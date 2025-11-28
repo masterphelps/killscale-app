@@ -77,7 +77,7 @@ export default function SettingsPage() {
             <span className="text-zinc-500 text-lg">x</span>
           </div>
           <p className="text-xs text-zinc-600 mt-2">
-            Ads below this (after learning phase) get the <span className="text-verdict-cut font-medium">CUT</span> verdict
+            Ads below this (after learning phase) get the <span className="text-verdict-kill font-medium">KILL</span> verdict
           </p>
         </div>
 
@@ -144,7 +144,7 @@ export default function SettingsPage() {
               <span className="text-sm">ROAS &lt; {rules.min_roas}x (after ${rules.learning_spend} spend)</span>
               <p className="text-xs text-zinc-600">Underperforming — consider pausing</p>
             </div>
-            <VerdictBadge verdict="cut" />
+            <VerdictBadge verdict="kill" />
           </div>
           <div className="flex items-center justify-between py-2">
             <div>

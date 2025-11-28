@@ -18,7 +18,7 @@ export function VerdictBadge({ verdict, size = 'md' }: VerdictBadgeProps) {
       {
         'bg-verdict-scale-bg text-verdict-scale border-verdict-scale/30': verdict === 'scale',
         'bg-verdict-watch-bg text-verdict-watch border-verdict-watch/30': verdict === 'watch',
-        'bg-verdict-cut-bg text-verdict-cut border-verdict-cut/30': verdict === 'cut',
+        'bg-verdict-kill-bg text-verdict-kill border-verdict-kill/30': verdict === 'kill',
         'bg-verdict-learn-bg text-verdict-learn border-verdict-learn/30': verdict === 'learn',
       }
     )}>

@@ -22,7 +22,7 @@ const FREE_CAMPAIGN_LIMIT = 5
 
 const DEFAULT_RULES: Rules = {
   id: '',
-  ad_account_id: '',
+  user_id: '',
   scale_roas: 3.0,
   min_roas: 1.5,
   learning_spend: 100,
@@ -39,10 +39,11 @@ export default function DashboardPage() {
   const { plan } = useSubscription()
   const { user } = useAuth()
   
-  // Load data from Supabase on mount
+  // Load data and rules from Supabase on mount
   useEffect(() => {
     if (user) {
       loadData()
+      loadRules()
     }
   }, [user])
 
@@ -71,6 +72,29 @@ export default function DashboardPage() {
       })))
     }
     setIsLoading(false)
+  }
+
+  const loadRules = async () => {
+    if (!user) return
+
+    const { data: rulesData, error } = await supabase
+      .from('rules')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+
+    if (rulesData && !error) {
+      setRules({
+        id: rulesData.id,
+        user_id: rulesData.user_id,
+        scale_roas: parseFloat(rulesData.scale_roas) || DEFAULT_RULES.scale_roas,
+        min_roas: parseFloat(rulesData.min_roas) || DEFAULT_RULES.min_roas,
+        learning_spend: parseFloat(rulesData.learning_spend) || DEFAULT_RULES.learning_spend,
+        created_at: rulesData.created_at,
+        updated_at: rulesData.updated_at
+      })
+    }
+    // If no rules found, keep defaults
   }
 
   const handleUpload = async (rows: CSVRow[]) => {

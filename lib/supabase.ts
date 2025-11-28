@@ -37,7 +37,7 @@ export type AdAccount = {
 
 export type Rules = {
   id: string
-  ad_account_id: string
+  user_id: string
   scale_roas: number
   min_roas: number
   learning_spend: number
@@ -113,7 +113,7 @@ export type AccountTotal = {
 }
 
 // Verdict calculation
-export type Verdict = 'scale' | 'watch' | 'cut' | 'learn'
+export type Verdict = 'scale' | 'watch' | 'kill' | 'learn'
 
 export function calculateVerdict(
   spend: number,
@@ -123,14 +123,14 @@ export function calculateVerdict(
   if (spend < rules.learning_spend) return 'learn'
   if (roas >= rules.scale_roas) return 'scale'
   if (roas >= rules.min_roas) return 'watch'
-  return 'cut'
+  return 'kill'
 }
 
 export function getVerdictDisplay(verdict: Verdict): { label: string; icon: string } {
   switch (verdict) {
     case 'scale': return { label: 'Scale', icon: '↑' }
-    case 'watch': return { label: 'Watch', icon: '●' }
-    case 'cut': return { label: 'Cut', icon: '↓' }
+    case 'watch': return { label: 'Watch', icon: '↔' }
+    case 'kill': return { label: 'Kill', icon: '↓' }
     case 'learn': return { label: 'Learn', icon: '○' }
   }
 }
