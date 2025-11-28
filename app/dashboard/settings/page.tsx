@@ -30,11 +30,14 @@ export default function SettingsPage() {
     if (!user) return
 
     const loadRules = async () => {
+      console.log('Loading rules for user:', user.id)
       const { data, error } = await supabase
         .from('rules')
         .select('*')
         .eq('user_id', user.id)
         .single()
+
+      console.log('Load result:', { data, error })
 
       if (data) {
         setRules({
@@ -56,22 +59,33 @@ export default function SettingsPage() {
   }
 
   const handleSave = async () => {
-    if (!user) return
+    if (!user) {
+      console.log('No user found!')
+      setError('Not logged in')
+      return
+    }
 
     setSaving(true)
     setError('')
     
-    const { error: upsertError } = await supabase
+    const payload = {
+      user_id: user.id,
+      scale_roas: rules.scale_roas,
+      min_roas: rules.min_roas,
+      learning_spend: rules.learning_spend,
+      updated_at: new Date().toISOString(),
+    }
+    
+    console.log('Saving rules:', payload)
+    
+    const { data, error: upsertError } = await supabase
       .from('rules')
-      .upsert({
-        user_id: user.id,
-        scale_roas: rules.scale_roas,
-        min_roas: rules.min_roas,
-        learning_spend: rules.learning_spend,
-        updated_at: new Date().toISOString(),
-      }, {
+      .upsert(payload, {
         onConflict: 'user_id'
       })
+      .select()
+
+    console.log('Save result:', { data, error: upsertError })
 
     setSaving(false)
     
@@ -102,6 +116,7 @@ export default function SettingsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Rules</h1>
         <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
+        <p className="text-xs text-zinc-600 mt-1">User ID: {user?.id || 'none'}</p>
       </div>
 
       <div className="bg-bg-card border border-border rounded-xl p-6 space-y-6">
