@@ -49,9 +49,12 @@ export default function SignupPage() {
           <div className="bg-bg-card border border-border rounded-xl p-8">
             <div className="text-3xl mb-4">✉️</div>
             <h1 className="text-2xl font-bold mb-2">Check your email</h1>
-            <p className="text-zinc-500">
-              We sent a confirmation link to <span className="text-white">{email}</span>
+            <p className="text-zinc-500 mb-6">
+              We sent a confirmation link to {email}
             </p>
+            <Link href="/login" className="text-accent hover:underline">
+              Back to login
+            </Link>
           </div>
         </div>
       </div>
@@ -62,17 +65,19 @@ export default function SignupPage() {
     <div className="min-h-screen bg-bg-dark flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-emerald-400 rounded-lg flex items-center justify-center text-xl">
-              ⚖️
-            </div>
-            <span className="font-mono font-bold text-2xl">KillScale</span>
+          <Link href="/" className="inline-block">
+            <svg width="200" height="45" viewBox="0 0 280 50">
+              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
+              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
+            </svg>
           </Link>
         </div>
 
         <div className="bg-bg-card border border-border rounded-xl p-8">
-          <h1 className="text-2xl font-bold mb-2">Create your account</h1>
-          <p className="text-zinc-500 mb-6">Start making better ad decisions</p>
+          <h1 className="text-2xl font-bold mb-2">Create an account</h1>
+          <p className="text-zinc-500 mb-6">Start optimizing your Meta Ads</p>
 
           <form onSubmit={handleSignup} className="space-y-4">
             <div>
@@ -123,7 +128,7 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
             >
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? 'Creating account...' : 'Sign Up'}
             </button>
           </form>
 
