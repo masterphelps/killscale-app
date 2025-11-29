@@ -14,7 +14,8 @@ const plans = [
     priceId: null,
     features: [
       'CSV upload',
-      '5 campaigns max',
+      '1 ad account',
+      '2 campaigns max',
       'Full hierarchy view',
       'Custom thresholds',
     ],
@@ -28,7 +29,8 @@ const plans = [
     priceId: 'price_1SYQDFLvvY2iVbuY0njXKK4c',
     features: [
       'CSV upload',
-      'Unlimited campaigns',
+      '1 ad account',
+      '20 campaigns max',
       'Full hierarchy view',
       'Custom thresholds',
       'Priority support',
@@ -42,10 +44,10 @@ const plans = [
     priceId: 'price_1SYOWOLvvY2iVbuYa0ovAR0G',
     features: [
       'Meta API connection',
-      '5 ad accounts',
+      '2 ad accounts',
+      'Unlimited campaigns',
       'Daily auto-refresh',
-      'Date range comparisons',
-      'Email alerts',
+      'Alerts & Trends',
     ],
     comingSoon: true,
   },
@@ -57,7 +59,8 @@ const plans = [
     priceId: 'price_1SYOWlLvvY2iVbuYgxcY88pk',
     features: [
       'Meta API connection',
-      'Unlimited ad accounts',
+      '100 ad accounts',
+      'Unlimited campaigns',
       'Hourly refresh',
       'White-label reports',
       'Team access',
@@ -109,10 +112,12 @@ export default function PricingPage() {
       <nav className="border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-gradient-to-br from-emerald-600 to-emerald-400 rounded-lg flex items-center justify-center text-lg">
-              ⚖️
-            </div>
-            <span className="font-mono font-bold text-lg">KillScale</span>
+            <svg width="180" height="36" viewBox="0 0 280 50">
+              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
+              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
+            </svg>
           </Link>
           {user ? (
             <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-white">
