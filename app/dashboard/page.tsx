@@ -18,7 +18,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const FREE_CAMPAIGN_LIMIT = 5
+const FREE_CAMPAIGN_LIMIT = 2
+const STARTER_CAMPAIGN_LIMIT = 20
 
 const DEFAULT_RULES: Rules = {
   id: '',
@@ -154,11 +155,18 @@ export default function DashboardPage() {
   
   const allCampaigns = Array.from(new Set(data.map(row => row.campaign_name)))
   const totalCampaigns = allCampaigns.length
-  const isLimited = userPlan === 'Free' && totalCampaigns > FREE_CAMPAIGN_LIMIT
-  const hiddenCampaigns = isLimited ? totalCampaigns - FREE_CAMPAIGN_LIMIT : 0
+  const getCampaignLimit = () => {
+    if (userPlan === 'Free') return FREE_CAMPAIGN_LIMIT
+    if (userPlan === 'Starter') return STARTER_CAMPAIGN_LIMIT
+    return Infinity // Pro & Agency = unlimited
+  }
   
-  const visibleCampaigns = userPlan === 'Free' 
-    ? allCampaigns.slice(0, FREE_CAMPAIGN_LIMIT)
+  const campaignLimit = getCampaignLimit()
+  const isLimited = totalCampaigns > campaignLimit
+  const hiddenCampaigns = isLimited ? totalCampaigns - campaignLimit : 0
+  
+  const visibleCampaigns = isLimited
+    ? allCampaigns.slice(0, campaignLimit)
     : allCampaigns
   
   const filteredData = data.filter(row => visibleCampaigns.includes(row.campaign_name))
