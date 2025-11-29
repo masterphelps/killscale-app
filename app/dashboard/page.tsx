@@ -265,15 +265,17 @@ export default function DashboardPage() {
   }
 
   const handleSelectAll = () => {
-    setSelectedCampaigns(new Set(visibleCampaigns))
-  }
-
-  const handleSelectNone = () => {
-    setSelectedCampaigns(new Set())
+    if (selectedCampaigns.size === visibleCampaigns.length) {
+      // All selected, so deselect all
+      setSelectedCampaigns(new Set())
+    } else {
+      // Some or none selected, so select all
+      setSelectedCampaigns(new Set(visibleCampaigns))
+    }
   }
 
   const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(c => selectedCampaigns.has(c))
-  const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c))
+  const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c)) && !allSelected
   
   if (isLoading) {
     return (
@@ -369,13 +371,13 @@ export default function DashboardPage() {
           )}
           
           {/* Campaign Selection Indicator */}
-          {selectedCampaigns.size < visibleCampaigns.length && (
+          {selectedCampaigns.size < visibleCampaigns.length && selectedCampaigns.size > 0 && (
             <div className="mb-4 px-4 py-2 bg-accent/10 border border-accent/30 rounded-lg flex items-center justify-between">
               <div className="text-sm text-accent">
                 Showing stats for {selectedCampaigns.size} of {visibleCampaigns.length} campaigns
               </div>
               <button 
-                onClick={handleSelectAll}
+                onClick={() => setSelectedCampaigns(new Set(visibleCampaigns))}
                 className="text-xs text-accent hover:text-white transition-colors"
               >
                 Select All
@@ -441,58 +443,30 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* Filters Row */}
-          <div className="flex flex-col gap-2 mb-4">
-            {/* Verdict Filters */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-500 mr-2">Filter:</span>
-              {filterButtons.map((filter) => (
-                <button
-                  key={filter.value}
-                  onClick={() => setVerdictFilter(filter.value)}
-                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                    verdictFilter === filter.value
-                      ? filter.value === 'all' 
-                        ? 'bg-zinc-700 border-zinc-600 text-white'
-                        : filter.value === 'scale'
-                          ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
-                          : filter.value === 'watch'
-                            ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
-                            : filter.value === 'kill'
-                              ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
-                              : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
-                      : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-            
-            {/* Campaign Selection */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-500 mr-2">Campaigns:</span>
+          {/* Verdict Filters */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-sm text-zinc-500 mr-2">Filter:</span>
+            {filterButtons.map((filter) => (
               <button
-                onClick={handleSelectAll}
+                key={filter.value}
+                onClick={() => setVerdictFilter(filter.value)}
                 className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                  allSelected 
-                    ? 'bg-zinc-700 border-zinc-600 text-white' 
+                  verdictFilter === filter.value
+                    ? filter.value === 'all' 
+                      ? 'bg-zinc-700 border-zinc-600 text-white'
+                      : filter.value === 'scale'
+                        ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
+                        : filter.value === 'watch'
+                          ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
+                          : filter.value === 'kill'
+                            ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
+                            : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
                     : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
                 }`}
               >
-                All
+                {filter.label}
               </button>
-              <button
-                onClick={handleSelectNone}
-                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                  !someSelected 
-                    ? 'bg-zinc-700 border-zinc-600 text-white' 
-                    : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
-                }`}
-              >
-                None
-              </button>
-            </div>
+            ))}
           </div>
           
           <PerformanceTable 
@@ -502,6 +476,9 @@ export default function DashboardPage() {
             verdictFilter={verdictFilter}
             selectedCampaigns={selectedCampaigns}
             onCampaignToggle={handleCampaignToggle}
+            onSelectAll={handleSelectAll}
+            allSelected={allSelected}
+            someSelected={someSelected}
           />
         </>
       )}

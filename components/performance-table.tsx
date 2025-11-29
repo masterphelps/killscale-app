@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Minus, Plus, Check } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
@@ -27,6 +27,9 @@ type PerformanceTableProps = {
   verdictFilter?: VerdictFilter
   selectedCampaigns?: Set<string>
   onCampaignToggle?: (campaignName: string) => void
+  onSelectAll?: () => void
+  allSelected?: boolean
+  someSelected?: boolean
 }
 
 type HierarchyNode = {
@@ -161,7 +164,10 @@ export function PerformanceTable({
   dateRange, 
   verdictFilter = 'all',
   selectedCampaigns,
-  onCampaignToggle
+  onCampaignToggle,
+  onSelectAll,
+  allSelected = false,
+  someSelected = false
 }: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
@@ -285,24 +291,7 @@ export function PerformanceTable({
   }
 
   const hasCheckboxes = selectedCampaigns && onCampaignToggle
-  
-  // Fixed widths for data columns
-  const fixedColsWidth = {
-    checkbox: hasCheckboxes ? 32 : 0,
-    spend: 80,
-    revenue: 85,
-    roas: 65,
-    purch: 55,
-    cpc: 65,
-    ctr: 65,
-    cpa: 70,
-    conv: 60,
-    clicks: 65,
-    impr: 75,
-    verdict: 80,
-  }
-  
-  const totalFixedWidth = Object.values(fixedColsWidth).reduce((a, b) => a + b, 0)
+  const checkboxWidth = hasCheckboxes ? 32 : 0
 
   const DataRow = ({ 
     node, 
@@ -344,7 +333,7 @@ export function PerformanceTable({
         {hasCheckboxes && (
           <div 
             className="flex items-center justify-center flex-shrink-0"
-            style={{ width: fixedColsWidth.checkbox }}
+            style={{ width: checkboxWidth }}
             onClick={(e) => {
               if (level === 'campaign' && onCampaignToggle) {
                 e.stopPropagation()
@@ -397,7 +386,7 @@ export function PerformanceTable({
           </div>
         </div>
         
-        {/* Data columns - fixed width, fill remaining space proportionally */}
+        {/* Data columns */}
         <div className="flex-1 flex items-center">
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
@@ -419,7 +408,7 @@ export function PerformanceTable({
 
   const HeaderRow = () => (
     <div className="flex items-center bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 40 }}>
-      {hasCheckboxes && <div style={{ width: fixedColsWidth.checkbox }} className="flex-shrink-0" />}
+      {hasCheckboxes && <div style={{ width: checkboxWidth }} className="flex-shrink-0" />}
       <div className="px-3 relative flex-shrink-0 font-semibold" style={{ width: nameColWidth }}>
         Name
         <div 
@@ -447,7 +436,25 @@ export function PerformanceTable({
 
   const TotalsRow = () => (
     <div className="flex items-center bg-zinc-900 border-b border-border font-medium" style={{ height: 46 }}>
-      {hasCheckboxes && <div style={{ width: fixedColsWidth.checkbox }} className="flex-shrink-0" />}
+      {hasCheckboxes && (
+        <div 
+          className="flex items-center justify-center flex-shrink-0 cursor-pointer"
+          style={{ width: checkboxWidth }}
+          onClick={onSelectAll}
+        >
+          <div className={cn(
+            'w-4 h-4 rounded border flex items-center justify-center transition-colors',
+            allSelected 
+              ? 'bg-accent border-accent text-white' 
+              : someSelected
+                ? 'bg-accent/50 border-accent text-white'
+                : 'border-zinc-600 hover:border-zinc-500'
+          )}>
+            {allSelected && <Check className="w-3 h-3" />}
+            {someSelected && !allSelected && <Minus className="w-3 h-3" />}
+          </div>
+        </div>
+      )}
       <div className="px-3 text-white flex-shrink-0 text-sm font-semibold" style={{ width: nameColWidth }}>All Campaigns</div>
       <div className="flex-1 flex items-center">
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
