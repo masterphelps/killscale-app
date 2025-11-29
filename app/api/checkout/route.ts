@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.scaleorcut.com'}/dashboard?upgraded=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.scaleorcut.com'}/pricing`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/dashboard?upgraded=true`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/pricing`,
       customer_email: userEmail,
       metadata: {
         userId: userId,
@@ -40,4 +40,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-// force rebuild

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Minus, Plus, Check } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
@@ -166,7 +166,8 @@ export function PerformanceTable({
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [allExpanded, setAllExpanded] = useState(false)
-  const [nameColWidth, setNameColWidth] = useState(280)
+  const [nameColWidth, setNameColWidth] = useState(300)
+  const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
@@ -267,12 +268,13 @@ export function PerformanceTable({
     startWidth.current = nameColWidth
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
+    e.preventDefault()
   }
 
   const handleMouseMove = (e: MouseEvent) => {
     if (!resizing.current) return
     const diff = e.clientX - startX.current
-    const newWidth = Math.max(150, Math.min(500, startWidth.current + diff))
+    const newWidth = Math.max(200, Math.min(600, startWidth.current + diff))
     setNameColWidth(newWidth)
   }
 
@@ -284,22 +286,23 @@ export function PerformanceTable({
 
   const hasCheckboxes = selectedCampaigns && onCampaignToggle
   
-  // Fixed pixel widths for data columns
-  const colWidths = {
-    checkbox: hasCheckboxes ? 28 : 0,
-    name: nameColWidth,
-    spend: 75,
-    revenue: 75,
-    roas: 60,
+  // Fixed widths for data columns
+  const fixedColsWidth = {
+    checkbox: hasCheckboxes ? 32 : 0,
+    spend: 80,
+    revenue: 85,
+    roas: 65,
     purch: 55,
-    cpc: 60,
-    ctr: 60,
-    cpa: 65,
-    conv: 55,
-    clicks: 60,
-    impr: 70,
-    verdict: 75,
+    cpc: 65,
+    ctr: 65,
+    cpa: 70,
+    conv: 60,
+    clicks: 65,
+    impr: 75,
+    verdict: 80,
   }
+  
+  const totalFixedWidth = Object.values(fixedColsWidth).reduce((a, b) => a + b, 0)
 
   const DataRow = ({ 
     node, 
@@ -314,7 +317,7 @@ export function PerformanceTable({
     onToggle?: () => void
     isSelected?: boolean
   }) => {
-    const indent = level === 'campaign' ? 0 : level === 'adset' ? 20 : 40
+    const indent = level === 'campaign' ? 0 : level === 'adset' ? 24 : 48
     const bgClass = level === 'campaign' 
       ? (isSelected ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' : 'bg-bg-card/50 opacity-60 hover:opacity-80')
       : level === 'adset'
@@ -335,13 +338,13 @@ export function PerformanceTable({
           bgClass,
           onToggle && 'cursor-pointer'
         )}
-        style={{ height: level === 'ad' ? 36 : 44 }}
+        style={{ height: level === 'ad' ? 38 : 46 }}
       >
         {/* Checkbox */}
         {hasCheckboxes && (
           <div 
             className="flex items-center justify-center flex-shrink-0"
-            style={{ width: colWidths.checkbox }}
+            style={{ width: fixedColsWidth.checkbox }}
             onClick={(e) => {
               if (level === 'campaign' && onCampaignToggle) {
                 e.stopPropagation()
@@ -362,10 +365,10 @@ export function PerformanceTable({
           </div>
         )}
         
-        {/* Name column */}
+        {/* Name column - flexible width */}
         <div 
-          className="flex items-center gap-2 min-w-0 px-3 flex-shrink-0 relative"
-          style={{ width: colWidths.name }}
+          className="flex items-center min-w-0 px-3 relative"
+          style={{ width: nameColWidth, flexShrink: 0 }}
           onClick={onToggle}
         >
           <div style={{ paddingLeft: indent }} className="flex items-center gap-2 min-w-0 flex-1">
@@ -381,29 +384,34 @@ export function PerformanceTable({
                 {isExpanded ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
               </button>
             )}
-            <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase', labelBg)}>{label}</span>
-            <span className={cn('truncate', textClass)} title={node.name}>{node.name}</span>
+            {!onToggle && <div className="w-4" />}
+            <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
+            <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
           </div>
           {/* Resize handle */}
           <div 
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/50 active:bg-accent"
+            className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center"
             onMouseDown={handleMouseDown}
-          />
+          >
+            <div className="w-0.5 h-4 bg-border rounded" />
+          </div>
         </div>
         
-        {/* Data columns - fixed width, never shift */}
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.spend }}>{formatCurrency(node.spend)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.revenue }}>{formatCurrency(node.revenue)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm font-semibold px-2" style={{ width: colWidths.roas }}>{formatROAS(node.roas)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.purch }}>{formatNumber(node.purchases)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.cpc }}>{formatMetric(node.cpc)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.ctr }}>{formatPercent(node.ctr)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.cpa }}>{formatMetric(node.cpa)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.conv }}>{formatPercent(node.convRate)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.clicks }}>{formatNumber(node.clicks)}</div>
-        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.impr }}>{formatNumber(node.impressions)}</div>
-        <div className="flex-shrink-0 flex justify-center px-2" style={{ width: colWidths.verdict }}>
-          <VerdictBadge verdict={node.verdict} size="sm" />
+        {/* Data columns - fixed width, fill remaining space proportionally */}
+        <div className="flex-1 flex items-center">
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
+          <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.purchases)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpc)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.ctr)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpa)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
+          <div className="w-20 flex justify-center px-2 flex-shrink-0">
+            <VerdictBadge verdict={node.verdict} size="sm" />
+          </div>
         </div>
       </div>
     )
@@ -411,50 +419,56 @@ export function PerformanceTable({
 
   const HeaderRow = () => (
     <div className="flex items-center bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 40 }}>
-      {hasCheckboxes && <div style={{ width: colWidths.checkbox }} />}
-      <div className="px-3 relative flex-shrink-0" style={{ width: colWidths.name }}>
+      {hasCheckboxes && <div style={{ width: fixedColsWidth.checkbox }} className="flex-shrink-0" />}
+      <div className="px-3 relative flex-shrink-0 font-semibold" style={{ width: nameColWidth }}>
         Name
         <div 
-          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/50"
+          className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 flex items-center justify-center"
           onMouseDown={handleMouseDown}
-        />
+        >
+          <div className="w-0.5 h-4 bg-border rounded" />
+        </div>
       </div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.spend }}>Spend</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.revenue }}>Revenue</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.roas }}>ROAS</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.purch }}>Purch</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.cpc }}>CPC</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.ctr }}>CTR</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.cpa }}>CPA</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.conv }}>Conv%</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.clicks }}>Clicks</div>
-      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.impr }}>Impr</div>
-      <div className="text-center px-2 flex-shrink-0" style={{ width: colWidths.verdict }}>Verdict</div>
+      <div className="flex-1 flex items-center">
+        <div className="flex-1 text-right px-2">Spend</div>
+        <div className="flex-1 text-right px-2">Revenue</div>
+        <div className="flex-1 text-right px-2">ROAS</div>
+        <div className="flex-1 text-right px-2">Purch</div>
+        <div className="flex-1 text-right px-2">CPC</div>
+        <div className="flex-1 text-right px-2">CTR</div>
+        <div className="flex-1 text-right px-2">CPA</div>
+        <div className="flex-1 text-right px-2">Conv%</div>
+        <div className="flex-1 text-right px-2">Clicks</div>
+        <div className="flex-1 text-right px-2">Impr</div>
+        <div className="w-20 text-center px-2 flex-shrink-0">Verdict</div>
+      </div>
     </div>
   )
 
   const TotalsRow = () => (
-    <div className="flex items-center bg-zinc-900 border-b border-border font-medium" style={{ height: 44 }}>
-      {hasCheckboxes && <div style={{ width: colWidths.checkbox }} />}
-      <div className="px-3 text-white flex-shrink-0" style={{ width: colWidths.name }}>All Campaigns</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.spend }}>{formatCurrency(totals.spend)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.revenue }}>{formatCurrency(totals.revenue)}</div>
-      <div className="text-right font-mono text-sm font-semibold px-2 flex-shrink-0" style={{ width: colWidths.roas }}>{formatROAS(totals.roas)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.purch }}>{formatNumber(totals.purchases)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.cpc }}>{formatMetric(totals.cpc)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.ctr }}>{formatPercent(totals.ctr)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.cpa }}>{formatMetric(totals.cpa)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.conv }}>{formatPercent(totals.convRate)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.clicks }}>{formatNumber(totals.clicks)}</div>
-      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.impr }}>{formatNumber(totals.impressions)}</div>
-      <div className="flex justify-center px-2 flex-shrink-0" style={{ width: colWidths.verdict }}>
-        <VerdictBadge verdict={totals.verdict} size="sm" />
+    <div className="flex items-center bg-zinc-900 border-b border-border font-medium" style={{ height: 46 }}>
+      {hasCheckboxes && <div style={{ width: fixedColsWidth.checkbox }} className="flex-shrink-0" />}
+      <div className="px-3 text-white flex-shrink-0 text-sm font-semibold" style={{ width: nameColWidth }}>All Campaigns</div>
+      <div className="flex-1 flex items-center">
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
+        <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.purchases)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpc)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.ctr)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpa)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.convRate)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.clicks)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
+        <div className="w-20 flex justify-center px-2 flex-shrink-0">
+          <VerdictBadge verdict={totals.verdict} size="sm" />
+        </div>
       </div>
     </div>
   )
   
   return (
-    <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
+    <div ref={containerRef} className="bg-bg-card border border-border rounded-xl overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div className="flex items-center gap-3">
@@ -476,52 +490,50 @@ export function PerformanceTable({
       
       {/* Table */}
       <div className="overflow-x-auto">
-        <div style={{ minWidth: colWidths.checkbox + colWidths.name + colWidths.spend + colWidths.revenue + colWidths.roas + colWidths.purch + colWidths.cpc + colWidths.ctr + colWidths.cpa + colWidths.conv + colWidths.clicks + colWidths.impr + colWidths.verdict }}>
-          <HeaderRow />
-          <TotalsRow />
-          
-          <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
-            {filteredHierarchy.length === 0 ? (
-              <div className="px-5 py-8 text-center text-zinc-500">
-                No ads match the selected filter
-              </div>
-            ) : (
-              filteredHierarchy.map(campaign => {
-                const isSelected = selectedCampaigns?.has(campaign.name) ?? true
-                
-                return (
-                  <div key={campaign.name}>
-                    <DataRow 
-                      node={campaign}
-                      level="campaign"
-                      isExpanded={expandedCampaigns.has(campaign.name)}
-                      onToggle={() => toggleCampaign(campaign.name)}
-                      isSelected={isSelected}
-                    />
-                    
-                    {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
-                      <div key={`${campaign.name}::${adset.name}`}>
+        <HeaderRow />
+        <TotalsRow />
+        
+        <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
+          {filteredHierarchy.length === 0 ? (
+            <div className="px-5 py-8 text-center text-zinc-500">
+              No ads match the selected filter
+            </div>
+          ) : (
+            filteredHierarchy.map(campaign => {
+              const isSelected = selectedCampaigns?.has(campaign.name) ?? true
+              
+              return (
+                <div key={campaign.name}>
+                  <DataRow 
+                    node={campaign}
+                    level="campaign"
+                    isExpanded={expandedCampaigns.has(campaign.name)}
+                    onToggle={() => toggleCampaign(campaign.name)}
+                    isSelected={isSelected}
+                  />
+                  
+                  {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                    <div key={`${campaign.name}::${adset.name}`}>
+                      <DataRow 
+                        node={adset}
+                        level="adset"
+                        isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
+                        onToggle={() => toggleAdset(campaign.name, adset.name)}
+                      />
+                      
+                      {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
                         <DataRow 
-                          node={adset}
-                          level="adset"
-                          isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
-                          onToggle={() => toggleAdset(campaign.name, adset.name)}
+                          key={`${campaign.name}::${adset.name}::${ad.name}`}
+                          node={ad}
+                          level="ad"
                         />
-                        
-                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
-                          <DataRow 
-                            key={`${campaign.name}::${adset.name}::${ad.name}`}
-                            node={ad}
-                            level="ad"
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )
-              })
-            )}
-          </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )
+            })
+          )}
         </div>
       </div>
     </div>
