@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Minus, Plus, Check } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
@@ -166,6 +166,10 @@ export function PerformanceTable({
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [allExpanded, setAllExpanded] = useState(false)
+  const [nameColWidth, setNameColWidth] = useState(280)
+  const resizing = useRef(false)
+  const startX = useRef(0)
+  const startWidth = useRef(0)
   
   const hierarchy = useMemo(() => buildHierarchy(data, rules), [data, rules])
   
@@ -257,10 +261,197 @@ export function PerformanceTable({
     setAllExpanded(!allExpanded)
   }
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    resizing.current = true
+    startX.current = e.clientX
+    startWidth.current = nameColWidth
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!resizing.current) return
+    const diff = e.clientX - startX.current
+    const newWidth = Math.max(150, Math.min(500, startWidth.current + diff))
+    setNameColWidth(newWidth)
+  }
+
+  const handleMouseUp = () => {
+    resizing.current = false
+    document.removeEventListener('mousemove', handleMouseMove)
+    document.removeEventListener('mouseup', handleMouseUp)
+  }
+
   const hasCheckboxes = selectedCampaigns && onCampaignToggle
-  const gridCols = hasCheckboxes 
-    ? "grid-cols-[28px_minmax(180px,280px)_repeat(10,minmax(60px,1fr))_80px]"
-    : "grid-cols-[minmax(200px,300px)_repeat(10,minmax(65px,1fr))_85px]"
+  
+  // Fixed pixel widths for data columns
+  const colWidths = {
+    checkbox: hasCheckboxes ? 28 : 0,
+    name: nameColWidth,
+    spend: 75,
+    revenue: 75,
+    roas: 60,
+    purch: 55,
+    cpc: 60,
+    ctr: 60,
+    cpa: 65,
+    conv: 55,
+    clicks: 60,
+    impr: 70,
+    verdict: 75,
+  }
+
+  const DataRow = ({ 
+    node, 
+    level, 
+    isExpanded, 
+    onToggle,
+    isSelected = true,
+  }: { 
+    node: HierarchyNode
+    level: 'campaign' | 'adset' | 'ad'
+    isExpanded?: boolean
+    onToggle?: () => void
+    isSelected?: boolean
+  }) => {
+    const indent = level === 'campaign' ? 0 : level === 'adset' ? 20 : 40
+    const bgClass = level === 'campaign' 
+      ? (isSelected ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' : 'bg-bg-card/50 opacity-60 hover:opacity-80')
+      : level === 'adset'
+        ? 'bg-hierarchy-adset-bg hover:bg-purple-500/15'
+        : 'bg-bg-card hover:bg-bg-hover'
+    const textClass = level === 'campaign' ? 'text-white' : level === 'adset' ? 'text-purple-200' : 'text-zinc-400'
+    const labelBg = level === 'campaign' 
+      ? 'bg-blue-500/30 text-blue-300' 
+      : level === 'adset' 
+        ? 'bg-purple-500/30 text-purple-300'
+        : 'bg-bg-dark text-zinc-500'
+    const label = level === 'campaign' ? 'Camp' : level === 'adset' ? 'Set' : 'Ad'
+
+    return (
+      <div 
+        className={cn(
+          'flex items-center border-b border-border transition-colors',
+          bgClass,
+          onToggle && 'cursor-pointer'
+        )}
+        style={{ height: level === 'ad' ? 36 : 44 }}
+      >
+        {/* Checkbox */}
+        {hasCheckboxes && (
+          <div 
+            className="flex items-center justify-center flex-shrink-0"
+            style={{ width: colWidths.checkbox }}
+            onClick={(e) => {
+              if (level === 'campaign' && onCampaignToggle) {
+                e.stopPropagation()
+                onCampaignToggle(node.name)
+              }
+            }}
+          >
+            {level === 'campaign' && (
+              <div className={cn(
+                'w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer',
+                isSelected 
+                  ? 'bg-accent border-accent text-white' 
+                  : 'border-zinc-600 hover:border-zinc-500'
+              )}>
+                {isSelected && <Check className="w-3 h-3" />}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Name column */}
+        <div 
+          className="flex items-center gap-2 min-w-0 px-3 flex-shrink-0 relative"
+          style={{ width: colWidths.name }}
+          onClick={onToggle}
+        >
+          <div style={{ paddingLeft: indent }} className="flex items-center gap-2 min-w-0 flex-1">
+            {onToggle && (
+              <button className={cn(
+                'w-4 h-4 flex-shrink-0 flex items-center justify-center rounded border transition-colors',
+                level === 'campaign' 
+                  ? (isExpanded ? 'bg-accent border-accent text-white' : 'border-border text-zinc-500')
+                  : level === 'adset'
+                    ? (isExpanded ? 'bg-purple-500 border-purple-500 text-white' : 'border-purple-500/30 text-purple-400')
+                    : ''
+              )}>
+                {isExpanded ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
+              </button>
+            )}
+            <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase', labelBg)}>{label}</span>
+            <span className={cn('truncate', textClass)} title={node.name}>{node.name}</span>
+          </div>
+          {/* Resize handle */}
+          <div 
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/50 active:bg-accent"
+            onMouseDown={handleMouseDown}
+          />
+        </div>
+        
+        {/* Data columns - fixed width, never shift */}
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.spend }}>{formatCurrency(node.spend)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.revenue }}>{formatCurrency(node.revenue)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm font-semibold px-2" style={{ width: colWidths.roas }}>{formatROAS(node.roas)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.purch }}>{formatNumber(node.purchases)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.cpc }}>{formatMetric(node.cpc)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.ctr }}>{formatPercent(node.ctr)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.cpa }}>{formatMetric(node.cpa)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.conv }}>{formatPercent(node.convRate)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.clicks }}>{formatNumber(node.clicks)}</div>
+        <div className="flex-shrink-0 text-right font-mono text-sm px-2" style={{ width: colWidths.impr }}>{formatNumber(node.impressions)}</div>
+        <div className="flex-shrink-0 flex justify-center px-2" style={{ width: colWidths.verdict }}>
+          <VerdictBadge verdict={node.verdict} size="sm" />
+        </div>
+      </div>
+    )
+  }
+
+  const HeaderRow = () => (
+    <div className="flex items-center bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 40 }}>
+      {hasCheckboxes && <div style={{ width: colWidths.checkbox }} />}
+      <div className="px-3 relative flex-shrink-0" style={{ width: colWidths.name }}>
+        Name
+        <div 
+          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/50"
+          onMouseDown={handleMouseDown}
+        />
+      </div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.spend }}>Spend</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.revenue }}>Revenue</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.roas }}>ROAS</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.purch }}>Purch</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.cpc }}>CPC</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.ctr }}>CTR</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.cpa }}>CPA</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.conv }}>Conv%</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.clicks }}>Clicks</div>
+      <div className="text-right px-2 flex-shrink-0" style={{ width: colWidths.impr }}>Impr</div>
+      <div className="text-center px-2 flex-shrink-0" style={{ width: colWidths.verdict }}>Verdict</div>
+    </div>
+  )
+
+  const TotalsRow = () => (
+    <div className="flex items-center bg-zinc-900 border-b border-border font-medium" style={{ height: 44 }}>
+      {hasCheckboxes && <div style={{ width: colWidths.checkbox }} />}
+      <div className="px-3 text-white flex-shrink-0" style={{ width: colWidths.name }}>All Campaigns</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.spend }}>{formatCurrency(totals.spend)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.revenue }}>{formatCurrency(totals.revenue)}</div>
+      <div className="text-right font-mono text-sm font-semibold px-2 flex-shrink-0" style={{ width: colWidths.roas }}>{formatROAS(totals.roas)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.purch }}>{formatNumber(totals.purchases)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.cpc }}>{formatMetric(totals.cpc)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.ctr }}>{formatPercent(totals.ctr)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.cpa }}>{formatMetric(totals.cpa)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.conv }}>{formatPercent(totals.convRate)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.clicks }}>{formatNumber(totals.clicks)}</div>
+      <div className="text-right font-mono text-sm px-2 flex-shrink-0" style={{ width: colWidths.impr }}>{formatNumber(totals.impressions)}</div>
+      <div className="flex justify-center px-2 flex-shrink-0" style={{ width: colWidths.verdict }}>
+        <VerdictBadge verdict={totals.verdict} size="sm" />
+      </div>
+    </div>
+  )
   
   return (
     <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
@@ -283,48 +474,12 @@ export function PerformanceTable({
         </button>
       </div>
       
-      {/* Scrollable Table Container */}
+      {/* Table */}
       <div className="overflow-x-auto">
-        <div className="min-w-[1100px]">
-          {/* Table Header */}
-          <div className={`grid ${gridCols} gap-2 px-5 py-3 bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border`}>
-            {hasCheckboxes && <div></div>}
-            <div>Name</div>
-            <div className="text-right">Spend</div>
-            <div className="text-right">Revenue</div>
-            <div className="text-right">ROAS</div>
-            <div className="text-right">Purch</div>
-            <div className="text-right">CPC</div>
-            <div className="text-right">CTR</div>
-            <div className="text-right">CPA</div>
-            <div className="text-right">Conv%</div>
-            <div className="text-right">Clicks</div>
-            <div className="text-right">Impr</div>
-            <div className="text-center">Verdict</div>
-          </div>
+        <div style={{ minWidth: colWidths.checkbox + colWidths.name + colWidths.spend + colWidths.revenue + colWidths.roas + colWidths.purch + colWidths.cpc + colWidths.ctr + colWidths.cpa + colWidths.conv + colWidths.clicks + colWidths.impr + colWidths.verdict }}>
+          <HeaderRow />
+          <TotalsRow />
           
-          {/* Account Total */}
-          <div className={`grid ${gridCols} gap-2 px-5 py-3 bg-zinc-900 border-b border-border font-medium`}>
-            {hasCheckboxes && <div></div>}
-            <div className="flex items-center gap-2">
-              <span className="text-white">All Campaigns</span>
-            </div>
-            <div className="text-right font-mono text-sm">{formatCurrency(totals.spend)}</div>
-            <div className="text-right font-mono text-sm">{formatCurrency(totals.revenue)}</div>
-            <div className="text-right font-mono text-sm font-semibold">{formatROAS(totals.roas)}</div>
-            <div className="text-right font-mono text-sm">{formatNumber(totals.purchases)}</div>
-            <div className="text-right font-mono text-sm">{formatMetric(totals.cpc)}</div>
-            <div className="text-right font-mono text-sm">{formatPercent(totals.ctr)}</div>
-            <div className="text-right font-mono text-sm">{formatMetric(totals.cpa)}</div>
-            <div className="text-right font-mono text-sm">{formatPercent(totals.convRate)}</div>
-            <div className="text-right font-mono text-sm">{formatNumber(totals.clicks)}</div>
-            <div className="text-right font-mono text-sm">{formatNumber(totals.impressions)}</div>
-            <div className="text-center">
-              <VerdictBadge verdict={totals.verdict} size="sm" />
-            </div>
-          </div>
-          
-          {/* Rows */}
           <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
             {filteredHierarchy.length === 0 ? (
               <div className="px-5 py-8 text-center text-zinc-500">
@@ -336,126 +491,29 @@ export function PerformanceTable({
                 
                 return (
                   <div key={campaign.name}>
-                    {/* Campaign Row */}
-                    <div 
-                      className={cn(
-                        `grid ${gridCols} gap-2 px-5 py-3 border-b border-border cursor-pointer transition-colors`,
-                        isSelected 
-                          ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' 
-                          : 'bg-bg-card/50 opacity-60 hover:opacity-80'
-                      )}
-                    >
-                      {/* Checkbox */}
-                      {hasCheckboxes && (
-                        <div 
-                          className="flex items-center"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onCampaignToggle(campaign.name)
-                          }}
-                        >
-                          <div className={cn(
-                            'w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer',
-                            isSelected 
-                              ? 'bg-accent border-accent text-white' 
-                              : 'border-zinc-600 hover:border-zinc-500'
-                          )}>
-                            {isSelected && <Check className="w-3 h-3" />}
-                          </div>
-                        </div>
-                      )}
-                      
-                      <div 
-                        className="flex items-center gap-2 font-medium text-white min-w-0"
-                        onClick={() => toggleCampaign(campaign.name)}
-                      >
-                        <button className={cn(
-                          'w-5 h-5 flex-shrink-0 flex items-center justify-center rounded border transition-colors',
-                          expandedCampaigns.has(campaign.name)
-                            ? 'bg-accent border-accent text-white'
-                            : 'border-border text-zinc-500 hover:border-zinc-500'
-                        )}>
-                          {expandedCampaigns.has(campaign.name) ? <Minus className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                        </button>
-                        <span className="text-[10px] flex-shrink-0 bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded uppercase">Camp</span>
-                        <span className="truncate" title={campaign.name}>{campaign.name}</span>
-                      </div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatCurrency(campaign.spend)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatCurrency(campaign.revenue)}</div>
-                      <div className="text-right font-mono text-sm font-semibold" onClick={() => toggleCampaign(campaign.name)}>{formatROAS(campaign.roas)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatNumber(campaign.purchases)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatMetric(campaign.cpc)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatPercent(campaign.ctr)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatMetric(campaign.cpa)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatPercent(campaign.convRate)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatNumber(campaign.clicks)}</div>
-                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatNumber(campaign.impressions)}</div>
-                      <div className="text-center" onClick={() => toggleCampaign(campaign.name)}>
-                        <VerdictBadge verdict={campaign.verdict} size="sm" />
-                      </div>
-                    </div>
+                    <DataRow 
+                      node={campaign}
+                      level="campaign"
+                      isExpanded={expandedCampaigns.has(campaign.name)}
+                      onToggle={() => toggleCampaign(campaign.name)}
+                      isSelected={isSelected}
+                    />
                     
-                    {/* Adsets */}
                     {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
                       <div key={`${campaign.name}::${adset.name}`}>
-                        {/* Adset Row */}
-                        <div 
-                          className={`grid ${gridCols} gap-2 px-5 py-2.5 pl-10 bg-hierarchy-adset-bg hover:bg-purple-500/15 border-b border-border cursor-pointer transition-colors animate-slide-in`}
-                          onClick={() => toggleAdset(campaign.name, adset.name)}
-                        >
-                          {hasCheckboxes && <div></div>}
-                          <div className="flex items-center gap-2 text-purple-200 min-w-0">
-                            <button className={cn(
-                              'w-4 h-4 flex-shrink-0 flex items-center justify-center rounded border transition-colors',
-                              expandedAdsets.has(`${campaign.name}::${adset.name}`)
-                                ? 'bg-purple-500 border-purple-500 text-white'
-                                : 'border-purple-500/30 text-purple-400 hover:border-purple-400'
-                            )}>
-                              {expandedAdsets.has(`${campaign.name}::${adset.name}`) ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
-                            </button>
-                            <span className="text-[10px] flex-shrink-0 bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded uppercase">Set</span>
-                            <span className="truncate" title={adset.name}>{adset.name}</span>
-                          </div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.spend)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.revenue)}</div>
-                          <div className="text-right font-mono text-sm font-semibold text-purple-200">{formatROAS(adset.roas)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.purchases)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatMetric(adset.cpc)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatPercent(adset.ctr)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatMetric(adset.cpa)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatPercent(adset.convRate)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.clicks)}</div>
-                          <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.impressions)}</div>
-                          <div className="text-center">
-                            <VerdictBadge verdict={adset.verdict} size="sm" />
-                          </div>
-                        </div>
+                        <DataRow 
+                          node={adset}
+                          level="adset"
+                          isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
+                          onToggle={() => toggleAdset(campaign.name, adset.name)}
+                        />
                         
-                        {/* Ads */}
                         {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
-                          <div 
+                          <DataRow 
                             key={`${campaign.name}::${adset.name}::${ad.name}`}
-                            className={`grid ${gridCols} gap-2 px-5 py-2 pl-16 bg-bg-card hover:bg-bg-hover border-b border-border transition-colors animate-slide-in`}
-                          >
-                            {hasCheckboxes && <div></div>}
-                            <div className="flex items-center gap-2 text-zinc-400 min-w-0">
-                              <span className="text-[10px] flex-shrink-0 bg-bg-dark text-zinc-500 px-1.5 py-0.5 rounded uppercase">Ad</span>
-                              <span className="truncate" title={ad.name}>{ad.name}</span>
-                            </div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.spend)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.revenue)}</div>
-                            <div className="text-right font-mono text-sm font-semibold text-zinc-300">{formatROAS(ad.roas)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.purchases)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatMetric(ad.cpc)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatPercent(ad.ctr)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatMetric(ad.cpa)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatPercent(ad.convRate)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.clicks)}</div>
-                            <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.impressions)}</div>
-                            <div className="text-center">
-                              <VerdictBadge verdict={ad.verdict} size="sm" />
-                            </div>
-                          </div>
+                            node={ad}
+                            level="ad"
+                          />
                         ))}
                       </div>
                     ))}

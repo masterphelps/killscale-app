@@ -26,7 +26,7 @@ const plans = [
     price: '$9',
     period: '/mo',
     description: 'For growing advertisers',
-    priceId: 'price_1SYQDFLvvY2iVbuY0njXKK4c',
+    priceId: process.env.NEXT_PUBLIC_STRIPE_STARTER_PRICE_ID,
     features: [
       'CSV upload',
       '1 ad account',
@@ -41,7 +41,7 @@ const plans = [
     price: '$29',
     period: '/mo',
     description: 'For serious advertisers',
-    priceId: 'price_1SYOWOLvvY2iVbuYa0ovAR0G',
+    priceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
     features: [
       'Meta API connection',
       '2 ad accounts',
@@ -56,7 +56,7 @@ const plans = [
     price: '$99',
     period: '/mo',
     description: 'For teams & clients',
-    priceId: 'price_1SYOWlLvvY2iVbuYgxcY88pk',
+    priceId: process.env.NEXT_PUBLIC_STRIPE_AGENCY_PRICE_ID,
     features: [
       'Meta API connection',
       '100 ad accounts',
