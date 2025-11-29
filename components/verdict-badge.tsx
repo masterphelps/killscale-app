@@ -13,8 +13,8 @@ export function VerdictBadge({ verdict, size = 'md' }: VerdictBadgeProps) {
   
   return (
     <span className={cn(
-      'inline-flex items-center gap-1 font-semibold uppercase tracking-wide rounded-md border',
-      size === 'sm' ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1',
+      'inline-flex items-center justify-center gap-1 font-semibold uppercase tracking-wide rounded-md border whitespace-nowrap',
+      size === 'sm' ? 'text-[10px] px-2 py-0.5 min-w-[60px]' : 'text-xs px-2.5 py-1 min-w-[70px]',
       {
         'bg-verdict-scale-bg text-verdict-scale border-verdict-scale/30': verdict === 'scale',
         'bg-verdict-watch-bg text-verdict-watch border-verdict-watch/30': verdict === 'watch',
@@ -22,7 +22,8 @@ export function VerdictBadge({ verdict, size = 'md' }: VerdictBadgeProps) {
         'bg-verdict-learn-bg text-verdict-learn border-verdict-learn/30': verdict === 'learn',
       }
     )}>
-      {icon} {label}
+      <span>{icon}</span>
+      <span>{label}</span>
     </span>
   )
 }

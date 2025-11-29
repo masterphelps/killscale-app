@@ -101,7 +101,6 @@ export default function DashboardPage() {
       }))
       setData(rows)
       
-      // Select all campaigns by default
       const campaigns = new Set(rows.map(r => r.campaign_name))
       setSelectedCampaigns(campaigns)
     }
@@ -160,7 +159,6 @@ export default function DashboardPage() {
 
     if (!error) {
       setData(rows)
-      // Select all campaigns by default
       const campaigns = new Set(rows.map(r => r.campaign_name))
       setSelectedCampaigns(campaigns)
     } else {
@@ -209,7 +207,6 @@ export default function DashboardPage() {
   
   const filteredData = data.filter(row => visibleCampaigns.includes(row.campaign_name))
   
-  // Data filtered by selected campaigns (for stat tiles)
   const selectedData = useMemo(() => 
     filteredData.filter(row => selectedCampaigns.has(row.campaign_name)),
     [filteredData, selectedCampaigns]
@@ -257,7 +254,6 @@ export default function DashboardPage() {
     roas: row.spend > 0 ? row.revenue / row.spend : 0
   }))
 
-  // Handle campaign selection
   const handleCampaignToggle = (campaignName: string) => {
     const newSelected = new Set(selectedCampaigns)
     if (newSelected.has(campaignName)) {
@@ -445,8 +441,9 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* Verdict Filters */}
-          <div className="flex items-center justify-between mb-4">
+          {/* Filters Row */}
+          <div className="flex flex-col gap-2 mb-4">
+            {/* Verdict Filters */}
             <div className="flex items-center gap-2">
               <span className="text-sm text-zinc-500 mr-2">Filter:</span>
               {filterButtons.map((filter) => (
@@ -472,25 +469,25 @@ export default function DashboardPage() {
               ))}
             </div>
             
-            {/* Quick select buttons */}
+            {/* Campaign Selection */}
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-500 mr-1">Campaigns:</span>
+              <span className="text-sm text-zinc-500 mr-2">Campaigns:</span>
               <button
                 onClick={handleSelectAll}
-                className={`px-2 py-1 text-xs rounded border transition-colors ${
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                   allSelected 
                     ? 'bg-zinc-700 border-zinc-600 text-white' 
-                    : 'border-border text-zinc-500 hover:border-zinc-500'
+                    : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
                 }`}
               >
                 All
               </button>
               <button
                 onClick={handleSelectNone}
-                className={`px-2 py-1 text-xs rounded border transition-colors ${
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                   !someSelected 
                     ? 'bg-zinc-700 border-zinc-600 text-white' 
-                    : 'border-border text-zinc-500 hover:border-zinc-500'
+                    : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
                 }`}
               >
                 None
