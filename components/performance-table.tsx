@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Minus, Plus, Check } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { Rules, calculateVerdict, Verdict } from '@/lib/supabase'
@@ -19,6 +19,9 @@ type AdRow = {
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
+
+type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
+type SortDirection = 'asc' | 'desc'
 
 type PerformanceTableProps = {
   data: AdRow[]
@@ -66,6 +69,13 @@ function calculateMetrics(node: { spend: number; clicks: number; impressions: nu
     cpa: node.purchases > 0 ? node.spend / node.purchases : 0,
     convRate: node.clicks > 0 ? (node.purchases / node.clicks) * 100 : 0,
   }
+}
+
+const verdictOrder: Record<Verdict, number> = {
+  'scale': 4,
+  'watch': 3,
+  'learn': 2,
+  'kill': 1,
 }
 
 function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
@@ -158,6 +168,34 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   return Object.values(campaigns)
 }
 
+function sortNodes(nodes: HierarchyNode[], field: SortField, direction: SortDirection): HierarchyNode[] {
+  const sorted = [...nodes].sort((a, b) => {
+    let aVal: number | string
+    let bVal: number | string
+    
+    if (field === 'name') {
+      aVal = a.name.toLowerCase()
+      bVal = b.name.toLowerCase()
+    } else if (field === 'verdict') {
+      aVal = verdictOrder[a.verdict]
+      bVal = verdictOrder[b.verdict]
+    } else {
+      aVal = a[field] as number
+      bVal = b[field] as number
+    }
+    
+    if (aVal < bVal) return direction === 'asc' ? -1 : 1
+    if (aVal > bVal) return direction === 'asc' ? 1 : -1
+    return 0
+  })
+  
+  // Also sort children
+  return sorted.map(node => ({
+    ...node,
+    children: node.children ? sortNodes(node.children, field, direction) : undefined
+  }))
+}
+
 export function PerformanceTable({ 
   data, 
   rules, 
@@ -173,6 +211,8 @@ export function PerformanceTable({
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [allExpanded, setAllExpanded] = useState(false)
   const [nameColWidth, setNameColWidth] = useState(300)
+  const [sortField, setSortField] = useState<SortField>('spend')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
   const startX = useRef(0)
@@ -195,6 +235,11 @@ export function PerformanceTable({
       }))
       .filter(campaign => campaign.children && campaign.children.length > 0)
   }, [hierarchy, verdictFilter])
+  
+  const sortedHierarchy = useMemo(() => 
+    sortNodes(filteredHierarchy, sortField, sortDirection),
+    [filteredHierarchy, sortField, sortDirection]
+  )
   
   const totals = useMemo(() => {
     const t = {
@@ -223,6 +268,15 @@ export function PerformanceTable({
     t.verdict = calculateVerdict(t.spend, t.roas, rules)
     return t
   }, [filteredHierarchy, rules])
+  
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('desc')
+    }
+  }
   
   const toggleCampaign = (name: string) => {
     const newSet = new Set(expandedCampaigns)
@@ -255,9 +309,9 @@ export function PerformanceTable({
       setExpandedCampaigns(new Set())
       setExpandedAdsets(new Set())
     } else {
-      const campaigns = new Set(filteredHierarchy.map(c => c.name))
+      const campaigns = new Set(sortedHierarchy.map(c => c.name))
       const adsets = new Set<string>()
-      filteredHierarchy.forEach(c => {
+      sortedHierarchy.forEach(c => {
         c.children?.forEach(a => {
           adsets.add(`${c.name}::${a.name}`)
         })
@@ -292,6 +346,13 @@ export function PerformanceTable({
 
   const hasCheckboxes = selectedCampaigns && onCampaignToggle
   const checkboxWidth = hasCheckboxes ? 32 : 0
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <div className="w-3 h-3" />
+    return sortDirection === 'asc' 
+      ? <ChevronUp className="w-3 h-3 text-accent" />
+      : <ChevronDown className="w-3 h-3 text-accent" />
+  }
 
   const DataRow = ({ 
     node, 
@@ -354,7 +415,7 @@ export function PerformanceTable({
           </div>
         )}
         
-        {/* Name column - flexible width */}
+        {/* Name column */}
         <div 
           className="flex items-center min-w-0 px-3 relative"
           style={{ width: nameColWidth, flexShrink: 0 }}
@@ -377,7 +438,6 @@ export function PerformanceTable({
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
             <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
           </div>
-          {/* Resize handle */}
           <div 
             className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center"
             onMouseDown={handleMouseDown}
@@ -409,27 +469,55 @@ export function PerformanceTable({
   const HeaderRow = () => (
     <div className="flex items-center bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 40 }}>
       {hasCheckboxes && <div style={{ width: checkboxWidth }} className="flex-shrink-0" />}
-      <div className="px-3 relative flex-shrink-0 font-semibold" style={{ width: nameColWidth }}>
+      <div 
+        className="px-3 relative flex-shrink-0 font-semibold flex items-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors"
+        style={{ width: nameColWidth }}
+        onClick={() => handleSort('name')}
+      >
         Name
+        <SortIcon field="name" />
         <div 
           className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 flex items-center justify-center"
           onMouseDown={handleMouseDown}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="w-0.5 h-4 bg-border rounded" />
         </div>
       </div>
       <div className="flex-1 flex items-center">
-        <div className="flex-1 text-right px-2">Spend</div>
-        <div className="flex-1 text-right px-2">Revenue</div>
-        <div className="flex-1 text-right px-2">ROAS</div>
-        <div className="flex-1 text-right px-2">Purch</div>
-        <div className="flex-1 text-right px-2">CPC</div>
-        <div className="flex-1 text-right px-2">CTR</div>
-        <div className="flex-1 text-right px-2">CPA</div>
-        <div className="flex-1 text-right px-2">Conv%</div>
-        <div className="flex-1 text-right px-2">Clicks</div>
-        <div className="flex-1 text-right px-2">Impr</div>
-        <div className="w-20 text-center px-2 flex-shrink-0">Verdict</div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('spend')}>
+          Spend <SortIcon field="spend" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('revenue')}>
+          Revenue <SortIcon field="revenue" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('roas')}>
+          ROAS <SortIcon field="roas" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('purchases')}>
+          Purch <SortIcon field="purchases" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpc')}>
+          CPC <SortIcon field="cpc" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('ctr')}>
+          CTR <SortIcon field="ctr" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpa')}>
+          CPA <SortIcon field="cpa" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('convRate')}>
+          Conv% <SortIcon field="convRate" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('clicks')}>
+          Clicks <SortIcon field="clicks" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('impressions')}>
+          Impr <SortIcon field="impressions" />
+        </div>
+        <div className="w-20 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
+          Verdict <SortIcon field="verdict" />
+        </div>
       </div>
     </div>
   )
@@ -480,7 +568,7 @@ export function PerformanceTable({
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold">Campaign Performance</h2>
-          <span className="text-sm text-zinc-500">{filteredHierarchy.length} campaigns</span>
+          <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
           {verdictFilter !== 'all' && (
             <span className="text-xs text-zinc-400 bg-bg-dark px-2 py-1 rounded">
               Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
@@ -501,12 +589,12 @@ export function PerformanceTable({
         <TotalsRow />
         
         <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
-          {filteredHierarchy.length === 0 ? (
+          {sortedHierarchy.length === 0 ? (
             <div className="px-5 py-8 text-center text-zinc-500">
               No ads match the selected filter
             </div>
           ) : (
-            filteredHierarchy.map(campaign => {
+            sortedHierarchy.map(campaign => {
               const isSelected = selectedCampaigns?.has(campaign.name) ?? true
               
               return (
