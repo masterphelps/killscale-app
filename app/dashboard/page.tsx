@@ -33,6 +33,32 @@ const DEFAULT_RULES: Rules = {
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
+// Formatting helpers
+const formatPercent = (value: number) => {
+  if (!isFinite(value) || isNaN(value)) return '0.00%'
+  return value.toFixed(2) + '%'
+}
+
+const formatCPA = (spend: number, purchases: number) => {
+  if (purchases === 0) return '—'
+  return formatCurrency(spend / purchases)
+}
+
+const formatAOV = (revenue: number, purchases: number) => {
+  if (purchases === 0) return '—'
+  return formatCurrency(revenue / purchases)
+}
+
+const formatCPM = (spend: number, impressions: number) => {
+  if (impressions === 0) return '—'
+  return formatCurrency((spend / impressions) * 1000)
+}
+
+const formatCPC = (spend: number, clicks: number) => {
+  if (clicks === 0) return '—'
+  return formatCurrency(spend / clicks)
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
@@ -43,7 +69,6 @@ export default function DashboardPage() {
   const { plan } = useSubscription()
   const { user } = useAuth()
   
-  // Load data and rules from Supabase on mount
   useEffect(() => {
     if (user) {
       loadData()
@@ -176,9 +201,22 @@ export default function DashboardPage() {
     revenue: filteredData.reduce((sum, row) => sum + row.revenue, 0),
     purchases: filteredData.reduce((sum, row) => sum + row.purchases, 0),
     impressions: filteredData.reduce((sum, row) => sum + row.impressions, 0),
-    roas: 0
+    clicks: filteredData.reduce((sum, row) => sum + row.clicks, 0),
+    roas: 0,
+    cpm: 0,
+    cpc: 0,
+    ctr: 0,
+    cpa: 0,
+    aov: 0,
+    convRate: 0
   }
   totals.roas = totals.spend > 0 ? totals.revenue / totals.spend : 0
+  totals.cpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0
+  totals.cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
+  totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
+  totals.cpa = totals.purchases > 0 ? totals.spend / totals.purchases : 0
+  totals.aov = totals.purchases > 0 ? totals.revenue / totals.purchases : 0
+  totals.convRate = totals.clicks > 0 ? (totals.purchases / totals.clicks) * 100 : 0
   
   const dateRange = {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],
@@ -290,7 +328,8 @@ export default function DashboardPage() {
             </div>
           )}
           
-          <div className="grid grid-cols-4 gap-4 mb-8">
+          {/* Primary Stats Row */}
+          <div className="grid grid-cols-4 gap-4 mb-4">
             <StatCard 
               label="Total Spend" 
               value={formatCurrency(totals.spend)}
@@ -310,6 +349,40 @@ export default function DashboardPage() {
               label="Purchases" 
               value={formatNumber(totals.purchases)}
               icon="🛒"
+            />
+          </div>
+          
+          {/* Secondary Stats Row */}
+          <div className="grid grid-cols-6 gap-4 mb-8">
+            <StatCard 
+              label="CPM" 
+              value={formatCPM(totals.spend, totals.impressions)}
+              icon="👁️"
+            />
+            <StatCard 
+              label="CPC" 
+              value={formatCPC(totals.spend, totals.clicks)}
+              icon="👆"
+            />
+            <StatCard 
+              label="CTR" 
+              value={formatPercent(totals.ctr)}
+              icon="🎯"
+            />
+            <StatCard 
+              label="CPA" 
+              value={formatCPA(totals.spend, totals.purchases)}
+              icon="💳"
+            />
+            <StatCard 
+              label="AOV" 
+              value={formatAOV(totals.revenue, totals.purchases)}
+              icon="🧾"
+            />
+            <StatCard 
+              label="Conv Rate" 
+              value={formatPercent(totals.convRate)}
+              icon="✅"
             />
           </div>
           
