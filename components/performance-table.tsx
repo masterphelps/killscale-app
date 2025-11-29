@@ -18,10 +18,13 @@ type AdRow = {
   roas: number
 }
 
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
+
 type PerformanceTableProps = {
   data: AdRow[]
   rules: Rules
   dateRange: { start: string; end: string }
+  verdictFilter?: VerdictFilter
 }
 
 type HierarchyNode = {
@@ -41,7 +44,6 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaigns: Record<string, HierarchyNode> = {}
   
   data.forEach(row => {
-    // Get or create campaign
     if (!campaigns[row.campaign_name]) {
       campaigns[row.campaign_name] = {
         name: row.campaign_name,
@@ -58,7 +60,6 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     const campaign = campaigns[row.campaign_name]
     
-    // Get or create adset
     let adset = campaign.children?.find(c => c.name === row.adset_name)
     if (!adset) {
       adset = {
@@ -76,7 +77,6 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       campaign.children?.push(adset)
     }
     
-    // Add ad
     const ad: HierarchyNode = {
       name: row.ad_name,
       type: 'ad',
@@ -90,7 +90,6 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     adset.children?.push(ad)
     
-    // Roll up to adset
     adset.impressions += row.impressions
     adset.clicks += row.clicks
     adset.spend += row.spend
@@ -98,7 +97,6 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     adset.revenue += row.revenue
   })
   
-  // Calculate adset and campaign rollups
   Object.values(campaigns).forEach(campaign => {
     campaign.children?.forEach(adset => {
       adset.roas = adset.spend > 0 ? adset.revenue / adset.spend : 0
@@ -118,12 +116,29 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   return Object.values(campaigns)
 }
 
-export function PerformanceTable({ data, rules, dateRange }: PerformanceTableProps) {
+export function PerformanceTable({ data, rules, dateRange, verdictFilter = 'all' }: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [allExpanded, setAllExpanded] = useState(false)
   
   const hierarchy = useMemo(() => buildHierarchy(data, rules), [data, rules])
+  
+  // Filter hierarchy based on verdict
+  const filteredHierarchy = useMemo(() => {
+    if (verdictFilter === 'all') return hierarchy
+    
+    return hierarchy
+      .map(campaign => ({
+        ...campaign,
+        children: campaign.children
+          ?.map(adset => ({
+            ...adset,
+            children: adset.children?.filter(ad => ad.verdict === verdictFilter)
+          }))
+          .filter(adset => adset.children && adset.children.length > 0)
+      }))
+      .filter(campaign => campaign.children && campaign.children.length > 0)
+  }, [hierarchy, verdictFilter])
   
   const totals = useMemo(() => {
     const t = {
@@ -135,7 +150,7 @@ export function PerformanceTable({ data, rules, dateRange }: PerformanceTablePro
       roas: 0,
       verdict: 'learn' as Verdict
     }
-    hierarchy.forEach(c => {
+    filteredHierarchy.forEach(c => {
       t.impressions += c.impressions
       t.clicks += c.clicks
       t.spend += c.spend
@@ -145,13 +160,12 @@ export function PerformanceTable({ data, rules, dateRange }: PerformanceTablePro
     t.roas = t.spend > 0 ? t.revenue / t.spend : 0
     t.verdict = calculateVerdict(t.spend, t.roas, rules)
     return t
-  }, [hierarchy, rules])
+  }, [filteredHierarchy, rules])
   
   const toggleCampaign = (name: string) => {
     const newSet = new Set(expandedCampaigns)
     if (newSet.has(name)) {
       newSet.delete(name)
-      // Also collapse all adsets in this campaign
       const newAdsets = new Set(expandedAdsets)
       hierarchy.find(c => c.name === name)?.children?.forEach(adset => {
         newAdsets.delete(`${name}::${adset.name}`)
@@ -179,9 +193,9 @@ export function PerformanceTable({ data, rules, dateRange }: PerformanceTablePro
       setExpandedCampaigns(new Set())
       setExpandedAdsets(new Set())
     } else {
-      const campaigns = new Set(hierarchy.map(c => c.name))
+      const campaigns = new Set(filteredHierarchy.map(c => c.name))
       const adsets = new Set<string>()
-      hierarchy.forEach(c => {
+      filteredHierarchy.forEach(c => {
         c.children?.forEach(a => {
           adsets.add(`${c.name}::${a.name}`)
         })
@@ -198,7 +212,12 @@ export function PerformanceTable({ data, rules, dateRange }: PerformanceTablePro
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold">Campaign Performance</h2>
-          <span className="text-sm text-zinc-500">{hierarchy.length} campaigns</span>
+          <span className="text-sm text-zinc-500">{filteredHierarchy.length} campaigns</span>
+          {verdictFilter !== 'all' && (
+            <span className="text-xs text-zinc-400 bg-bg-dark px-2 py-1 rounded">
+              Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
+            </span>
+          )}
         </div>
         <button
           onClick={toggleAll}
@@ -237,93 +256,99 @@ export function PerformanceTable({ data, rules, dateRange }: PerformanceTablePro
       </div>
       
       {/* Rows */}
-      <div className="max-h-[500px] overflow-y-auto">
-        {hierarchy.map(campaign => (
-          <div key={campaign.name}>
-            {/* Campaign Row */}
-            <div 
-              className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] gap-4 px-5 py-3 bg-hierarchy-campaign-bg hover:bg-blue-500/20 border-b border-border cursor-pointer transition-colors"
-              onClick={() => toggleCampaign(campaign.name)}
-            >
-              <div className="flex items-center gap-2 font-medium text-white">
-                <button className={cn(
-                  'w-5 h-5 flex items-center justify-center rounded border transition-colors',
-                  expandedCampaigns.has(campaign.name)
-                    ? 'bg-accent border-accent text-white'
-                    : 'border-border text-zinc-500 hover:border-zinc-500'
-                )}>
-                  {expandedCampaigns.has(campaign.name) ? <Minus className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                </button>
-                <span className="text-[10px] bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded uppercase">Camp</span>
-                {campaign.name}
-              </div>
-              <div className="text-right font-mono text-sm">{formatNumber(campaign.impressions)}</div>
-              <div className="text-right font-mono text-sm">{formatNumber(campaign.clicks)}</div>
-              <div className="text-right font-mono text-sm">{formatCurrency(campaign.spend)}</div>
-              <div className="text-right font-mono text-sm">{formatNumber(campaign.purchases)}</div>
-              <div className="text-right font-mono text-sm">{formatCurrency(campaign.revenue)}</div>
-              <div className="text-right font-mono text-sm font-semibold">{formatROAS(campaign.roas)}</div>
-              <div className="text-center">
-                <VerdictBadge verdict={campaign.verdict} size="sm" />
-              </div>
-            </div>
-            
-            {/* Adsets */}
-            {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
-              <div key={`${campaign.name}::${adset.name}`}>
-                {/* Adset Row */}
-                <div 
-                  className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] gap-4 px-5 py-2.5 pl-10 bg-hierarchy-adset-bg hover:bg-purple-500/15 border-b border-border cursor-pointer transition-colors animate-slide-in"
-                  onClick={() => toggleAdset(campaign.name, adset.name)}
-                >
-                  <div className="flex items-center gap-2 text-purple-200">
-                    <button className={cn(
-                      'w-4 h-4 flex items-center justify-center rounded border transition-colors',
-                      expandedAdsets.has(`${campaign.name}::${adset.name}`)
-                        ? 'bg-purple-500 border-purple-500 text-white'
-                        : 'border-purple-500/30 text-purple-400 hover:border-purple-400'
-                    )}>
-                      {expandedAdsets.has(`${campaign.name}::${adset.name}`) ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
-                    </button>
-                    <span className="text-[10px] bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded uppercase">Set</span>
-                    {adset.name}
-                  </div>
-                  <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.impressions)}</div>
-                  <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.clicks)}</div>
-                  <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.spend)}</div>
-                  <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.purchases)}</div>
-                  <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.revenue)}</div>
-                  <div className="text-right font-mono text-sm font-semibold text-purple-200">{formatROAS(adset.roas)}</div>
-                  <div className="text-center">
-                    <VerdictBadge verdict={adset.verdict} size="sm" />
-                  </div>
-                </div>
-                
-                {/* Ads */}
-                {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
-                  <div 
-                    key={`${campaign.name}::${adset.name}::${ad.name}`}
-                    className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] gap-4 px-5 py-2 pl-16 bg-bg-card hover:bg-bg-hover border-b border-border transition-colors animate-slide-in"
-                  >
-                    <div className="flex items-center gap-2 text-zinc-400">
-                      <span className="text-[10px] bg-bg-dark text-zinc-500 px-1.5 py-0.5 rounded uppercase">Ad</span>
-                      {ad.name}
-                    </div>
-                    <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.impressions)}</div>
-                    <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.clicks)}</div>
-                    <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.spend)}</div>
-                    <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.purchases)}</div>
-                    <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.revenue)}</div>
-                    <div className="text-right font-mono text-sm font-semibold text-zinc-300">{formatROAS(ad.roas)}</div>
-                    <div className="text-center">
-                      <VerdictBadge verdict={ad.verdict} size="sm" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
+      <div className="max-h-[calc(100vh-400px)] overflow-y-auto">
+        {filteredHierarchy.length === 0 ? (
+          <div className="px-5 py-8 text-center text-zinc-500">
+            No ads match the selected filter
           </div>
-        ))}
+        ) : (
+          filteredHierarchy.map(campaign => (
+            <div key={campaign.name}>
+              {/* Campaign Row */}
+              <div 
+                className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] gap-4 px-5 py-3 bg-hierarchy-campaign-bg hover:bg-blue-500/20 border-b border-border cursor-pointer transition-colors"
+                onClick={() => toggleCampaign(campaign.name)}
+              >
+                <div className="flex items-center gap-2 font-medium text-white">
+                  <button className={cn(
+                    'w-5 h-5 flex items-center justify-center rounded border transition-colors',
+                    expandedCampaigns.has(campaign.name)
+                      ? 'bg-accent border-accent text-white'
+                      : 'border-border text-zinc-500 hover:border-zinc-500'
+                  )}>
+                    {expandedCampaigns.has(campaign.name) ? <Minus className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                  </button>
+                  <span className="text-[10px] bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded uppercase">Camp</span>
+                  {campaign.name}
+                </div>
+                <div className="text-right font-mono text-sm">{formatNumber(campaign.impressions)}</div>
+                <div className="text-right font-mono text-sm">{formatNumber(campaign.clicks)}</div>
+                <div className="text-right font-mono text-sm">{formatCurrency(campaign.spend)}</div>
+                <div className="text-right font-mono text-sm">{formatNumber(campaign.purchases)}</div>
+                <div className="text-right font-mono text-sm">{formatCurrency(campaign.revenue)}</div>
+                <div className="text-right font-mono text-sm font-semibold">{formatROAS(campaign.roas)}</div>
+                <div className="text-center">
+                  <VerdictBadge verdict={campaign.verdict} size="sm" />
+                </div>
+              </div>
+              
+              {/* Adsets */}
+              {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                <div key={`${campaign.name}::${adset.name}`}>
+                  {/* Adset Row */}
+                  <div 
+                    className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] gap-4 px-5 py-2.5 pl-10 bg-hierarchy-adset-bg hover:bg-purple-500/15 border-b border-border cursor-pointer transition-colors animate-slide-in"
+                    onClick={() => toggleAdset(campaign.name, adset.name)}
+                  >
+                    <div className="flex items-center gap-2 text-purple-200">
+                      <button className={cn(
+                        'w-4 h-4 flex items-center justify-center rounded border transition-colors',
+                        expandedAdsets.has(`${campaign.name}::${adset.name}`)
+                          ? 'bg-purple-500 border-purple-500 text-white'
+                          : 'border-purple-500/30 text-purple-400 hover:border-purple-400'
+                      )}>
+                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
+                      </button>
+                      <span className="text-[10px] bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded uppercase">Set</span>
+                      {adset.name}
+                    </div>
+                    <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.impressions)}</div>
+                    <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.clicks)}</div>
+                    <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.spend)}</div>
+                    <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.purchases)}</div>
+                    <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.revenue)}</div>
+                    <div className="text-right font-mono text-sm font-semibold text-purple-200">{formatROAS(adset.roas)}</div>
+                    <div className="text-center">
+                      <VerdictBadge verdict={adset.verdict} size="sm" />
+                    </div>
+                  </div>
+                  
+                  {/* Ads */}
+                  {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
+                    <div 
+                      key={`${campaign.name}::${adset.name}::${ad.name}`}
+                      className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] gap-4 px-5 py-2 pl-16 bg-bg-card hover:bg-bg-hover border-b border-border transition-colors animate-slide-in"
+                    >
+                      <div className="flex items-center gap-2 text-zinc-400">
+                        <span className="text-[10px] bg-bg-dark text-zinc-500 px-1.5 py-0.5 rounded uppercase">Ad</span>
+                        {ad.name}
+                      </div>
+                      <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.impressions)}</div>
+                      <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.clicks)}</div>
+                      <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.spend)}</div>
+                      <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.purchases)}</div>
+                      <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.revenue)}</div>
+                      <div className="text-right font-mono text-sm font-semibold text-zinc-300">{formatROAS(ad.roas)}</div>
+                      <div className="text-center">
+                        <VerdictBadge verdict={ad.verdict} size="sm" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </div>
   )

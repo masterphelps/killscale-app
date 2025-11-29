@@ -31,12 +31,15 @@ const DEFAULT_RULES: Rules = {
   updated_at: ''
 }
 
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
+
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
   const [showUpload, setShowUpload] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
   const { plan } = useSubscription()
   const { user } = useAuth()
   
@@ -95,7 +98,6 @@ export default function DashboardPage() {
         updated_at: rulesData.updated_at
       })
     }
-    // If no rules found, keep defaults
   }
 
   const handleUpload = async (rows: CSVRow[]) => {
@@ -103,13 +105,11 @@ export default function DashboardPage() {
     
     setIsSaving(true)
     
-    // Delete existing data for this user
     await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', user.id)
 
-    // Insert new data
     const insertData = rows.map(row => ({
       user_id: user.id,
       date_start: row.date_start,
@@ -158,7 +158,7 @@ export default function DashboardPage() {
   const getCampaignLimit = () => {
     if (userPlan === 'Free') return FREE_CAMPAIGN_LIMIT
     if (userPlan === 'Starter') return STARTER_CAMPAIGN_LIMIT
-    return Infinity // Pro & Agency = unlimited
+    return Infinity
   }
   
   const campaignLimit = getCampaignLimit()
@@ -204,6 +204,14 @@ export default function DashboardPage() {
       </div>
     )
   }
+  
+  const filterButtons: { value: VerdictFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'scale', label: 'Scale' },
+    { value: 'watch', label: 'Watch' },
+    { value: 'kill', label: 'Kill' },
+    { value: 'learn', label: 'Learn' },
+  ]
   
   return (
     <>
@@ -269,7 +277,7 @@ export default function DashboardPage() {
                     {hiddenCampaigns} campaign{hiddenCampaigns > 1 ? 's' : ''} hidden
                   </div>
                   <div className="text-sm text-zinc-400">
-                    Free plan is limited to {FREE_CAMPAIGN_LIMIT} campaigns. Upgrade to see all your data.
+                    {userPlan} plan is limited to {campaignLimit} campaigns. Upgrade to see all your data.
                   </div>
                 </div>
               </div>
@@ -305,10 +313,37 @@ export default function DashboardPage() {
             />
           </div>
           
+          {/* Verdict Filters */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-sm text-zinc-500 mr-2">Filter:</span>
+            {filterButtons.map((filter) => (
+              <button
+                key={filter.value}
+                onClick={() => setVerdictFilter(filter.value)}
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                  verdictFilter === filter.value
+                    ? filter.value === 'all' 
+                      ? 'bg-zinc-700 border-zinc-600 text-white'
+                      : filter.value === 'scale'
+                        ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
+                        : filter.value === 'watch'
+                          ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
+                          : filter.value === 'kill'
+                            ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
+                            : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
+                    : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          
           <PerformanceTable 
             data={tableData}
             rules={rules}
             dateRange={dateRange}
+            verdictFilter={verdictFilter}
           />
         </>
       )}
