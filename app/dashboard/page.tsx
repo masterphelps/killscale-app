@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Upload, Calendar, Lock, Trash2 } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
@@ -33,7 +33,6 @@ const DEFAULT_RULES: Rules = {
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
-// Formatting helpers
 const formatPercent = (value: number) => {
   if (!isFinite(value) || isNaN(value)) return '0.00%'
   return value.toFixed(2) + '%'
@@ -66,6 +65,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
+  const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const { plan } = useSubscription()
   const { user } = useAuth()
   
@@ -87,7 +87,7 @@ export default function DashboardPage() {
       .order('date_start', { ascending: false })
 
     if (adData && !error) {
-      setData(adData.map(row => ({
+      const rows = adData.map(row => ({
         date_start: row.date_start,
         date_end: row.date_end,
         campaign_name: row.campaign_name,
@@ -98,7 +98,12 @@ export default function DashboardPage() {
         spend: parseFloat(row.spend),
         purchases: row.purchases,
         revenue: parseFloat(row.revenue),
-      })))
+      }))
+      setData(rows)
+      
+      // Select all campaigns by default
+      const campaigns = new Set(rows.map(r => r.campaign_name))
+      setSelectedCampaigns(campaigns)
     }
     setIsLoading(false)
   }
@@ -155,6 +160,9 @@ export default function DashboardPage() {
 
     if (!error) {
       setData(rows)
+      // Select all campaigns by default
+      const campaigns = new Set(rows.map(r => r.campaign_name))
+      setSelectedCampaigns(campaigns)
     } else {
       console.error('Error saving data:', error)
       alert('Error saving data. Please try again.')
@@ -174,11 +182,16 @@ export default function DashboardPage() {
       .eq('user_id', user.id)
 
     setData([])
+    setSelectedCampaigns(new Set())
   }
   
   const userPlan = plan
   
-  const allCampaigns = Array.from(new Set(data.map(row => row.campaign_name)))
+  const allCampaigns = useMemo(() => 
+    Array.from(new Set(data.map(row => row.campaign_name))),
+    [data]
+  )
+  
   const totalCampaigns = allCampaigns.length
   const getCampaignLimit = () => {
     if (userPlan === 'Free') return FREE_CAMPAIGN_LIMIT
@@ -196,27 +209,36 @@ export default function DashboardPage() {
   
   const filteredData = data.filter(row => visibleCampaigns.includes(row.campaign_name))
   
-  const totals = {
-    spend: filteredData.reduce((sum, row) => sum + row.spend, 0),
-    revenue: filteredData.reduce((sum, row) => sum + row.revenue, 0),
-    purchases: filteredData.reduce((sum, row) => sum + row.purchases, 0),
-    impressions: filteredData.reduce((sum, row) => sum + row.impressions, 0),
-    clicks: filteredData.reduce((sum, row) => sum + row.clicks, 0),
-    roas: 0,
-    cpm: 0,
-    cpc: 0,
-    ctr: 0,
-    cpa: 0,
-    aov: 0,
-    convRate: 0
-  }
-  totals.roas = totals.spend > 0 ? totals.revenue / totals.spend : 0
-  totals.cpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0
-  totals.cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
-  totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
-  totals.cpa = totals.purchases > 0 ? totals.spend / totals.purchases : 0
-  totals.aov = totals.purchases > 0 ? totals.revenue / totals.purchases : 0
-  totals.convRate = totals.clicks > 0 ? (totals.purchases / totals.clicks) * 100 : 0
+  // Data filtered by selected campaigns (for stat tiles)
+  const selectedData = useMemo(() => 
+    filteredData.filter(row => selectedCampaigns.has(row.campaign_name)),
+    [filteredData, selectedCampaigns]
+  )
+  
+  const totals = useMemo(() => {
+    const t = {
+      spend: selectedData.reduce((sum, row) => sum + row.spend, 0),
+      revenue: selectedData.reduce((sum, row) => sum + row.revenue, 0),
+      purchases: selectedData.reduce((sum, row) => sum + row.purchases, 0),
+      impressions: selectedData.reduce((sum, row) => sum + row.impressions, 0),
+      clicks: selectedData.reduce((sum, row) => sum + row.clicks, 0),
+      roas: 0,
+      cpm: 0,
+      cpc: 0,
+      ctr: 0,
+      cpa: 0,
+      aov: 0,
+      convRate: 0
+    }
+    t.roas = t.spend > 0 ? t.revenue / t.spend : 0
+    t.cpm = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : 0
+    t.cpc = t.clicks > 0 ? t.spend / t.clicks : 0
+    t.ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0
+    t.cpa = t.purchases > 0 ? t.spend / t.purchases : 0
+    t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
+    t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
+    return t
+  }, [selectedData])
   
   const dateRange = {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],
@@ -234,6 +256,28 @@ export default function DashboardPage() {
     revenue: row.revenue,
     roas: row.spend > 0 ? row.revenue / row.spend : 0
   }))
+
+  // Handle campaign selection
+  const handleCampaignToggle = (campaignName: string) => {
+    const newSelected = new Set(selectedCampaigns)
+    if (newSelected.has(campaignName)) {
+      newSelected.delete(campaignName)
+    } else {
+      newSelected.add(campaignName)
+    }
+    setSelectedCampaigns(newSelected)
+  }
+
+  const handleSelectAll = () => {
+    setSelectedCampaigns(new Set(visibleCampaigns))
+  }
+
+  const handleSelectNone = () => {
+    setSelectedCampaigns(new Set())
+  }
+
+  const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(c => selectedCampaigns.has(c))
+  const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c))
   
   if (isLoading) {
     return (
@@ -328,6 +372,21 @@ export default function DashboardPage() {
             </div>
           )}
           
+          {/* Campaign Selection Indicator */}
+          {selectedCampaigns.size < visibleCampaigns.length && (
+            <div className="mb-4 px-4 py-2 bg-accent/10 border border-accent/30 rounded-lg flex items-center justify-between">
+              <div className="text-sm text-accent">
+                Showing stats for {selectedCampaigns.size} of {visibleCampaigns.length} campaigns
+              </div>
+              <button 
+                onClick={handleSelectAll}
+                className="text-xs text-accent hover:text-white transition-colors"
+              >
+                Select All
+              </button>
+            </div>
+          )}
+          
           {/* Primary Stats Row */}
           <div className="grid grid-cols-4 gap-4 mb-4">
             <StatCard 
@@ -387,29 +446,56 @@ export default function DashboardPage() {
           </div>
           
           {/* Verdict Filters */}
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-sm text-zinc-500 mr-2">Filter:</span>
-            {filterButtons.map((filter) => (
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-zinc-500 mr-2">Filter:</span>
+              {filterButtons.map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setVerdictFilter(filter.value)}
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                    verdictFilter === filter.value
+                      ? filter.value === 'all' 
+                        ? 'bg-zinc-700 border-zinc-600 text-white'
+                        : filter.value === 'scale'
+                          ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
+                          : filter.value === 'watch'
+                            ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
+                            : filter.value === 'kill'
+                              ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
+                              : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
+                      : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            
+            {/* Quick select buttons */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-zinc-500 mr-1">Campaigns:</span>
               <button
-                key={filter.value}
-                onClick={() => setVerdictFilter(filter.value)}
-                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                  verdictFilter === filter.value
-                    ? filter.value === 'all' 
-                      ? 'bg-zinc-700 border-zinc-600 text-white'
-                      : filter.value === 'scale'
-                        ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
-                        : filter.value === 'watch'
-                          ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
-                          : filter.value === 'kill'
-                            ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
-                            : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
-                    : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
+                onClick={handleSelectAll}
+                className={`px-2 py-1 text-xs rounded border transition-colors ${
+                  allSelected 
+                    ? 'bg-zinc-700 border-zinc-600 text-white' 
+                    : 'border-border text-zinc-500 hover:border-zinc-500'
                 }`}
               >
-                {filter.label}
+                All
               </button>
-            ))}
+              <button
+                onClick={handleSelectNone}
+                className={`px-2 py-1 text-xs rounded border transition-colors ${
+                  !someSelected 
+                    ? 'bg-zinc-700 border-zinc-600 text-white' 
+                    : 'border-border text-zinc-500 hover:border-zinc-500'
+                }`}
+              >
+                None
+              </button>
+            </div>
           </div>
           
           <PerformanceTable 
@@ -417,6 +503,8 @@ export default function DashboardPage() {
             rules={rules}
             dateRange={dateRange}
             verdictFilter={verdictFilter}
+            selectedCampaigns={selectedCampaigns}
+            onCampaignToggle={handleCampaignToggle}
           />
         </>
       )}

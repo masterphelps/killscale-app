@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Minus, Plus } from 'lucide-react'
+import { Minus, Plus, Check } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { Rules, calculateVerdict, Verdict } from '@/lib/supabase'
@@ -25,6 +25,8 @@ type PerformanceTableProps = {
   rules: Rules
   dateRange: { start: string; end: string }
   verdictFilter?: VerdictFilter
+  selectedCampaigns?: Set<string>
+  onCampaignToggle?: (campaignName: string) => void
 }
 
 type HierarchyNode = {
@@ -153,7 +155,14 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   return Object.values(campaigns)
 }
 
-export function PerformanceTable({ data, rules, dateRange, verdictFilter = 'all' }: PerformanceTableProps) {
+export function PerformanceTable({ 
+  data, 
+  rules, 
+  dateRange, 
+  verdictFilter = 'all',
+  selectedCampaigns,
+  onCampaignToggle
+}: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [allExpanded, setAllExpanded] = useState(false)
@@ -248,7 +257,10 @@ export function PerformanceTable({ data, rules, dateRange, verdictFilter = 'all'
     setAllExpanded(!allExpanded)
   }
 
-  const gridCols = "grid-cols-[2fr_repeat(10,minmax(70px,1fr))_90px]"
+  const hasCheckboxes = selectedCampaigns && onCampaignToggle
+  const gridCols = hasCheckboxes 
+    ? "grid-cols-[28px_minmax(180px,280px)_repeat(10,minmax(60px,1fr))_80px]"
+    : "grid-cols-[minmax(200px,300px)_repeat(10,minmax(65px,1fr))_85px]"
   
   return (
     <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
@@ -271,148 +283,188 @@ export function PerformanceTable({ data, rules, dateRange, verdictFilter = 'all'
         </button>
       </div>
       
-      {/* Table Header */}
-      <div className={`grid ${gridCols} gap-2 px-5 py-3 bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border`}>
-        <div>Name</div>
-        <div className="text-right">Spend</div>
-        <div className="text-right">Revenue</div>
-        <div className="text-right">ROAS</div>
-        <div className="text-right">Purch</div>
-        <div className="text-right">CPC</div>
-        <div className="text-right">CTR</div>
-        <div className="text-right">CPA</div>
-        <div className="text-right">Conv%</div>
-        <div className="text-right">Clicks</div>
-        <div className="text-right">Impr</div>
-        <div className="text-center">Verdict</div>
-      </div>
-      
-      {/* Account Total */}
-      <div className={`grid ${gridCols} gap-2 px-5 py-3 bg-zinc-900 border-b border-border font-medium`}>
-        <div className="flex items-center gap-2">
-          <span className="text-white">All Campaigns</span>
-        </div>
-        <div className="text-right font-mono text-sm">{formatCurrency(totals.spend)}</div>
-        <div className="text-right font-mono text-sm">{formatCurrency(totals.revenue)}</div>
-        <div className="text-right font-mono text-sm font-semibold">{formatROAS(totals.roas)}</div>
-        <div className="text-right font-mono text-sm">{formatNumber(totals.purchases)}</div>
-        <div className="text-right font-mono text-sm">{formatMetric(totals.cpc)}</div>
-        <div className="text-right font-mono text-sm">{formatPercent(totals.ctr)}</div>
-        <div className="text-right font-mono text-sm">{formatMetric(totals.cpa)}</div>
-        <div className="text-right font-mono text-sm">{formatPercent(totals.convRate)}</div>
-        <div className="text-right font-mono text-sm">{formatNumber(totals.clicks)}</div>
-        <div className="text-right font-mono text-sm">{formatNumber(totals.impressions)}</div>
-        <div className="text-center">
-          <VerdictBadge verdict={totals.verdict} size="sm" />
-        </div>
-      </div>
-      
-      {/* Rows */}
-      <div className="max-h-[calc(100vh-500px)] overflow-y-auto overflow-x-auto">
-        {filteredHierarchy.length === 0 ? (
-          <div className="px-5 py-8 text-center text-zinc-500">
-            No ads match the selected filter
+      {/* Scrollable Table Container */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[1100px]">
+          {/* Table Header */}
+          <div className={`grid ${gridCols} gap-2 px-5 py-3 bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border`}>
+            {hasCheckboxes && <div></div>}
+            <div>Name</div>
+            <div className="text-right">Spend</div>
+            <div className="text-right">Revenue</div>
+            <div className="text-right">ROAS</div>
+            <div className="text-right">Purch</div>
+            <div className="text-right">CPC</div>
+            <div className="text-right">CTR</div>
+            <div className="text-right">CPA</div>
+            <div className="text-right">Conv%</div>
+            <div className="text-right">Clicks</div>
+            <div className="text-right">Impr</div>
+            <div className="text-center">Verdict</div>
           </div>
-        ) : (
-          filteredHierarchy.map(campaign => (
-            <div key={campaign.name}>
-              {/* Campaign Row */}
-              <div 
-                className={`grid ${gridCols} gap-2 px-5 py-3 bg-hierarchy-campaign-bg hover:bg-blue-500/20 border-b border-border cursor-pointer transition-colors`}
-                onClick={() => toggleCampaign(campaign.name)}
-              >
-                <div className="flex items-center gap-2 font-medium text-white">
-                  <button className={cn(
-                    'w-5 h-5 flex items-center justify-center rounded border transition-colors',
-                    expandedCampaigns.has(campaign.name)
-                      ? 'bg-accent border-accent text-white'
-                      : 'border-border text-zinc-500 hover:border-zinc-500'
-                  )}>
-                    {expandedCampaigns.has(campaign.name) ? <Minus className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                  </button>
-                  <span className="text-[10px] bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded uppercase">Camp</span>
-                  <span className="truncate">{campaign.name}</span>
-                </div>
-                <div className="text-right font-mono text-sm">{formatCurrency(campaign.spend)}</div>
-                <div className="text-right font-mono text-sm">{formatCurrency(campaign.revenue)}</div>
-                <div className="text-right font-mono text-sm font-semibold">{formatROAS(campaign.roas)}</div>
-                <div className="text-right font-mono text-sm">{formatNumber(campaign.purchases)}</div>
-                <div className="text-right font-mono text-sm">{formatMetric(campaign.cpc)}</div>
-                <div className="text-right font-mono text-sm">{formatPercent(campaign.ctr)}</div>
-                <div className="text-right font-mono text-sm">{formatMetric(campaign.cpa)}</div>
-                <div className="text-right font-mono text-sm">{formatPercent(campaign.convRate)}</div>
-                <div className="text-right font-mono text-sm">{formatNumber(campaign.clicks)}</div>
-                <div className="text-right font-mono text-sm">{formatNumber(campaign.impressions)}</div>
-                <div className="text-center">
-                  <VerdictBadge verdict={campaign.verdict} size="sm" />
-                </div>
-              </div>
-              
-              {/* Adsets */}
-              {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
-                <div key={`${campaign.name}::${adset.name}`}>
-                  {/* Adset Row */}
-                  <div 
-                    className={`grid ${gridCols} gap-2 px-5 py-2.5 pl-10 bg-hierarchy-adset-bg hover:bg-purple-500/15 border-b border-border cursor-pointer transition-colors animate-slide-in`}
-                    onClick={() => toggleAdset(campaign.name, adset.name)}
-                  >
-                    <div className="flex items-center gap-2 text-purple-200">
-                      <button className={cn(
-                        'w-4 h-4 flex items-center justify-center rounded border transition-colors',
-                        expandedAdsets.has(`${campaign.name}::${adset.name}`)
-                          ? 'bg-purple-500 border-purple-500 text-white'
-                          : 'border-purple-500/30 text-purple-400 hover:border-purple-400'
-                      )}>
-                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
-                      </button>
-                      <span className="text-[10px] bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded uppercase">Set</span>
-                      <span className="truncate">{adset.name}</span>
-                    </div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.spend)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.revenue)}</div>
-                    <div className="text-right font-mono text-sm font-semibold text-purple-200">{formatROAS(adset.roas)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.purchases)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatMetric(adset.cpc)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatPercent(adset.ctr)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatMetric(adset.cpa)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatPercent(adset.convRate)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.clicks)}</div>
-                    <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.impressions)}</div>
-                    <div className="text-center">
-                      <VerdictBadge verdict={adset.verdict} size="sm" />
-                    </div>
-                  </div>
-                  
-                  {/* Ads */}
-                  {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
-                    <div 
-                      key={`${campaign.name}::${adset.name}::${ad.name}`}
-                      className={`grid ${gridCols} gap-2 px-5 py-2 pl-16 bg-bg-card hover:bg-bg-hover border-b border-border transition-colors animate-slide-in`}
-                    >
-                      <div className="flex items-center gap-2 text-zinc-400">
-                        <span className="text-[10px] bg-bg-dark text-zinc-500 px-1.5 py-0.5 rounded uppercase">Ad</span>
-                        <span className="truncate">{ad.name}</span>
-                      </div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.spend)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.revenue)}</div>
-                      <div className="text-right font-mono text-sm font-semibold text-zinc-300">{formatROAS(ad.roas)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.purchases)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatMetric(ad.cpc)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatPercent(ad.ctr)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatMetric(ad.cpa)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatPercent(ad.convRate)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.clicks)}</div>
-                      <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.impressions)}</div>
-                      <div className="text-center">
-                        <VerdictBadge verdict={ad.verdict} size="sm" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
+          
+          {/* Account Total */}
+          <div className={`grid ${gridCols} gap-2 px-5 py-3 bg-zinc-900 border-b border-border font-medium`}>
+            {hasCheckboxes && <div></div>}
+            <div className="flex items-center gap-2">
+              <span className="text-white">All Campaigns</span>
             </div>
-          ))
-        )}
+            <div className="text-right font-mono text-sm">{formatCurrency(totals.spend)}</div>
+            <div className="text-right font-mono text-sm">{formatCurrency(totals.revenue)}</div>
+            <div className="text-right font-mono text-sm font-semibold">{formatROAS(totals.roas)}</div>
+            <div className="text-right font-mono text-sm">{formatNumber(totals.purchases)}</div>
+            <div className="text-right font-mono text-sm">{formatMetric(totals.cpc)}</div>
+            <div className="text-right font-mono text-sm">{formatPercent(totals.ctr)}</div>
+            <div className="text-right font-mono text-sm">{formatMetric(totals.cpa)}</div>
+            <div className="text-right font-mono text-sm">{formatPercent(totals.convRate)}</div>
+            <div className="text-right font-mono text-sm">{formatNumber(totals.clicks)}</div>
+            <div className="text-right font-mono text-sm">{formatNumber(totals.impressions)}</div>
+            <div className="text-center">
+              <VerdictBadge verdict={totals.verdict} size="sm" />
+            </div>
+          </div>
+          
+          {/* Rows */}
+          <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
+            {filteredHierarchy.length === 0 ? (
+              <div className="px-5 py-8 text-center text-zinc-500">
+                No ads match the selected filter
+              </div>
+            ) : (
+              filteredHierarchy.map(campaign => {
+                const isSelected = selectedCampaigns?.has(campaign.name) ?? true
+                
+                return (
+                  <div key={campaign.name}>
+                    {/* Campaign Row */}
+                    <div 
+                      className={cn(
+                        `grid ${gridCols} gap-2 px-5 py-3 border-b border-border cursor-pointer transition-colors`,
+                        isSelected 
+                          ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' 
+                          : 'bg-bg-card/50 opacity-60 hover:opacity-80'
+                      )}
+                    >
+                      {/* Checkbox */}
+                      {hasCheckboxes && (
+                        <div 
+                          className="flex items-center"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onCampaignToggle(campaign.name)
+                          }}
+                        >
+                          <div className={cn(
+                            'w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer',
+                            isSelected 
+                              ? 'bg-accent border-accent text-white' 
+                              : 'border-zinc-600 hover:border-zinc-500'
+                          )}>
+                            {isSelected && <Check className="w-3 h-3" />}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div 
+                        className="flex items-center gap-2 font-medium text-white min-w-0"
+                        onClick={() => toggleCampaign(campaign.name)}
+                      >
+                        <button className={cn(
+                          'w-5 h-5 flex-shrink-0 flex items-center justify-center rounded border transition-colors',
+                          expandedCampaigns.has(campaign.name)
+                            ? 'bg-accent border-accent text-white'
+                            : 'border-border text-zinc-500 hover:border-zinc-500'
+                        )}>
+                          {expandedCampaigns.has(campaign.name) ? <Minus className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                        </button>
+                        <span className="text-[10px] flex-shrink-0 bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded uppercase">Camp</span>
+                        <span className="truncate" title={campaign.name}>{campaign.name}</span>
+                      </div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatCurrency(campaign.spend)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatCurrency(campaign.revenue)}</div>
+                      <div className="text-right font-mono text-sm font-semibold" onClick={() => toggleCampaign(campaign.name)}>{formatROAS(campaign.roas)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatNumber(campaign.purchases)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatMetric(campaign.cpc)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatPercent(campaign.ctr)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatMetric(campaign.cpa)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatPercent(campaign.convRate)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatNumber(campaign.clicks)}</div>
+                      <div className="text-right font-mono text-sm" onClick={() => toggleCampaign(campaign.name)}>{formatNumber(campaign.impressions)}</div>
+                      <div className="text-center" onClick={() => toggleCampaign(campaign.name)}>
+                        <VerdictBadge verdict={campaign.verdict} size="sm" />
+                      </div>
+                    </div>
+                    
+                    {/* Adsets */}
+                    {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                      <div key={`${campaign.name}::${adset.name}`}>
+                        {/* Adset Row */}
+                        <div 
+                          className={`grid ${gridCols} gap-2 px-5 py-2.5 pl-10 bg-hierarchy-adset-bg hover:bg-purple-500/15 border-b border-border cursor-pointer transition-colors animate-slide-in`}
+                          onClick={() => toggleAdset(campaign.name, adset.name)}
+                        >
+                          {hasCheckboxes && <div></div>}
+                          <div className="flex items-center gap-2 text-purple-200 min-w-0">
+                            <button className={cn(
+                              'w-4 h-4 flex-shrink-0 flex items-center justify-center rounded border transition-colors',
+                              expandedAdsets.has(`${campaign.name}::${adset.name}`)
+                                ? 'bg-purple-500 border-purple-500 text-white'
+                                : 'border-purple-500/30 text-purple-400 hover:border-purple-400'
+                            )}>
+                              {expandedAdsets.has(`${campaign.name}::${adset.name}`) ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
+                            </button>
+                            <span className="text-[10px] flex-shrink-0 bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded uppercase">Set</span>
+                            <span className="truncate" title={adset.name}>{adset.name}</span>
+                          </div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.spend)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatCurrency(adset.revenue)}</div>
+                          <div className="text-right font-mono text-sm font-semibold text-purple-200">{formatROAS(adset.roas)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.purchases)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatMetric(adset.cpc)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatPercent(adset.ctr)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatMetric(adset.cpa)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatPercent(adset.convRate)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.clicks)}</div>
+                          <div className="text-right font-mono text-sm text-purple-200">{formatNumber(adset.impressions)}</div>
+                          <div className="text-center">
+                            <VerdictBadge verdict={adset.verdict} size="sm" />
+                          </div>
+                        </div>
+                        
+                        {/* Ads */}
+                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
+                          <div 
+                            key={`${campaign.name}::${adset.name}::${ad.name}`}
+                            className={`grid ${gridCols} gap-2 px-5 py-2 pl-16 bg-bg-card hover:bg-bg-hover border-b border-border transition-colors animate-slide-in`}
+                          >
+                            {hasCheckboxes && <div></div>}
+                            <div className="flex items-center gap-2 text-zinc-400 min-w-0">
+                              <span className="text-[10px] flex-shrink-0 bg-bg-dark text-zinc-500 px-1.5 py-0.5 rounded uppercase">Ad</span>
+                              <span className="truncate" title={ad.name}>{ad.name}</span>
+                            </div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.spend)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatCurrency(ad.revenue)}</div>
+                            <div className="text-right font-mono text-sm font-semibold text-zinc-300">{formatROAS(ad.roas)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.purchases)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatMetric(ad.cpc)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatPercent(ad.ctr)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatMetric(ad.cpa)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatPercent(ad.convRate)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.clicks)}</div>
+                            <div className="text-right font-mono text-sm text-zinc-400">{formatNumber(ad.impressions)}</div>
+                            <div className="text-center">
+                              <VerdictBadge verdict={ad.verdict} size="sm" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
