@@ -390,6 +390,17 @@ export default function TrendsPage() {
   const [viewMode, setViewMode] = useState<'overview' | 'compare' | 'funnel' | 'scatter'>('overview')
   const [compareMode, setCompareMode] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
+  const [includePaused, setIncludePaused] = useState(true)
+  const [dateRange, setDateRange] = useState<{ start: string, end: string }>(() => {
+    // Default to last 30 days
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - 30)
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0]
+    }
+  })
   const { user } = useAuth()
   
   useEffect(() => {
@@ -426,11 +437,32 @@ export default function TrendsPage() {
     setIsLoading(false)
   }
   
+  // Filter data by date range and paused status
+  const filteredData = useMemo(() => {
+    return data.filter(row => {
+      // Date filter
+      if (row.date_start < dateRange.start || row.date_start > dateRange.end) {
+        return false
+      }
+      
+      // Paused filter - exclude if not including paused and any level is paused
+      if (!includePaused) {
+        const isPaused = 
+          row.status === 'PAUSED' || 
+          row.adset_status === 'PAUSED' || 
+          row.campaign_status === 'PAUSED'
+        if (isPaused) return false
+      }
+      
+      return true
+    })
+  }, [data, dateRange, includePaused])
+  
   // Build hierarchy
   const hierarchy = useMemo(() => {
     const campaigns: Record<string, AggregatedData> = {}
     
-    data.forEach(row => {
+    filteredData.forEach(row => {
       // Campaign level - use campaign_status if available
       if (!campaigns[row.campaign_name]) {
         campaigns[row.campaign_name] = {
@@ -515,7 +547,7 @@ export default function TrendsPage() {
     Object.values(campaigns).forEach(calcMetrics)
     
     return Object.values(campaigns).sort((a, b) => b.spend - a.spend)
-  }, [data])
+  }, [filteredData])
   
   // Current selection level
   const currentLevel: HierarchyLevel = selection.ad ? 'ad' 
@@ -568,15 +600,15 @@ export default function TrendsPage() {
   const timeSeriesData = useMemo(() => {
     const dateMap: Record<string, { date: string, spend: number, revenue: number, roas: number }> = {}
     
-    const filteredData = selection.campaign
-      ? data.filter(row => {
+    const selectedRows = selection.campaign
+      ? filteredData.filter(row => {
           if (selection.ad) return row.ad_name === selection.ad
           if (selection.adset) return row.adset_name === selection.adset
           return row.campaign_name === selection.campaign
         })
-      : data
+      : filteredData
     
-    filteredData.forEach(row => {
+    selectedRows.forEach(row => {
       const date = row.date_start
       if (!dateMap[date]) {
         dateMap[date] = { date, spend: 0, revenue: 0, roas: 0 }
@@ -588,7 +620,7 @@ export default function TrendsPage() {
     return Object.values(dateMap)
       .map(d => ({ ...d, roas: d.spend > 0 ? d.revenue / d.spend : 0 }))
       .sort((a, b) => a.date.localeCompare(b.date))
-  }, [data, selection])
+  }, [filteredData, selection])
   
   // Treemap data for account view
   const treemapData = useMemo(() => {
@@ -713,6 +745,64 @@ export default function TrendsPage() {
         <div>
           <h1 className="text-2xl font-bold mb-1">Trends Explorer</h1>
           <p className="text-zinc-500">Drill down into your performance data</p>
+        </div>
+        
+        {/* Controls */}
+        <div className="flex items-center gap-3">
+          {/* Include Paused Toggle */}
+          <label className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg cursor-pointer hover:border-zinc-600 transition-colors">
+            <input
+              type="checkbox"
+              checked={includePaused}
+              onChange={(e) => setIncludePaused(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-accent focus:ring-accent focus:ring-offset-0"
+            />
+            <span className="text-sm text-zinc-300">Include Paused</span>
+          </label>
+          
+          {/* Date Range */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
+            <Calendar className="w-4 h-4 text-zinc-500" />
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+              className="bg-transparent text-sm text-zinc-300 border-none focus:outline-none w-[110px]"
+            />
+            <span className="text-zinc-600">→</span>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+              className="bg-transparent text-sm text-zinc-300 border-none focus:outline-none w-[110px]"
+            />
+          </div>
+          
+          {/* Quick Date Presets */}
+          <div className="flex items-center gap-1">
+            {[
+              { label: '7D', days: 7 },
+              { label: '14D', days: 14 },
+              { label: '30D', days: 30 },
+              { label: '90D', days: 90 },
+            ].map(preset => (
+              <button
+                key={preset.label}
+                onClick={() => {
+                  const end = new Date()
+                  const start = new Date()
+                  start.setDate(start.getDate() - preset.days)
+                  setDateRange({
+                    start: start.toISOString().split('T')[0],
+                    end: end.toISOString().split('T')[0]
+                  })
+                }}
+                className="px-2 py-1 text-xs font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 rounded transition-colors"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       

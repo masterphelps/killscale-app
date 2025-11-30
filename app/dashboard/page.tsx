@@ -582,16 +582,46 @@ export default function DashboardPage() {
 
       {data.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-96 border-2 border-dashed border-border rounded-xl">
-          <div className="text-6xl mb-4">📊</div>
-          <h2 className="text-xl font-semibold mb-2">No data yet</h2>
-          <p className="text-zinc-500 mb-6">Upload a CSV export from Meta Ads to get started</p>
-          <button 
-            onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
-          >
-            <Upload className="w-4 h-4" />
-            Upload CSV
-          </button>
+          {isSyncing ? (
+            <>
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent mb-4"></div>
+              <h2 className="text-xl font-semibold mb-2">Syncing data...</h2>
+              <p className="text-zinc-500">Fetching your Meta Ads data</p>
+            </>
+          ) : (
+            <>
+              <div className="text-6xl mb-4">📊</div>
+              <h2 className="text-xl font-semibold mb-2">No data yet</h2>
+              <p className="text-zinc-500 mb-6">
+                {canSync && selectedAccountId 
+                  ? 'Click Sync to fetch data from Meta Ads, or upload a CSV'
+                  : 'Upload a CSV export from Meta Ads to get started'
+                }
+              </p>
+              <div className="flex items-center gap-3">
+                {canSync && selectedAccountId && (
+                  <button 
+                    onClick={handleSync}
+                    className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Sync from Meta
+                  </button>
+                )}
+                <button 
+                  onClick={() => setShowUpload(true)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    canSync && selectedAccountId
+                      ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
+                      : 'bg-accent hover:bg-accent-hover text-white'
+                  }`}
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload CSV
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ) : (
         <>
