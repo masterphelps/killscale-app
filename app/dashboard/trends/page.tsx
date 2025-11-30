@@ -1,53 +1,1008 @@
 'use client'
 
-import { TrendingUp, TrendingDown, Calendar } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { 
+  ChevronRight, 
+  ChevronDown,
+  TrendingUp, 
+  TrendingDown, 
+  Minus,
+  Zap,
+  Target,
+  DollarSign,
+  Eye,
+  MousePointer,
+  ShoppingCart,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
+  Sparkles,
+  Layers,
+  Search
+} from 'lucide-react'
+import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
+import { createClient } from '@supabase/supabase-js'
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
+  LineChart,
+  Line,
+  Legend,
+  ComposedChart,
+  Treemap
+} from 'recharts'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+type AdData = {
+  campaign_name: string
+  adset_name: string
+  ad_name: string
+  date_start: string
+  date_end: string
+  impressions: number
+  clicks: number
+  spend: number
+  purchases: number
+  revenue: number
+  status?: string | null
+}
+
+type HierarchyLevel = 'account' | 'campaign' | 'adset' | 'ad'
+
+type SelectionPath = {
+  campaign?: string
+  adset?: string
+  ad?: string
+}
+
+type AggregatedData = {
+  name: string
+  spend: number
+  revenue: number
+  roas: number
+  impressions: number
+  clicks: number
+  purchases: number
+  ctr: number
+  cpc: number
+  cpa: number
+  convRate: number
+  children?: AggregatedData[]
+  status?: string | null
+}
+
+// Color scale for ROAS
+const getROASColor = (roas: number) => {
+  if (roas >= 3) return '#22c55e' // green - scale
+  if (roas >= 2) return '#84cc16' // lime
+  if (roas >= 1.5) return '#eab308' // yellow - watch
+  if (roas >= 1) return '#f97316' // orange
+  return '#ef4444' // red - kill
+}
+
+const getROASBgColor = (roas: number) => {
+  if (roas >= 3) return 'rgba(34, 197, 94, 0.15)'
+  if (roas >= 2) return 'rgba(132, 204, 22, 0.15)'
+  if (roas >= 1.5) return 'rgba(234, 179, 8, 0.15)'
+  if (roas >= 1) return 'rgba(249, 115, 22, 0.15)'
+  return 'rgba(239, 68, 68, 0.15)'
+}
+
+// Trend indicator
+const TrendIndicator = ({ current, previous }: { current: number, previous: number }) => {
+  if (previous === 0) return <span className="text-zinc-500">—</span>
+  
+  const change = ((current - previous) / previous) * 100
+  const isPositive = change > 0
+  const isNeutral = Math.abs(change) < 1
+  
+  if (isNeutral) {
+    return (
+      <span className="flex items-center gap-1 text-zinc-500 text-sm">
+        <Minus className="w-3 h-3" />
+        <span>0%</span>
+      </span>
+    )
+  }
+  
+  return (
+    <span className={cn(
+      'flex items-center gap-1 text-sm font-medium',
+      isPositive ? 'text-green-400' : 'text-red-400'
+    )}>
+      {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+      <span>{isPositive ? '+' : ''}{change.toFixed(1)}%</span>
+    </span>
+  )
+}
+
+// Custom Treemap Content
+const CustomTreemapContent = (props: any) => {
+  const { x, y, width, height, name, spend, roas, onClick } = props
+  
+  if (width < 50 || height < 30) return null
+  
+  const color = getROASColor(roas || 0)
+  const bgColor = getROASBgColor(roas || 0)
+  
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={bgColor}
+        stroke="#27272a"
+        strokeWidth={2}
+        rx={8}
+        className="cursor-pointer transition-all hover:brightness-125"
+        onClick={() => onClick?.(name)}
+      />
+      {width > 80 && height > 50 && (
+        <>
+          <text
+            x={x + width / 2}
+            y={y + height / 2 - 8}
+            textAnchor="middle"
+            fill="#e4e4e7"
+            fontSize={12}
+            fontWeight={500}
+            className="pointer-events-none"
+          >
+            {name?.length > 20 ? name.substring(0, 20) + '...' : name}
+          </text>
+          <text
+            x={x + width / 2}
+            y={y + height / 2 + 10}
+            textAnchor="middle"
+            fill={color}
+            fontSize={14}
+            fontWeight={700}
+            className="pointer-events-none"
+          >
+            {roas?.toFixed(2)}x
+          </text>
+          <text
+            x={x + width / 2}
+            y={y + height / 2 + 26}
+            textAnchor="middle"
+            fill="#71717a"
+            fontSize={10}
+            className="pointer-events-none"
+          >
+            {formatCurrency(spend)}
+          </text>
+        </>
+      )}
+    </g>
+  )
+}
+
+// Insight Card component
+const InsightCard = ({ 
+  icon: Icon, 
+  title, 
+  value, 
+  subtitle,
+  trend,
+  color = 'accent'
+}: { 
+  icon: any
+  title: string
+  value: string
+  subtitle?: string
+  trend?: { current: number, previous: number }
+  color?: string
+}) => {
+  const colorClasses: Record<string, string> = {
+    accent: 'text-accent bg-accent/10 border-accent/20',
+    green: 'text-green-400 bg-green-400/10 border-green-400/20',
+    red: 'text-red-400 bg-red-400/10 border-red-400/20',
+    yellow: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+    purple: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
+  }
+  
+  return (
+    <div className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors">
+      <div className="flex items-start justify-between mb-2">
+        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center border', colorClasses[color])}>
+          <Icon className="w-4 h-4" />
+        </div>
+        {trend && <TrendIndicator current={trend.current} previous={trend.previous} />}
+      </div>
+      <div className="text-2xl font-bold mb-0.5">{value}</div>
+      <div className="text-sm text-zinc-500">{title}</div>
+      {subtitle && <div className="text-xs text-zinc-600 mt-1">{subtitle}</div>}
+    </div>
+  )
+}
+
+// Hierarchy Navigator Item
+const NavItem = ({ 
+  name, 
+  level, 
+  isSelected, 
+  isExpanded, 
+  hasChildren,
+  metrics,
+  onClick,
+  onExpand,
+  status
+}: {
+  name: string
+  level: HierarchyLevel
+  isSelected: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+  metrics: { spend: number, roas: number }
+  onClick: () => void
+  onExpand: () => void
+  status?: string | null
+}) => {
+  const indent = level === 'campaign' ? 0 : level === 'adset' ? 16 : 32
+  
+  const levelColors: Record<HierarchyLevel, string> = {
+    account: 'bg-accent text-white',
+    campaign: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+    adset: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
+    ad: 'bg-zinc-700/50 text-zinc-400 border border-zinc-600/30'
+  }
+  
+  const levelLabels: Record<HierarchyLevel, string> = {
+    account: 'ACC',
+    campaign: 'C',
+    adset: 'AS',
+    ad: 'AD'
+  }
+  
+  const isPaused = status && status !== 'ACTIVE'
+  
+  return (
+    <div 
+      className={cn(
+        'group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all',
+        isSelected 
+          ? 'bg-accent/20 border border-accent/30' 
+          : 'hover:bg-zinc-800/50 border border-transparent'
+      )}
+      style={{ marginLeft: indent }}
+      onClick={onClick}
+    >
+      {hasChildren && (
+        <button 
+          onClick={(e) => { e.stopPropagation(); onExpand(); }}
+          className="w-4 h-4 flex items-center justify-center text-zinc-500 hover:text-white"
+        >
+          {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        </button>
+      )}
+      {!hasChildren && <div className="w-4" />}
+      
+      <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-medium', levelColors[level])}>
+        {levelLabels[level]}
+      </span>
+      
+      <span className={cn(
+        'flex-1 text-sm truncate',
+        isSelected ? 'text-white' : 'text-zinc-300',
+        isPaused && 'opacity-50'
+      )}>
+        {name}
+      </span>
+      
+      {isPaused && (
+        <span className="text-[8px] px-1 py-0.5 bg-zinc-700 text-zinc-400 rounded">
+          PAUSED
+        </span>
+      )}
+      
+      <span className={cn(
+        'text-xs font-medium',
+        metrics.roas >= 2 ? 'text-green-400' : metrics.roas >= 1 ? 'text-yellow-400' : 'text-red-400'
+      )}>
+        {metrics.roas.toFixed(1)}x
+      </span>
+    </div>
+  )
+}
 
 export default function TrendsPage() {
+  const [data, setData] = useState<AdData[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [selection, setSelection] = useState<SelectionPath>({})
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
+  const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
+  const [searchQuery, setSearchQuery] = useState('')
+  const { user } = useAuth()
+  
+  useEffect(() => {
+    if (user) loadData()
+  }, [user])
+  
+  const loadData = async () => {
+    if (!user) return
+    setIsLoading(true)
+    
+    const { data: adData, error } = await supabase
+      .from('ad_data')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date_start', { ascending: true })
+    
+    if (adData && !error) {
+      setData(adData.map(row => ({
+        campaign_name: row.campaign_name,
+        adset_name: row.adset_name,
+        ad_name: row.ad_name,
+        date_start: row.date_start,
+        date_end: row.date_end,
+        impressions: row.impressions,
+        clicks: row.clicks,
+        spend: parseFloat(row.spend),
+        purchases: row.purchases,
+        revenue: parseFloat(row.revenue),
+        status: row.status
+      })))
+    }
+    setIsLoading(false)
+  }
+  
+  // Build hierarchy
+  const hierarchy = useMemo(() => {
+    const campaigns: Record<string, AggregatedData> = {}
+    
+    data.forEach(row => {
+      // Campaign level
+      if (!campaigns[row.campaign_name]) {
+        campaigns[row.campaign_name] = {
+          name: row.campaign_name,
+          spend: 0, revenue: 0, roas: 0,
+          impressions: 0, clicks: 0, purchases: 0,
+          ctr: 0, cpc: 0, cpa: 0, convRate: 0,
+          children: [],
+          status: row.status
+        }
+      }
+      const campaign = campaigns[row.campaign_name]
+      
+      // AdSet level
+      let adset = campaign.children?.find(a => a.name === row.adset_name)
+      if (!adset) {
+        adset = {
+          name: row.adset_name,
+          spend: 0, revenue: 0, roas: 0,
+          impressions: 0, clicks: 0, purchases: 0,
+          ctr: 0, cpc: 0, cpa: 0, convRate: 0,
+          children: [],
+          status: row.status
+        }
+        campaign.children?.push(adset)
+      }
+      
+      // Ad level
+      let ad = adset.children?.find(a => a.name === row.ad_name)
+      if (!ad) {
+        ad = {
+          name: row.ad_name,
+          spend: 0, revenue: 0, roas: 0,
+          impressions: 0, clicks: 0, purchases: 0,
+          ctr: 0, cpc: 0, cpa: 0, convRate: 0,
+          status: row.status
+        }
+        adset.children?.push(ad)
+      }
+      
+      // Aggregate
+      ad.spend += row.spend
+      ad.revenue += row.revenue
+      ad.impressions += row.impressions
+      ad.clicks += row.clicks
+      ad.purchases += row.purchases
+      
+      adset.spend += row.spend
+      adset.revenue += row.revenue
+      adset.impressions += row.impressions
+      adset.clicks += row.clicks
+      adset.purchases += row.purchases
+      
+      campaign.spend += row.spend
+      campaign.revenue += row.revenue
+      campaign.impressions += row.impressions
+      campaign.clicks += row.clicks
+      campaign.purchases += row.purchases
+    })
+    
+    // Calculate derived metrics
+    const calcMetrics = (node: AggregatedData) => {
+      node.roas = node.spend > 0 ? node.revenue / node.spend : 0
+      node.ctr = node.impressions > 0 ? (node.clicks / node.impressions) * 100 : 0
+      node.cpc = node.clicks > 0 ? node.spend / node.clicks : 0
+      node.cpa = node.purchases > 0 ? node.spend / node.purchases : 0
+      node.convRate = node.clicks > 0 ? (node.purchases / node.clicks) * 100 : 0
+      node.children?.forEach(calcMetrics)
+    }
+    
+    Object.values(campaigns).forEach(calcMetrics)
+    
+    return Object.values(campaigns).sort((a, b) => b.spend - a.spend)
+  }, [data])
+  
+  // Current selection level
+  const currentLevel: HierarchyLevel = selection.ad ? 'ad' 
+    : selection.adset ? 'adset' 
+    : selection.campaign ? 'campaign' 
+    : 'account'
+  
+  // Get selected entity data
+  const selectedData = useMemo(() => {
+    if (selection.ad) {
+      const campaign = hierarchy.find(c => c.name === selection.campaign)
+      const adset = campaign?.children?.find(a => a.name === selection.adset)
+      return adset?.children?.find(ad => ad.name === selection.ad)
+    }
+    if (selection.adset) {
+      const campaign = hierarchy.find(c => c.name === selection.campaign)
+      return campaign?.children?.find(a => a.name === selection.adset)
+    }
+    if (selection.campaign) {
+      return hierarchy.find(c => c.name === selection.campaign)
+    }
+    return null
+  }, [hierarchy, selection])
+  
+  // Account totals
+  const accountTotals = useMemo(() => {
+    const totals = hierarchy.reduce((acc, campaign) => ({
+      spend: acc.spend + campaign.spend,
+      revenue: acc.revenue + campaign.revenue,
+      impressions: acc.impressions + campaign.impressions,
+      clicks: acc.clicks + campaign.clicks,
+      purchases: acc.purchases + campaign.purchases,
+      roas: 0,
+      ctr: 0,
+      cpc: 0,
+      cpa: 0,
+      convRate: 0
+    }), { spend: 0, revenue: 0, impressions: 0, clicks: 0, purchases: 0, roas: 0, ctr: 0, cpc: 0, cpa: 0, convRate: 0 })
+    
+    totals.roas = totals.spend > 0 ? totals.revenue / totals.spend : 0
+    totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
+    totals.cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
+    totals.cpa = totals.purchases > 0 ? totals.spend / totals.purchases : 0
+    totals.convRate = totals.clicks > 0 ? (totals.purchases / totals.clicks) * 100 : 0
+    
+    return totals
+  }, [hierarchy])
+  
+  // Time series data for charts
+  const timeSeriesData = useMemo(() => {
+    const dateMap: Record<string, { date: string, spend: number, revenue: number, roas: number }> = {}
+    
+    const filteredData = selection.campaign
+      ? data.filter(row => {
+          if (selection.ad) return row.ad_name === selection.ad
+          if (selection.adset) return row.adset_name === selection.adset
+          return row.campaign_name === selection.campaign
+        })
+      : data
+    
+    filteredData.forEach(row => {
+      const date = row.date_start
+      if (!dateMap[date]) {
+        dateMap[date] = { date, spend: 0, revenue: 0, roas: 0 }
+      }
+      dateMap[date].spend += row.spend
+      dateMap[date].revenue += row.revenue
+    })
+    
+    return Object.values(dateMap)
+      .map(d => ({ ...d, roas: d.spend > 0 ? d.revenue / d.spend : 0 }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [data, selection])
+  
+  // Treemap data for account view
+  const treemapData = useMemo(() => {
+    return hierarchy.map(campaign => ({
+      name: campaign.name,
+      size: campaign.spend,
+      spend: campaign.spend,
+      roas: campaign.roas
+    }))
+  }, [hierarchy])
+  
+  // Generate insights
+  const insights = useMemo(() => {
+    const results: { type: 'success' | 'warning' | 'info', message: string }[] = []
+    
+    if (hierarchy.length > 0) {
+      // Best performer
+      const best = [...hierarchy].sort((a, b) => b.roas - a.roas)[0]
+      if (best && best.roas > 0) {
+        results.push({
+          type: 'success',
+          message: `🔥 Top performer: "${best.name}" with ${best.roas.toFixed(2)}x ROAS`
+        })
+      }
+      
+      // Worst performer with significant spend
+      const worst = [...hierarchy].filter(c => c.spend > 50).sort((a, b) => a.roas - b.roas)[0]
+      if (worst && worst.roas < 1.5) {
+        results.push({
+          type: 'warning',
+          message: `⚠️ "${worst.name}" has ${worst.roas.toFixed(2)}x ROAS - consider optimizing`
+        })
+      }
+      
+      // High spender
+      const topSpender = [...hierarchy].sort((a, b) => b.spend - a.spend)[0]
+      if (topSpender && accountTotals.spend > 0) {
+        const spendPercent = (topSpender.spend / accountTotals.spend) * 100
+        if (spendPercent > 40) {
+          results.push({
+            type: 'info',
+            message: `💰 "${topSpender.name}" represents ${spendPercent.toFixed(0)}% of total spend`
+          })
+        }
+      }
+    }
+    
+    return results
+  }, [hierarchy, accountTotals])
+  
+  // Breadcrumb
+  const breadcrumb = useMemo(() => {
+    const parts: { label: string, onClick: () => void }[] = [
+      { label: 'Account', onClick: () => setSelection({}) }
+    ]
+    
+    if (selection.campaign) {
+      parts.push({ 
+        label: selection.campaign, 
+        onClick: () => setSelection({ campaign: selection.campaign }) 
+      })
+    }
+    if (selection.adset) {
+      parts.push({ 
+        label: selection.adset, 
+        onClick: () => setSelection({ campaign: selection.campaign, adset: selection.adset }) 
+      })
+    }
+    if (selection.ad) {
+      parts.push({ 
+        label: selection.ad, 
+        onClick: () => {} 
+      })
+    }
+    
+    return parts
+  }, [selection])
+  
+  // Filter hierarchy by search
+  const filteredHierarchy = useMemo(() => {
+    if (!searchQuery) return hierarchy
+    
+    const query = searchQuery.toLowerCase()
+    return hierarchy.filter(campaign => {
+      if (campaign.name.toLowerCase().includes(query)) return true
+      return campaign.children?.some(adset => {
+        if (adset.name.toLowerCase().includes(query)) return true
+        return adset.children?.some(ad => ad.name.toLowerCase().includes(query))
+      })
+    })
+  }, [hierarchy, searchQuery])
+  
+  const displayData = selectedData || { 
+    name: 'Account', 
+    ...accountTotals 
+  }
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-accent"></div>
+      </div>
+    )
+  }
+  
+  if (data.length === 0) {
+    return (
+      <div className="text-center py-20">
+        <div className="w-16 h-16 bg-bg-card rounded-full flex items-center justify-center mx-auto mb-4">
+          <BarChart3 className="w-8 h-8 text-zinc-500" />
+        </div>
+        <h2 className="text-xl font-semibold mb-2">No Data Yet</h2>
+        <p className="text-zinc-500">Sync your Meta account or upload a CSV to explore trends</p>
+      </div>
+    )
+  }
+
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-1">Trends</h1>
-        <p className="text-zinc-500">Track performance over time</p>
-      </div>
-
-      {/* Coming Soon State */}
-      <div className="bg-bg-card border border-border rounded-xl p-12 text-center">
-        <div className="w-16 h-16 bg-bg-dark rounded-full flex items-center justify-center mx-auto mb-4">
-          <TrendingUp className="w-8 h-8 text-accent" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2">Coming Soon</h2>
-        <p className="text-zinc-500 max-w-md mx-auto mb-6">
-          Track your ROAS, spend, and revenue trends over time. Compare date ranges and spot patterns.
-        </p>
-        <div className="flex items-center justify-center gap-4 text-sm text-zinc-600">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Week over week
-          </div>
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-verdict-scale" />
-            Growth tracking
-          </div>
-          <div className="flex items-center gap-2">
-            <TrendingDown className="w-4 h-4 text-verdict-cut" />
-            Drop alerts
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Trends Explorer</h1>
+          <p className="text-zinc-500">Drill down into your performance data</p>
         </div>
       </div>
+      
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm">
+        {breadcrumb.map((item, index) => (
+          <div key={index} className="flex items-center gap-2">
+            {index > 0 && <ChevronRight className="w-4 h-4 text-zinc-600" />}
+            <button 
+              onClick={item.onClick}
+              className={cn(
+                'px-2 py-1 rounded transition-colors',
+                index === breadcrumb.length - 1 
+                  ? 'bg-accent/20 text-accent font-medium' 
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+              )}
+            >
+              {item.label.length > 30 ? item.label.substring(0, 30) + '...' : item.label}
+            </button>
+          </div>
+        ))}
+      </div>
 
-      {/* Placeholder Charts */}
-      <div className="grid grid-cols-2 gap-6 mt-6">
-        <div className="bg-bg-card border border-border rounded-xl p-6">
-          <h3 className="font-medium mb-4">ROAS Over Time</h3>
-          <div className="h-48 bg-bg-dark rounded-lg flex items-center justify-center text-zinc-600">
-            Chart coming soon
+      {/* Main Layout */}
+      <div className="flex gap-6">
+        {/* Left Sidebar - Hierarchy Navigator */}
+        <div className="w-80 flex-shrink-0">
+          <div className="bg-bg-card border border-border rounded-xl overflow-hidden sticky top-6">
+            {/* Search */}
+            <div className="p-3 border-b border-border">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Search campaigns, ad sets, ads..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+            
+            {/* Hierarchy */}
+            <div className="p-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+              {/* Account Level */}
+              <div 
+                className={cn(
+                  'flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all mb-2',
+                  !selection.campaign 
+                    ? 'bg-accent/20 border border-accent/30' 
+                    : 'hover:bg-zinc-800/50 border border-transparent'
+                )}
+                onClick={() => setSelection({})}
+              >
+                <div className="w-6 h-6 rounded bg-accent/20 flex items-center justify-center">
+                  <Layers className="w-3.5 h-3.5 text-accent" />
+                </div>
+                <span className="flex-1 font-medium">All Campaigns</span>
+                <span className={cn(
+                  'text-xs font-medium',
+                  accountTotals.roas >= 2 ? 'text-green-400' : accountTotals.roas >= 1 ? 'text-yellow-400' : 'text-red-400'
+                )}>
+                  {accountTotals.roas.toFixed(1)}x
+                </span>
+              </div>
+              
+              <div className="h-px bg-border mb-2" />
+              
+              {/* Campaigns */}
+              {filteredHierarchy.map(campaign => (
+                <div key={campaign.name}>
+                  <NavItem
+                    name={campaign.name}
+                    level="campaign"
+                    isSelected={selection.campaign === campaign.name && !selection.adset}
+                    isExpanded={expandedCampaigns.has(campaign.name)}
+                    hasChildren={(campaign.children?.length || 0) > 0}
+                    metrics={{ spend: campaign.spend, roas: campaign.roas }}
+                    status={campaign.status}
+                    onClick={() => setSelection({ campaign: campaign.name })}
+                    onExpand={() => {
+                      const newSet = new Set(expandedCampaigns)
+                      if (newSet.has(campaign.name)) {
+                        newSet.delete(campaign.name)
+                      } else {
+                        newSet.add(campaign.name)
+                      }
+                      setExpandedCampaigns(newSet)
+                    }}
+                  />
+                  
+                  {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                    <div key={adset.name}>
+                      <NavItem
+                        name={adset.name}
+                        level="adset"
+                        isSelected={selection.adset === adset.name && !selection.ad}
+                        isExpanded={expandedAdsets.has(`${campaign.name}-${adset.name}`)}
+                        hasChildren={(adset.children?.length || 0) > 0}
+                        metrics={{ spend: adset.spend, roas: adset.roas }}
+                        status={adset.status}
+                        onClick={() => setSelection({ campaign: campaign.name, adset: adset.name })}
+                        onExpand={() => {
+                          const key = `${campaign.name}-${adset.name}`
+                          const newSet = new Set(expandedAdsets)
+                          if (newSet.has(key)) {
+                            newSet.delete(key)
+                          } else {
+                            newSet.add(key)
+                          }
+                          setExpandedAdsets(newSet)
+                        }}
+                      />
+                      
+                      {expandedAdsets.has(`${campaign.name}-${adset.name}`) && adset.children?.map(ad => (
+                        <NavItem
+                          key={ad.name}
+                          name={ad.name}
+                          level="ad"
+                          isSelected={selection.ad === ad.name}
+                          isExpanded={false}
+                          hasChildren={false}
+                          metrics={{ spend: ad.spend, roas: ad.roas }}
+                          status={ad.status}
+                          onClick={() => setSelection({ campaign: campaign.name, adset: adset.name, ad: ad.name })}
+                          onExpand={() => {}}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="bg-bg-card border border-border rounded-xl p-6">
-          <h3 className="font-medium mb-4">Spend vs Revenue</h3>
-          <div className="h-48 bg-bg-dark rounded-lg flex items-center justify-center text-zinc-600">
-            Chart coming soon
+        
+        {/* Main Content */}
+        <div className="flex-1 space-y-6">
+          {/* Insight Cards */}
+          <div className="grid grid-cols-5 gap-4">
+            <InsightCard
+              icon={DollarSign}
+              title="Total Spend"
+              value={formatCurrency(displayData.spend)}
+              color="purple"
+            />
+            <InsightCard
+              icon={TrendingUp}
+              title="Revenue"
+              value={formatCurrency(displayData.revenue)}
+              color="green"
+            />
+            <InsightCard
+              icon={Target}
+              title="ROAS"
+              value={`${displayData.roas.toFixed(2)}x`}
+              color={displayData.roas >= 2 ? 'green' : displayData.roas >= 1 ? 'yellow' : 'red'}
+            />
+            <InsightCard
+              icon={ShoppingCart}
+              title="Purchases"
+              value={formatNumber(displayData.purchases)}
+              color="accent"
+            />
+            <InsightCard
+              icon={MousePointer}
+              title="CTR"
+              value={`${displayData.ctr.toFixed(2)}%`}
+              color="accent"
+            />
           </div>
+          
+          {/* AI Insights */}
+          {insights.length > 0 && currentLevel === 'account' && (
+            <div className="bg-gradient-to-r from-accent/10 via-purple-500/10 to-pink-500/10 border border-accent/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-accent" />
+                <span className="font-medium text-sm">Insights</span>
+              </div>
+              <div className="space-y-2">
+                {insights.map((insight, i) => (
+                  <div key={i} className="text-sm text-zinc-300">
+                    {insight.message}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Main Visualization */}
+          <div className="bg-bg-card border border-border rounded-xl p-6">
+            <h3 className="font-semibold mb-4">
+              {currentLevel === 'account' ? 'Campaign Overview' : 'Performance Over Time'}
+            </h3>
+            
+            {currentLevel === 'account' ? (
+              /* Treemap for account level */
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <Treemap
+                    data={treemapData}
+                    dataKey="size"
+                    aspectRatio={4/3}
+                    stroke="#27272a"
+                    content={<CustomTreemapContent onClick={(name: string) => setSelection({ campaign: name })} />}
+                  />
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              /* Time series for campaign/adset/ad level */
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={timeSeriesData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#71717a" 
+                      fontSize={11}
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <YAxis 
+                      yAxisId="left" 
+                      stroke="#71717a" 
+                      fontSize={11}
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <YAxis 
+                      yAxisId="right" 
+                      orientation="right" 
+                      stroke="#71717a" 
+                      fontSize={11}
+                      tickFormatter={(value) => `${value.toFixed(1)}x`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#18181b', 
+                        border: '1px solid #27272a',
+                        borderRadius: 8 
+                      }}
+                      formatter={(value: number, name: string) => {
+                        if (name === 'roas') return [`${value.toFixed(2)}x`, 'ROAS']
+                        return [formatCurrency(value), name === 'spend' ? 'Spend' : 'Revenue']
+                      }}
+                    />
+                    <Legend />
+                    <Area 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="spend" 
+                      fill="rgba(139, 92, 246, 0.2)" 
+                      stroke="#8b5cf6"
+                      name="Spend"
+                    />
+                    <Area 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="revenue" 
+                      fill="rgba(34, 197, 94, 0.2)" 
+                      stroke="#22c55e"
+                      name="Revenue"
+                    />
+                    <Line 
+                      yAxisId="right"
+                      type="monotone" 
+                      dataKey="roas" 
+                      stroke="#f59e0b" 
+                      strokeWidth={2}
+                      dot={false}
+                      name="ROAS"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+          
+          {/* Children breakdown for campaign/adset level */}
+          {(currentLevel === 'campaign' || currentLevel === 'adset') && selectedData?.children && (
+            <div className="bg-bg-card border border-border rounded-xl p-6">
+              <h3 className="font-semibold mb-4">
+                {currentLevel === 'campaign' ? 'Ad Sets' : 'Ads'} Performance
+              </h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart 
+                    data={selectedData.children.sort((a, b) => b.roas - a.roas)}
+                    layout="vertical"
+                    margin={{ left: 120 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                    <XAxis type="number" stroke="#71717a" fontSize={11} />
+                    <YAxis 
+                      type="category" 
+                      dataKey="name" 
+                      stroke="#71717a" 
+                      fontSize={11}
+                      width={110}
+                      tickFormatter={(value) => value.length > 15 ? value.substring(0, 15) + '...' : value}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#18181b', 
+                        border: '1px solid #27272a',
+                        borderRadius: 8 
+                      }}
+                      formatter={(value: number) => [`${value.toFixed(2)}x`, 'ROAS']}
+                    />
+                    <Bar dataKey="roas" radius={[0, 4, 4, 0]}>
+                      {selectedData.children.map((entry, index) => (
+                        <Cell key={index} fill={getROASColor(entry.roas)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          
+          {/* Detailed metrics for ad level */}
+          {currentLevel === 'ad' && selectedData && (
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-bg-card border border-border rounded-xl p-6">
+                <h3 className="font-semibold mb-4">Performance Metrics</h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <span className="text-zinc-400">Cost per Click</span>
+                    <span className="font-mono font-medium">{formatCurrency(selectedData.cpc)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <span className="text-zinc-400">Cost per Acquisition</span>
+                    <span className="font-mono font-medium">{selectedData.cpa > 0 ? formatCurrency(selectedData.cpa) : '—'}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <span className="text-zinc-400">Click-through Rate</span>
+                    <span className="font-mono font-medium">{selectedData.ctr.toFixed(2)}%</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-zinc-400">Conversion Rate</span>
+                    <span className="font-mono font-medium">{selectedData.convRate.toFixed(2)}%</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-bg-card border border-border rounded-xl p-6">
+                <h3 className="font-semibold mb-4">Volume Metrics</h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <span className="text-zinc-400">Impressions</span>
+                    <span className="font-mono font-medium">{formatNumber(selectedData.impressions)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <span className="text-zinc-400">Clicks</span>
+                    <span className="font-mono font-medium">{formatNumber(selectedData.clicks)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <span className="text-zinc-400">Purchases</span>
+                    <span className="font-mono font-medium">{formatNumber(selectedData.purchases)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-zinc-400">Total Spend</span>
+                    <span className="font-mono font-medium">{formatCurrency(selectedData.spend)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
