@@ -6,6 +6,36 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Helper function to fetch all pages from Meta API
+async function fetchAllPages<T>(initialUrl: string): Promise<T[]> {
+  const allData: T[] = []
+  let nextUrl: string | null = initialUrl
+  let pageCount = 0
+  const maxPages = 50 // Safety limit
+  
+  while (nextUrl && pageCount < maxPages) {
+    const response = await fetch(nextUrl)
+    const result = await response.json()
+    
+    if (result.error) {
+      console.error('Meta API pagination error:', result.error)
+      break
+    }
+    
+    if (result.data && Array.isArray(result.data)) {
+      allData.push(...result.data)
+    }
+    
+    // Check for next page
+    nextUrl = result.paging?.next || null
+    pageCount++
+    
+    console.log(`Fetched page ${pageCount}, total records: ${allData.length}`)
+  }
+  
+  return allData
+}
+
 type MetaInsight = {
   campaign_name: string
   campaign_id: string
@@ -93,12 +123,19 @@ export async function POST(request: NextRequest) {
     // IMPORTANT: Add time_increment=1 to get daily breakdown for time series charts
     insightsUrl.searchParams.set('time_increment', '1')
     
-    const response = await fetch(insightsUrl.toString())
-    const data = await response.json()
+    // Fetch ALL pages of insights data
+    console.log('Fetching insights with pagination...')
+    const allInsights = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+    console.log(`Total insights fetched: ${allInsights.length}`)
     
-    if (data.error) {
-      console.error('Meta API error:', data.error)
-      return NextResponse.json({ error: data.error.message }, { status: 400 })
+    if (allInsights.length === 0) {
+      // Check if there was an error on first request
+      const testResponse = await fetch(insightsUrl.toString())
+      const testData = await testResponse.json()
+      if (testData.error) {
+        console.error('Meta API error:', testData.error)
+        return NextResponse.json({ error: testData.error.message }, { status: 400 })
+      }
     }
     
     // Build status maps for campaigns, adsets, and ads
@@ -106,62 +143,44 @@ export async function POST(request: NextRequest) {
     const adsetStatusMap: Record<string, string> = {}
     const adStatusMap: Record<string, string> = {}
     
-    // Fetch campaign statuses
+    // Fetch campaign statuses (with pagination)
     const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
     campaignsUrl.searchParams.set('fields', 'id,effective_status')
     campaignsUrl.searchParams.set('limit', '500')
     
-    const campaignsResponse = await fetch(campaignsUrl.toString())
-    const campaignsData = await campaignsResponse.json()
-    
-    console.log('Campaigns response:', JSON.stringify(campaignsData).slice(0, 500))
-    
-    if (campaignsData.data) {
-      campaignsData.data.forEach((c: EntityStatus) => {
-        campaignStatusMap[c.id] = c.effective_status
-      })
-    }
+    const allCampaigns = await fetchAllPages<EntityStatus>(campaignsUrl.toString())
+    allCampaigns.forEach((c) => {
+      campaignStatusMap[c.id] = c.effective_status
+    })
     console.log('Campaign status map:', Object.keys(campaignStatusMap).length, 'campaigns')
     
-    // Fetch adset statuses
+    // Fetch adset statuses (with pagination)
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
     adsetsUrl.searchParams.set('fields', 'id,effective_status')
     adsetsUrl.searchParams.set('limit', '500')
     
-    const adsetsResponse = await fetch(adsetsUrl.toString())
-    const adsetsData = await adsetsResponse.json()
-    
-    console.log('Adsets response:', JSON.stringify(adsetsData).slice(0, 500))
-    
-    if (adsetsData.data) {
-      adsetsData.data.forEach((a: EntityStatus) => {
-        adsetStatusMap[a.id] = a.effective_status
-      })
-    }
+    const allAdsets = await fetchAllPages<EntityStatus>(adsetsUrl.toString())
+    allAdsets.forEach((a) => {
+      adsetStatusMap[a.id] = a.effective_status
+    })
     console.log('Adset status map:', Object.keys(adsetStatusMap).length, 'adsets')
     
-    // Fetch ad statuses
+    // Fetch ad statuses (with pagination)
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
     adsUrl.searchParams.set('fields', 'id,effective_status')
     adsUrl.searchParams.set('limit', '500')
     
-    const adsResponse = await fetch(adsUrl.toString())
-    const adsData = await adsResponse.json()
-    
-    console.log('Ads response:', JSON.stringify(adsData).slice(0, 500))
-    
-    if (adsData.data) {
-      adsData.data.forEach((ad: EntityStatus) => {
-        adStatusMap[ad.id] = ad.effective_status
-      })
-    }
+    const allAds = await fetchAllPages<EntityStatus>(adsUrl.toString())
+    allAds.forEach((ad) => {
+      adStatusMap[ad.id] = ad.effective_status
+    })
     console.log('Ad status map:', Object.keys(adStatusMap).length, 'ads')
     
     // Transform Meta data to our format
-    const adData = (data.data || []).map((insight: MetaInsight, idx: number) => {
+    const adData = allInsights.map((insight: MetaInsight, idx: number) => {
       // Log first few insights to debug
       if (idx < 3) {
         console.log(`Insight ${idx}:`, {

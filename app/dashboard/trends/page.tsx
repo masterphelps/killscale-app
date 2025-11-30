@@ -1224,8 +1224,11 @@ export default function TrendsPage() {
                       }}
                       labelStyle={{ color: '#a1a1aa' }}
                       formatter={(value: number, name: string) => {
-                        if (name === 'roas') return [`${value.toFixed(2)}x`, 'ROAS']
-                        return [formatCurrency(value), name === 'spend' ? 'Spend' : 'Revenue']
+                        // name is the display name from the series (e.g., "Spend", "Revenue", "ROAS")
+                        if (name === 'ROAS') return [`${value.toFixed(2)}x`, 'ROAS']
+                        if (name === 'Spend') return [formatCurrency(value), 'Spend']
+                        if (name === 'Revenue') return [formatCurrency(value), 'Revenue']
+                        return [value, name]
                       }}
                       labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     />
