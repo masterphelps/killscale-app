@@ -90,6 +90,9 @@ export async function POST(request: NextRequest) {
       insightsUrl.searchParams.set('date_preset', datePreset)
     }
     
+    // IMPORTANT: Add time_increment=1 to get daily breakdown for time series charts
+    insightsUrl.searchParams.set('time_increment', '1')
+    
     const response = await fetch(insightsUrl.toString())
     const data = await response.json()
     
