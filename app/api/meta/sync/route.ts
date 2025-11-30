@@ -221,16 +221,27 @@ export async function POST(request: NextRequest) {
       })
     }
     
+    // Log sample data before insert
+    console.log('Sample data to insert:', JSON.stringify(adData[0], null, 2))
+    console.log('Total records to insert:', adData.length)
+    
     // Delete ALL existing data for this user (CSV and API)
-    await supabase
+    const { error: deleteError } = await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', userId)
     
+    if (deleteError) {
+      console.error('Delete error:', deleteError)
+    }
+    
     // Insert new data
-    const { error: insertError } = await supabase
+    const { data: insertedData, error: insertError } = await supabase
       .from('ad_data')
       .insert(adData)
+      .select()
+    
+    console.log('Insert result - inserted:', insertedData?.length || 0, 'error:', insertError)
     
     if (insertError) {
       console.error('Insert error:', insertError)
