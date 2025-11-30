@@ -22,9 +22,10 @@ type MetaInsight = {
   date_stop: string
 }
 
-type AdStatus = {
+type EntityStatus = {
   id: string
   effective_status: string
+  status?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -97,27 +98,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: data.error.message }, { status: 400 })
     }
     
-    // Get unique ad IDs to fetch their status
-    const adIds = Array.from(new Set((data.data || []).map((i: MetaInsight) => i.ad_id)))
+    // Build status maps for campaigns, adsets, and ads
+    const campaignStatusMap: Record<string, string> = {}
+    const adsetStatusMap: Record<string, string> = {}
+    const adStatusMap: Record<string, string> = {}
     
-    // Fetch ad statuses in batches
-    const statusMap: Record<string, string> = {}
+    // Fetch campaign statuses
+    const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
+    campaignsUrl.searchParams.set('access_token', accessToken)
+    campaignsUrl.searchParams.set('fields', 'id,effective_status')
+    campaignsUrl.searchParams.set('limit', '500')
     
-    if (adIds.length > 0) {
-      // Fetch ads with their effective status (includes campaign/adset status)
-      const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
-      adsUrl.searchParams.set('access_token', accessToken)
-      adsUrl.searchParams.set('fields', 'id,effective_status')
-      adsUrl.searchParams.set('limit', '500')
-      
-      const adsResponse = await fetch(adsUrl.toString())
-      const adsData = await adsResponse.json()
-      
-      if (adsData.data) {
-        adsData.data.forEach((ad: AdStatus) => {
-          statusMap[ad.id] = ad.effective_status
-        })
-      }
+    const campaignsResponse = await fetch(campaignsUrl.toString())
+    const campaignsData = await campaignsResponse.json()
+    
+    if (campaignsData.data) {
+      campaignsData.data.forEach((c: EntityStatus) => {
+        campaignStatusMap[c.id] = c.effective_status
+      })
+    }
+    
+    // Fetch adset statuses
+    const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
+    adsetsUrl.searchParams.set('access_token', accessToken)
+    adsetsUrl.searchParams.set('fields', 'id,effective_status')
+    adsetsUrl.searchParams.set('limit', '500')
+    
+    const adsetsResponse = await fetch(adsetsUrl.toString())
+    const adsetsData = await adsetsResponse.json()
+    
+    if (adsetsData.data) {
+      adsetsData.data.forEach((a: EntityStatus) => {
+        adsetStatusMap[a.id] = a.effective_status
+      })
+    }
+    
+    // Fetch ad statuses
+    const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
+    adsUrl.searchParams.set('access_token', accessToken)
+    adsUrl.searchParams.set('fields', 'id,effective_status')
+    adsUrl.searchParams.set('limit', '500')
+    
+    const adsResponse = await fetch(adsUrl.toString())
+    const adsData = await adsResponse.json()
+    
+    if (adsData.data) {
+      adsData.data.forEach((ad: EntityStatus) => {
+        adStatusMap[ad.id] = ad.effective_status
+      })
     }
     
     // Transform Meta data to our format
@@ -130,10 +158,15 @@ export async function POST(request: NextRequest) {
         a.action_type === 'purchase' || a.action_type === 'omni_purchase'
       )
       
-      // Get status - effective_status includes parent (campaign/adset) status
-      // ACTIVE, PAUSED, DELETED, ARCHIVED, IN_PROCESS, WITH_ISSUES, etc.
-      const status = statusMap[insight.ad_id] || 'UNKNOWN'
+      // Get status at each level
+      // Priority: ad status > adset status > campaign status
+      // effective_status already includes parent status inheritance
+      const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
+      const adsetStatus = adsetStatusMap[insight.adset_id] || 'UNKNOWN'
+      const campaignStatus = campaignStatusMap[insight.campaign_id] || 'UNKNOWN'
       
+      // The ad's effective_status should reflect the true status
+      // But we'll store all three for proper aggregation
       return {
         user_id: userId,
         source: 'meta_api',
@@ -141,10 +174,14 @@ export async function POST(request: NextRequest) {
         date_start: insight.date_start,
         date_end: insight.date_stop,
         campaign_name: insight.campaign_name,
+        campaign_id: insight.campaign_id,
         adset_name: insight.adset_name,
+        adset_id: insight.adset_id,
         ad_name: insight.ad_name,
         ad_id: insight.ad_id,
-        status: status,
+        status: adStatus,  // Ad's effective status (includes parent inheritance)
+        adset_status: adsetStatus,  // Adset's own status
+        campaign_status: campaignStatus,  // Campaign's own status
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,

@@ -16,7 +16,9 @@ type AdRow = {
   purchases: number
   revenue: number
   roas: number
-  status?: string | null  // null for CSV, set for API data
+  status?: string | null  // Ad's effective status
+  adset_status?: string | null  // Adset's own status
+  campaign_status?: string | null  // Campaign's own status
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'off'
@@ -82,9 +84,19 @@ const verdictOrder: Record<Verdict, number> = {
 }
 
 function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
-  const campaigns: Record<string, HierarchyNode> = {}
+  const campaigns: Record<string, HierarchyNode & { _status?: string | null }> = {}
+  const adsetStatuses: Record<string, string | null> = {}  // Track adset statuses by name
+  const campaignStatuses: Record<string, string | null> = {}  // Track campaign statuses by name
   
   data.forEach(row => {
+    // Capture statuses from the first row we see for each entity
+    if (row.campaign_status && !campaignStatuses[row.campaign_name]) {
+      campaignStatuses[row.campaign_name] = row.campaign_status
+    }
+    if (row.adset_status && !adsetStatuses[row.adset_name]) {
+      adsetStatuses[row.adset_name] = row.adset_status
+    }
+    
     if (!campaigns[row.campaign_name]) {
       campaigns[row.campaign_name] = {
         name: row.campaign_name,
@@ -155,15 +167,19 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       const adsetMetrics = calculateMetrics(adset)
       Object.assign(adset, adsetMetrics)
       
-      // Only set status if children have status (API data)
-      // CSV data won't have status on children
-      const childStatuses = adset.children?.map(ad => ad.status).filter(s => s !== undefined && s !== null)
-      if (childStatuses && childStatuses.length > 0) {
-        // Adset is active if ANY child ad is active
-        const hasActiveAd = childStatuses.some(s => s === 'ACTIVE')
-        adset.status = hasActiveAd ? 'ACTIVE' : 'PAUSED'
+      // Use the direct adset_status from Meta API if available
+      // This is the adset's OWN status, not derived from children
+      const directStatus = adsetStatuses[adset.name]
+      if (directStatus) {
+        adset.status = directStatus
+      } else {
+        // Fallback: derive from children for CSV data or missing status
+        const childStatuses = adset.children?.map(ad => ad.status).filter(s => s !== undefined && s !== null)
+        if (childStatuses && childStatuses.length > 0) {
+          const hasActiveAd = childStatuses.some(s => s === 'ACTIVE')
+          adset.status = hasActiveAd ? 'ACTIVE' : 'PAUSED'
+        }
       }
-      // If no child has status (CSV data), leave adset.status as undefined
       
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules, adset.status)
       
@@ -178,14 +194,18 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     const campaignMetrics = calculateMetrics(campaign)
     Object.assign(campaign, campaignMetrics)
     
-    // Only set status if children have status (API data)
-    const childStatuses = campaign.children?.map(adset => adset.status).filter(s => s !== undefined && s !== null)
-    if (childStatuses && childStatuses.length > 0) {
-      // Campaign is active if ANY child adset is active
-      const hasActiveAdset = childStatuses.some(s => s === 'ACTIVE')
-      campaign.status = hasActiveAdset ? 'ACTIVE' : 'PAUSED'
+    // Use the direct campaign_status from Meta API if available
+    const directStatus = campaignStatuses[campaign.name]
+    if (directStatus) {
+      campaign.status = directStatus
+    } else {
+      // Fallback: derive from children for CSV data or missing status
+      const childStatuses = campaign.children?.map(adset => adset.status).filter(s => s !== undefined && s !== null)
+      if (childStatuses && childStatuses.length > 0) {
+        const hasActiveAdset = childStatuses.some(s => s === 'ACTIVE')
+        campaign.status = hasActiveAdset ? 'ACTIVE' : 'PAUSED'
+      }
     }
-    // If no child has status (CSV data), leave campaign.status as undefined
     
     campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules, campaign.status)
   })

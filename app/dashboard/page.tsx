@@ -96,17 +96,6 @@ export default function DashboardPage() {
     }
   }, [user])
 
-  // Live mode auto-sync every 5 minutes
-  useEffect(() => {
-    if (!isLiveMode || !canSync || !selectedAccountId) return
-    
-    const interval = setInterval(() => {
-      handleSyncAccount(selectedAccountId)
-    }, 5 * 60 * 1000) // 5 minutes
-    
-    return () => clearInterval(interval)
-  }, [isLiveMode, canSync, selectedAccountId])
-
   // Auto-sync when coming from sidebar account selection
   useEffect(() => {
     const syncAccountId = searchParams.get('sync')
@@ -135,6 +124,17 @@ export default function DashboardPage() {
   const selectedAccountId = connection?.selected_account_id || 
     connection?.ad_accounts?.find(a => a.in_dashboard)?.id
 
+  // Live mode auto-sync every 5 minutes
+  useEffect(() => {
+    if (!isLiveMode || !canSync || !selectedAccountId) return
+    
+    const interval = setInterval(() => {
+      handleSyncAccount(selectedAccountId)
+    }, 5 * 60 * 1000) // 5 minutes
+    
+    return () => clearInterval(interval)
+  }, [isLiveMode, canSync, selectedAccountId])
+
   const loadData = async () => {
     if (!user) return
     
@@ -157,7 +157,9 @@ export default function DashboardPage() {
         spend: parseFloat(row.spend),
         purchases: row.purchases,
         revenue: parseFloat(row.revenue),
-        status: row.status, // Will be null for CSV, set for API data
+        status: row.status, // Ad's effective status (includes parent inheritance)
+        adset_status: row.adset_status, // Adset's own status
+        campaign_status: row.campaign_status, // Campaign's own status
       }))
       setData(rows)
       
