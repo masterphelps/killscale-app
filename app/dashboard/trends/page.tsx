@@ -739,7 +739,7 @@ export default function TrendsPage() {
       {/* Main Layout */}
       <div className="flex gap-6">
         {/* Left Sidebar - Hierarchy Navigator */}
-        <div className="w-80 flex-shrink-0">
+        <div className="w-[380px] flex-shrink-0">
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden sticky top-6">
             {/* Search */}
             <div className="p-3 border-b border-border">
@@ -1095,17 +1095,97 @@ export default function TrendsPage() {
                 </div>
               </div>
             ) : currentLevel === 'account' ? (
-              /* Treemap for account level */
-              <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <Treemap
-                    data={treemapData}
-                    dataKey="size"
-                    aspectRatio={4/3}
-                    stroke="#27272a"
-                    content={<CustomTreemapContent onClick={(name: string) => setSelection({ campaign: name })} />}
-                  />
-                </ResponsiveContainer>
+              /* Campaign breakdown for account level - Pie + Bar combo */
+              <div className="grid grid-cols-2 gap-6">
+                {/* Spend Distribution Pie Chart */}
+                <div>
+                  <h4 className="text-sm font-medium text-zinc-400 mb-3">Spend by Campaign</h4>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPie>
+                        <Pie
+                          data={hierarchy.map(c => ({ name: c.name, value: c.spend, roas: c.roas }))}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={100}
+                          paddingAngle={2}
+                          dataKey="value"
+                          onClick={(data) => setSelection({ campaign: data.name })}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {hierarchy.map((entry, index) => (
+                            <Cell key={index} fill={getROASColor(entry.roas)} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#18181b', 
+                            border: '1px solid #3f3f46',
+                            borderRadius: 8,
+                            color: '#e4e4e7'
+                          }}
+                          formatter={(value: number, name: string, props: any) => [
+                            `${formatCurrency(value)} (${props.payload.roas.toFixed(2)}x ROAS)`,
+                            props.payload.name
+                          ]}
+                        />
+                      </RechartsPie>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="text-center text-sm text-zinc-500 mt-2">Click a segment to drill down</div>
+                </div>
+                
+                {/* ROAS Ranking Bar Chart */}
+                <div>
+                  <h4 className="text-sm font-medium text-zinc-400 mb-3">ROAS by Campaign</h4>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
+                        data={[...hierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8)}
+                        layout="vertical"
+                        margin={{ left: 10, right: 20 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                        <XAxis 
+                          type="number"
+                          stroke="#3f3f46"
+                          tick={{ fill: '#a1a1aa', fontSize: 10, stroke: 'none' }}
+                          tickLine={{ stroke: '#3f3f46' }}
+                          tickFormatter={(v) => `${v.toFixed(1)}x`}
+                        />
+                        <YAxis 
+                          type="category" 
+                          dataKey="name" 
+                          stroke="#3f3f46"
+                          tick={{ fill: '#a1a1aa', fontSize: 10, stroke: 'none' }}
+                          tickLine={{ stroke: '#3f3f46' }}
+                          width={140}
+                          tickFormatter={(value) => value.length > 18 ? value.substring(0, 18) + '...' : value}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#18181b', 
+                            border: '1px solid #3f3f46',
+                            borderRadius: 8,
+                            color: '#e4e4e7'
+                          }}
+                          formatter={(value: number) => [`${value.toFixed(2)}x`, 'ROAS']}
+                        />
+                        <Bar 
+                          dataKey="roas" 
+                          radius={[0, 4, 4, 0]}
+                          onClick={(data) => setSelection({ campaign: data.name })}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {[...hierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8).map((entry, index) => (
+                            <Cell key={index} fill={getROASColor(entry.roas)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             ) : (
               /* Time series for campaign/adset/ad level */
@@ -1116,14 +1196,14 @@ export default function TrendsPage() {
                     <XAxis 
                       dataKey="date" 
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     />
                     <YAxis 
                       yAxisId="left" 
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => `$${value}`}
                     />
@@ -1131,7 +1211,7 @@ export default function TrendsPage() {
                       yAxisId="right" 
                       orientation="right" 
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => `${value.toFixed(1)}x`}
                     />
@@ -1147,6 +1227,7 @@ export default function TrendsPage() {
                         if (name === 'roas') return [`${value.toFixed(2)}x`, 'ROAS']
                         return [formatCurrency(value), name === 'spend' ? 'Spend' : 'Revenue']
                       }}
+                      labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     />
                     <Legend 
                       wrapperStyle={{ color: '#a1a1aa' }}
@@ -1155,16 +1236,18 @@ export default function TrendsPage() {
                       yAxisId="left"
                       type="monotone" 
                       dataKey="spend" 
-                      fill="rgba(139, 92, 246, 0.2)" 
+                      fill="rgba(139, 92, 246, 0.3)" 
                       stroke="#8b5cf6"
+                      strokeWidth={2}
                       name="Spend"
                     />
                     <Area 
                       yAxisId="left"
                       type="monotone" 
                       dataKey="revenue" 
-                      fill="rgba(34, 197, 94, 0.2)" 
+                      fill="rgba(34, 197, 94, 0.3)" 
                       stroke="#22c55e"
+                      strokeWidth={2}
                       name="Revenue"
                     />
                     <Line 
@@ -1172,8 +1255,9 @@ export default function TrendsPage() {
                       type="monotone" 
                       dataKey="roas" 
                       stroke="#f59e0b" 
-                      strokeWidth={2}
-                      dot={false}
+                      strokeWidth={3}
+                      dot={{ fill: '#f59e0b', strokeWidth: 0, r: 3 }}
+                      activeDot={{ r: 5, fill: '#f59e0b' }}
                       name="ROAS"
                     />
                   </ComposedChart>
@@ -1188,28 +1272,29 @@ export default function TrendsPage() {
               <h3 className="font-semibold mb-4">
                 {currentLevel === 'campaign' ? 'Ad Sets' : 'Ads'} Performance
               </h3>
-              <div className="h-64">
+              <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart 
                     data={[...selectedData.children].sort((a, b) => b.roas - a.roas)}
                     layout="vertical"
-                    margin={{ left: 120 }}
+                    margin={{ left: 20, right: 20 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
                     <XAxis 
                       type="number" 
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
+                      tickFormatter={(v) => `${v.toFixed(1)}x`}
                     />
                     <YAxis 
                       type="category" 
                       dataKey="name" 
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
-                      width={110}
-                      tickFormatter={(value) => value.length > 15 ? value.substring(0, 15) + '...' : value}
+                      width={200}
+                      tickFormatter={(value) => value.length > 28 ? value.substring(0, 28) + '...' : value}
                     />
                     <Tooltip 
                       contentStyle={{ 
