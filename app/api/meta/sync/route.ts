@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Get unique ad IDs to fetch their status
-    const adIds = [...new Set((data.data || []).map((i: MetaInsight) => i.ad_id))]
+    const adIds = Array.from(new Set((data.data || []).map((i: MetaInsight) => i.ad_id)))
     
     // Fetch ad statuses in batches
     const statusMap: Record<string, string> = {}
