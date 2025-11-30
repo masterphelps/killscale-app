@@ -289,7 +289,8 @@ const NavItem = ({
   onClick,
   onExpand,
   status,
-  hasChildrenPaused
+  hasChildrenPaused,
+  showPausedIndicators = true
 }: {
   name: string
   level: HierarchyLevel
@@ -301,6 +302,7 @@ const NavItem = ({
   onExpand: () => void
   status?: string | null
   hasChildrenPaused?: boolean
+  showPausedIndicators?: boolean
 }) => {
   const indent = level === 'campaign' ? 0 : level === 'adset' ? 16 : 32
   
@@ -353,8 +355,8 @@ const NavItem = ({
         {name}
       </span>
       
-      {/* Paused indicator - filled for self, outline for children */}
-      {isPaused ? (
+      {/* Paused indicator - only show when includePaused is on */}
+      {showPausedIndicators && isPaused ? (
         <span className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 bg-zinc-700 text-zinc-400 rounded">
           <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="4" width="4" height="16" rx="1" />
@@ -362,7 +364,7 @@ const NavItem = ({
           </svg>
           <span>PAUSED</span>
         </span>
-      ) : hasChildrenPaused ? (
+      ) : showPausedIndicators && hasChildrenPaused ? (
         <span className="flex items-center text-zinc-500" title="Contains paused items">
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="6" y="4" width="4" height="16" rx="1" />
@@ -927,6 +929,7 @@ export default function TrendsPage() {
                     metrics={{ spend: campaign.spend, roas: campaign.roas }}
                     status={campaign.status}
                     hasChildrenPaused={campaign.hasChildrenPaused}
+                    showPausedIndicators={includePaused}
                     onClick={() => setSelection({ campaign: campaign.name })}
                     onExpand={() => {
                       const newSet = new Set(expandedCampaigns)
@@ -950,6 +953,7 @@ export default function TrendsPage() {
                         metrics={{ spend: adset.spend, roas: adset.roas }}
                         status={adset.status}
                         hasChildrenPaused={adset.hasChildrenPaused}
+                        showPausedIndicators={includePaused}
                         onClick={() => setSelection({ campaign: campaign.name, adset: adset.name })}
                         onExpand={() => {
                           const key = `${campaign.name}-${adset.name}`
@@ -973,6 +977,7 @@ export default function TrendsPage() {
                           hasChildren={false}
                           metrics={{ spend: ad.spend, roas: ad.roas }}
                           status={ad.status}
+                          showPausedIndicators={includePaused}
                           onClick={() => setSelection({ campaign: campaign.name, adset: adset.name, ad: ad.name })}
                           onExpand={() => {}}
                         />
@@ -1234,21 +1239,41 @@ export default function TrendsPage() {
                 {/* Spend Distribution Pie Chart */}
                 <div>
                   <h4 className="text-sm font-medium text-zinc-400 mb-3">Spend by Campaign</h4>
-                  <div className="h-72">
+                  <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <RechartsPie>
                         <Pie
-                          data={hierarchy.map(c => ({ name: c.name, value: c.spend, roas: c.roas }))}
+                          data={hierarchy.slice(0, 8).map(c => ({ name: c.name, value: c.spend, roas: c.roas }))}
                           cx="50%"
                           cy="50%"
-                          innerRadius={60}
-                          outerRadius={100}
+                          innerRadius={50}
+                          outerRadius={80}
                           paddingAngle={2}
                           dataKey="value"
                           onClick={(data) => setSelection({ campaign: data.name })}
                           style={{ cursor: 'pointer' }}
+                          label={({ name, percent, cx, cy, midAngle, outerRadius }) => {
+                            const RADIAN = Math.PI / 180
+                            const radius = outerRadius + 25
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN)
+                            if (percent < 0.05) return null // Hide labels for tiny slices
+                            return (
+                              <text 
+                                x={x} 
+                                y={y} 
+                                fill="#a1a1aa"
+                                textAnchor={x > cx ? 'start' : 'end'}
+                                dominantBaseline="central"
+                                fontSize={11}
+                              >
+                                {name.length > 15 ? name.substring(0, 15) + '...' : name}
+                              </text>
+                            )
+                          }}
+                          labelLine={{ stroke: '#52525b', strokeWidth: 1 }}
                         >
-                          {hierarchy.map((entry, index) => (
+                          {hierarchy.slice(0, 8).map((entry, index) => (
                             <Cell key={index} fill={getROASColor(entry.roas)} />
                           ))}
                         </Pie>
@@ -1256,9 +1281,10 @@ export default function TrendsPage() {
                           contentStyle={{ 
                             backgroundColor: '#18181b', 
                             border: '1px solid #3f3f46',
-                            borderRadius: 8,
-                            color: '#e4e4e7'
+                            borderRadius: 8
                           }}
+                          itemStyle={{ color: '#e4e4e7' }}
+                          labelStyle={{ color: '#a1a1aa' }}
                           formatter={(value: number, name: string, props: any) => [
                             `${formatCurrency(value)} (${props.payload.roas.toFixed(2)}x ROAS)`,
                             props.payload.name
