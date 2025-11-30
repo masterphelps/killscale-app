@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
@@ -502,6 +502,12 @@ export function PerformanceTable({
             {!onToggle && <div className="w-4" />}
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
             <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
+            {node.status && node.status !== 'ACTIVE' && (
+              <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
+                <Pause className="w-2.5 h-2.5" />
+                <span>{node.status === 'PAUSED' || node.status === 'ADSET_PAUSED' || node.status === 'CAMPAIGN_PAUSED' ? 'Paused' : node.status === 'UNKNOWN' ? 'Unknown' : node.status}</span>
+              </span>
+            )}
           </div>
           <div 
             className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center"
@@ -523,8 +529,8 @@ export function PerformanceTable({
           <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
-          <div className="w-28 flex justify-center px-2 flex-shrink-0">
-            <VerdictBadge verdict={node.verdict} status={node.status} size="sm" />
+          <div className="w-20 flex justify-center px-2 flex-shrink-0">
+            <VerdictBadge verdict={node.verdict} size="sm" />
           </div>
         </div>
       </div>
@@ -580,7 +586,7 @@ export function PerformanceTable({
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('impressions')}>
           Impr <SortIcon field="impressions" />
         </div>
-        <div className="w-28 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
+        <div className="w-20 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
           Verdict <SortIcon field="verdict" />
         </div>
       </div>
@@ -620,7 +626,7 @@ export function PerformanceTable({
         <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.convRate)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.clicks)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
-        <div className="w-28 flex justify-center px-2 flex-shrink-0">
+        <div className="w-20 flex justify-center px-2 flex-shrink-0">
           <VerdictBadge verdict={totals.verdict} size="sm" />
         </div>
       </div>
