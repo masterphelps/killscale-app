@@ -58,6 +58,8 @@ type AdData = {
   purchases: number
   revenue: number
   status?: string | null
+  adset_status?: string | null
+  campaign_status?: string | null
 }
 
 type HierarchyLevel = 'account' | 'campaign' | 'adset' | 'ad'
@@ -82,6 +84,7 @@ type AggregatedData = {
   convRate: number
   children?: AggregatedData[]
   status?: string | null
+  hasChildrenPaused?: boolean
 }
 
 // Color scale for ROAS
@@ -141,50 +144,64 @@ const CustomTreemapContent = (props: any) => {
   return (
     <g>
       <rect
-        x={x}
-        y={y}
-        width={width}
-        height={height}
+        x={x + 2}
+        y={y + 2}
+        width={width - 4}
+        height={height - 4}
         fill={bgColor}
-        stroke="#27272a"
-        strokeWidth={2}
-        rx={8}
-        className="cursor-pointer transition-all hover:brightness-125"
+        stroke={color}
+        strokeWidth={1}
+        strokeOpacity={0.3}
+        rx={6}
+        className="cursor-pointer"
+        onClick={() => onClick?.(name)}
+      />
+      {/* Hover overlay */}
+      <rect
+        x={x + 2}
+        y={y + 2}
+        width={width - 4}
+        height={height - 4}
+        fill="transparent"
+        rx={6}
+        className="cursor-pointer hover:fill-white/5 transition-all"
         onClick={() => onClick?.(name)}
       />
       {width > 80 && height > 50 && (
         <>
+          {/* Text background for readability */}
+          <rect
+            x={x + 8}
+            y={y + height / 2 - 22}
+            width={width - 16}
+            height={44}
+            fill="rgba(0,0,0,0.4)"
+            rx={4}
+            className="pointer-events-none"
+          />
           <text
             x={x + width / 2}
-            y={y + height / 2 - 8}
+            y={y + height / 2 - 6}
             textAnchor="middle"
-            fill="#e4e4e7"
+            fill="#ffffff"
             fontSize={12}
-            fontWeight={500}
+            fontWeight={600}
             className="pointer-events-none"
+            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
           >
-            {name?.length > 20 ? name.substring(0, 20) + '...' : name}
+            {name?.length > Math.floor(width / 8) ? name.substring(0, Math.floor(width / 8)) + '...' : name}
           </text>
           <text
             x={x + width / 2}
-            y={y + height / 2 + 10}
+            y={y + height / 2 + 12}
             textAnchor="middle"
             fill={color}
             fontSize={14}
             fontWeight={700}
             className="pointer-events-none"
+            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
           >
-            {roas?.toFixed(2)}x
-          </text>
-          <text
-            x={x + width / 2}
-            y={y + height / 2 + 26}
-            textAnchor="middle"
-            fill="#71717a"
-            fontSize={10}
-            className="pointer-events-none"
-          >
-            {formatCurrency(spend)}
+            {roas?.toFixed(2)}x · {formatCurrency(spend)}
           </text>
         </>
       )}
@@ -241,7 +258,8 @@ const NavItem = ({
   metrics,
   onClick,
   onExpand,
-  status
+  status,
+  hasChildrenPaused
 }: {
   name: string
   level: HierarchyLevel
@@ -252,6 +270,7 @@ const NavItem = ({
   onClick: () => void
   onExpand: () => void
   status?: string | null
+  hasChildrenPaused?: boolean
 }) => {
   const indent = level === 'campaign' ? 0 : level === 'adset' ? 16 : 32
   
@@ -304,10 +323,23 @@ const NavItem = ({
         {name}
       </span>
       
-      {isPaused && (
-        <span className="text-[8px] px-1 py-0.5 bg-zinc-700 text-zinc-400 rounded">
-          PAUSED
+      {/* Paused indicator - filled for self, outline for children */}
+      {isPaused ? (
+        <span className="flex items-center gap-1 text-[8px] px-1.5 py-0.5 bg-zinc-700 text-zinc-400 rounded">
+          <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
+          <span>PAUSED</span>
         </span>
+      ) : hasChildrenPaused ? (
+        <span className="flex items-center text-zinc-500" title="Contains paused items">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
+        </span>
+      ) : null}
       )}
       
       <span className={cn(
@@ -355,7 +387,9 @@ export default function TrendsPage() {
         spend: parseFloat(row.spend),
         purchases: row.purchases,
         revenue: parseFloat(row.revenue),
-        status: row.status
+        status: row.status,
+        adset_status: row.adset_status,
+        campaign_status: row.campaign_status
       })))
     }
     setIsLoading(false)
@@ -366,7 +400,7 @@ export default function TrendsPage() {
     const campaigns: Record<string, AggregatedData> = {}
     
     data.forEach(row => {
-      // Campaign level
+      // Campaign level - use campaign_status if available
       if (!campaigns[row.campaign_name]) {
         campaigns[row.campaign_name] = {
           name: row.campaign_name,
@@ -374,12 +408,12 @@ export default function TrendsPage() {
           impressions: 0, clicks: 0, purchases: 0,
           ctr: 0, cpc: 0, cpa: 0, convRate: 0,
           children: [],
-          status: row.status
+          status: (row as any).campaign_status || null // Use campaign's own status
         }
       }
       const campaign = campaigns[row.campaign_name]
       
-      // AdSet level
+      // AdSet level - use adset_status if available, otherwise inherit from row
       let adset = campaign.children?.find(a => a.name === row.adset_name)
       if (!adset) {
         adset = {
@@ -388,12 +422,12 @@ export default function TrendsPage() {
           impressions: 0, clicks: 0, purchases: 0,
           ctr: 0, cpc: 0, cpa: 0, convRate: 0,
           children: [],
-          status: row.status
+          status: (row as any).adset_status || null // Use adset's own status
         }
         campaign.children?.push(adset)
       }
       
-      // Ad level
+      // Ad level - use ad's status
       let ad = adset.children?.find(a => a.name === row.ad_name)
       if (!ad) {
         ad = {
@@ -401,7 +435,7 @@ export default function TrendsPage() {
           spend: 0, revenue: 0, roas: 0,
           impressions: 0, clicks: 0, purchases: 0,
           ctr: 0, cpc: 0, cpa: 0, convRate: 0,
-          status: row.status
+          status: row.status // Ad's effective status
         }
         adset.children?.push(ad)
       }
@@ -426,14 +460,25 @@ export default function TrendsPage() {
       campaign.purchases += row.purchases
     })
     
-    // Calculate derived metrics
+    // Calculate derived metrics and hasChildrenPaused
     const calcMetrics = (node: AggregatedData) => {
       node.roas = node.spend > 0 ? node.revenue / node.spend : 0
       node.ctr = node.impressions > 0 ? (node.clicks / node.impressions) * 100 : 0
       node.cpc = node.clicks > 0 ? node.spend / node.clicks : 0
       node.cpa = node.purchases > 0 ? node.spend / node.purchases : 0
       node.convRate = node.clicks > 0 ? (node.purchases / node.clicks) * 100 : 0
+      
+      // Recursively process children first
       node.children?.forEach(calcMetrics)
+      
+      // Check if any children are paused (only if this node itself is active or has no status)
+      const selfIsPaused = node.status && node.status !== 'ACTIVE'
+      if (!selfIsPaused && node.children && node.children.length > 0) {
+        node.hasChildrenPaused = node.children.some(child => {
+          const childIsPaused = child.status && child.status !== 'ACTIVE'
+          return childIsPaused || child.hasChildrenPaused
+        })
+      }
     }
     
     Object.values(campaigns).forEach(calcMetrics)
@@ -716,6 +761,7 @@ export default function TrendsPage() {
                     hasChildren={(campaign.children?.length || 0) > 0}
                     metrics={{ spend: campaign.spend, roas: campaign.roas }}
                     status={campaign.status}
+                    hasChildrenPaused={campaign.hasChildrenPaused}
                     onClick={() => setSelection({ campaign: campaign.name })}
                     onExpand={() => {
                       const newSet = new Set(expandedCampaigns)
@@ -738,6 +784,7 @@ export default function TrendsPage() {
                         hasChildren={(adset.children?.length || 0) > 0}
                         metrics={{ spend: adset.spend, roas: adset.roas }}
                         status={adset.status}
+                        hasChildrenPaused={adset.hasChildrenPaused}
                         onClick={() => setSelection({ campaign: campaign.name, adset: adset.name })}
                         onExpand={() => {
                           const key = `${campaign.name}-${adset.name}`
@@ -853,35 +900,42 @@ export default function TrendsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                     <XAxis 
                       dataKey="date" 
-                      stroke="#71717a" 
-                      fontSize={11}
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     />
                     <YAxis 
                       yAxisId="left" 
-                      stroke="#71717a" 
-                      fontSize={11}
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => `$${value}`}
                     />
                     <YAxis 
                       yAxisId="right" 
                       orientation="right" 
-                      stroke="#71717a" 
-                      fontSize={11}
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => `${value.toFixed(1)}x`}
                     />
                     <Tooltip 
                       contentStyle={{ 
                         backgroundColor: '#18181b', 
-                        border: '1px solid #27272a',
-                        borderRadius: 8 
+                        border: '1px solid #3f3f46',
+                        borderRadius: 8,
+                        color: '#e4e4e7'
                       }}
+                      labelStyle={{ color: '#a1a1aa' }}
                       formatter={(value: number, name: string) => {
                         if (name === 'roas') return [`${value.toFixed(2)}x`, 'ROAS']
                         return [formatCurrency(value), name === 'spend' ? 'Spend' : 'Revenue']
                       }}
                     />
-                    <Legend />
+                    <Legend 
+                      wrapperStyle={{ color: '#a1a1aa' }}
+                    />
                     <Area 
                       yAxisId="left"
                       type="monotone" 
@@ -927,21 +981,29 @@ export default function TrendsPage() {
                     margin={{ left: 120 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                    <XAxis type="number" stroke="#71717a" fontSize={11} />
+                    <XAxis 
+                      type="number" 
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tickLine={{ stroke: '#3f3f46' }}
+                    />
                     <YAxis 
                       type="category" 
                       dataKey="name" 
-                      stroke="#71717a" 
-                      fontSize={11}
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tickLine={{ stroke: '#3f3f46' }}
                       width={110}
                       tickFormatter={(value) => value.length > 15 ? value.substring(0, 15) + '...' : value}
                     />
                     <Tooltip 
                       contentStyle={{ 
                         backgroundColor: '#18181b', 
-                        border: '1px solid #27272a',
-                        borderRadius: 8 
+                        border: '1px solid #3f3f46',
+                        borderRadius: 8,
+                        color: '#e4e4e7'
                       }}
+                      labelStyle={{ color: '#a1a1aa' }}
                       formatter={(value: number) => [`${value.toFixed(2)}x`, 'ROAS']}
                     />
                     <Bar dataKey="roas" radius={[0, 4, 4, 0]}>

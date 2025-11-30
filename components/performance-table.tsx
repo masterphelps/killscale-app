@@ -53,6 +53,7 @@ type HierarchyNode = {
   cpa: number
   convRate: number
   status?: string | null  // null for CSV, set for API data
+  hasChildrenPaused?: boolean
   verdict: Verdict
   children?: HierarchyNode[]
 }
@@ -181,6 +182,12 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         }
       }
       
+      // Check if any children are paused (only if adset itself is active)
+      const adsetIsPaused = adset.status && adset.status !== 'ACTIVE'
+      if (!adsetIsPaused && adset.children && adset.children.length > 0) {
+        adset.hasChildrenPaused = adset.children.some(ad => ad.status && ad.status !== 'ACTIVE')
+      }
+      
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
       
       campaign.impressions += adset.impressions
@@ -205,6 +212,15 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         const hasActiveAdset = childStatuses.some(s => s === 'ACTIVE')
         campaign.status = hasActiveAdset ? 'ACTIVE' : 'PAUSED'
       }
+    }
+    
+    // Check if any children are paused (only if campaign itself is active)
+    const campaignIsPaused = campaign.status && campaign.status !== 'ACTIVE'
+    if (!campaignIsPaused && campaign.children && campaign.children.length > 0) {
+      campaign.hasChildrenPaused = campaign.children.some(adset => {
+        const adsetIsPaused = adset.status && adset.status !== 'ACTIVE'
+        return adsetIsPaused || adset.hasChildrenPaused
+      })
     }
     
     campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules)
@@ -502,12 +518,17 @@ export function PerformanceTable({
             {!onToggle && <div className="w-4" />}
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
             <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
-            {node.status && node.status !== 'ACTIVE' && (
+            {/* Paused indicator - filled for self, outline for children */}
+            {node.status && node.status !== 'ACTIVE' ? (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
-                <Pause className="w-2.5 h-2.5" />
+                <Pause className="w-2.5 h-2.5 fill-current" />
                 <span>{node.status === 'PAUSED' || node.status === 'ADSET_PAUSED' || node.status === 'CAMPAIGN_PAUSED' ? 'Paused' : node.status === 'UNKNOWN' ? 'Unknown' : node.status}</span>
               </span>
-            )}
+            ) : node.hasChildrenPaused ? (
+              <span className="flex-shrink-0 inline-flex items-center text-zinc-600 ml-1" title="Contains paused items">
+                <Pause className="w-3 h-3" strokeWidth={1.5} />
+              </span>
+            ) : null}
           </div>
           <div 
             className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center"

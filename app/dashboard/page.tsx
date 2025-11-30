@@ -444,49 +444,45 @@ export default function DashboardPage() {
 
   const currentDatePreset = DATE_PRESETS.find(p => p.value === datePreset)
   
+  // Count entities
+  const entityCounts = useMemo(() => {
+    const campaigns = new Set(data.map(r => r.campaign_name))
+    const adsets = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}`))
+    const ads = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
+    const accounts = dashboardAccounts?.length || 0
+    return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
+  }, [data, dashboardAccounts])
+  
   return (
     <>
       <div className="flex items-start justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
-          <p className="text-zinc-500">Your Meta Ads performance at a glance</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+            <p className="text-zinc-500">Your Meta Ads performance at a glance</p>
+          </div>
+          
+          {/* Entity counts next to Dashboard */}
+          {data.length > 0 && (
+            <div className="flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
+                <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="w-px h-3 bg-border" />
+              <span className="text-zinc-400">{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
+              <div className="w-px h-3 bg-border" />
+              <span className="text-zinc-400">{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
+              <div className="w-px h-3 bg-border" />
+              <span className="text-zinc-400">{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-3">
           {data.length > 0 && (
             <>
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
-                {totalCampaigns} campaign{totalCampaigns !== 1 ? 's' : ''}
-              </div>
-              
-              {/* Date Picker Dropdown */}
-              <div className="relative">
-                <DatePickerButton
-                  label={getDateLabel()}
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  isOpen={showDatePicker}
-                />
-                
-                <DatePicker
-                  isOpen={showDatePicker}
-                  onClose={() => {
-                    setShowDatePicker(false)
-                    setShowCustomDateInputs(false)
-                  }}
-                  datePreset={datePreset}
-                  onPresetChange={handleDatePresetChange}
-                  customStartDate={customStartDate}
-                  customEndDate={customEndDate}
-                  onCustomDateChange={(start, end) => {
-                    setCustomStartDate(start)
-                    setCustomEndDate(end)
-                  }}
-                  onApply={handleCustomDateApply}
-                />
-              </div>
-
-              {/* Live Toggle */}
+              {/* Live Toggle - moved before date picker */}
               <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
                 <button
                   onClick={() => canSync && selectedAccountId && setIsLiveMode(!isLiveMode)}
@@ -516,6 +512,32 @@ export default function DashboardPage() {
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                   </span>
                 )}
+              </div>
+
+              {/* Date Picker Dropdown */}
+              <div className="relative">
+                <DatePickerButton
+                  label={getDateLabel()}
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  isOpen={showDatePicker}
+                />
+                
+                <DatePicker
+                  isOpen={showDatePicker}
+                  onClose={() => {
+                    setShowDatePicker(false)
+                    setShowCustomDateInputs(false)
+                  }}
+                  datePreset={datePreset}
+                  onPresetChange={handleDatePresetChange}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomDateChange={(start, end) => {
+                    setCustomStartDate(start)
+                    setCustomEndDate(end)
+                  }}
+                  onApply={handleCustomDateApply}
+                />
               </div>
             </>
           )}
