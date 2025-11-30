@@ -117,6 +117,7 @@ export function Sidebar() {
       setDataSource('meta_api')
       setCurrentAccountId(data.ad_account_id)
     } else {
+      // Treat NULL or 'csv' as CSV data
       setDataSource('csv')
       setCurrentAccountId(null)
     }
@@ -129,14 +130,21 @@ export function Sidebar() {
   // Fallback: if no accounts have in_dashboard set yet, use all accounts
   const displayAccounts = dashboardAccounts.length > 0 ? dashboardAccounts : allAccounts
   const selectedAccount = displayAccounts.find(a => a.id === selectedAccountId) || displayAccounts[0]
-  const currentMetaAccount = displayAccounts.find(a => a.id === currentAccountId)
+  const currentMetaAccount = allAccounts.find(a => a.id === currentAccountId) // Search ALL accounts, not just display
   const hasMultipleAccounts = displayAccounts.length > 1
 
   // Determine what to show in the account selector
   const getDisplayName = () => {
     if (dataSource === 'none') return 'No data'
     if (dataSource === 'csv') return 'CSV Data'
-    if (dataSource === 'meta_api' && currentMetaAccount) return currentMetaAccount.name
+    if (dataSource === 'meta_api') {
+      // First try to find the account by currentAccountId
+      if (currentMetaAccount) return currentMetaAccount.name
+      // Fallback to selected account
+      if (selectedAccount) return selectedAccount.name
+      // Last resort
+      return 'Meta Account'
+    }
     return 'No account selected'
   }
 
