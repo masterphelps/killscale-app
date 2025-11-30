@@ -112,11 +112,14 @@ export async function POST(request: NextRequest) {
     const campaignsResponse = await fetch(campaignsUrl.toString())
     const campaignsData = await campaignsResponse.json()
     
+    console.log('Campaigns response:', JSON.stringify(campaignsData).slice(0, 500))
+    
     if (campaignsData.data) {
       campaignsData.data.forEach((c: EntityStatus) => {
         campaignStatusMap[c.id] = c.effective_status
       })
     }
+    console.log('Campaign status map:', Object.keys(campaignStatusMap).length, 'campaigns')
     
     // Fetch adset statuses
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
@@ -127,11 +130,14 @@ export async function POST(request: NextRequest) {
     const adsetsResponse = await fetch(adsetsUrl.toString())
     const adsetsData = await adsetsResponse.json()
     
+    console.log('Adsets response:', JSON.stringify(adsetsData).slice(0, 500))
+    
     if (adsetsData.data) {
       adsetsData.data.forEach((a: EntityStatus) => {
         adsetStatusMap[a.id] = a.effective_status
       })
     }
+    console.log('Adset status map:', Object.keys(adsetStatusMap).length, 'adsets')
     
     // Fetch ad statuses
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
@@ -142,14 +148,27 @@ export async function POST(request: NextRequest) {
     const adsResponse = await fetch(adsUrl.toString())
     const adsData = await adsResponse.json()
     
+    console.log('Ads response:', JSON.stringify(adsData).slice(0, 500))
+    
     if (adsData.data) {
       adsData.data.forEach((ad: EntityStatus) => {
         adStatusMap[ad.id] = ad.effective_status
       })
     }
+    console.log('Ad status map:', Object.keys(adStatusMap).length, 'ads')
     
     // Transform Meta data to our format
-    const adData = (data.data || []).map((insight: MetaInsight) => {
+    const adData = (data.data || []).map((insight: MetaInsight, idx: number) => {
+      // Log first few insights to debug
+      if (idx < 3) {
+        console.log(`Insight ${idx}:`, {
+          ad_id: insight.ad_id,
+          adset_id: insight.adset_id,
+          campaign_id: insight.campaign_id,
+          ad_name: insight.ad_name
+        })
+      }
+      
       // Find purchase actions
       const purchases = insight.actions?.find(a => 
         a.action_type === 'purchase' || a.action_type === 'omni_purchase'
@@ -164,6 +183,10 @@ export async function POST(request: NextRequest) {
       const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
       const adsetStatus = adsetStatusMap[insight.adset_id] || 'UNKNOWN'
       const campaignStatus = campaignStatusMap[insight.campaign_id] || 'UNKNOWN'
+      
+      if (idx < 3) {
+        console.log(`Status lookup ${idx}:`, { adStatus, adsetStatus, campaignStatus })
+      }
       
       // The ad's effective_status should reflect the true status
       // But we'll store all three for proper aggregation
