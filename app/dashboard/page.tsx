@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Upload, Calendar, Lock, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
@@ -34,6 +35,7 @@ const DEFAULT_RULES: Rules = {
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
 const DATE_PRESETS = [
+  { value: 'maximum', label: 'Maximum' },
   { value: 'today', label: 'Today' },
   { value: 'yesterday', label: 'Yesterday' },
   { value: 'last_7d', label: 'Last 7 Days' },
@@ -41,6 +43,7 @@ const DATE_PRESETS = [
   { value: 'last_30d', label: 'Last 30 Days' },
   { value: 'this_month', label: 'This Month' },
   { value: 'last_month', label: 'Last Month' },
+  { value: 'custom', label: 'Custom Range' },
 ]
 
 const formatPercent = (value: number) => {
@@ -84,9 +87,13 @@ export default function DashboardPage() {
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [datePreset, setDatePreset] = useState('last_30d')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
+  const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
+  const searchParams = useSearchParams()
   
   const canSync = plan === 'Pro' || plan === 'Agency'
   
@@ -97,6 +104,17 @@ export default function DashboardPage() {
       loadConnection()
     }
   }, [user])
+
+  // Auto-sync when coming from sidebar account selection
+  useEffect(() => {
+    const syncAccountId = searchParams.get('sync')
+    if (syncAccountId && user && canSync) {
+      // Clear the URL param
+      window.history.replaceState({}, '', '/dashboard')
+      // Trigger sync for the selected account
+      handleSyncAccount(syncAccountId)
+    }
+  }, [searchParams, user, canSync])
 
   const loadConnection = async () => {
     if (!user) return
@@ -224,8 +242,9 @@ export default function DashboardPage() {
     setSelectedCampaigns(new Set())
   }
 
-  const handleSync = async () => {
-    if (!user || !selectedAccountId || !canSync) return
+  // Sync a specific account (used by sidebar dropdown)
+  const handleSyncAccount = async (accountId: string) => {
+    if (!user || !canSync) return
     
     setIsSyncing(true)
     
@@ -241,8 +260,10 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          adAccountId: selectedAccountId,
+          adAccountId: accountId,
           datePreset,
+          customStartDate: datePreset === 'custom' ? customStartDate : undefined,
+          customEndDate: datePreset === 'custom' ? customEndDate : undefined,
         }),
       })
       
@@ -260,9 +281,37 @@ export default function DashboardPage() {
     setIsSyncing(false)
   }
 
+  // Sync using the currently selected account
+  const handleSync = async () => {
+    if (!selectedAccountId) return
+    await handleSyncAccount(selectedAccountId)
+  }
+
   const handleDatePresetChange = (preset: string) => {
-    setDatePreset(preset)
-    setShowDatePicker(false)
+    if (preset === 'custom') {
+      setShowCustomDateInputs(true)
+      // Don't close dropdown yet - let user pick dates
+    } else {
+      setDatePreset(preset)
+      setShowDatePicker(false)
+      setShowCustomDateInputs(false)
+    }
+  }
+
+  const handleCustomDateApply = () => {
+    if (customStartDate && customEndDate) {
+      setDatePreset('custom')
+      setShowDatePicker(false)
+      setShowCustomDateInputs(false)
+    }
+  }
+
+  // Get display label for current date selection
+  const getDateLabel = () => {
+    if (datePreset === 'custom' && customStartDate && customEndDate) {
+      return `${customStartDate} - ${customEndDate}`
+    }
+    return DATE_PRESETS.find(p => p.value === datePreset)?.label || 'Last 30 Days'
   }
   
   const userPlan = plan
@@ -398,7 +447,7 @@ export default function DashboardPage() {
                   className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm hover:border-border-light transition-colors"
                 >
                   <Calendar className="w-4 h-4" />
-                  {currentDatePreset?.label || formatDateRange(dateRange.start, dateRange.end)}
+                  {getDateLabel()}
                   <ChevronDown className="w-3 h-3 text-zinc-500" />
                 </button>
                 
@@ -406,9 +455,12 @@ export default function DashboardPage() {
                   <>
                     <div 
                       className="fixed inset-0 z-10" 
-                      onClick={() => setShowDatePicker(false)} 
+                      onClick={() => {
+                        setShowDatePicker(false)
+                        setShowCustomDateInputs(false)
+                      }} 
                     />
-                    <div className="absolute right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden min-w-[160px]">
+                    <div className="absolute right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden min-w-[200px]">
                       {DATE_PRESETS.map((preset) => (
                         <button
                           key={preset.value}
@@ -420,6 +472,37 @@ export default function DashboardPage() {
                           {preset.label}
                         </button>
                       ))}
+                      
+                      {/* Custom Date Inputs */}
+                      {showCustomDateInputs && (
+                        <div className="p-3 border-t border-border space-y-3">
+                          <div>
+                            <label className="block text-xs text-zinc-500 mb-1">Start Date</label>
+                            <input
+                              type="date"
+                              value={customStartDate}
+                              onChange={(e) => setCustomStartDate(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bg-hover border border-border rounded text-sm text-white focus:outline-none focus:border-accent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-zinc-500 mb-1">End Date</label>
+                            <input
+                              type="date"
+                              value={customEndDate}
+                              onChange={(e) => setCustomEndDate(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bg-hover border border-border rounded text-sm text-white focus:outline-none focus:border-accent"
+                            />
+                          </div>
+                          <button
+                            onClick={handleCustomDateApply}
+                            disabled={!customStartDate || !customEndDate}
+                            className="w-full px-3 py-1.5 bg-accent text-white rounded text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

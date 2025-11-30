@@ -131,7 +131,9 @@ export function Sidebar() {
   const displayAccounts = dashboardAccounts.length > 0 ? dashboardAccounts : allAccounts
   const selectedAccount = displayAccounts.find(a => a.id === selectedAccountId) || displayAccounts[0]
   const currentMetaAccount = allAccounts.find(a => a.id === currentAccountId) // Search ALL accounts, not just display
-  const hasMultipleAccounts = displayAccounts.length > 1
+  
+  // Show dropdown if there are multiple dashboard accounts OR if there's at least one to switch to
+  const canShowDropdown = displayAccounts.length > 0
 
   // Determine what to show in the account selector
   const getDisplayName = () => {
@@ -160,8 +162,8 @@ export function Sidebar() {
       .update({ selected_account_id: accountId })
       .eq('user_id', user.id)
     
-    // Reload page to refresh data for new account
-    window.location.reload()
+    // Trigger sync for this account by navigating to dashboard with sync param
+    window.location.href = `/dashboard?sync=${accountId}`
   }
   
   const upgradeText = plan === 'Free' 
@@ -185,10 +187,10 @@ export function Sidebar() {
       {/* Account Selector */}
       <div className="relative mb-6">
         <button
-          onClick={() => (hasMultipleAccounts || dataSource === 'csv') && setShowAccountDropdown(!showAccountDropdown)}
+          onClick={() => canShowDropdown && setShowAccountDropdown(!showAccountDropdown)}
           className={cn(
             "w-full bg-bg-card border border-border rounded-lg p-3 text-left transition-colors",
-            (hasMultipleAccounts || displayAccounts.length > 0) && "hover:border-zinc-600 cursor-pointer",
+            canShowDropdown && "hover:border-zinc-600 cursor-pointer",
           )}
         >
           <div className="text-xs text-zinc-500 mb-1">
@@ -199,7 +201,7 @@ export function Sidebar() {
               {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
               {getDisplayName()}
             </span>
-            {(hasMultipleAccounts || displayAccounts.length > 0) && (
+            {canShowDropdown && (
               <ChevronDown className={cn(
                 "w-4 h-4 text-zinc-500 transition-transform",
                 showAccountDropdown && "rotate-180"

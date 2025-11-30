@@ -21,7 +21,7 @@ type MetaInsight = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, datePreset = 'last_30d' } = await request.json()
+    const { userId, adAccountId, datePreset = 'last_30d', customStartDate, customEndDate } = await request.json()
     
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -61,8 +61,22 @@ export async function POST(request: NextRequest) {
     insightsUrl.searchParams.set('access_token', accessToken)
     insightsUrl.searchParams.set('fields', fields)
     insightsUrl.searchParams.set('level', 'ad')
-    insightsUrl.searchParams.set('date_preset', datePreset)
     insightsUrl.searchParams.set('limit', '500')
+    
+    // Handle different date options
+    if (datePreset === 'custom' && customStartDate && customEndDate) {
+      // Use custom time range
+      insightsUrl.searchParams.set('time_range', JSON.stringify({
+        since: customStartDate,
+        until: customEndDate
+      }))
+    } else if (datePreset === 'maximum') {
+      // Maximum = lifetime data (use 'maximum' preset)
+      insightsUrl.searchParams.set('date_preset', 'maximum')
+    } else {
+      // Use preset
+      insightsUrl.searchParams.set('date_preset', datePreset)
+    }
     
     const response = await fetch(insightsUrl.toString())
     const data = await response.json()
