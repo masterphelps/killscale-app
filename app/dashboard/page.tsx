@@ -80,6 +80,8 @@ export default function DashboardPage() {
   const [customEndDate, setCustomEndDate] = useState('')
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
+  const [isLiveMode, setIsLiveMode] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
   const searchParams = useSearchParams()
@@ -93,6 +95,17 @@ export default function DashboardPage() {
       loadConnection()
     }
   }, [user])
+
+  // Live mode auto-sync every 5 minutes
+  useEffect(() => {
+    if (!isLiveMode || !canSync || !selectedAccountId) return
+    
+    const interval = setInterval(() => {
+      handleSyncAccount(selectedAccountId)
+    }, 5 * 60 * 1000) // 5 minutes
+    
+    return () => clearInterval(interval)
+  }, [isLiveMode, canSync, selectedAccountId])
 
   // Auto-sync when coming from sidebar account selection
   useEffect(() => {
@@ -262,6 +275,7 @@ export default function DashboardPage() {
       
       if (response.ok) {
         await loadData()
+        setLastSyncTime(new Date())
       } else {
         alert(result.error || 'Sync failed')
       }
@@ -278,13 +292,22 @@ export default function DashboardPage() {
     await handleSyncAccount(selectedAccountId)
   }
 
+  // Format time since last sync
+  const getTimeSinceSync = () => {
+    if (!lastSyncTime) return null
+    const seconds = Math.floor((Date.now() - lastSyncTime.getTime()) / 1000)
+    if (seconds < 60) return 'just now'
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    return `${hours}h ago`
+  }
+
   const handleDatePresetChange = (preset: string) => {
+    setDatePreset(preset)
     if (preset === 'custom') {
       setShowCustomDateInputs(true)
-      // Don't close dropdown yet - let user pick dates
     } else {
-      setDatePreset(preset)
-      setShowDatePicker(false)
       setShowCustomDateInputs(false)
     }
   }
@@ -458,16 +481,41 @@ export default function DashboardPage() {
                 />
               </div>
 
-              <button 
-                onClick={handleClearData}
-                className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {/* Live Toggle */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
+                <button
+                  onClick={() => canSync && selectedAccountId && setIsLiveMode(!isLiveMode)}
+                  disabled={!canSync || !selectedAccountId}
+                  className={`relative w-10 h-5 rounded-full transition-all ${
+                    !canSync || !selectedAccountId
+                      ? 'bg-zinc-800 cursor-not-allowed'
+                      : isLiveMode
+                        ? 'bg-green-500'
+                        : 'bg-zinc-700 hover:bg-zinc-600'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+                      isLiveMode ? 'left-5 bg-white' : 'left-0.5 bg-zinc-400'
+                    }`}
+                  />
+                </button>
+                <span className={`text-sm ${
+                  !canSync || !selectedAccountId ? 'text-zinc-600' : isLiveMode ? 'text-green-400' : 'text-zinc-400'
+                }`}>
+                  Live
+                </span>
+                {isLiveMode && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  </span>
+                )}
+              </div>
             </>
           )}
           
-          {/* Sync Button - greyed for Free/Starter */}
+          {/* Sync Button */}
           <button 
             onClick={handleSync}
             disabled={!canSync || isSyncing || !selectedAccountId}
@@ -480,6 +528,9 @@ export default function DashboardPage() {
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
             {isSyncing ? 'Syncing...' : 'Sync'}
+            {lastSyncTime && !isSyncing && (
+              <span className="text-xs text-zinc-500">{getTimeSinceSync()}</span>
+            )}
           </button>
           
           <button 
@@ -489,6 +540,16 @@ export default function DashboardPage() {
             <Upload className="w-4 h-4" />
             Upload CSV
           </button>
+
+          {/* Delete Button - far right */}
+          {data.length > 0 && (
+            <button 
+              onClick={handleClearData}
+              className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
