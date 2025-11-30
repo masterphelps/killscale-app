@@ -449,9 +449,9 @@ export default function DashboardPage() {
     const campaigns = new Set(data.map(r => r.campaign_name))
     const adsets = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}`))
     const ads = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
-    const accounts = dashboardAccounts?.length || 0
+    const accounts = connection?.ad_accounts?.filter(a => a.in_dashboard)?.length || 0
     return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
-  }, [data, dashboardAccounts])
+  }, [data, connection])
   
   return (
     <>
