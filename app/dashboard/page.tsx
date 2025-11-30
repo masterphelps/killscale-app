@@ -33,7 +33,7 @@ const DEFAULT_RULES: Rules = {
   updated_at: ''
 }
 
-type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'off'
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'paused'
 
 const formatPercent = (value: number) => {
   if (!isFinite(value) || isNaN(value)) return '0.00%'
@@ -436,7 +436,7 @@ export default function DashboardPage() {
     { value: 'watch', label: 'Watch' },
     { value: 'kill', label: 'Kill' },
     { value: 'learn', label: 'Learn' },
-    { value: 'off', label: 'Off' },
+    { value: 'paused', label: 'Paused' },
   ]
 
   const currentDatePreset = DATE_PRESETS.find(p => p.value === datePreset)

@@ -112,23 +112,31 @@ export type AccountTotal = {
   campaign_count: number
 }
 
-// Verdict calculation
-export type Verdict = 'scale' | 'watch' | 'kill' | 'learn' | 'off'
+// Verdict calculation - pure performance based
+export type Verdict = 'scale' | 'watch' | 'kill' | 'learn'
 
 export function calculateVerdict(
   spend: number,
   roas: number,
-  rules: Rules,
-  status?: string | null
+  rules: Rules
 ): Verdict {
-  // Only check status for API data (status will be set)
-  // CSV data won't have status, so skip this check
-  if (status && status !== 'ACTIVE') return 'off'
-  
   if (spend < rules.learning_spend) return 'learn'
   if (roas >= rules.scale_roas) return 'scale'
   if (roas >= rules.min_roas) return 'watch'
   return 'kill'
+}
+
+// Check if entity is active (for status indicator)
+export function isEntityActive(status?: string | null): boolean {
+  if (!status) return true // CSV data - assume active
+  return status === 'ACTIVE'
+}
+
+export function getStatusLabel(status?: string | null): string | null {
+  if (!status || status === 'ACTIVE') return null
+  if (status === 'PAUSED' || status === 'ADSET_PAUSED' || status === 'CAMPAIGN_PAUSED') return 'Paused'
+  if (status === 'DELETED' || status === 'ARCHIVED') return 'Deleted'
+  return status
 }
 
 export function getVerdictDisplay(verdict: Verdict): { label: string; icon: string } {
@@ -137,6 +145,5 @@ export function getVerdictDisplay(verdict: Verdict): { label: string; icon: stri
     case 'watch': return { label: 'Watch', icon: '↔' }
     case 'kill': return { label: 'Kill', icon: '↓' }
     case 'learn': return { label: 'Learn', icon: '○' }
-    case 'off': return { label: 'Off', icon: '⏸' }
   }
 }

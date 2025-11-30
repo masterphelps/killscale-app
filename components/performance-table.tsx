@@ -4,7 +4,7 @@ import { useState, useMemo, useRef } from 'react'
 import { Minus, Plus, Check, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
-import { Rules, calculateVerdict, Verdict } from '@/lib/supabase'
+import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
 
 type AdRow = {
   campaign_name: string
@@ -21,7 +21,7 @@ type AdRow = {
   campaign_status?: string | null  // Campaign's own status
 }
 
-type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'off'
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'paused'
 
 type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
 type SortDirection = 'asc' | 'desc'
@@ -76,11 +76,10 @@ function calculateMetrics(node: { spend: number; clicks: number; impressions: nu
 }
 
 const verdictOrder: Record<Verdict, number> = {
-  'scale': 5,
-  'watch': 4,
-  'learn': 3,
-  'kill': 2,
-  'off': 1,
+  'scale': 4,
+  'watch': 3,
+  'learn': 2,
+  'kill': 1,
 }
 
 function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
@@ -150,7 +149,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       roas: row.spend > 0 ? row.revenue / row.spend : 0,
       status: row.status,
       ...metrics,
-      verdict: calculateVerdict(row.spend, row.spend > 0 ? row.revenue / row.spend : 0, rules, row.status)
+      verdict: calculateVerdict(row.spend, row.spend > 0 ? row.revenue / row.spend : 0, rules)
     }
     adset.children?.push(ad)
     
@@ -181,7 +180,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         }
       }
       
-      adset.verdict = calculateVerdict(adset.spend, adset.roas, rules, adset.status)
+      adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
       
       campaign.impressions += adset.impressions
       campaign.clicks += adset.clicks
@@ -207,7 +206,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
     }
     
-    campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules, campaign.status)
+    campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules)
   })
   
   return Object.values(campaigns)
@@ -268,6 +267,22 @@ export function PerformanceTable({
   const filteredHierarchy = useMemo(() => {
     if (verdictFilter === 'all') return hierarchy
     
+    // 'paused' filter checks status, not verdict
+    if (verdictFilter === 'paused') {
+      return hierarchy
+        .map(campaign => ({
+          ...campaign,
+          children: campaign.children
+            ?.map(adset => ({
+              ...adset,
+              children: adset.children?.filter(ad => !isEntityActive(ad.status))
+            }))
+            .filter(adset => adset.children && adset.children.length > 0)
+        }))
+        .filter(campaign => campaign.children && campaign.children.length > 0)
+    }
+    
+    // Other filters check verdict
     return hierarchy
       .map(campaign => ({
         ...campaign,
@@ -503,8 +518,8 @@ export function PerformanceTable({
           <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
-          <div className="w-20 flex justify-center px-2 flex-shrink-0">
-            <VerdictBadge verdict={node.verdict} size="sm" />
+          <div className="w-28 flex justify-center px-2 flex-shrink-0">
+            <VerdictBadge verdict={node.verdict} status={node.status} size="sm" />
           </div>
         </div>
       </div>
@@ -560,7 +575,7 @@ export function PerformanceTable({
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('impressions')}>
           Impr <SortIcon field="impressions" />
         </div>
-        <div className="w-20 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
+        <div className="w-28 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
           Verdict <SortIcon field="verdict" />
         </div>
       </div>
@@ -600,7 +615,7 @@ export function PerformanceTable({
         <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.convRate)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.clicks)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
-        <div className="w-20 flex justify-center px-2 flex-shrink-0">
+        <div className="w-28 flex justify-center px-2 flex-shrink-0">
           <VerdictBadge verdict={totals.verdict} size="sm" />
         </div>
       </div>
