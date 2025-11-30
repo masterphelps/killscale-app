@@ -16,9 +16,10 @@ type AdRow = {
   purchases: number
   revenue: number
   roas: number
+  status?: string | null  // null for CSV, set for API data
 }
 
-type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'off'
 
 type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
 type SortDirection = 'asc' | 'desc'
@@ -48,6 +49,7 @@ type HierarchyNode = {
   ctr: number
   cpa: number
   convRate: number
+  status?: string | null  // null for CSV, set for API data
   verdict: Verdict
   children?: HierarchyNode[]
 }
@@ -72,10 +74,11 @@ function calculateMetrics(node: { spend: number; clicks: number; impressions: nu
 }
 
 const verdictOrder: Record<Verdict, number> = {
-  'scale': 4,
-  'watch': 3,
-  'learn': 2,
-  'kill': 1,
+  'scale': 5,
+  'watch': 4,
+  'learn': 3,
+  'kill': 2,
+  'off': 1,
 }
 
 function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
@@ -133,8 +136,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       purchases: row.purchases,
       revenue: row.revenue,
       roas: row.spend > 0 ? row.revenue / row.spend : 0,
+      status: row.status,
       ...metrics,
-      verdict: calculateVerdict(row.spend, row.spend > 0 ? row.revenue / row.spend : 0, rules)
+      verdict: calculateVerdict(row.spend, row.spend > 0 ? row.revenue / row.spend : 0, rules, row.status)
     }
     adset.children?.push(ad)
     
@@ -150,7 +154,18 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       adset.roas = adset.spend > 0 ? adset.revenue / adset.spend : 0
       const adsetMetrics = calculateMetrics(adset)
       Object.assign(adset, adsetMetrics)
-      adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
+      
+      // Only set status if children have status (API data)
+      // CSV data won't have status on children
+      const childStatuses = adset.children?.map(ad => ad.status).filter(s => s !== undefined && s !== null)
+      if (childStatuses && childStatuses.length > 0) {
+        // Adset is active if ANY child ad is active
+        const hasActiveAd = childStatuses.some(s => s === 'ACTIVE')
+        adset.status = hasActiveAd ? 'ACTIVE' : 'PAUSED'
+      }
+      // If no child has status (CSV data), leave adset.status as undefined
+      
+      adset.verdict = calculateVerdict(adset.spend, adset.roas, rules, adset.status)
       
       campaign.impressions += adset.impressions
       campaign.clicks += adset.clicks
@@ -162,7 +177,17 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     campaign.roas = campaign.spend > 0 ? campaign.revenue / campaign.spend : 0
     const campaignMetrics = calculateMetrics(campaign)
     Object.assign(campaign, campaignMetrics)
-    campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules)
+    
+    // Only set status if children have status (API data)
+    const childStatuses = campaign.children?.map(adset => adset.status).filter(s => s !== undefined && s !== null)
+    if (childStatuses && childStatuses.length > 0) {
+      // Campaign is active if ANY child adset is active
+      const hasActiveAdset = childStatuses.some(s => s === 'ACTIVE')
+      campaign.status = hasActiveAdset ? 'ACTIVE' : 'PAUSED'
+    }
+    // If no child has status (CSV data), leave campaign.status as undefined
+    
+    campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules, campaign.status)
   })
   
   return Object.values(campaigns)

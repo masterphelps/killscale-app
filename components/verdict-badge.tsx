@@ -20,6 +20,7 @@ export function VerdictBadge({ verdict, size = 'md' }: VerdictBadgeProps) {
         'bg-verdict-watch-bg text-verdict-watch border-verdict-watch/30': verdict === 'watch',
         'bg-verdict-kill-bg text-verdict-kill border-verdict-kill/30': verdict === 'kill',
         'bg-verdict-learn-bg text-verdict-learn border-verdict-learn/30': verdict === 'learn',
+        'bg-zinc-800/50 text-zinc-500 border-zinc-700/30': verdict === 'off',
       }
     )}>
       <span>{icon}</span>

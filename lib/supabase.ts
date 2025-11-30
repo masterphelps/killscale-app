@@ -113,13 +113,18 @@ export type AccountTotal = {
 }
 
 // Verdict calculation
-export type Verdict = 'scale' | 'watch' | 'kill' | 'learn'
+export type Verdict = 'scale' | 'watch' | 'kill' | 'learn' | 'off'
 
 export function calculateVerdict(
   spend: number,
   roas: number,
-  rules: Rules
+  rules: Rules,
+  status?: string | null
 ): Verdict {
+  // Only check status for API data (status will be set)
+  // CSV data won't have status, so skip this check
+  if (status && status !== 'ACTIVE') return 'off'
+  
   if (spend < rules.learning_spend) return 'learn'
   if (roas >= rules.scale_roas) return 'scale'
   if (roas >= rules.min_roas) return 'watch'
@@ -132,5 +137,6 @@ export function getVerdictDisplay(verdict: Verdict): { label: string; icon: stri
     case 'watch': return { label: 'Watch', icon: '↔' }
     case 'kill': return { label: 'Kill', icon: '↓' }
     case 'learn': return { label: 'Learn', icon: '○' }
+    case 'off': return { label: 'Off', icon: '⏸' }
   }
 }

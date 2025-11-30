@@ -8,8 +8,11 @@ const supabase = createClient(
 
 type MetaInsight = {
   campaign_name: string
+  campaign_id: string
   adset_name: string
+  adset_id: string
   ad_name: string
+  ad_id: string
   impressions: string
   clicks: string
   spend: string
@@ -17,6 +20,11 @@ type MetaInsight = {
   action_values?: { action_type: string; value: string }[]
   date_start: string
   date_stop: string
+}
+
+type AdStatus = {
+  id: string
+  effective_status: string
 }
 
 export async function POST(request: NextRequest) {
@@ -48,8 +56,11 @@ export async function POST(request: NextRequest) {
     // Fetch ad insights from Meta Marketing API
     const fields = [
       'campaign_name',
+      'campaign_id',
       'adset_name', 
+      'adset_id',
       'ad_name',
+      'ad_id',
       'impressions',
       'clicks',
       'spend',
@@ -86,6 +97,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: data.error.message }, { status: 400 })
     }
     
+    // Get unique ad IDs to fetch their status
+    const adIds = [...new Set((data.data || []).map((i: MetaInsight) => i.ad_id))]
+    
+    // Fetch ad statuses in batches
+    const statusMap: Record<string, string> = {}
+    
+    if (adIds.length > 0) {
+      // Fetch ads with their effective status (includes campaign/adset status)
+      const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
+      adsUrl.searchParams.set('access_token', accessToken)
+      adsUrl.searchParams.set('fields', 'id,effective_status')
+      adsUrl.searchParams.set('limit', '500')
+      
+      const adsResponse = await fetch(adsUrl.toString())
+      const adsData = await adsResponse.json()
+      
+      if (adsData.data) {
+        adsData.data.forEach((ad: AdStatus) => {
+          statusMap[ad.id] = ad.effective_status
+        })
+      }
+    }
+    
     // Transform Meta data to our format
     const adData = (data.data || []).map((insight: MetaInsight) => {
       // Find purchase actions
@@ -96,6 +130,10 @@ export async function POST(request: NextRequest) {
         a.action_type === 'purchase' || a.action_type === 'omni_purchase'
       )
       
+      // Get status - effective_status includes parent (campaign/adset) status
+      // ACTIVE, PAUSED, DELETED, ARCHIVED, IN_PROCESS, WITH_ISSUES, etc.
+      const status = statusMap[insight.ad_id] || 'UNKNOWN'
+      
       return {
         user_id: userId,
         source: 'meta_api',
@@ -105,6 +143,8 @@ export async function POST(request: NextRequest) {
         campaign_name: insight.campaign_name,
         adset_name: insight.adset_name,
         ad_name: insight.ad_name,
+        ad_id: insight.ad_id,
+        status: status,
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,

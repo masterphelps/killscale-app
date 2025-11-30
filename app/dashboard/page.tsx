@@ -32,7 +32,7 @@ const DEFAULT_RULES: Rules = {
   updated_at: ''
 }
 
-type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'off'
 
 const DATE_PRESETS = [
   { value: 'maximum', label: 'Maximum' },
@@ -155,6 +155,7 @@ export default function DashboardPage() {
         spend: parseFloat(row.spend),
         purchases: row.purchases,
         revenue: parseFloat(row.revenue),
+        status: row.status, // Will be null for CSV, set for API data
       }))
       setData(rows)
       
@@ -210,6 +211,7 @@ export default function DashboardPage() {
       spend: row.spend,
       purchases: row.purchases,
       revenue: row.revenue,
+      // CSV data doesn't have status - leave as null/default
     }))
 
     const { error } = await supabase
@@ -420,6 +422,7 @@ export default function DashboardPage() {
     { value: 'watch', label: 'Watch' },
     { value: 'kill', label: 'Kill' },
     { value: 'learn', label: 'Learn' },
+    { value: 'off', label: 'Off' },
   ]
 
   const currentDatePreset = DATE_PRESETS.find(p => p.value === datePreset)
