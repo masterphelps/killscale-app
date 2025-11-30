@@ -88,6 +88,15 @@ export async function GET(request: NextRequest) {
     // Store connection in database
     const expiresAt = new Date(Date.now() + (finalExpiry * 1000)).toISOString()
     
+    // Add in_dashboard field to each account (first one defaults to true)
+    const accountsWithDashboard = (adAccountsData.data || []).map((account: any, index: number) => ({
+      ...account,
+      in_dashboard: index === 0 // First account auto-added to dashboard
+    }))
+    
+    // Set the first account as selected
+    const firstAccountId = accountsWithDashboard.length > 0 ? accountsWithDashboard[0].id : null
+    
     // Upsert meta_connections record
     const { error: dbError } = await supabase
       .from('meta_connections')
@@ -97,7 +106,8 @@ export async function GET(request: NextRequest) {
         meta_user_name: profileData.name,
         access_token: finalToken,
         token_expires_at: expiresAt,
-        ad_accounts: adAccountsData.data || [],
+        ad_accounts: accountsWithDashboard,
+        selected_account_id: firstAccountId,
         connected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }, {

@@ -173,6 +173,7 @@ export default function DashboardPage() {
     
     setIsSaving(true)
     
+    // Delete all existing data
     await supabase
       .from('ad_data')
       .delete()
@@ -180,6 +181,7 @@ export default function DashboardPage() {
 
     const insertData = rows.map(row => ({
       user_id: user.id,
+      source: 'csv',  // Mark as CSV data
       date_start: row.date_start,
       date_end: row.date_end,
       campaign_name: row.campaign_name,
@@ -228,6 +230,12 @@ export default function DashboardPage() {
     setIsSyncing(true)
     
     try {
+      // Delete ALL existing data (CSV and API) before syncing
+      await supabase
+        .from('ad_data')
+        .delete()
+        .eq('user_id', user.id)
+      
       const response = await fetch('/api/meta/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

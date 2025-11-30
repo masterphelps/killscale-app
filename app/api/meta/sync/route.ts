@@ -107,13 +107,11 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Delete old synced data for this account
+    // Delete ALL existing data for this user (CSV and API)
     await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', userId)
-      .eq('source', 'meta_api')
-      .eq('ad_account_id', adAccountId)
     
     // Insert new data
     const { error: insertError } = await supabase

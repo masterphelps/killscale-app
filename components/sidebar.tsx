@@ -11,7 +11,8 @@ import {
   Link as LinkIcon,
   ChevronDown,
   LogOut,
-  Check
+  Check,
+  FileSpreadsheet
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -36,6 +37,8 @@ type MetaConnection = {
   selected_account_id: string | null
 }
 
+type DataSource = 'none' | 'csv' | 'meta_api'
+
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
@@ -50,13 +53,34 @@ export function Sidebar() {
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [dataSource, setDataSource] = useState<DataSource>('none')
+  const [currentAccountId, setCurrentAccountId] = useState<string | null>(null)
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
   
-  // Load Meta connection data
+  // Load Meta connection data and check current data source
   useEffect(() => {
     if (user) {
       loadConnection()
+      checkDataSource()
+    }
+  }, [user])
+
+  // Listen for storage events to refresh when data changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      checkDataSource()
+    }
+    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener('focus', handleStorageChange)
+    
+    // Also check periodically for changes (handles same-tab updates)
+    const interval = setInterval(checkDataSource, 2000)
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('focus', handleStorageChange)
+      clearInterval(interval)
     }
   }, [user])
 
@@ -75,10 +99,46 @@ export function Sidebar() {
     }
   }
 
-  // Get dashboard accounts only
-  const dashboardAccounts = connection?.ad_accounts?.filter(a => a.in_dashboard) || []
-  const selectedAccount = dashboardAccounts.find(a => a.id === selectedAccountId) || dashboardAccounts[0]
-  const hasMultipleAccounts = dashboardAccounts.length > 1
+  const checkDataSource = async () => {
+    if (!user) return
+    
+    // Check what type of data exists
+    const { data, error } = await supabase
+      .from('ad_data')
+      .select('source, ad_account_id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single()
+    
+    if (error || !data) {
+      setDataSource('none')
+      setCurrentAccountId(null)
+    } else if (data.source === 'meta_api') {
+      setDataSource('meta_api')
+      setCurrentAccountId(data.ad_account_id)
+    } else {
+      setDataSource('csv')
+      setCurrentAccountId(null)
+    }
+  }
+
+  // Get dashboard accounts - if none have in_dashboard set, show all accounts
+  const allAccounts = connection?.ad_accounts || []
+  const dashboardAccounts = allAccounts.filter(a => a.in_dashboard)
+  
+  // Fallback: if no accounts have in_dashboard set yet, use all accounts
+  const displayAccounts = dashboardAccounts.length > 0 ? dashboardAccounts : allAccounts
+  const selectedAccount = displayAccounts.find(a => a.id === selectedAccountId) || displayAccounts[0]
+  const currentMetaAccount = displayAccounts.find(a => a.id === currentAccountId)
+  const hasMultipleAccounts = displayAccounts.length > 1
+
+  // Determine what to show in the account selector
+  const getDisplayName = () => {
+    if (dataSource === 'none') return 'No data'
+    if (dataSource === 'csv') return 'CSV Data'
+    if (dataSource === 'meta_api' && currentMetaAccount) return currentMetaAccount.name
+    return 'No account selected'
+  }
 
   const handleSelectAccount = async (accountId: string) => {
     if (!user) return
@@ -117,19 +177,21 @@ export function Sidebar() {
       {/* Account Selector */}
       <div className="relative mb-6">
         <button
-          onClick={() => hasMultipleAccounts && setShowAccountDropdown(!showAccountDropdown)}
+          onClick={() => (hasMultipleAccounts || dataSource === 'csv') && setShowAccountDropdown(!showAccountDropdown)}
           className={cn(
             "w-full bg-bg-card border border-border rounded-lg p-3 text-left transition-colors",
-            hasMultipleAccounts && "hover:border-zinc-600 cursor-pointer",
-            !hasMultipleAccounts && "cursor-default"
+            (hasMultipleAccounts || displayAccounts.length > 0) && "hover:border-zinc-600 cursor-pointer",
           )}
         >
-          <div className="text-xs text-zinc-500 mb-1">Ad Account</div>
+          <div className="text-xs text-zinc-500 mb-1">
+            {dataSource === 'csv' ? 'Data Source' : 'Ad Account'}
+          </div>
           <div className="flex items-center justify-between text-sm font-medium">
-            <span className="truncate">
-              {selectedAccount?.name || 'No account selected'}
+            <span className="truncate flex items-center gap-2">
+              {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
+              {getDisplayName()}
             </span>
-            {hasMultipleAccounts && (
+            {(hasMultipleAccounts || displayAccounts.length > 0) && (
               <ChevronDown className={cn(
                 "w-4 h-4 text-zinc-500 transition-transform",
                 showAccountDropdown && "rotate-180"
@@ -139,28 +201,38 @@ export function Sidebar() {
         </button>
         
         {/* Dropdown */}
-        {showAccountDropdown && hasMultipleAccounts && (
+        {showAccountDropdown && (
           <>
             <div 
               className="fixed inset-0 z-10" 
               onClick={() => setShowAccountDropdown(false)} 
             />
             <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden">
-              {dashboardAccounts.map((account) => (
+              {/* Show CSV option if currently viewing CSV */}
+              {dataSource === 'csv' && (
+                <div className="px-3 py-2 text-sm text-zinc-400 bg-accent/10 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4" />
+                  CSV Data (current)
+                </div>
+              )}
+              
+              {/* Show Meta accounts */}
+              {displayAccounts.map((account) => (
                 <button
                   key={account.id}
                   onClick={() => handleSelectAccount(account.id)}
                   className={cn(
                     "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                    account.id === selectedAccountId && "bg-accent/10"
+                    dataSource === 'meta_api' && account.id === currentAccountId && "bg-accent/10"
                   )}
                 >
                   <span className="truncate">{account.name}</span>
-                  {account.id === selectedAccountId && (
+                  {dataSource === 'meta_api' && account.id === currentAccountId && (
                     <Check className="w-4 h-4 text-accent flex-shrink-0" />
                   )}
                 </button>
               ))}
+              
               <Link
                 href="/dashboard/connect"
                 className="w-full px-3 py-2 text-left text-sm text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors border-t border-border flex items-center gap-2"
@@ -173,7 +245,7 @@ export function Sidebar() {
         )}
         
         {/* No accounts tooltip */}
-        {!selectedAccount && (
+        {dataSource === 'none' && displayAccounts.length === 0 && (
           <Link 
             href="/dashboard/connect"
             className="block mt-2 text-xs text-accent hover:text-accent-hover text-center"
