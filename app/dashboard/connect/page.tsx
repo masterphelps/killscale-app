@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { createClient } from '@supabase/supabase-js'
-import { Lock, Link2, Unlink, RefreshCw, CheckCircle, AlertCircle, Zap } from 'lucide-react'
+import { Lock, Link2, Unlink, RefreshCw, CheckCircle, AlertCircle, Zap, LayoutDashboard, Calendar } from 'lucide-react'
 import Link from 'next/link'
 
 const supabase = createClient(
@@ -18,15 +18,18 @@ type AdAccount = {
   name: string
   account_status: number
   currency: string
+  in_dashboard?: boolean
 }
 
 type MetaConnection = {
   id: string
   meta_user_id: string
   meta_user_name: string
+  access_token: string
   ad_accounts: AdAccount[]
   connected_at: string
   last_sync_at: string | null
+  selected_account_id: string | null
 }
 
 const DATE_PRESETS = [
@@ -39,18 +42,26 @@ const DATE_PRESETS = [
   { value: 'last_month', label: 'Last Month' },
 ]
 
+const ACCOUNT_LIMITS: Record<string, number> = {
+  'Free': 1,
+  'Starter': 1,
+  'Pro': 2,
+  'Agency': 100,
+}
+
 export default function ConnectPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
   const searchParams = useSearchParams()
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [selectedAccount, setSelectedAccount] = useState<string>('')
+  const [syncing, setSyncing] = useState<string | null>(null)
   const [datePreset, setDatePreset] = useState('last_30d')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
   const isPro = plan === 'Pro' || plan === 'Agency'
+  const accountLimit = ACCOUNT_LIMITS[plan] || 1
+  const dashboardAccountCount = connection?.ad_accounts?.filter(a => a.in_dashboard).length || 0
   
   useEffect(() => {
     if (user) {
@@ -91,9 +102,6 @@ export default function ConnectPage() {
     
     if (data && !error) {
       setConnection(data)
-      if (data.ad_accounts?.length > 0) {
-        setSelectedAccount(data.ad_accounts[0].id)
-      }
     }
     setLoading(false)
   }
@@ -104,7 +112,7 @@ export default function ConnectPage() {
   }
   
   const handleDisconnect = async () => {
-    if (!user || !confirm('Disconnect your Meta account? This will remove synced ad data.')) return
+    if (!user || !confirm('Disconnect your Meta account? This will remove all synced ad data.')) return
     
     await supabase
       .from('meta_connections')
@@ -121,10 +129,60 @@ export default function ConnectPage() {
     setMessage({ type: 'success', text: 'Meta account disconnected.' })
   }
   
-  const handleSync = async () => {
-    if (!user || !selectedAccount) return
+  const handleToggleDashboard = async (accountId: string) => {
+    if (!user || !connection) return
     
-    setSyncing(true)
+    const account = connection.ad_accounts.find(a => a.id === accountId)
+    if (!account) return
+    
+    const isCurrentlyInDashboard = account.in_dashboard
+    
+    // Check limit when adding
+    if (!isCurrentlyInDashboard && dashboardAccountCount >= accountLimit) {
+      setMessage({ 
+        type: 'error', 
+        text: `${plan} plan is limited to ${accountLimit} dashboard account${accountLimit > 1 ? 's' : ''}. Upgrade to add more.` 
+      })
+      return
+    }
+    
+    // Update the ad_accounts array
+    const updatedAccounts = connection.ad_accounts.map(a => 
+      a.id === accountId ? { ...a, in_dashboard: !isCurrentlyInDashboard } : a
+    )
+    
+    // If adding first account, also set it as selected
+    const newSelectedId = !isCurrentlyInDashboard && dashboardAccountCount === 0 
+      ? accountId 
+      : connection.selected_account_id
+    
+    const { error } = await supabase
+      .from('meta_connections')
+      .update({ 
+        ad_accounts: updatedAccounts,
+        selected_account_id: newSelectedId
+      })
+      .eq('user_id', user.id)
+    
+    if (!error) {
+      setConnection({
+        ...connection,
+        ad_accounts: updatedAccounts,
+        selected_account_id: newSelectedId
+      })
+      setMessage({ 
+        type: 'success', 
+        text: isCurrentlyInDashboard 
+          ? `${account.name} removed from dashboard` 
+          : `${account.name} added to dashboard` 
+      })
+    }
+  }
+  
+  const handleSync = async (accountId: string) => {
+    if (!user) return
+    
+    setSyncing(accountId)
     setMessage(null)
     
     try {
@@ -133,7 +191,7 @@ export default function ConnectPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          adAccountId: selectedAccount,
+          adAccountId: accountId,
           datePreset,
         }),
       })
@@ -150,7 +208,7 @@ export default function ConnectPage() {
       setMessage({ type: 'error', text: 'Sync failed. Please try again.' })
     }
     
-    setSyncing(false)
+    setSyncing(null)
   }
   
   if (loading) {
@@ -161,44 +219,14 @@ export default function ConnectPage() {
     )
   }
   
-  // Gate for non-Pro users
-  if (!isPro) {
-    return (
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold mb-1">Connect Meta</h1>
-            <p className="text-zinc-500">Link your Meta Ads account for automatic data sync</p>
-          </div>
-        </div>
-        
-        <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
-          <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-8 h-8 text-accent" />
-          </div>
-          <h2 className="text-xl font-semibold mb-2">Pro Feature</h2>
-          <p className="text-zinc-400 mb-6 max-w-md mx-auto">
-            Meta API integration is available on Pro and Agency plans. 
-            Connect your ad accounts for automatic daily syncing - no more CSV uploads!
-          </p>
-          <Link
-            href="/pricing"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-accent hover:bg-accent-hover text-white rounded-lg font-semibold transition-colors"
-          >
-            <Zap className="w-4 h-4" />
-            Upgrade to Pro
-          </Link>
-        </div>
-      </div>
-    )
-  }
+  const canConnect = isPro
   
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold mb-1">Connect Meta</h1>
-          <p className="text-zinc-500">Link your Meta Ads account for automatic data sync</p>
+          <p className="text-zinc-500">Link your Meta Ads accounts for automatic data sync</p>
         </div>
       </div>
       
@@ -243,62 +271,69 @@ export default function ConnectPage() {
                   <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                 </svg>
               </div>
-              <div>
+              <div className="flex-1">
                 <div className="font-medium">{connection.meta_user_name}</div>
                 <div className="text-sm text-zinc-500">
                   Connected {new Date(connection.connected_at).toLocaleDateString()}
                 </div>
               </div>
+              <button
+                onClick={handleDisconnect}
+                className="flex items-center gap-2 text-sm text-zinc-400 hover:text-red-400 transition-colors"
+              >
+                <Unlink className="w-4 h-4" />
+                Disconnect
+              </button>
             </div>
-            
-            <button
-              onClick={handleDisconnect}
-              className="flex items-center gap-2 text-sm text-zinc-400 hover:text-red-400 transition-colors"
-            >
-              <Unlink className="w-4 h-4" />
-              Disconnect account
-            </button>
           </div>
         ) : (
-          <button
-            onClick={handleConnect}
-            className="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
-          >
-            <Link2 className="w-5 h-5" />
-            Connect Meta Account
-          </button>
+          <>
+            {canConnect ? (
+              <button
+                onClick={handleConnect}
+                className="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+              >
+                <Link2 className="w-5 h-5" />
+                Connect Meta Account
+              </button>
+            ) : (
+              <div className="text-center py-4">
+                <div className="flex items-center justify-center gap-2 text-zinc-400 mb-3">
+                  <Lock className="w-5 h-5" />
+                  <span>Meta API requires Pro plan</span>
+                </div>
+                <Link
+                  href="/pricing"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
+                >
+                  <Zap className="w-4 h-4" />
+                  Upgrade to Pro
+                </Link>
+              </div>
+            )}
+          </>
         )}
       </div>
       
-      {/* Sync Controls */}
+      {/* Ad Accounts List */}
       {connection && connection.ad_accounts?.length > 0 && (
-        <div className="bg-bg-card border border-border rounded-xl p-6">
-          <h2 className="font-semibold mb-4">Sync Ad Data</h2>
-          
-          <div className="space-y-4">
-            {/* Ad Account Selector */}
-            <div>
-              <label className="block text-sm text-zinc-400 mb-2">Ad Account</label>
-              <select
-                value={selectedAccount}
-                onChange={(e) => setSelectedAccount(e.target.value)}
-                className="w-full px-4 py-2 bg-bg-dark border border-border rounded-lg text-white focus:border-accent focus:outline-none"
-              >
-                {connection.ad_accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.id.replace('act_', '')})
-                  </option>
-                ))}
-              </select>
+        <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold">Ad Accounts</h2>
+            <div className="text-sm text-zinc-500">
+              {dashboardAccountCount} / {accountLimit} in dashboard
             </div>
-            
-            {/* Date Range Selector */}
-            <div>
-              <label className="block text-sm text-zinc-400 mb-2">Date Range</label>
+          </div>
+          
+          {/* Date preset selector for syncing */}
+          <div className="mb-4 p-3 bg-bg-dark rounded-lg">
+            <div className="flex items-center gap-3">
+              <Calendar className="w-4 h-4 text-zinc-400" />
+              <label className="text-sm text-zinc-400">Sync date range:</label>
               <select
                 value={datePreset}
                 onChange={(e) => setDatePreset(e.target.value)}
-                className="w-full px-4 py-2 bg-bg-dark border border-border rounded-lg text-white focus:border-accent focus:outline-none"
+                className="flex-1 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-white focus:border-accent focus:outline-none"
               >
                 {DATE_PRESETS.map((preset) => (
                   <option key={preset.value} value={preset.value}>
@@ -307,26 +342,94 @@ export default function ConnectPage() {
                 ))}
               </select>
             </div>
-            
-            {/* Last Sync Info */}
-            {connection.last_sync_at && (
-              <div className="text-sm text-zinc-500">
-                Last synced: {new Date(connection.last_sync_at).toLocaleString()}
-              </div>
-            )}
-            
-            {/* Sync Button */}
-            <button
-              onClick={handleSync}
-              disabled={syncing || !selectedAccount}
-              className="flex items-center justify-center gap-2 w-full py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded-lg font-semibold transition-colors"
-            >
-              <RefreshCw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync Now'}
-            </button>
           </div>
+          
+          <div className="space-y-3">
+            {connection.ad_accounts.map((account) => {
+              const isInDashboard = account.in_dashboard
+              const isSyncing = syncing === account.id
+              const canAddToDashboard = isInDashboard || dashboardAccountCount < accountLimit
+              
+              return (
+                <div 
+                  key={account.id}
+                  className={`p-4 rounded-lg border transition-colors ${
+                    isInDashboard 
+                      ? 'bg-accent/5 border-accent/30' 
+                      : 'bg-bg-dark border-border'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium flex items-center gap-2">
+                        {account.name}
+                        {isInDashboard && (
+                          <span className="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded">
+                            In Dashboard
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-zinc-500">
+                        {account.id.replace('act_', '')} • {account.currency}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {/* Sync Button */}
+                      <button
+                        onClick={() => handleSync(account.id)}
+                        disabled={isSyncing}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-white hover:border-zinc-500 disabled:opacity-50 transition-colors"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                        {isSyncing ? 'Syncing...' : 'Sync'}
+                      </button>
+                      
+                      {/* Add to Dashboard Toggle */}
+                      <button
+                        onClick={() => handleToggleDashboard(account.id)}
+                        disabled={!canAddToDashboard && !isInDashboard}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                          isInDashboard
+                            ? 'bg-accent text-white hover:bg-accent-hover'
+                            : canAddToDashboard
+                              ? 'bg-bg-card border border-border text-zinc-400 hover:text-white hover:border-zinc-500'
+                              : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+                        }`}
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        {isInDashboard ? 'In Dashboard' : 'Add to Dashboard'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          
+          {/* Limit warning */}
+          {dashboardAccountCount >= accountLimit && (
+            <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-amber-500">
+                <Lock className="w-4 h-4" />
+                Dashboard account limit reached
+              </div>
+              <Link
+                href="/pricing"
+                className="text-sm text-amber-500 hover:text-amber-400 font-medium"
+              >
+                Upgrade →
+              </Link>
+            </div>
+          )}
         </div>
       )}
+      
+      {/* Help text */}
+      <div className="text-sm text-zinc-500 space-y-2">
+        <p><strong>Sync:</strong> Pull the latest ad data for testing and review.</p>
+        <p><strong>Add to Dashboard:</strong> Include this account in your main dashboard view. This counts against your plan&apos;s account limit.</p>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Upload, Calendar, Lock, Trash2 } from 'lucide-react'
+import { Upload, Calendar, Lock, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
@@ -33,6 +33,16 @@ const DEFAULT_RULES: Rules = {
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
+const DATE_PRESETS = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'last_7d', label: 'Last 7 Days' },
+  { value: 'last_14d', label: 'Last 14 Days' },
+  { value: 'last_30d', label: 'Last 30 Days' },
+  { value: 'this_month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+]
+
 const formatPercent = (value: number) => {
   if (!isFinite(value) || isNaN(value)) return '0.00%'
   return value.toFixed(2) + '%'
@@ -58,23 +68,52 @@ const formatCPC = (spend: number, clicks: number) => {
   return formatCurrency(spend / clicks)
 }
 
+type MetaConnection = {
+  ad_accounts: { id: string; name: string; in_dashboard?: boolean }[]
+  selected_account_id: string | null
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
   const [showUpload, setShowUpload] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [datePreset, setDatePreset] = useState('last_30d')
+  const [connection, setConnection] = useState<MetaConnection | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
+  
+  const canSync = plan === 'Pro' || plan === 'Agency'
   
   useEffect(() => {
     if (user) {
       loadData()
       loadRules()
+      loadConnection()
     }
   }, [user])
+
+  const loadConnection = async () => {
+    if (!user) return
+    
+    const { data, error } = await supabase
+      .from('meta_connections')
+      .select('ad_accounts, selected_account_id')
+      .eq('user_id', user.id)
+      .single()
+    
+    if (data && !error) {
+      setConnection(data)
+    }
+  }
+
+  const selectedAccountId = connection?.selected_account_id || 
+    connection?.ad_accounts?.find(a => a.in_dashboard)?.id
 
   const loadData = async () => {
     if (!user) return
@@ -182,6 +221,41 @@ export default function DashboardPage() {
     setData([])
     setSelectedCampaigns(new Set())
   }
+
+  const handleSync = async () => {
+    if (!user || !selectedAccountId || !canSync) return
+    
+    setIsSyncing(true)
+    
+    try {
+      const response = await fetch('/api/meta/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: selectedAccountId,
+          datePreset,
+        }),
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        await loadData()
+      } else {
+        alert(result.error || 'Sync failed')
+      }
+    } catch (err) {
+      alert('Sync failed. Please try again.')
+    }
+    
+    setIsSyncing(false)
+  }
+
+  const handleDatePresetChange = (preset: string) => {
+    setDatePreset(preset)
+    setShowDatePicker(false)
+  }
   
   const userPlan = plan
   
@@ -266,10 +340,8 @@ export default function DashboardPage() {
 
   const handleSelectAll = () => {
     if (selectedCampaigns.size === visibleCampaigns.length) {
-      // All selected, so deselect all
       setSelectedCampaigns(new Set())
     } else {
-      // Some or none selected, so select all
       setSelectedCampaigns(new Set(visibleCampaigns))
     }
   }
@@ -292,6 +364,8 @@ export default function DashboardPage() {
     { value: 'kill', label: 'Kill' },
     { value: 'learn', label: 'Learn' },
   ]
+
+  const currentDatePreset = DATE_PRESETS.find(p => p.value === datePreset)
   
   return (
     <>
@@ -309,10 +383,39 @@ export default function DashboardPage() {
                 {totalCampaigns} campaign{totalCampaigns !== 1 ? 's' : ''}
               </div>
               
-              <button className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm hover:border-border-light transition-colors">
-                <Calendar className="w-4 h-4" />
-                {formatDateRange(dateRange.start, dateRange.end)}
-              </button>
+              {/* Date Picker Dropdown */}
+              <div className="relative">
+                <button 
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm hover:border-border-light transition-colors"
+                >
+                  <Calendar className="w-4 h-4" />
+                  {currentDatePreset?.label || formatDateRange(dateRange.start, dateRange.end)}
+                  <ChevronDown className="w-3 h-3 text-zinc-500" />
+                </button>
+                
+                {showDatePicker && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowDatePicker(false)} 
+                    />
+                    <div className="absolute right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden min-w-[160px]">
+                      {DATE_PRESETS.map((preset) => (
+                        <button
+                          key={preset.value}
+                          onClick={() => handleDatePresetChange(preset.value)}
+                          className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-hover transition-colors ${
+                            datePreset === preset.value ? 'bg-accent/10 text-accent' : 'text-zinc-300'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
 
               <button 
                 onClick={handleClearData}
@@ -322,6 +425,21 @@ export default function DashboardPage() {
               </button>
             </>
           )}
+          
+          {/* Sync Button - greyed for Free/Starter */}
+          <button 
+            onClick={handleSync}
+            disabled={!canSync || isSyncing || !selectedAccountId}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              canSync && selectedAccountId
+                ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
+                : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+            }`}
+            title={!canSync ? 'Sync requires Pro plan' : !selectedAccountId ? 'Connect an account first' : 'Sync from Meta'}
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync'}
+          </button>
           
           <button 
             onClick={() => setShowUpload(true)}

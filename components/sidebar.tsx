@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -10,11 +10,31 @@ import {
   Settings, 
   Link as LinkIcon,
   ChevronDown,
-  LogOut
+  LogOut,
+  Check
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+type AdAccount = {
+  id: string
+  name: string
+  account_status: number
+  currency: string
+  in_dashboard?: boolean
+}
+
+type MetaConnection = {
+  ad_accounts: AdAccount[]
+  selected_account_id: string | null
+}
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -27,10 +47,54 @@ export function Sidebar() {
   const pathname = usePathname()
   const { user, signOut } = useAuth()
   const { plan } = useSubscription()
-  const [showTooltip, setShowTooltip] = useState(false)
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false)
+  const [connection, setConnection] = useState<MetaConnection | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
-  const accountName = 'My Store'
+  
+  // Load Meta connection data
+  useEffect(() => {
+    if (user) {
+      loadConnection()
+    }
+  }, [user])
+
+  const loadConnection = async () => {
+    if (!user) return
+    
+    const { data, error } = await supabase
+      .from('meta_connections')
+      .select('ad_accounts, selected_account_id')
+      .eq('user_id', user.id)
+      .single()
+    
+    if (data && !error) {
+      setConnection(data)
+      setSelectedAccountId(data.selected_account_id)
+    }
+  }
+
+  // Get dashboard accounts only
+  const dashboardAccounts = connection?.ad_accounts?.filter(a => a.in_dashboard) || []
+  const selectedAccount = dashboardAccounts.find(a => a.id === selectedAccountId) || dashboardAccounts[0]
+  const hasMultipleAccounts = dashboardAccounts.length > 1
+
+  const handleSelectAccount = async (accountId: string) => {
+    if (!user) return
+    
+    setSelectedAccountId(accountId)
+    setShowAccountDropdown(false)
+    
+    // Save selection to database
+    await supabase
+      .from('meta_connections')
+      .update({ selected_account_id: accountId })
+      .eq('user_id', user.id)
+    
+    // Reload page to refresh data for new account
+    window.location.reload()
+  }
   
   const upgradeText = plan === 'Free' 
     ? { title: 'Upgrade to Starter', subtitle: 'Unlimited campaigns' }
@@ -51,20 +115,71 @@ export function Sidebar() {
     </Link>
       
       {/* Account Selector */}
-      <div 
-        className="bg-bg-card border border-border rounded-lg p-3 mb-6 relative"
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-      >
-        <div className="text-xs text-zinc-500 mb-1">Ad Account</div>
-        <div className="w-full flex items-center justify-between text-sm font-medium text-zinc-400 cursor-default">
-          {accountName}
-          <ChevronDown className="w-4 h-4 text-zinc-600" />
-        </div>
-        {showTooltip && (plan === 'Free' || plan === 'Starter') && (
-          <div className="absolute left-0 right-0 top-full mt-2 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 text-center z-10">
-            Multiple accounts available in Pro & Agency plans
+      <div className="relative mb-6">
+        <button
+          onClick={() => hasMultipleAccounts && setShowAccountDropdown(!showAccountDropdown)}
+          className={cn(
+            "w-full bg-bg-card border border-border rounded-lg p-3 text-left transition-colors",
+            hasMultipleAccounts && "hover:border-zinc-600 cursor-pointer",
+            !hasMultipleAccounts && "cursor-default"
+          )}
+        >
+          <div className="text-xs text-zinc-500 mb-1">Ad Account</div>
+          <div className="flex items-center justify-between text-sm font-medium">
+            <span className="truncate">
+              {selectedAccount?.name || 'No account selected'}
+            </span>
+            {hasMultipleAccounts && (
+              <ChevronDown className={cn(
+                "w-4 h-4 text-zinc-500 transition-transform",
+                showAccountDropdown && "rotate-180"
+              )} />
+            )}
           </div>
+        </button>
+        
+        {/* Dropdown */}
+        {showAccountDropdown && hasMultipleAccounts && (
+          <>
+            <div 
+              className="fixed inset-0 z-10" 
+              onClick={() => setShowAccountDropdown(false)} 
+            />
+            <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden">
+              {dashboardAccounts.map((account) => (
+                <button
+                  key={account.id}
+                  onClick={() => handleSelectAccount(account.id)}
+                  className={cn(
+                    "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
+                    account.id === selectedAccountId && "bg-accent/10"
+                  )}
+                >
+                  <span className="truncate">{account.name}</span>
+                  {account.id === selectedAccountId && (
+                    <Check className="w-4 h-4 text-accent flex-shrink-0" />
+                  )}
+                </button>
+              ))}
+              <Link
+                href="/dashboard/connect"
+                className="w-full px-3 py-2 text-left text-sm text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors border-t border-border flex items-center gap-2"
+              >
+                <LinkIcon className="w-3 h-3" />
+                Manage accounts
+              </Link>
+            </div>
+          </>
+        )}
+        
+        {/* No accounts tooltip */}
+        {!selectedAccount && (
+          <Link 
+            href="/dashboard/connect"
+            className="block mt-2 text-xs text-accent hover:text-accent-hover text-center"
+          >
+            Connect an account →
+          </Link>
         )}
       </div>
       
@@ -102,7 +217,12 @@ export function Sidebar() {
         </div>
         <Link
           href="/dashboard/connect"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-bg-hover hover:text-white transition-colors"
+          className={cn(
+            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+            pathname === '/dashboard/connect'
+              ? 'bg-accent text-white'
+              : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+          )}
         >
           <LinkIcon className="w-5 h-5" />
           Connect Account
