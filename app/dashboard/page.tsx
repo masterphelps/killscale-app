@@ -426,6 +426,15 @@ export default function DashboardPage() {
   const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(c => selectedCampaigns.has(c))
   const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c)) && !allSelected
   
+  // Count entities - must be before early returns (hooks must be unconditional)
+  const entityCounts = useMemo(() => {
+    const campaigns = new Set(data.map(r => r.campaign_name))
+    const adsets = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}`))
+    const ads = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
+    const accounts = connection?.ad_accounts?.filter(a => a.in_dashboard)?.length || 0
+    return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
+  }, [data, connection])
+  
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -443,15 +452,6 @@ export default function DashboardPage() {
   ]
 
   const currentDatePreset = DATE_PRESETS.find(p => p.value === datePreset)
-  
-  // Count entities
-  const entityCounts = useMemo(() => {
-    const campaigns = new Set(data.map(r => r.campaign_name))
-    const adsets = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}`))
-    const ads = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
-    const accounts = connection?.ad_accounts?.filter(a => a.in_dashboard)?.length || 0
-    return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
-  }, [data, connection])
   
   return (
     <>
