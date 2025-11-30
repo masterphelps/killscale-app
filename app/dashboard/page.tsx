@@ -399,7 +399,10 @@ export default function DashboardPage() {
     spend: row.spend,
     purchases: row.purchases,
     revenue: row.revenue,
-    roas: row.spend > 0 ? row.revenue / row.spend : 0
+    roas: row.spend > 0 ? row.revenue / row.spend : 0,
+    status: row.status,
+    adset_status: row.adset_status,
+    campaign_status: row.campaign_status,
   }))
 
   const handleCampaignToggle = (campaignName: string) => {

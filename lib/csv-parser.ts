@@ -11,6 +11,10 @@ export type CSVRow = {
   spend: number
   purchases: number
   revenue: number
+  // Status fields from Meta API (null for CSV uploads)
+  status?: string | null
+  adset_status?: string | null
+  campaign_status?: string | null
 }
 
 const COLUMN_MAP: Record<string, string> = {
