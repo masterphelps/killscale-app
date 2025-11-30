@@ -21,7 +21,7 @@ type AdRow = {
   campaign_status?: string | null  // Campaign's own status
 }
 
-type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'paused'
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
 type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
 type SortDirection = 'asc' | 'desc'
@@ -31,6 +31,7 @@ type PerformanceTableProps = {
   rules: Rules
   dateRange: { start: string; end: string }
   verdictFilter?: VerdictFilter
+  includePaused?: boolean
   selectedCampaigns?: Set<string>
   onCampaignToggle?: (campaignName: string) => void
   onSelectAll?: () => void
@@ -245,6 +246,7 @@ export function PerformanceTable({
   rules, 
   dateRange, 
   verdictFilter = 'all',
+  includePaused = true,
   selectedCampaigns,
   onCampaignToggle,
   onSelectAll,
@@ -265,25 +267,28 @@ export function PerformanceTable({
   const hierarchy = useMemo(() => buildHierarchy(data, rules), [data, rules])
   
   const filteredHierarchy = useMemo(() => {
-    if (verdictFilter === 'all') return hierarchy
+    // First filter by paused status if needed
+    let filtered = hierarchy
     
-    // 'paused' filter checks status, not verdict
-    if (verdictFilter === 'paused') {
-      return hierarchy
+    if (!includePaused) {
+      // Exclude paused items
+      filtered = hierarchy
         .map(campaign => ({
           ...campaign,
           children: campaign.children
             ?.map(adset => ({
               ...adset,
-              children: adset.children?.filter(ad => !isEntityActive(ad.status))
+              children: adset.children?.filter(ad => isEntityActive(ad.status))
             }))
             .filter(adset => adset.children && adset.children.length > 0)
         }))
         .filter(campaign => campaign.children && campaign.children.length > 0)
     }
     
-    // Other filters check verdict
-    return hierarchy
+    // Then apply verdict filter
+    if (verdictFilter === 'all') return filtered
+    
+    return filtered
       .map(campaign => ({
         ...campaign,
         children: campaign.children
@@ -294,7 +299,7 @@ export function PerformanceTable({
           .filter(adset => adset.children && adset.children.length > 0)
       }))
       .filter(campaign => campaign.children && campaign.children.length > 0)
-  }, [hierarchy, verdictFilter])
+  }, [hierarchy, verdictFilter, includePaused])
   
   const sortedHierarchy = useMemo(() => 
     sortNodes(filteredHierarchy, sortField, sortDirection),

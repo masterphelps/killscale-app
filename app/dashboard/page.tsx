@@ -33,7 +33,7 @@ const DEFAULT_RULES: Rules = {
   updated_at: ''
 }
 
-type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'paused'
+type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
 const formatPercent = (value: number) => {
   if (!isFinite(value) || isNaN(value)) return '0.00%'
@@ -73,6 +73,7 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
+  const [includePaused, setIncludePaused] = useState(true)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [datePreset, setDatePreset] = useState('last_30d')
@@ -436,7 +437,6 @@ export default function DashboardPage() {
     { value: 'watch', label: 'Watch' },
     { value: 'kill', label: 'Kill' },
     { value: 'learn', label: 'Learn' },
-    { value: 'paused', label: 'Paused' },
   ]
 
   const currentDatePreset = DATE_PRESETS.find(p => p.value === datePreset)
@@ -689,6 +689,25 @@ export default function DashboardPage() {
                 {filter.label}
               </button>
             ))}
+            
+            {/* Include Paused Toggle */}
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border">
+              <button
+                onClick={() => setIncludePaused(!includePaused)}
+                className={`relative w-9 h-5 rounded-full transition-all ${
+                  includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                    includePaused ? 'left-4' : 'left-0.5'
+                  }`}
+                />
+              </button>
+              <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                Include Paused
+              </span>
+            </div>
           </div>
           
           <PerformanceTable 
@@ -696,6 +715,7 @@ export default function DashboardPage() {
             rules={rules}
             dateRange={dateRange}
             verdictFilter={verdictFilter}
+            includePaused={includePaused}
             selectedCampaigns={selectedCampaigns}
             onCampaignToggle={handleCampaignToggle}
             onSelectAll={handleSelectAll}

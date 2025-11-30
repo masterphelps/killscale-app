@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Analytics } from '@vercel/analytics/react'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth'
 import { SubscriptionProvider } from '@/lib/subscription'
@@ -21,6 +22,7 @@ export default function RootLayout({
             {children}
           </SubscriptionProvider>
         </AuthProvider>
+        <Analytics />
       </body>
     </html>
   )
