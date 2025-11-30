@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { 
   ChevronRight, 
   ChevronDown,
@@ -18,7 +18,19 @@ import {
   ArrowDownRight,
   Sparkles,
   Layers,
-  Search
+  Search,
+  Download,
+  RefreshCw,
+  Calendar,
+  GitCompare,
+  PieChart,
+  Activity,
+  Filter,
+  ChevronLeft,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Lightbulb
 } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -38,7 +50,19 @@ import {
   Line,
   Legend,
   ComposedChart,
-  Treemap
+  Treemap,
+  PieChart as RechartsPie,
+  Pie,
+  ScatterChart,
+  Scatter,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  FunnelChart,
+  Funnel,
+  LabelList
 } from 'recharts'
 
 const supabase = createClient(
@@ -363,6 +387,9 @@ export default function TrendsPage() {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [viewMode, setViewMode] = useState<'overview' | 'compare' | 'funnel' | 'scatter'>('overview')
+  const [compareMode, setCompareMode] = useState(false)
+  const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
   const { user } = useAuth()
   
   useEffect(() => {
@@ -865,25 +892,209 @@ export default function TrendsPage() {
             <div className="bg-gradient-to-r from-accent/10 via-purple-500/10 to-pink-500/10 border border-accent/20 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="w-4 h-4 text-accent" />
-                <span className="font-medium text-sm">Insights</span>
+                <span className="font-medium text-sm">AI Insights</span>
               </div>
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {insights.map((insight, i) => (
-                  <div key={i} className="text-sm text-zinc-300">
-                    {insight.message}
+                  <div key={i} className="flex items-start gap-2 text-sm text-zinc-300 bg-black/20 rounded-lg p-3">
+                    <span className="text-lg">{insight.type === 'success' ? '🔥' : insight.type === 'warning' ? '⚠️' : '💡'}</span>
+                    <span>{insight.message}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
           
+          {/* View Mode Tabs */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
+              <button
+                onClick={() => setViewMode('overview')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                  viewMode === 'overview' 
+                    ? 'bg-accent text-white' 
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                )}
+              >
+                <BarChart3 className="w-4 h-4" />
+                Overview
+              </button>
+              <button
+                onClick={() => setViewMode('funnel')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                  viewMode === 'funnel' 
+                    ? 'bg-accent text-white' 
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                )}
+              >
+                <Filter className="w-4 h-4" />
+                Funnel
+              </button>
+              <button
+                onClick={() => setViewMode('scatter')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                  viewMode === 'scatter' 
+                    ? 'bg-accent text-white' 
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                )}
+              >
+                <Activity className="w-4 h-4" />
+                Spend vs ROAS
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-white hover:border-zinc-600 transition-all">
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+            </div>
+          </div>
+          
           {/* Main Visualization */}
           <div className="bg-bg-card border border-border rounded-xl p-6">
             <h3 className="font-semibold mb-4">
-              {currentLevel === 'account' ? 'Campaign Overview' : 'Performance Over Time'}
+              {viewMode === 'overview' 
+                ? (currentLevel === 'account' ? 'Campaign Overview' : 'Performance Over Time')
+                : viewMode === 'funnel'
+                  ? 'Conversion Funnel'
+                  : 'Spend vs ROAS Analysis'
+              }
             </h3>
             
-            {currentLevel === 'account' ? (
+            {viewMode === 'funnel' ? (
+              /* Funnel Visualization */
+              <div className="h-96">
+                <div className="grid grid-cols-5 gap-4 h-full items-end">
+                  {[
+                    { label: 'Impressions', value: displayData.impressions, color: 'bg-blue-500' },
+                    { label: 'Clicks', value: displayData.clicks, color: 'bg-purple-500' },
+                    { label: 'Purchases', value: displayData.purchases, color: 'bg-green-500' },
+                  ].map((stage, i, arr) => {
+                    const maxVal = arr[0].value || 1
+                    const height = Math.max(10, (stage.value / maxVal) * 100)
+                    const rate = i > 0 ? ((stage.value / (arr[i-1].value || 1)) * 100).toFixed(2) : '100'
+                    return (
+                      <div key={stage.label} className="flex flex-col items-center gap-2">
+                        <div className="text-sm text-zinc-400">{stage.label}</div>
+                        <div className="text-lg font-bold">{formatNumber(stage.value)}</div>
+                        <div 
+                          className={cn('w-full rounded-t-lg transition-all', stage.color)}
+                          style={{ height: `${height}%`, minHeight: 40 }}
+                        />
+                        {i > 0 && (
+                          <div className="text-xs text-zinc-500">{rate}% rate</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="text-sm text-zinc-400">Revenue</div>
+                    <div className="text-lg font-bold text-green-400">{formatCurrency(displayData.revenue)}</div>
+                    <div 
+                      className="w-full rounded-t-lg bg-green-500/50"
+                      style={{ height: '60%', minHeight: 40 }}
+                    />
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="text-sm text-zinc-400">ROAS</div>
+                    <div className={cn(
+                      'text-2xl font-bold',
+                      displayData.roas >= 2 ? 'text-green-400' : displayData.roas >= 1 ? 'text-yellow-400' : 'text-red-400'
+                    )}>
+                      {displayData.roas.toFixed(2)}x
+                    </div>
+                    <div 
+                      className={cn(
+                        'w-full rounded-t-lg',
+                        displayData.roas >= 2 ? 'bg-green-500' : displayData.roas >= 1 ? 'bg-yellow-500' : 'bg-red-500'
+                      )}
+                      style={{ height: `${Math.min(100, displayData.roas * 25)}%`, minHeight: 40 }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : viewMode === 'scatter' ? (
+              /* Scatter Plot - Spend vs ROAS */
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <XAxis 
+                      type="number" 
+                      dataKey="spend" 
+                      name="Spend"
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
+                      tickFormatter={(v) => `$${v}`}
+                      label={{ value: 'Spend', position: 'bottom', fill: '#71717a', fontSize: 12 }}
+                    />
+                    <YAxis 
+                      type="number" 
+                      dataKey="roas" 
+                      name="ROAS"
+                      stroke="#3f3f46"
+                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
+                      tickFormatter={(v) => `${v.toFixed(1)}x`}
+                      label={{ value: 'ROAS', angle: -90, position: 'insideLeft', fill: '#71717a', fontSize: 12 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#18181b', 
+                        border: '1px solid #3f3f46',
+                        borderRadius: 8,
+                        color: '#e4e4e7'
+                      }}
+                      formatter={(value: number, name: string) => {
+                        if (name === 'roas') return [`${value.toFixed(2)}x`, 'ROAS']
+                        if (name === 'spend') return [formatCurrency(value), 'Spend']
+                        return [value, name]
+                      }}
+                      labelFormatter={(label) => `${label}`}
+                    />
+                    <Scatter 
+                      name="Campaigns" 
+                      data={hierarchy.map(c => ({ name: c.name, spend: c.spend, roas: c.roas, revenue: c.revenue }))}
+                      fill="#8b5cf6"
+                    >
+                      {hierarchy.map((entry, index) => (
+                        <Cell 
+                          key={index} 
+                          fill={getROASColor(entry.roas)}
+                          cursor="pointer"
+                          onClick={() => setSelection({ campaign: entry.name })}
+                        />
+                      ))}
+                    </Scatter>
+                    {/* Reference line at ROAS 1.0 */}
+                    <Line 
+                      type="monotone" 
+                      dataKey={() => 1} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5"
+                      dot={false}
+                    />
+                  </ScatterChart>
+                </ResponsiveContainer>
+                <div className="flex items-center justify-center gap-6 mt-4 text-xs text-zinc-500">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                    <span>ROAS ≥ 2x (Scale)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                    <span>ROAS 1-2x (Watch)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500" />
+                    <span>ROAS &lt; 1x (Kill)</span>
+                  </div>
+                </div>
+              </div>
+            ) : currentLevel === 'account' ? (
               /* Treemap for account level */
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
