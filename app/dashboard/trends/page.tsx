@@ -340,7 +340,6 @@ const NavItem = ({
           </svg>
         </span>
       ) : null}
-      )}
       
       <span className={cn(
         'text-xs font-medium',
