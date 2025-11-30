@@ -1252,7 +1252,7 @@ export default function TrendsPage() {
                           dataKey="value"
                           onClick={(data) => setSelection({ campaign: data.name })}
                           style={{ cursor: 'pointer' }}
-                          label={({ name, percent, cx, cy, midAngle, outerRadius }) => {
+                          label={({ name, percent, cx, cy, midAngle, outerRadius }: { name: string, percent: number, cx: number, cy: number, midAngle: number, outerRadius: number }) => {
                             const RADIAN = Math.PI / 180
                             const radius = outerRadius + 25
                             const x = cx + radius * Math.cos(-midAngle * RADIAN)
