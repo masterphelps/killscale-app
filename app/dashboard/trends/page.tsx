@@ -141,6 +141,11 @@ const CustomTreemapContent = (props: any) => {
   const color = getROASColor(roas || 0)
   const bgColor = getROASBgColor(roas || 0)
   
+  // Calculate text to display
+  const maxChars = Math.floor(width / 9)
+  const displayName = name?.length > maxChars ? name.substring(0, maxChars) + '...' : name
+  const statsText = `${roas?.toFixed(1)}x · ${formatCurrency(spend)}`
+  
   return (
     <g>
       <rect
@@ -169,39 +174,39 @@ const CustomTreemapContent = (props: any) => {
       />
       {width > 80 && height > 50 && (
         <>
-          {/* Text background for readability */}
+          {/* Text background pill for readability */}
           <rect
             x={x + 8}
-            y={y + height / 2 - 22}
+            y={y + height / 2 - 20}
             width={width - 16}
-            height={44}
-            fill="rgba(0,0,0,0.4)"
-            rx={4}
+            height={40}
+            fill="rgba(0,0,0,0.6)"
+            rx={6}
             className="pointer-events-none"
           />
+          {/* Campaign name - no stroke, just solid fill */}
           <text
             x={x + width / 2}
-            y={y + height / 2 - 6}
+            y={y + height / 2 - 4}
             textAnchor="middle"
             fill="#ffffff"
-            fontSize={12}
+            fontSize={11}
             fontWeight={600}
             className="pointer-events-none"
-            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
           >
-            {name?.length > Math.floor(width / 8) ? name.substring(0, Math.floor(width / 8)) + '...' : name}
+            {displayName}
           </text>
+          {/* Stats line */}
           <text
             x={x + width / 2}
             y={y + height / 2 + 12}
             textAnchor="middle"
             fill={color}
-            fontSize={14}
+            fontSize={13}
             fontWeight={700}
             className="pointer-events-none"
-            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
           >
-            {roas?.toFixed(2)}x · {formatCurrency(spend)}
+            {statsText}
           </text>
         </>
       )}
@@ -975,7 +980,7 @@ export default function TrendsPage() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart 
-                    data={selectedData.children.sort((a, b) => b.roas - a.roas)}
+                    data={[...selectedData.children].sort((a, b) => b.roas - a.roas)}
                     layout="vertical"
                     margin={{ left: 120 }}
                   >
@@ -1006,7 +1011,7 @@ export default function TrendsPage() {
                       formatter={(value: number) => [`${value.toFixed(2)}x`, 'ROAS']}
                     />
                     <Bar dataKey="roas" radius={[0, 4, 4, 0]}>
-                      {selectedData.children.map((entry, index) => (
+                      {[...selectedData.children].sort((a, b) => b.roas - a.roas).map((entry, index) => (
                         <Cell key={index} fill={getROASColor(entry.roas)} />
                       ))}
                     </Bar>
