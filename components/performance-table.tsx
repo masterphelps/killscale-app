@@ -139,21 +139,36 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       campaign.children?.push(adset)
     }
     
-    const metrics = calculateMetrics(row)
-    const ad: HierarchyNode = {
-      name: row.ad_name,
-      type: 'ad',
-      impressions: row.impressions,
-      clicks: row.clicks,
-      spend: row.spend,
-      purchases: row.purchases,
-      revenue: row.revenue,
-      roas: row.spend > 0 ? row.revenue / row.spend : 0,
-      status: row.status,
-      ...metrics,
-      verdict: calculateVerdict(row.spend, row.spend > 0 ? row.revenue / row.spend : 0, rules)
+    // Check if ad already exists - aggregate instead of duplicating
+    let ad = adset.children?.find(a => a.name === row.ad_name)
+    if (!ad) {
+      ad = {
+        name: row.ad_name,
+        type: 'ad',
+        impressions: 0,
+        clicks: 0,
+        spend: 0,
+        purchases: 0,
+        revenue: 0,
+        roas: 0,
+        cpc: 0,
+        ctr: 0,
+        cpa: 0,
+        convRate: 0,
+        status: row.status,
+        verdict: 'learn'
+      }
+      adset.children?.push(ad)
     }
-    adset.children?.push(ad)
+    
+    // Aggregate ad metrics
+    ad.impressions += row.impressions
+    ad.clicks += row.clicks
+    ad.spend += row.spend
+    ad.purchases += row.purchases
+    ad.revenue += row.revenue
+    // Keep the status from any row (they should all be the same for a given ad)
+    if (row.status) ad.status = row.status
     
     adset.impressions += row.impressions
     adset.clicks += row.clicks
@@ -164,6 +179,14 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   
   Object.values(campaigns).forEach(campaign => {
     campaign.children?.forEach(adset => {
+      // Calculate ad-level metrics after aggregation
+      adset.children?.forEach(ad => {
+        ad.roas = ad.spend > 0 ? ad.revenue / ad.spend : 0
+        const adMetrics = calculateMetrics(ad)
+        Object.assign(ad, adMetrics)
+        ad.verdict = calculateVerdict(ad.spend, ad.roas, rules)
+      })
+      
       adset.roas = adset.spend > 0 ? adset.revenue / adset.spend : 0
       const adsetMetrics = calculateMetrics(adset)
       Object.assign(adset, adsetMetrics)
@@ -287,14 +310,16 @@ export function PerformanceTable({
     let filtered = hierarchy
     
     if (!includePaused) {
-      // Exclude paused items
+      // Exclude paused items at all levels
       filtered = hierarchy
+        .filter(campaign => isEntityActive(campaign.status)) // Filter out paused campaigns
         .map(campaign => ({
           ...campaign,
           children: campaign.children
-            ?.map(adset => ({
+            ?.filter(adset => isEntityActive(adset.status)) // Filter out paused adsets
+            .map(adset => ({
               ...adset,
-              children: adset.children?.filter(ad => isEntityActive(ad.status))
+              children: adset.children?.filter(ad => isEntityActive(ad.status)) // Filter out paused ads
             }))
             .filter(adset => adset.children && adset.children.length > 0)
         }))
@@ -518,13 +543,13 @@ export function PerformanceTable({
             {!onToggle && <div className="w-4" />}
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
             <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
-            {/* Paused indicator - filled for self, outline for children */}
-            {node.status && node.status !== 'ACTIVE' ? (
+            {/* Paused indicator - only show when includePaused is true */}
+            {includePaused && node.status && node.status !== 'ACTIVE' ? (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
                 <Pause className="w-2.5 h-2.5 fill-current" />
                 <span>{node.status === 'PAUSED' || node.status === 'ADSET_PAUSED' || node.status === 'CAMPAIGN_PAUSED' ? 'Paused' : node.status === 'UNKNOWN' ? 'Unknown' : node.status}</span>
               </span>
-            ) : node.hasChildrenPaused ? (
+            ) : includePaused && node.hasChildrenPaused ? (
               <span className="flex-shrink-0 inline-flex items-center text-zinc-600 ml-1" title="Contains paused items">
                 <Pause className="w-3 h-3" strokeWidth={1.5} />
               </span>
