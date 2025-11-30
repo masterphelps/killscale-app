@@ -35,6 +35,7 @@ import {
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
+import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import {
   AreaChart,
   Area,
@@ -391,16 +392,10 @@ export default function TrendsPage() {
   const [compareMode, setCompareMode] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
   const [includePaused, setIncludePaused] = useState(true)
-  const [dateRange, setDateRange] = useState<{ start: string, end: string }>(() => {
-    // Default to last 30 days
-    const end = new Date()
-    const start = new Date()
-    start.setDate(start.getDate() - 30)
-    return {
-      start: start.toISOString().split('T')[0],
-      end: end.toISOString().split('T')[0]
-    }
-  })
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [datePreset, setDatePreset] = useState('last_30d')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
   const { user } = useAuth()
   
   useEffect(() => {
@@ -437,6 +432,63 @@ export default function TrendsPage() {
     setIsLoading(false)
   }
   
+  // Calculate date range from preset
+  const getDateRangeFromPreset = (preset: string): { start: string, end: string } => {
+    const today = new Date()
+    const end = today.toISOString().split('T')[0]
+    let start: Date
+    
+    switch (preset) {
+      case 'today':
+        return { start: end, end }
+      case 'yesterday':
+        start = new Date(today)
+        start.setDate(start.getDate() - 1)
+        return { start: start.toISOString().split('T')[0], end: start.toISOString().split('T')[0] }
+      case 'last_7d':
+        start = new Date(today)
+        start.setDate(start.getDate() - 7)
+        return { start: start.toISOString().split('T')[0], end }
+      case 'last_14d':
+        start = new Date(today)
+        start.setDate(start.getDate() - 14)
+        return { start: start.toISOString().split('T')[0], end }
+      case 'last_30d':
+        start = new Date(today)
+        start.setDate(start.getDate() - 30)
+        return { start: start.toISOString().split('T')[0], end }
+      case 'last_90d':
+        start = new Date(today)
+        start.setDate(start.getDate() - 90)
+        return { start: start.toISOString().split('T')[0], end }
+      case 'this_month':
+        start = new Date(today.getFullYear(), today.getMonth(), 1)
+        return { start: start.toISOString().split('T')[0], end }
+      case 'last_month':
+        start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
+        return { start: start.toISOString().split('T')[0], end: lastMonthEnd.toISOString().split('T')[0] }
+      case 'maximum':
+        return { start: '2000-01-01', end }
+      case 'custom':
+        return { start: customStartDate || '2000-01-01', end: customEndDate || end }
+      default:
+        start = new Date(today)
+        start.setDate(start.getDate() - 30)
+        return { start: start.toISOString().split('T')[0], end }
+    }
+  }
+  
+  const dateRange = useMemo(() => getDateRangeFromPreset(datePreset), [datePreset, customStartDate, customEndDate])
+  
+  // Get display label for current date selection
+  const getDateLabel = () => {
+    if (datePreset === 'custom' && customStartDate && customEndDate) {
+      return `${customStartDate} - ${customEndDate}`
+    }
+    return DATE_PRESETS.find(p => p.value === datePreset)?.label || 'Last 30 Days'
+  }
+  
   // Filter data by date range and paused status
   const filteredData = useMemo(() => {
     return data.filter(row => {
@@ -448,9 +500,9 @@ export default function TrendsPage() {
       // Paused filter - exclude if not including paused and any level is paused
       if (!includePaused) {
         const isPaused = 
-          row.status === 'PAUSED' || 
-          row.adset_status === 'PAUSED' || 
-          row.campaign_status === 'PAUSED'
+          row.status?.toUpperCase() === 'PAUSED' || 
+          row.adset_status?.toUpperCase() === 'PAUSED' || 
+          row.campaign_status?.toUpperCase() === 'PAUSED'
         if (isPaused) return false
       }
       
@@ -749,59 +801,51 @@ export default function TrendsPage() {
         
         {/* Controls */}
         <div className="flex items-center gap-3">
-          {/* Include Paused Toggle */}
-          <label className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg cursor-pointer hover:border-zinc-600 transition-colors">
-            <input
-              type="checkbox"
-              checked={includePaused}
-              onChange={(e) => setIncludePaused(e.target.checked)}
-              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-accent focus:ring-accent focus:ring-offset-0"
-            />
-            <span className="text-sm text-zinc-300">Include Paused</span>
-          </label>
-          
-          {/* Date Range */}
+          {/* Include Paused Toggle - same style as dashboard */}
           <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
-            <Calendar className="w-4 h-4 text-zinc-500" />
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-              className="bg-transparent text-sm text-zinc-300 border-none focus:outline-none w-[110px]"
-            />
-            <span className="text-zinc-600">→</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-              className="bg-transparent text-sm text-zinc-300 border-none focus:outline-none w-[110px]"
-            />
+            <button
+              onClick={() => setIncludePaused(!includePaused)}
+              className={`relative w-9 h-5 rounded-full transition-all ${
+                includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                  includePaused ? 'left-4' : 'left-0.5'
+                }`}
+              />
+            </button>
+            <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+              Include Paused
+            </span>
           </div>
           
-          {/* Quick Date Presets */}
-          <div className="flex items-center gap-1">
-            {[
-              { label: '7D', days: 7 },
-              { label: '14D', days: 14 },
-              { label: '30D', days: 30 },
-              { label: '90D', days: 90 },
-            ].map(preset => (
-              <button
-                key={preset.label}
-                onClick={() => {
-                  const end = new Date()
-                  const start = new Date()
-                  start.setDate(start.getDate() - preset.days)
-                  setDateRange({
-                    start: start.toISOString().split('T')[0],
-                    end: end.toISOString().split('T')[0]
-                  })
-                }}
-                className="px-2 py-1 text-xs font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 rounded transition-colors"
-              >
-                {preset.label}
-              </button>
-            ))}
+          {/* Date Picker Dropdown - same as dashboard */}
+          <div className="relative">
+            <DatePickerButton
+              label={getDateLabel()}
+              onClick={() => setShowDatePicker(!showDatePicker)}
+              isOpen={showDatePicker}
+            />
+            
+            <DatePicker
+              isOpen={showDatePicker}
+              onClose={() => setShowDatePicker(false)}
+              datePreset={datePreset}
+              onPresetChange={(preset) => setDatePreset(preset)}
+              customStartDate={customStartDate}
+              customEndDate={customEndDate}
+              onCustomDateChange={(start, end) => {
+                setCustomStartDate(start)
+                setCustomEndDate(end)
+              }}
+              onApply={() => {
+                if (customStartDate && customEndDate) {
+                  setDatePreset('custom')
+                  setShowDatePicker(false)
+                }
+              }}
+            />
           </div>
         </div>
       </div>
