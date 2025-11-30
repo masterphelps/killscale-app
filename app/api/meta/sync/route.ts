@@ -14,8 +14,8 @@ async function fetchAllPages<T>(initialUrl: string): Promise<T[]> {
   const maxPages = 50 // Safety limit
   
   while (nextUrl && pageCount < maxPages) {
-    const response = await fetch(nextUrl)
-    const result = await response.json()
+    const res: Response = await fetch(nextUrl)
+    const result: { data?: T[], error?: unknown, paging?: { next?: string } } = await res.json()
     
     if (result.error) {
       console.error('Meta API pagination error:', result.error)
