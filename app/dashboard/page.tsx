@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Upload, Calendar, Lock, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
+import { Upload, Lock, Trash2, RefreshCw } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
+import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CSVRow } from '@/lib/csv-parser'
 import { Rules } from '@/lib/supabase'
 import { formatCurrency, formatNumber, formatROAS, formatDateRange } from '@/lib/utils'
@@ -33,18 +34,6 @@ const DEFAULT_RULES: Rules = {
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn' | 'off'
-
-const DATE_PRESETS = [
-  { value: 'maximum', label: 'Maximum' },
-  { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
-  { value: 'last_7d', label: 'Last 7 Days' },
-  { value: 'last_14d', label: 'Last 14 Days' },
-  { value: 'last_30d', label: 'Last 30 Days' },
-  { value: 'this_month', label: 'This Month' },
-  { value: 'last_month', label: 'Last Month' },
-  { value: 'custom', label: 'Custom Range' },
-]
 
 const formatPercent = (value: number) => {
   if (!isFinite(value) || isNaN(value)) return '0.00%'
@@ -445,70 +434,28 @@ export default function DashboardPage() {
               
               {/* Date Picker Dropdown */}
               <div className="relative">
-                <button 
+                <DatePickerButton
+                  label={getDateLabel()}
                   onClick={() => setShowDatePicker(!showDatePicker)}
-                  className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm hover:border-border-light transition-colors"
-                >
-                  <Calendar className="w-4 h-4" />
-                  {getDateLabel()}
-                  <ChevronDown className="w-3 h-3 text-zinc-500" />
-                </button>
+                  isOpen={showDatePicker}
+                />
                 
-                {showDatePicker && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-10" 
-                      onClick={() => {
-                        setShowDatePicker(false)
-                        setShowCustomDateInputs(false)
-                      }} 
-                    />
-                    <div className="absolute right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden min-w-[200px]">
-                      {DATE_PRESETS.map((preset) => (
-                        <button
-                          key={preset.value}
-                          onClick={() => handleDatePresetChange(preset.value)}
-                          className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-hover transition-colors ${
-                            datePreset === preset.value ? 'bg-accent/10 text-accent' : 'text-zinc-300'
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                      
-                      {/* Custom Date Inputs */}
-                      {showCustomDateInputs && (
-                        <div className="p-3 border-t border-border space-y-3">
-                          <div>
-                            <label className="block text-xs text-zinc-500 mb-1">Start Date</label>
-                            <input
-                              type="date"
-                              value={customStartDate}
-                              onChange={(e) => setCustomStartDate(e.target.value)}
-                              className="w-full px-2 py-1.5 bg-bg-hover border border-border rounded text-sm text-white focus:outline-none focus:border-accent"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-zinc-500 mb-1">End Date</label>
-                            <input
-                              type="date"
-                              value={customEndDate}
-                              onChange={(e) => setCustomEndDate(e.target.value)}
-                              className="w-full px-2 py-1.5 bg-bg-hover border border-border rounded text-sm text-white focus:outline-none focus:border-accent"
-                            />
-                          </div>
-                          <button
-                            onClick={handleCustomDateApply}
-                            disabled={!customStartDate || !customEndDate}
-                            className="w-full px-3 py-1.5 bg-accent text-white rounded text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          >
-                            Apply
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
+                <DatePicker
+                  isOpen={showDatePicker}
+                  onClose={() => {
+                    setShowDatePicker(false)
+                    setShowCustomDateInputs(false)
+                  }}
+                  datePreset={datePreset}
+                  onPresetChange={handleDatePresetChange}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomDateChange={(start, end) => {
+                    setCustomStartDate(start)
+                    setCustomEndDate(end)
+                  }}
+                  onApply={handleCustomDateApply}
+                />
               </div>
 
               <button 
