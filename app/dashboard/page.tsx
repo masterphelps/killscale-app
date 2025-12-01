@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Upload, Lock, Trash2, RefreshCw } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
@@ -82,7 +82,6 @@ export default function DashboardPage() {
   const [customEndDate, setCustomEndDate] = useState('')
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
-  const [isLiveMode, setIsLiveMode] = useState(false)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [statusChangeModal, setStatusChangeModal] = useState<{
     isOpen: boolean
@@ -151,16 +150,51 @@ export default function DashboardPage() {
   const selectedAccountId = connection?.selected_account_id || 
     connection?.ad_accounts?.find(a => a.in_dashboard)?.id
 
-  // Live mode auto-sync every 5 minutes
+  // Track if this is the initial mount (to prevent auto-sync on page load)
+  const isInitialMount = useRef(true)
+
+  // Compute if we're viewing "live" data (date range includes today)
+  const isLive = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Presets that include today
+    const livePresets = ['today', 'last_7d', 'last_14d', 'last_30d', 'this_month', 'maximum']
+    
+    if (datePreset === 'custom') {
+      // Custom range is live if end date is today or later
+      return customEndDate >= today
+    }
+    
+    return livePresets.includes(datePreset)
+  }, [datePreset, customEndDate])
+
+  // Auto-sync when date preset changes (debounced, skip initial mount)
   useEffect(() => {
-    if (!isLiveMode || !canSync || !selectedAccountId) return
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
+    
+    if (!canSync || !selectedAccountId || !user) return
+    
+    // Debounce to avoid rapid syncs when clicking through presets
+    const timeout = setTimeout(() => {
+      handleSyncAccount(selectedAccountId)
+    }, 500)
+    
+    return () => clearTimeout(timeout)
+  }, [datePreset, customStartDate, customEndDate, selectedAccountId, canSync, user])
+
+  // Auto-refresh every 5 minutes when viewing live data
+  useEffect(() => {
+    if (!isLive || !canSync || !selectedAccountId) return
     
     const interval = setInterval(() => {
       handleSyncAccount(selectedAccountId)
     }, 5 * 60 * 1000) // 5 minutes
     
     return () => clearInterval(interval)
-  }, [isLiveMode, canSync, selectedAccountId])
+  }, [isLive, canSync, selectedAccountId])
 
   const loadData = async () => {
     if (!user) return
@@ -580,37 +614,16 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           {data.length > 0 && (
             <>
-              {/* Live Toggle - moved before date picker */}
-              <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
-                <button
-                  onClick={() => canSync && selectedAccountId && setIsLiveMode(!isLiveMode)}
-                  disabled={!canSync || !selectedAccountId}
-                  className={`relative w-10 h-5 rounded-full transition-all ${
-                    !canSync || !selectedAccountId
-                      ? 'bg-zinc-800 cursor-not-allowed'
-                      : isLiveMode
-                        ? 'bg-green-500'
-                        : 'bg-zinc-700 hover:bg-zinc-600'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-                      isLiveMode ? 'left-5 bg-white' : 'left-0.5 bg-zinc-400'
-                    }`}
-                  />
-                </button>
-                <span className={`text-sm ${
-                  !canSync || !selectedAccountId ? 'text-zinc-600' : isLiveMode ? 'text-green-400' : 'text-zinc-400'
-                }`}>
-                  Live
-                </span>
-                {isLiveMode && (
+              {/* Live Indicator - shows when viewing current data */}
+              {isLive && canSync && selectedAccountId && (
+                <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                   </span>
-                )}
-              </div>
+                  <span className="text-sm text-green-400">Live</span>
+                </div>
+              )}
 
               {/* Date Picker Dropdown */}
               <div className="relative">
@@ -640,14 +653,16 @@ export default function DashboardPage() {
             </>
           )}
           
-          {/* Sync Button */}
+          {/* Sync Button - now shows syncing state more prominently */}
           <button 
             onClick={handleSync}
             disabled={!canSync || isSyncing || !selectedAccountId}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              canSync && selectedAccountId
-                ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
-                : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+              isSyncing
+                ? 'bg-accent/20 border border-accent/50 text-accent'
+                : canSync && selectedAccountId
+                  ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
+                  : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
             }`}
             title={!canSync ? 'Sync requires Pro plan' : !selectedAccountId ? 'Connect an account first' : 'Sync from Meta'}
           >
