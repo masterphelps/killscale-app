@@ -68,3 +68,66 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Mobile padding for header */
+@media (max-width: 1023px) {
+  main {
+    padding-top: 4.5rem !important;
+  }
+}
+
+/* Mobile card styles */
+.mobile-card {
+  @apply bg-bg-card border border-border rounded-xl p-4 mb-3;
+}
+
+.mobile-card-header {
+  @apply flex items-start justify-between mb-3;
+}
+
+.mobile-card-name {
+  @apply font-semibold text-sm flex-1 pr-2;
+}
+
+.mobile-card-metrics {
+  @apply grid grid-cols-3 gap-3 text-center;
+}
+
+.mobile-card-metric {
+  @apply bg-bg-dark rounded-lg p-2;
+}
+
+.mobile-card-metric-label {
+  @apply text-[10px] text-zinc-500 uppercase tracking-wide;
+}
+
+.mobile-card-metric-value {
+  @apply font-mono text-sm font-semibold;
+}
+
+.mobile-card-children {
+  @apply mt-3 pt-3 border-t border-border space-y-2;
+}
+
+.mobile-card-child {
+  @apply bg-bg-dark rounded-lg p-3;
+}
+
+/* Hide desktop table on mobile, show cards */
+@media (max-width: 1023px) {
+  .desktop-table {
+    display: none !important;
+  }
+  .mobile-cards {
+    display: block !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .desktop-table {
+    display: block !important;
+  }
+  .mobile-cards {
+    display: none !important;
+  }
+}

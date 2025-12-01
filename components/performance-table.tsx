@@ -678,75 +678,276 @@ export function PerformanceTable({
       </div>
     </div>
   )
+
+  // Mobile Card Component
+  const MobileCard = ({ node, level, isExpanded, onToggle }: { 
+    node: HierarchyNode
+    level: 'campaign' | 'adset' | 'ad'
+    isExpanded?: boolean
+    onToggle?: () => void 
+  }) => {
+    const isPaused = node.status && !isEntityActive(node.status)
+    const hasChildrenPaused = node.hasChildrenPaused
+    
+    const levelColors = {
+      campaign: 'border-l-hierarchy-campaign',
+      adset: 'border-l-hierarchy-adset',
+      ad: 'border-l-zinc-600'
+    }
+    
+    const levelLabels = {
+      campaign: 'Campaign',
+      adset: 'Ad Set',
+      ad: 'Ad'
+    }
+    
+    return (
+      <div className={cn(
+        "bg-bg-card border border-border rounded-xl p-4 mb-3 border-l-4",
+        levelColors[level],
+        isPaused && "opacity-60"
+      )}>
+        {/* Header with name and verdict */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1 pr-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-wide">{levelLabels[level]}</span>
+              {isPaused && <Pause className="w-3 h-3 text-zinc-500" />}
+              {hasChildrenPaused && !isPaused && (
+                <span className="text-[10px] text-zinc-500">(has paused)</span>
+              )}
+            </div>
+            <h3 className={cn(
+              "font-semibold text-sm",
+              isPaused && "text-zinc-400"
+            )}>{node.name}</h3>
+          </div>
+          <VerdictBadge verdict={node.verdict} size="sm" />
+        </div>
+        
+        {/* Key Metrics */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="bg-bg-dark rounded-lg p-2 text-center">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Spend</div>
+            <div className="font-mono text-sm font-semibold">{formatCurrency(node.spend)}</div>
+          </div>
+          <div className="bg-bg-dark rounded-lg p-2 text-center">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Revenue</div>
+            <div className="font-mono text-sm font-semibold">{formatCurrency(node.revenue)}</div>
+          </div>
+          <div className="bg-bg-dark rounded-lg p-2 text-center">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wide">ROAS</div>
+            <div className={cn(
+              "font-mono text-sm font-semibold",
+              node.roas >= rules.scale_roas ? "text-verdict-scale" :
+              node.roas >= rules.min_roas ? "text-verdict-watch" :
+              node.spend >= rules.learning_spend ? "text-verdict-kill" : "text-zinc-400"
+            )}>{formatROAS(node.roas)}</div>
+          </div>
+        </div>
+        
+        {/* Secondary metrics */}
+        <div className="grid grid-cols-4 gap-2 text-center text-xs">
+          <div>
+            <div className="text-zinc-500">Purch</div>
+            <div className="font-mono">{formatNumber(node.purchases)}</div>
+          </div>
+          <div>
+            <div className="text-zinc-500">CPA</div>
+            <div className="font-mono">{formatMetric(node.cpa)}</div>
+          </div>
+          <div>
+            <div className="text-zinc-500">CTR</div>
+            <div className="font-mono">{formatPercent(node.ctr)}</div>
+          </div>
+          <div>
+            <div className="text-zinc-500">CPC</div>
+            <div className="font-mono">{formatMetric(node.cpc)}</div>
+          </div>
+        </div>
+        
+        {/* Expand/collapse for campaigns and adsets */}
+        {level !== 'ad' && node.children && node.children.length > 0 && (
+          <button
+            onClick={onToggle}
+            className="w-full mt-3 pt-3 border-t border-border text-xs text-zinc-400 hover:text-white flex items-center justify-center gap-1 transition-colors"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="w-4 h-4" />
+                Hide {node.children.length} {level === 'campaign' ? 'ad sets' : 'ads'}
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4" />
+                Show {node.children.length} {level === 'campaign' ? 'ad sets' : 'ads'}
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // Mobile Totals Card
+  const MobileTotalsCard = () => (
+    <div className="bg-zinc-900 border border-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold">All Campaigns</h3>
+        <VerdictBadge verdict={totals.verdict} size="sm" />
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-bg-dark rounded-lg p-2 text-center">
+          <div className="text-[10px] text-zinc-500 uppercase">Spend</div>
+          <div className="font-mono text-sm font-semibold">{formatCurrency(totals.spend)}</div>
+        </div>
+        <div className="bg-bg-dark rounded-lg p-2 text-center">
+          <div className="text-[10px] text-zinc-500 uppercase">Revenue</div>
+          <div className="font-mono text-sm font-semibold">{formatCurrency(totals.revenue)}</div>
+        </div>
+        <div className="bg-bg-dark rounded-lg p-2 text-center">
+          <div className="text-[10px] text-zinc-500 uppercase">ROAS</div>
+          <div className="font-mono text-sm font-semibold text-verdict-scale">{formatROAS(totals.roas)}</div>
+        </div>
+      </div>
+    </div>
+  )
   
   return (
-    <div ref={containerRef} className="bg-bg-card border border-border rounded-xl overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <h2 className="font-semibold">Campaign Performance</h2>
-          <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
-          {verdictFilter !== 'all' && (
-            <span className="text-xs text-zinc-400 bg-bg-dark px-2 py-1 rounded">
-              Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
-            </span>
-          )}
+    <div ref={containerRef}>
+      {/* Desktop Table View */}
+      <div className="desktop-table bg-bg-card border border-border rounded-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <h2 className="font-semibold">Campaign Performance</h2>
+            <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
+            {verdictFilter !== 'all' && (
+              <span className="text-xs text-zinc-400 bg-bg-dark px-2 py-1 rounded">
+                Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
+              </span>
+            )}
+          </div>
+          <button
+            onClick={toggleAll}
+            className="text-xs text-zinc-400 hover:text-white bg-bg-dark border border-border px-3 py-1.5 rounded-md transition-colors"
+          >
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
         </div>
-        <button
-          onClick={toggleAll}
-          className="text-xs text-zinc-400 hover:text-white bg-bg-dark border border-border px-3 py-1.5 rounded-md transition-colors"
-        >
-          {allExpanded ? 'Collapse All' : 'Expand All'}
-        </button>
-      </div>
-      
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <HeaderRow />
-        <TotalsRow />
         
-        <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
-          {sortedHierarchy.length === 0 ? (
-            <div className="px-5 py-8 text-center text-zinc-500">
-              No ads match the selected filter
-            </div>
-          ) : (
-            sortedHierarchy.map(campaign => {
-              const isSelected = selectedCampaigns?.has(campaign.name) ?? true
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <HeaderRow />
+          <TotalsRow />
+          
+          <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
+            {sortedHierarchy.length === 0 ? (
+              <div className="px-5 py-8 text-center text-zinc-500">
+                No ads match the selected filter
+              </div>
+            ) : (
+              sortedHierarchy.map(campaign => {
+                const isSelected = selectedCampaigns?.has(campaign.name) ?? true
+                
+                return (
+                  <div key={campaign.name}>
+                    <DataRow 
+                      node={campaign}
+                      level="campaign"
+                      isExpanded={expandedCampaigns.has(campaign.name)}
+                      onToggle={() => toggleCampaign(campaign.name)}
+                      isSelected={isSelected}
+                    />
+                    
+                    {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                      <div key={`${campaign.name}::${adset.name}`}>
+                        <DataRow 
+                          node={adset}
+                          level="adset"
+                          isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
+                          onToggle={() => toggleAdset(campaign.name, adset.name)}
+                        />
+                        
+                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
+                          <DataRow 
+                            key={`${campaign.name}::${adset.name}::${ad.name}`}
+                            node={ad}
+                            level="ad"
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Cards View */}
+      <div className="mobile-cards">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-semibold">Campaign Performance</h2>
+            <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
+          </div>
+          <button
+            onClick={toggleAll}
+            className="text-xs text-zinc-400 hover:text-white bg-bg-card border border-border px-3 py-1.5 rounded-md transition-colors"
+          >
+            {allExpanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+
+        {verdictFilter !== 'all' && (
+          <div className="text-xs text-zinc-400 bg-bg-card border border-border px-3 py-2 rounded-lg mb-4">
+            Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
+          </div>
+        )}
+
+        {/* Totals Card */}
+        <MobileTotalsCard />
+        
+        {/* Campaign Cards */}
+        {sortedHierarchy.length === 0 ? (
+          <div className="py-8 text-center text-zinc-500">
+            No ads match the selected filter
+          </div>
+        ) : (
+          sortedHierarchy.map(campaign => (
+            <div key={campaign.name}>
+              <MobileCard
+                node={campaign}
+                level="campaign"
+                isExpanded={expandedCampaigns.has(campaign.name)}
+                onToggle={() => toggleCampaign(campaign.name)}
+              />
               
-              return (
-                <div key={campaign.name}>
-                  <DataRow 
-                    node={campaign}
-                    level="campaign"
-                    isExpanded={expandedCampaigns.has(campaign.name)}
-                    onToggle={() => toggleCampaign(campaign.name)}
-                    isSelected={isSelected}
+              {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                <div key={`${campaign.name}::${adset.name}`} className="ml-3">
+                  <MobileCard
+                    node={adset}
+                    level="adset"
+                    isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
+                    onToggle={() => toggleAdset(campaign.name, adset.name)}
                   />
                   
-                  {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
-                    <div key={`${campaign.name}::${adset.name}`}>
-                      <DataRow 
-                        node={adset}
-                        level="adset"
-                        isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
-                        onToggle={() => toggleAdset(campaign.name, adset.name)}
+                  {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
+                    <div key={`${campaign.name}::${adset.name}::${ad.name}`} className="ml-3">
+                      <MobileCard
+                        node={ad}
+                        level="ad"
                       />
-                      
-                      {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
-                        <DataRow 
-                          key={`${campaign.name}::${adset.name}::${ad.name}`}
-                          node={ad}
-                          level="ad"
-                        />
-                      ))}
                     </div>
                   ))}
                 </div>
-              )
-            })
-          )}
-        </div>
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </div>
   )
