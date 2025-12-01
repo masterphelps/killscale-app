@@ -134,10 +134,11 @@ function formatTimeAgo(dateString: string): string {
 export default function AlertsPage() {
   const [activeTab, setActiveTab] = useState<'alerts' | 'settings'>('alerts')
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [historyAlerts, setHistoryAlerts] = useState<Alert[]>([])
   const [settings, setSettings] = useState<Record<string, AlertSetting>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'unread' | 'high'>('all')
+  const [filter, setFilter] = useState<'all' | 'unread' | 'history'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [statusModal, setStatusModal] = useState<{
     isOpen: boolean
@@ -157,11 +158,20 @@ export default function AlertsPage() {
     if (!user) return
     
     try {
+      // Load active alerts
       const res = await fetch(`/api/alerts?userId=${user.id}`)
       const data = await res.json()
       
       if (data.alerts) {
         setAlerts(data.alerts)
+      }
+      
+      // Load history (dismissed alerts)
+      const historyRes = await fetch(`/api/alerts?userId=${user.id}&dismissed=true`)
+      const historyData = await historyRes.json()
+      
+      if (historyData.alerts) {
+        setHistoryAlerts(historyData.alerts)
       }
     } catch (err) {
       console.error('Failed to load alerts:', err)
@@ -373,14 +383,15 @@ export default function AlertsPage() {
     }
   }
 
-  const filteredAlerts = alerts.filter(alert => {
-    if (filter === 'unread') return !alert.is_read
-    if (filter === 'high') return alert.priority === 'high'
-    return true
-  })
+  const filteredAlerts = filter === 'history' 
+    ? historyAlerts 
+    : alerts.filter(alert => {
+        if (filter === 'unread') return !alert.is_read
+        return true
+      })
 
   const unreadCount = alerts.filter(a => !a.is_read).length
-  const highPriorityCount = alerts.filter(a => a.priority === 'high' && !a.is_read).length
+  const historyCount = historyAlerts.length
 
   if (isLoading) {
     return (
@@ -451,7 +462,7 @@ export default function AlertsPage() {
               {[
                 { key: 'all', label: 'All', count: alerts.length },
                 { key: 'unread', label: 'Unread', count: unreadCount },
-                { key: 'high', label: 'High Priority', count: highPriorityCount },
+                { key: 'history', label: 'History', count: historyCount },
               ].map(({ key, label, count }) => (
                 <button
                   key={key}
@@ -472,37 +483,39 @@ export default function AlertsPage() {
               ))}
             </div>
 
-            {/* Bulk Actions */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={refreshAlerts}
-                disabled={isRefreshing}
-                className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm hover:border-zinc-500 transition-colors"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Scan</span>
-              </button>
-              
-              {unreadCount > 0 && (
+            {/* Bulk Actions - only show when not in history view */}
+            {filter !== 'history' && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={markAllRead}
+                  onClick={refreshAlerts}
+                  disabled={isRefreshing}
                   className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm hover:border-zinc-500 transition-colors"
                 >
-                  <CheckCheck className="w-4 h-4" />
-                  <span className="hidden sm:inline">Read all</span>
+                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Scan</span>
                 </button>
-              )}
-              
-              {alerts.length > 0 && (
-                <button
-                  onClick={dismissAll}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-500/50 transition-colors"
+                
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllRead}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm hover:border-zinc-500 transition-colors"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                    <span className="hidden sm:inline">Read all</span>
+                  </button>
+                )}
+                
+                {alerts.length > 0 && (
+                  <button
+                    onClick={dismissAll}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-500/50 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span className="hidden sm:inline">Clear</span>
                 </button>
               )}
             </div>
+            )}
           </div>
 
           {/* Alerts List */}
@@ -515,7 +528,7 @@ export default function AlertsPage() {
                   ? "You're all caught up! Alerts will appear here when something needs your attention."
                   : filter === 'unread'
                     ? "No unread alerts. Nice work!"
-                    : "No high priority alerts right now."
+                    : "No cleared alerts yet."
                 }
               </p>
             </div>
@@ -555,45 +568,56 @@ export default function AlertsPage() {
                           {alert.message}
                         </p>
                         
-                        <div className="flex flex-wrap items-center gap-2">
-                          {canManageAds && 
-                           alert.entity_id && 
-                           (alert.type === 'high_spend_no_conv' || alert.type === 'roas_below_min') &&
-                           !alert.action_taken && (
+                        {/* Actions - only show for non-history alerts */}
+                        {filter !== 'history' ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {canManageAds && 
+                             alert.entity_id && 
+                             (alert.type === 'high_spend_no_conv' || alert.type === 'roas_below_min') &&
+                             !alert.action_taken && (
+                              <button
+                                onClick={() => handlePauseClick(alert)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/20 transition-colors"
+                              >
+                                <Pause className="w-3.5 h-3.5" />
+                                Pause Now
+                              </button>
+                            )}
+                            
+                            {alert.action_taken && (
+                              <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-sm">
+                                <Check className="w-3.5 h-3.5" />
+                                {alert.action_taken === 'paused' ? 'Paused' : alert.action_taken}
+                              </span>
+                            )}
+                            
+                            {!alert.is_read && (
+                              <button
+                                onClick={() => markAsRead(alert.id)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-dark border border-border text-zinc-400 rounded-lg text-sm hover:text-white hover:border-zinc-500 transition-colors"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                Mark read
+                              </button>
+                            )}
+                            
                             <button
-                              onClick={() => handlePauseClick(alert)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/20 transition-colors"
+                              onClick={() => dismissAlert(alert.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-zinc-500 rounded-lg text-sm hover:text-red-400 transition-colors"
                             >
-                              <Pause className="w-3.5 h-3.5" />
-                              Pause Now
+                              <X className="w-3.5 h-3.5" />
+                              Dismiss
                             </button>
-                          )}
-                          
-                          {alert.action_taken && (
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-sm">
+                          </div>
+                        ) : (
+                          /* History view - show action taken badge if applicable */
+                          alert.action_taken && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-sm">
                               <Check className="w-3.5 h-3.5" />
                               {alert.action_taken === 'paused' ? 'Paused' : alert.action_taken}
                             </span>
-                          )}
-                          
-                          {!alert.is_read && (
-                            <button
-                              onClick={() => markAsRead(alert.id)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-dark border border-border text-zinc-400 rounded-lg text-sm hover:text-white hover:border-zinc-500 transition-colors"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              Mark read
-                            </button>
-                          )}
-                          
-                          <button
-                            onClick={() => dismissAlert(alert.id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-zinc-500 rounded-lg text-sm hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            Dismiss
-                          </button>
-                        </div>
+                          )
+                        )}
                       </div>
                     </div>
                   </div>

@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId')
     const unreadOnly = searchParams.get('unreadOnly') === 'true'
     const countOnly = searchParams.get('countOnly') === 'true'
+    const dismissed = searchParams.get('dismissed') === 'true'
     const limit = parseInt(searchParams.get('limit') || '50')
     
     if (!userId) {
@@ -40,11 +41,11 @@ export async function GET(request: NextRequest) {
       .from('alerts')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_dismissed', false)
+      .eq('is_dismissed', dismissed) // false = active, true = history
       .order('created_at', { ascending: false })
       .limit(limit)
     
-    if (unreadOnly) {
+    if (unreadOnly && !dismissed) {
       query = query.eq('is_read', false)
     }
     

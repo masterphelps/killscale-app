@@ -196,10 +196,14 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [isLive, canSync, selectedAccountId])
 
-  const loadData = async () => {
+  const loadData = async (showLoading = true) => {
     if (!user) return
     
-    setIsLoading(true)
+    // Only show loading spinner on initial load (no existing data)
+    if (showLoading && data.length === 0) {
+      setIsLoading(true)
+    }
+    
     const { data: adData, error } = await supabase
       .from('ad_data')
       .select('*')
@@ -227,8 +231,11 @@ export default function DashboardPage() {
       }))
       setData(rows)
       
-      const campaigns = new Set(rows.map(r => r.campaign_name))
-      setSelectedCampaigns(campaigns)
+      // Only reset campaign selection on initial load
+      if (data.length === 0) {
+        const campaigns = new Set(rows.map(r => r.campaign_name))
+        setSelectedCampaigns(campaigns)
+      }
     }
     setIsLoading(false)
   }
@@ -340,7 +347,8 @@ export default function DashboardPage() {
       const result = await response.json()
       
       if (response.ok) {
-        await loadData()
+        // Silent refresh - don't show loading spinner, preserves table state
+        await loadData(false)
         setLastSyncTime(new Date())
       } else {
         alert(result.error || 'Sync failed')
