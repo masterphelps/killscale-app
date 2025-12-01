@@ -164,6 +164,10 @@ export async function POST(request: NextRequest) {
     })
     console.log('Campaign status map:', Object.keys(campaignStatusMap).length, 'campaigns')
     
+    // Debug: Log campaigns with budgets
+    const campaignsWithBudget = Object.entries(campaignBudgetMap).filter(([_, b]) => b.daily || b.lifetime)
+    console.log('Campaigns with CBO budget:', campaignsWithBudget.length, campaignsWithBudget.slice(0, 3))
+    
     // Fetch adset statuses and budgets (with pagination)
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
@@ -180,6 +184,10 @@ export async function POST(request: NextRequest) {
       }
     })
     console.log('Adset status map:', Object.keys(adsetStatusMap).length, 'adsets')
+    
+    // Debug: Log adsets with budgets
+    const adsetsWithBudget = Object.entries(adsetBudgetMap).filter(([_, b]) => b.daily || b.lifetime)
+    console.log('Adsets with ABO budget:', adsetsWithBudget.length, adsetsWithBudget.slice(0, 3))
     
     // Fetch ad statuses (with pagination)
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
@@ -269,6 +277,18 @@ export async function POST(request: NextRequest) {
     // Log sample data before insert
     console.log('Sample data to insert:', JSON.stringify(adData[0], null, 2))
     console.log('Total records to insert:', adData.length)
+    
+    // Debug: Check how many records have budget data
+    const recordsWithCampaignBudget = adData.filter(r => r.campaign_daily_budget || r.campaign_lifetime_budget)
+    const recordsWithAdsetBudget = adData.filter(r => r.adset_daily_budget || r.adset_lifetime_budget)
+    console.log('Records with campaign budget:', recordsWithCampaignBudget.length)
+    console.log('Records with adset budget:', recordsWithAdsetBudget.length)
+    if (recordsWithCampaignBudget.length > 0) {
+      console.log('Sample campaign budget:', recordsWithCampaignBudget[0].campaign_daily_budget, recordsWithCampaignBudget[0].campaign_lifetime_budget)
+    }
+    if (recordsWithAdsetBudget.length > 0) {
+      console.log('Sample adset budget:', recordsWithAdsetBudget[0].adset_daily_budget, recordsWithAdsetBudget[0].adset_lifetime_budget)
+    }
     
     // Delete ALL existing data for this user (CSV and API)
     const { error: deleteError } = await supabase
