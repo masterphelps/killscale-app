@@ -395,7 +395,7 @@ export default function TrendsPage() {
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
   const [includePaused, setIncludePaused] = useState(true)
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [datePreset, setDatePreset] = useState('last_30d')
+  const [datePreset, setDatePreset] = useState('all')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const { user } = useAuth()
@@ -441,6 +441,8 @@ export default function TrendsPage() {
     let start: Date
     
     switch (preset) {
+      case 'all':
+        return { start: '2020-01-01', end: '2099-12-31' }
       case 'today':
         return { start: end, end }
       case 'yesterday':
