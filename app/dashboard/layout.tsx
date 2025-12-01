@@ -21,12 +21,10 @@ export default function DashboardLayout({
     }
   }, [user, loading, router])
 
-  // Close sidebar on route change (mobile)
   useEffect(() => {
     setSidebarOpen(false)
   }, [children])
 
-  // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {
     if (sidebarOpen) {
       document.body.style.overflow = 'hidden'
@@ -52,7 +50,7 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-bg-dark text-white">
-      {/* Mobile Header */}
+      {/* Mobile Header - only shows on mobile */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-bg-sidebar border-b border-border z-50 flex items-center justify-between px-4">
         <svg width="140" height="28" viewBox="0 0 240 40">
           <rect x="4" y="6" width="32" height="28" rx="6" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
@@ -68,20 +66,19 @@ export default function DashboardLayout({
         </button>
       </div>
 
-      {/* Mobile Sidebar Overlay - closes sidebar when tapped */}
+      {/* Mobile Sidebar Overlay - only on mobile when open */}
       {sidebarOpen && (
         <div 
-          className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 bg-black/60 z-40"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar wrapper - mobile: slides in/out, desktop: always visible */}
       <div className={`
+        lg:block
+        ${sidebarOpen ? 'block' : 'hidden'}
         fixed top-0 left-0 h-full z-50
-        transform transition-transform duration-200 ease-in-out
-        lg:translate-x-0
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <Sidebar />
       </div>
