@@ -21,6 +21,20 @@ type Alert = {
   data?: Record<string, any>
 }
 
+type AlertSettings = {
+  enabled: boolean
+  threshold: number | null
+}
+
+// Default settings
+const DEFAULT_SETTINGS: Record<AlertType, AlertSettings> = {
+  high_spend_no_conv: { enabled: true, threshold: 50 },
+  roas_below_min: { enabled: true, threshold: null },
+  roas_above_scale: { enabled: true, threshold: null },
+  status_changed: { enabled: false, threshold: null },
+  ad_fatigue: { enabled: false, threshold: 3 },
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await request.json()
@@ -28,6 +42,23 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'Missing user ID' }, { status: 400 })
     }
+    
+    // Get user's alert settings
+    const { data: userSettings } = await supabase
+      .from('alert_settings')
+      .select('alert_type, enabled, threshold')
+      .eq('user_id', userId)
+    
+    // Merge with defaults
+    const settings: Record<AlertType, AlertSettings> = { ...DEFAULT_SETTINGS }
+    userSettings?.forEach(s => {
+      if (settings[s.alert_type as AlertType]) {
+        settings[s.alert_type as AlertType] = {
+          enabled: s.enabled,
+          threshold: s.threshold ?? DEFAULT_SETTINGS[s.alert_type as AlertType].threshold,
+        }
+      }
+    })
     
     // Get user's rules
     const { data: rules } = await supabase
@@ -156,104 +187,113 @@ export async function POST(request: NextRequest) {
     
     const newAlerts: Alert[] = []
     
-    // Check for HIGH SPEND NO CONVERSIONS (campaigns and adsets with $50+ spend, 0 purchases)
-    Object.values(campaigns).forEach(campaign => {
-      if (campaign.spend >= 50 && campaign.purchases === 0 && campaign.status === 'ACTIVE') {
-        newAlerts.push({
-          user_id: userId,
-          type: 'high_spend_no_conv',
-          priority: 'high',
-          title: 'High spend with no conversions',
-          message: `"${campaign.name}" has spent $${campaign.spend.toFixed(2)} with zero purchases.`,
-          entity_type: 'campaign',
-          entity_id: campaign.id,
-          entity_name: campaign.name,
-          data: { spend: campaign.spend, purchases: 0 }
-        })
-      }
-    })
+    // Get threshold for high spend no conversions
+    const highSpendThreshold = settings.high_spend_no_conv.threshold || 50
     
-    Object.values(adsets).forEach(adset => {
-      if (adset.spend >= 50 && adset.purchases === 0 && adset.status === 'ACTIVE') {
-        newAlerts.push({
-          user_id: userId,
-          type: 'high_spend_no_conv',
-          priority: 'high',
-          title: 'Ad set burning money',
-          message: `"${adset.name}" has spent $${adset.spend.toFixed(2)} with zero purchases.`,
-          entity_type: 'adset',
-          entity_id: adset.id,
-          entity_name: adset.name,
-          data: { spend: adset.spend, purchases: 0, campaign: adset.campaign_name }
-        })
-      }
-    })
+    // Check for HIGH SPEND NO CONVERSIONS (campaigns and adsets with threshold+ spend, 0 purchases)
+    if (settings.high_spend_no_conv.enabled) {
+      Object.values(campaigns).forEach(campaign => {
+        if (campaign.spend >= highSpendThreshold && campaign.purchases === 0 && campaign.status === 'ACTIVE') {
+          newAlerts.push({
+            user_id: userId,
+            type: 'high_spend_no_conv',
+            priority: 'high',
+            title: 'High spend with no conversions',
+            message: `"${campaign.name}" has spent $${campaign.spend.toFixed(2)} with zero purchases.`,
+            entity_type: 'campaign',
+            entity_id: campaign.id,
+            entity_name: campaign.name,
+            data: { spend: campaign.spend, purchases: 0 }
+          })
+        }
+      })
+      
+      Object.values(adsets).forEach(adset => {
+        if (adset.spend >= highSpendThreshold && adset.purchases === 0 && adset.status === 'ACTIVE') {
+          newAlerts.push({
+            user_id: userId,
+            type: 'high_spend_no_conv',
+            priority: 'high',
+            title: 'Ad set burning money',
+            message: `"${adset.name}" has spent $${adset.spend.toFixed(2)} with zero purchases.`,
+            entity_type: 'adset',
+            entity_id: adset.id,
+            entity_name: adset.name,
+            data: { spend: adset.spend, purchases: 0, campaign: adset.campaign_name }
+          })
+        }
+      })
+    }
     
     // Check for ROAS BELOW MIN (with significant spend)
-    Object.values(campaigns).forEach(campaign => {
-      if (campaign.spend >= learningSpend && campaign.roas > 0 && campaign.roas < minRoas && campaign.status === 'ACTIVE') {
-        newAlerts.push({
-          user_id: userId,
-          type: 'roas_below_min',
-          priority: 'medium',
-          title: 'ROAS below threshold',
-          message: `"${campaign.name}" has ${campaign.roas.toFixed(2)}x ROAS (below your ${minRoas}x minimum).`,
-          entity_type: 'campaign',
-          entity_id: campaign.id,
-          entity_name: campaign.name,
-          data: { roas: campaign.roas, minRoas, spend: campaign.spend }
-        })
-      }
-    })
-    
-    Object.values(adsets).forEach(adset => {
-      if (adset.spend >= learningSpend && adset.roas > 0 && adset.roas < minRoas && adset.status === 'ACTIVE') {
-        newAlerts.push({
-          user_id: userId,
-          type: 'roas_below_min',
-          priority: 'medium',
-          title: 'Ad set underperforming',
-          message: `"${adset.name}" has ${adset.roas.toFixed(2)}x ROAS (below your ${minRoas}x minimum).`,
-          entity_type: 'adset',
-          entity_id: adset.id,
-          entity_name: adset.name,
-          data: { roas: adset.roas, minRoas, spend: adset.spend, campaign: adset.campaign_name }
-        })
-      }
-    })
+    if (settings.roas_below_min.enabled) {
+      Object.values(campaigns).forEach(campaign => {
+        if (campaign.spend >= learningSpend && campaign.roas > 0 && campaign.roas < minRoas && campaign.status === 'ACTIVE') {
+          newAlerts.push({
+            user_id: userId,
+            type: 'roas_below_min',
+            priority: 'medium',
+            title: 'ROAS below threshold',
+            message: `"${campaign.name}" has ${campaign.roas.toFixed(2)}x ROAS (below your ${minRoas}x minimum).`,
+            entity_type: 'campaign',
+            entity_id: campaign.id,
+            entity_name: campaign.name,
+            data: { roas: campaign.roas, minRoas, spend: campaign.spend }
+          })
+        }
+      })
+      
+      Object.values(adsets).forEach(adset => {
+        if (adset.spend >= learningSpend && adset.roas > 0 && adset.roas < minRoas && adset.status === 'ACTIVE') {
+          newAlerts.push({
+            user_id: userId,
+            type: 'roas_below_min',
+            priority: 'medium',
+            title: 'Ad set underperforming',
+            message: `"${adset.name}" has ${adset.roas.toFixed(2)}x ROAS (below your ${minRoas}x minimum).`,
+            entity_type: 'adset',
+            entity_id: adset.id,
+            entity_name: adset.name,
+            data: { roas: adset.roas, minRoas, spend: adset.spend, campaign: adset.campaign_name }
+          })
+        }
+      })
+    }
     
     // Check for ROAS ABOVE SCALE (opportunities!)
-    Object.values(campaigns).forEach(campaign => {
-      if (campaign.spend >= learningSpend && campaign.roas >= scaleRoas && campaign.status === 'ACTIVE') {
-        newAlerts.push({
-          user_id: userId,
-          type: 'roas_above_scale',
-          priority: 'low',
-          title: '🚀 Scaling opportunity',
-          message: `"${campaign.name}" is crushing it with ${campaign.roas.toFixed(2)}x ROAS! Consider increasing budget.`,
-          entity_type: 'campaign',
-          entity_id: campaign.id,
-          entity_name: campaign.name,
-          data: { roas: campaign.roas, scaleRoas, spend: campaign.spend, revenue: campaign.revenue }
-        })
-      }
-    })
-    
-    Object.values(ads).forEach(ad => {
-      if (ad.spend >= learningSpend / 2 && ad.roas >= scaleRoas && ad.status === 'ACTIVE') {
-        newAlerts.push({
-          user_id: userId,
-          type: 'roas_above_scale',
-          priority: 'low',
-          title: '🔥 Winning ad found',
-          message: `"${ad.name}" has ${ad.roas.toFixed(2)}x ROAS. This ad is a winner!`,
-          entity_type: 'ad',
-          entity_id: ad.id,
-          entity_name: ad.name,
-          data: { roas: ad.roas, scaleRoas, spend: ad.spend, revenue: ad.revenue, adset: ad.adset_name }
-        })
-      }
-    })
+    if (settings.roas_above_scale.enabled) {
+      Object.values(campaigns).forEach(campaign => {
+        if (campaign.spend >= learningSpend && campaign.roas >= scaleRoas && campaign.status === 'ACTIVE') {
+          newAlerts.push({
+            user_id: userId,
+            type: 'roas_above_scale',
+            priority: 'low',
+            title: '🚀 Scaling opportunity',
+            message: `"${campaign.name}" is crushing it with ${campaign.roas.toFixed(2)}x ROAS! Consider increasing budget.`,
+            entity_type: 'campaign',
+            entity_id: campaign.id,
+            entity_name: campaign.name,
+            data: { roas: campaign.roas, scaleRoas, spend: campaign.spend, revenue: campaign.revenue }
+          })
+        }
+      })
+      
+      Object.values(ads).forEach(ad => {
+        if (ad.spend >= learningSpend / 2 && ad.roas >= scaleRoas && ad.status === 'ACTIVE') {
+          newAlerts.push({
+            user_id: userId,
+            type: 'roas_above_scale',
+            priority: 'low',
+            title: '🔥 Winning ad found',
+            message: `"${ad.name}" has ${ad.roas.toFixed(2)}x ROAS. This ad is a winner!`,
+            entity_type: 'ad',
+            entity_id: ad.id,
+            entity_name: ad.name,
+            data: { roas: ad.roas, scaleRoas, spend: ad.spend, revenue: ad.revenue, adset: ad.adset_name }
+          })
+        }
+      })
+    }
     
     if (newAlerts.length === 0) {
       return NextResponse.json({ message: 'No new alerts', alerts: 0 })
