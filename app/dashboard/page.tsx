@@ -488,7 +488,7 @@ export default function DashboardPage() {
   
   return (
     <>
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
@@ -497,7 +497,7 @@ export default function DashboardPage() {
           
           {/* Entity counts next to Dashboard */}
           {data.length > 0 && (
-            <div className="flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
+            <div className="hidden lg:flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
                 <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
@@ -512,11 +512,11 @@ export default function DashboardPage() {
           )}
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           {data.length > 0 && (
             <>
               {/* Live Toggle - moved before date picker */}
-              <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
                 <button
                   onClick={() => canSync && selectedAccountId && setIsLiveMode(!isLiveMode)}
                   disabled={!canSync || !selectedAccountId}
@@ -587,7 +587,7 @@ export default function DashboardPage() {
             title={!canSync ? 'Sync requires Pro plan' : !selectedAccountId ? 'Connect an account first' : 'Sync from Meta'}
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Syncing...' : 'Sync'}
+            {isSyncing ? <span className="hidden sm:inline">Syncing...</span> : <span className="hidden sm:inline">Sync</span>}
             {lastSyncTime && !isSyncing && (
               <span className="text-xs text-zinc-500">{getTimeSinceSync()}</span>
             )}
@@ -598,7 +598,7 @@ export default function DashboardPage() {
             className="flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Upload className="w-4 h-4" />
-            Upload CSV
+            <span className="hidden sm:inline">Upload CSV</span>
           </button>
 
           {/* Delete Button - far right */}
@@ -631,7 +631,7 @@ export default function DashboardPage() {
                   : 'Upload a CSV export from Meta Ads to get started'
                 }
               </p>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 lg:gap-3">
                 {canSync && selectedAccountId && (
                   <button 
                     onClick={handleSync}
@@ -650,7 +650,7 @@ export default function DashboardPage() {
                   }`}
                 >
                   <Upload className="w-4 h-4" />
-                  Upload CSV
+                  <span className="hidden sm:inline">Upload CSV</span>
                 </button>
               </div>
             </>
@@ -660,7 +660,7 @@ export default function DashboardPage() {
         <>
           {isLimited && (
             <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 lg:gap-3">
                 <Lock className="w-5 h-5 text-amber-500" />
                 <div>
                   <div className="font-medium text-amber-500">
@@ -824,7 +824,7 @@ export default function DashboardPage() {
           />
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-bg-sidebar border border-border rounded-xl p-6 z-50">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold">Upload CSV</h2>
+              <h2 className="text-lg font-semibold"><span className="hidden sm:inline">Upload CSV</span></h2>
               <button 
                 onClick={() => setShowUpload(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-card border border-border text-zinc-400 hover:text-white transition-colors"
