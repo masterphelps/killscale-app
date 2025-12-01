@@ -4,8 +4,11 @@ export type CSVRow = {
   date_start: string
   date_end: string
   ad_name: string
+  ad_id?: string | null
   campaign_name: string
+  campaign_id?: string | null
   adset_name: string
+  adset_id?: string | null
   impressions: number
   clicks: number
   spend: number

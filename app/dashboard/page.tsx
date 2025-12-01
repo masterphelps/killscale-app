@@ -6,6 +6,7 @@ import { Upload, Lock, Trash2, RefreshCw } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
+import { StatusChangeModal } from '@/components/confirm-modal'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CSVRow } from '@/lib/csv-parser'
 import { Rules } from '@/lib/supabase'
@@ -83,6 +84,14 @@ export default function DashboardPage() {
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [isLiveMode, setIsLiveMode] = useState(false)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [statusChangeModal, setStatusChangeModal] = useState<{
+    isOpen: boolean
+    entityId: string
+    entityType: 'campaign' | 'adset' | 'ad'
+    entityName: string
+    action: 'pause' | 'resume'
+  } | null>(null)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { plan } = useSubscription()
   const { user } = useAuth()
   const searchParams = useSearchParams()
@@ -168,8 +177,11 @@ export default function DashboardPage() {
         date_start: row.date_start,
         date_end: row.date_end,
         campaign_name: row.campaign_name,
+        campaign_id: row.campaign_id,
         adset_name: row.adset_name,
+        adset_id: row.adset_id,
         ad_name: row.ad_name,
+        ad_id: row.ad_id,
         impressions: row.impressions,
         clicks: row.clicks,
         spend: parseFloat(row.spend),
@@ -312,6 +324,56 @@ export default function DashboardPage() {
     await handleSyncAccount(selectedAccountId)
   }
 
+  // Handle status change request (opens confirmation modal)
+  const handleStatusChangeRequest = (
+    entityId: string,
+    entityType: 'campaign' | 'adset' | 'ad',
+    entityName: string,
+    newStatus: 'ACTIVE' | 'PAUSED'
+  ) => {
+    setStatusChangeModal({
+      isOpen: true,
+      entityId,
+      entityType,
+      entityName,
+      action: newStatus === 'PAUSED' ? 'pause' : 'resume'
+    })
+  }
+
+  // Confirm and execute status change
+  const handleStatusChangeConfirm = async () => {
+    if (!statusChangeModal || !user) return
+    
+    setIsUpdatingStatus(true)
+    
+    try {
+      const response = await fetch('/api/meta/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entityId: statusChangeModal.entityId,
+          entityType: statusChangeModal.entityType,
+          status: statusChangeModal.action === 'pause' ? 'PAUSED' : 'ACTIVE'
+        }),
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        // Refresh data to reflect the change
+        await loadData()
+        setStatusChangeModal(null)
+      } else {
+        alert(result.error || 'Failed to update status')
+      }
+    } catch (err) {
+      alert('Failed to update status. Please try again.')
+    }
+    
+    setIsUpdatingStatus(false)
+  }
+
   // Format time since last sync
   const getTimeSinceSync = () => {
     if (!lastSyncTime) return null
@@ -425,8 +487,11 @@ export default function DashboardPage() {
   
   const tableData = filteredData.map(row => ({
     campaign_name: row.campaign_name,
+    campaign_id: row.campaign_id,
     adset_name: row.adset_name,
+    adset_id: row.adset_id,
     ad_name: row.ad_name,
+    ad_id: row.ad_id,
     impressions: row.impressions,
     clicks: row.clicks,
     spend: row.spend,
@@ -812,6 +877,8 @@ export default function DashboardPage() {
             onSelectAll={handleSelectAll}
             allSelected={allSelected}
             someSelected={someSelected}
+            onStatusChange={handleStatusChangeRequest}
+            canManageAds={canSync && !!selectedAccountId}
           />
         </>
       )}
@@ -840,6 +907,19 @@ export default function DashboardPage() {
             )}
           </div>
         </>
+      )}
+
+      {/* Status Change Confirmation Modal */}
+      {statusChangeModal && (
+        <StatusChangeModal
+          isOpen={statusChangeModal.isOpen}
+          onClose={() => setStatusChangeModal(null)}
+          onConfirm={handleStatusChangeConfirm}
+          entityName={statusChangeModal.entityName}
+          entityType={statusChangeModal.entityType}
+          action={statusChangeModal.action}
+          isLoading={isUpdatingStatus}
+        />
       )}
     </>
   )

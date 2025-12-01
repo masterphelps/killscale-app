@@ -1,15 +1,18 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause, Play } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
 
 type AdRow = {
   campaign_name: string
+  campaign_id?: string | null
   adset_name: string
+  adset_id?: string | null
   ad_name: string
+  ad_id?: string | null
   impressions: number
   clicks: number
   spend: number
@@ -37,10 +40,13 @@ type PerformanceTableProps = {
   onSelectAll?: () => void
   allSelected?: boolean
   someSelected?: boolean
+  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED') => void
+  canManageAds?: boolean
 }
 
 type HierarchyNode = {
   name: string
+  id?: string | null  // Meta entity ID for API calls
   type: 'campaign' | 'adset' | 'ad'
   impressions: number
   clicks: number
@@ -88,19 +94,28 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaigns: Record<string, HierarchyNode & { _status?: string | null }> = {}
   const adsetStatuses: Record<string, string | null> = {}  // Track adset statuses by name
   const campaignStatuses: Record<string, string | null> = {}  // Track campaign statuses by name
+  const campaignIds: Record<string, string | null> = {}  // Track campaign IDs by name
+  const adsetIds: Record<string, string | null> = {}  // Track adset IDs by name
   
   data.forEach(row => {
-    // Capture statuses from the first row we see for each entity
+    // Capture statuses and IDs from the first row we see for each entity
     if (row.campaign_status && !campaignStatuses[row.campaign_name]) {
       campaignStatuses[row.campaign_name] = row.campaign_status
     }
+    if (row.campaign_id && !campaignIds[row.campaign_name]) {
+      campaignIds[row.campaign_name] = row.campaign_id
+    }
     if (row.adset_status && !adsetStatuses[row.adset_name]) {
       adsetStatuses[row.adset_name] = row.adset_status
+    }
+    if (row.adset_id && !adsetIds[row.adset_name]) {
+      adsetIds[row.adset_name] = row.adset_id
     }
     
     if (!campaigns[row.campaign_name]) {
       campaigns[row.campaign_name] = {
         name: row.campaign_name,
+        id: row.campaign_id,
         type: 'campaign',
         impressions: 0,
         clicks: 0,
@@ -117,11 +132,14 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
     }
     const campaign = campaigns[row.campaign_name]
+    // Ensure we have the ID even if first row didn't have it
+    if (row.campaign_id && !campaign.id) campaign.id = row.campaign_id
     
     let adset = campaign.children?.find(c => c.name === row.adset_name)
     if (!adset) {
       adset = {
         name: row.adset_name,
+        id: row.adset_id,
         type: 'adset',
         impressions: 0,
         clicks: 0,
@@ -138,12 +156,15 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
       campaign.children?.push(adset)
     }
+    // Ensure we have the ID even if first row didn't have it
+    if (row.adset_id && !adset.id) adset.id = row.adset_id
     
     // Check if ad already exists - aggregate instead of duplicating
     let ad = adset.children?.find(a => a.name === row.ad_name)
     if (!ad) {
       ad = {
         name: row.ad_name,
+        id: row.ad_id,
         type: 'ad',
         impressions: 0,
         clicks: 0,
@@ -160,6 +181,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
       adset.children?.push(ad)
     }
+    // Ensure we have the ID even if first row didn't have it
+    if (row.ad_id && !ad.id) ad.id = row.ad_id
     
     // Aggregate ad metrics
     ad.impressions += row.impressions
@@ -290,7 +313,9 @@ export function PerformanceTable({
   onCampaignToggle,
   onSelectAll,
   allSelected = false,
-  someSelected = false
+  someSelected = false,
+  onStatusChange,
+  canManageAds = false
 }: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
@@ -578,6 +603,32 @@ export function PerformanceTable({
           <div className="w-20 flex justify-center px-2 flex-shrink-0">
             <VerdictBadge verdict={node.verdict} size="sm" />
           </div>
+          {/* Actions column */}
+          {canManageAds && onStatusChange && node.id && (
+            <div className="w-16 flex justify-center px-2 flex-shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const isPaused = node.status && node.status !== 'ACTIVE'
+                  const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
+                  onStatusChange(node.id!, level, node.name, newStatus)
+                }}
+                className={cn(
+                  'w-7 h-7 flex items-center justify-center rounded-md border transition-all',
+                  node.status && node.status !== 'ACTIVE'
+                    ? 'border-green-500/30 text-green-500 hover:bg-green-500/20 hover:border-green-500/50'
+                    : 'border-amber-500/30 text-amber-500 hover:bg-amber-500/20 hover:border-amber-500/50'
+                )}
+                title={node.status && node.status !== 'ACTIVE' ? 'Resume' : 'Pause'}
+              >
+                {node.status && node.status !== 'ACTIVE' ? (
+                  <Play className="w-3.5 h-3.5" />
+                ) : (
+                  <Pause className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -635,6 +686,11 @@ export function PerformanceTable({
         <div className="w-20 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
           Verdict <SortIcon field="verdict" />
         </div>
+        {canManageAds && (
+          <div className="w-16 text-center px-2 flex-shrink-0">
+            Actions
+          </div>
+        )}
       </div>
     </div>
   )
@@ -675,6 +731,9 @@ export function PerformanceTable({
         <div className="w-20 flex justify-center px-2 flex-shrink-0">
           <VerdictBadge verdict={totals.verdict} size="sm" />
         </div>
+        {canManageAds && (
+          <div className="w-16 flex-shrink-0" />
+        )}
       </div>
     </div>
   )
@@ -722,7 +781,31 @@ export function PerformanceTable({
               isPaused && "text-zinc-400"
             )}>{node.name}</h3>
           </div>
-          <VerdictBadge verdict={node.verdict} size="sm" />
+          <div className="flex items-center gap-2">
+            <VerdictBadge verdict={node.verdict} size="sm" />
+            {/* Pause/Resume button for mobile */}
+            {canManageAds && onStatusChange && node.id && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
+                  onStatusChange(node.id!, level, node.name, newStatus)
+                }}
+                className={cn(
+                  'w-8 h-8 flex items-center justify-center rounded-lg border transition-all',
+                  isPaused
+                    ? 'border-green-500/30 text-green-500 hover:bg-green-500/20'
+                    : 'border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+                )}
+              >
+                {isPaused ? (
+                  <Play className="w-4 h-4" />
+                ) : (
+                  <Pause className="w-4 h-4" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
         
         {/* Key Metrics */}
