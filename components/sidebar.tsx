@@ -55,6 +55,7 @@ export function Sidebar() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [dataSource, setDataSource] = useState<DataSource>('none')
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null)
+  const [unreadAlertCount, setUnreadAlertCount] = useState(0)
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
   
@@ -63,7 +64,16 @@ export function Sidebar() {
     if (user) {
       loadConnection()
       checkDataSource()
+      loadAlertCount()
     }
+  }, [user])
+
+  // Periodically check alert count
+  useEffect(() => {
+    if (!user) return
+    
+    const interval = setInterval(loadAlertCount, 30000) // Every 30 seconds
+    return () => clearInterval(interval)
   }, [user])
 
   // Listen for storage events to refresh when data changes
@@ -120,6 +130,20 @@ export function Sidebar() {
       // Treat NULL or 'csv' as CSV data
       setDataSource('csv')
       setCurrentAccountId(null)
+    }
+  }
+
+  const loadAlertCount = async () => {
+    if (!user) return
+    
+    try {
+      const res = await fetch(`/api/alerts?userId=${user.id}&countOnly=true`)
+      const data = await res.json()
+      if (typeof data.count === 'number') {
+        setUnreadAlertCount(data.count)
+      }
+    } catch (err) {
+      console.error('Failed to load alert count:', err)
     }
   }
 
@@ -273,6 +297,7 @@ export function Sidebar() {
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
+          const isAlerts = item.href === '/dashboard/alerts'
           
           return (
             <Link
@@ -286,7 +311,17 @@ export function Sidebar() {
               )}
             >
               <Icon className="w-5 h-5" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {isAlerts && unreadAlertCount > 0 && (
+                <span className={cn(
+                  "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
+                  isActive 
+                    ? "bg-white/20 text-white" 
+                    : "bg-red-500 text-white"
+                )}>
+                  {unreadAlertCount > 99 ? '99+' : unreadAlertCount}
+                </span>
+              )}
             </Link>
           )
         })}

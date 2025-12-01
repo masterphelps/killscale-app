@@ -276,6 +276,19 @@ export async function POST(request: NextRequest) {
       .update({ last_sync_at: new Date().toISOString() })
       .eq('user_id', userId)
     
+    // Trigger alert generation in the background
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      fetch(`${baseUrl}/api/alerts/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      }).catch(err => console.error('Alert generation failed:', err))
+    } catch (alertErr) {
+      console.error('Failed to trigger alerts:', alertErr)
+      // Don't fail the sync if alert generation fails
+    }
+    
     return NextResponse.json({ 
       message: 'Sync complete',
       count: adData.length 
