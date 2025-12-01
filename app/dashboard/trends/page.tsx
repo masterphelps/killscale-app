@@ -408,9 +408,8 @@ export default function TrendsPage() {
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: true })
-      .limit(10000)
     
-    if (adData && !error) { console.log("Trends loaded rows:", adData.length);
+    if (adData && !error) {
       setData(adData.map(row => ({
         campaign_name: row.campaign_name,
         adset_name: row.adset_name,
