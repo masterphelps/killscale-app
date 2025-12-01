@@ -649,7 +649,7 @@ export default function TrendsPage() {
       if (best && best.roas > 0) {
         results.push({
           type: 'success',
-          message: `🔥 Top performer: "${best.name}" with ${best.roas.toFixed(2)}x ROAS`
+          message: `Top performer: "${best.name}" with ${best.roas.toFixed(2)}x ROAS`
         })
       }
       
@@ -658,7 +658,7 @@ export default function TrendsPage() {
       if (worst && worst.roas < 1.5) {
         results.push({
           type: 'warning',
-          message: `⚠️ "${worst.name}" has ${worst.roas.toFixed(2)}x ROAS - consider optimizing`
+          message: `"${worst.name}" has ${worst.roas.toFixed(2)}x ROAS - consider optimizing`
         })
       }
       
@@ -669,7 +669,7 @@ export default function TrendsPage() {
         if (spendPercent > 40) {
           results.push({
             type: 'info',
-            message: `💰 "${topSpender.name}" represents ${spendPercent.toFixed(0)}% of total spend`
+            message: `"${topSpender.name}" represents ${spendPercent.toFixed(0)}% of total spend`
           })
         }
       }
