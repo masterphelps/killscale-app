@@ -26,6 +26,18 @@ export default function DashboardLayout({
     setSidebarOpen(false)
   }, [children])
 
+  // Prevent body scroll when sidebar is open on mobile
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [sidebarOpen])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-bg-dark flex items-center justify-center">
@@ -56,25 +68,26 @@ export default function DashboardLayout({
         </button>
       </div>
 
-      {/* Mobile Sidebar Overlay */}
+      {/* Mobile Sidebar Overlay - closes sidebar when tapped */}
       {sidebarOpen && (
         <div 
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar - hidden on mobile unless open */}
+      {/* Sidebar */}
       <div className={`
-        fixed lg:relative z-50
+        fixed top-0 left-0 h-full z-50
         transform transition-transform duration-200 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        lg:translate-x-0
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <Sidebar />
       </div>
 
       {/* Main content */}
-      <main className="lg:ml-60 p-4 lg:p-8 pt-18 lg:pt-8">
+      <main className="lg:ml-60 p-4 lg:p-8 pt-20 lg:pt-8">
         {children}
       </main>
     </div>

@@ -12,12 +12,12 @@ type StatCardProps = {
 
 export function StatCard({ label, value, change, icon }: StatCardProps) {
   return (
-    <div className="bg-bg-card border border-border rounded-xl p-5">
-      <div className="text-sm text-zinc-400 mb-2 flex items-center gap-2">
-        {icon && <span>{icon}</span>}
+    <div className="bg-bg-card border border-border rounded-xl p-3 lg:p-5">
+      <div className="text-xs lg:text-sm text-zinc-400 mb-1 lg:mb-2 flex items-center gap-1 lg:gap-2">
+        {icon && <span className="text-sm lg:text-base">{icon}</span>}
         {label}
       </div>
-      <div className="text-3xl font-bold font-mono">{value}</div>
+      <div className="text-xl lg:text-3xl font-bold font-mono truncate">{value}</div>
       {change && (
         <div className={cn(
           'text-xs mt-2 flex items-center gap-1',
