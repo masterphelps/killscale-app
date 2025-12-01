@@ -595,7 +595,7 @@ export default function DashboardPage() {
           
           <button 
             onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+            className="hidden sm:flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Upload CSV</span>
