@@ -35,7 +35,6 @@ import {
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
-import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import {
   AreaChart,
   Area,
@@ -394,10 +393,6 @@ export default function TrendsPage() {
   const [compareMode, setCompareMode] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
   const [includePaused, setIncludePaused] = useState(true)
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [datePreset, setDatePreset] = useState('last_30d')
-  const [customStartDate, setCustomStartDate] = useState('')
-  const [customEndDate, setCustomEndDate] = useState('')
   const { user } = useAuth()
   
   useEffect(() => {
@@ -434,64 +429,27 @@ export default function TrendsPage() {
     setIsLoading(false)
   }
   
-  // Calculate date range from preset
-  const getDateRangeFromPreset = (preset: string): { start: string, end: string } => {
-    const today = new Date()
-    const end = today.toISOString().split('T')[0]
-    let start: Date
-    
-    switch (preset) {
-      case 'today':
-        return { start: end, end }
-      case 'yesterday':
-        start = new Date(today)
-        start.setDate(start.getDate() - 1)
-        return { start: start.toISOString().split('T')[0], end: start.toISOString().split('T')[0] }
-      case 'last_7d':
-        start = new Date(today)
-        start.setDate(start.getDate() - 7)
-        return { start: start.toISOString().split('T')[0], end }
-      case 'last_14d':
-        start = new Date(today)
-        start.setDate(start.getDate() - 14)
-        return { start: start.toISOString().split('T')[0], end }
-      case 'last_30d':
-        start = new Date(today)
-        start.setDate(start.getDate() - 30)
-        return { start: start.toISOString().split('T')[0], end }
-      case 'last_90d':
-        start = new Date(today)
-        start.setDate(start.getDate() - 90)
-        return { start: start.toISOString().split('T')[0], end }
-      case 'this_month':
-        start = new Date(today.getFullYear(), today.getMonth(), 1)
-        return { start: start.toISOString().split('T')[0], end }
-      case 'last_month':
-        start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
-        return { start: start.toISOString().split('T')[0], end: lastMonthEnd.toISOString().split('T')[0] }
-      case 'maximum':
-        return { start: '2000-01-01', end }
-      case 'custom':
-        return { start: customStartDate || '2000-01-01', end: customEndDate || end }
-      default:
-        start = new Date(today)
-        start.setDate(start.getDate() - 30)
-        return { start: start.toISOString().split('T')[0], end }
-    }
-  }
-  
-  const dateRange = useMemo(() => getDateRangeFromPreset(datePreset), [datePreset, customStartDate, customEndDate])
-  
   // Get display label for current date selection
   const getDateLabel = () => {
-    if (datePreset === 'custom' && customStartDate && customEndDate) {
-      return `${customStartDate} - ${customEndDate}`
+    if (dataDateRange) {
+      return `${dataDateRange.start} - ${dataDateRange.end}`
     }
-    return DATE_PRESETS.find(p => p.value === datePreset)?.label || 'Last 30 Days'
+    return 'No data'
   }
   
   // Filter data by date range and paused status
+  // Get actual date range from synced data
+  const dataDateRange = useMemo(() => {
+    if (data.length === 0) return null
+    const dates = data.map(r => r.date_start).filter(Boolean).sort()
+    const endDates = data.map(r => r.date_end).filter(Boolean).sort()
+    if (dates.length === 0) return null
+    return {
+      start: dates[0],
+      end: endDates[endDates.length - 1] || dates[dates.length - 1]
+    }
+  }, [data])
+
   const filteredData = useMemo(() => {
     return data.filter(row => {
       // Paused filter - exclude if not including paused and any level is paused
@@ -817,32 +775,10 @@ export default function TrendsPage() {
             </span>
           </div>
           
-          {/* Date Picker Dropdown - same as dashboard */}
-          <div className="relative">
-            <DatePickerButton
-              label={getDateLabel()}
-              onClick={() => setShowDatePicker(!showDatePicker)}
-              isOpen={showDatePicker}
-            />
-            
-            <DatePicker
-              isOpen={showDatePicker}
-              onClose={() => setShowDatePicker(false)}
-              datePreset={datePreset}
-              onPresetChange={(preset) => setDatePreset(preset)}
-              customStartDate={customStartDate}
-              customEndDate={customEndDate}
-              onCustomDateChange={(start, end) => {
-                setCustomStartDate(start)
-                setCustomEndDate(end)
-              }}
-              onApply={() => {
-                if (customStartDate && customEndDate) {
-                  setDatePreset('custom')
-                  setShowDatePicker(false)
-                }
-              }}
-            />
+          {/* Date Range Display - shows actual synced data range */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
+            <Calendar className="w-4 h-4 text-zinc-500" />
+            <span className="text-sm">{getDateLabel()}</span>
           </div>
         </div>
       </div>
