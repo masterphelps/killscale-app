@@ -164,7 +164,7 @@ export default function DashboardPage() {
       .order('date_start', { ascending: false })
       .limit(10000)
 
-    if (adData && !error) {
+    if (adData && !error) { console.log("Dashboard loaded rows:", adData.length);
       const rows = adData.map(row => ({
         date_start: row.date_start,
         date_end: row.date_end,

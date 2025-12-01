@@ -410,7 +410,7 @@ export default function TrendsPage() {
       .order('date_start', { ascending: true })
       .limit(10000)
     
-    if (adData && !error) {
+    if (adData && !error) { console.log("Trends loaded rows:", adData.length);
       setData(adData.map(row => ({
         campaign_name: row.campaign_name,
         adset_name: row.adset_name,
