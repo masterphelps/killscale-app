@@ -230,11 +230,6 @@ export default function DashboardPage() {
         status: row.status, // Ad's effective status (includes parent inheritance)
         adset_status: row.adset_status, // Adset's own status
         campaign_status: row.campaign_status, // Campaign's own status
-        // Budget fields
-        campaign_daily_budget: row.campaign_daily_budget ? parseFloat(row.campaign_daily_budget) : null,
-        campaign_lifetime_budget: row.campaign_lifetime_budget ? parseFloat(row.campaign_lifetime_budget) : null,
-        adset_daily_budget: row.adset_daily_budget ? parseFloat(row.adset_daily_budget) : null,
-        adset_lifetime_budget: row.adset_lifetime_budget ? parseFloat(row.adset_lifetime_budget) : null,
       }))
       setData(rows)
       
