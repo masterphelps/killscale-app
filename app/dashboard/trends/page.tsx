@@ -496,12 +496,6 @@ export default function TrendsPage() {
   // Filter data by date range and paused status
   const filteredData = useMemo(() => {
     return data.filter(row => {
-      // Date filter - skip if all selected
-      if (datePreset !== 'all') {
-      if (row.date_start < dateRange.start || row.date_start > dateRange.end) {
-        return false
-      }
-      
       // Paused filter - exclude if not including paused and any level is paused
       if (!includePaused) {
         const isPaused = 
@@ -513,7 +507,7 @@ export default function TrendsPage() {
       
       return true
     })
-  }, [data, dateRange, datePreset, includePaused])
+  }, [data, includePaused])
   
   // Build hierarchy
   const hierarchy = useMemo(() => {
