@@ -613,24 +613,6 @@ export function PerformanceTable({
             {!onToggle && <div className="w-4" />}
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
             <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
-            {/* Budget badge - CBO on campaign, ABO on adset (only in detailed mode) */}
-            {viewMode === 'detailed' && node.budgetType && (
-              <span className={cn(
-                'flex-shrink-0 inline-flex items-center gap-1 rounded text-[9px] px-1.5 py-0.5 ml-1 font-medium',
-                node.budgetType === 'CBO' 
-                  ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' 
-                  : 'bg-purple-500/20 border border-purple-500/30 text-purple-400'
-              )}>
-                <span>{node.budgetType}</span>
-                <span className="text-zinc-400">
-                  {node.dailyBudget 
-                    ? `$${node.dailyBudget.toLocaleString()}/day` 
-                    : node.lifetimeBudget 
-                      ? `$${node.lifetimeBudget.toLocaleString()} LT`
-                      : ''}
-                </span>
-              </span>
-            )}
             {/* Paused indicator - only show when includePaused is true */}
             {includePaused && node.status && node.status !== 'ACTIVE' ? (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
@@ -653,28 +635,26 @@ export function PerformanceTable({
         
         {/* Data columns */}
         <div className="flex-1 flex items-center">
-          {/* Simple mode: Budget column */}
-          {viewMode === 'simple' && (
-            <div className="w-28 text-right font-mono text-sm px-2 flex-shrink-0">
-              {node.budgetType ? (
-                <span className={cn(
-                  'inline-flex items-center gap-1 rounded text-[10px] px-1.5 py-0.5 font-medium',
-                  node.budgetType === 'CBO' 
-                    ? 'bg-blue-500/20 text-blue-400' 
-                    : 'bg-purple-500/20 text-purple-400'
-                )}>
-                  <span>{node.budgetType}</span>
-                  <span className="text-zinc-400">
-                    {node.dailyBudget 
-                      ? `$${node.dailyBudget.toLocaleString()}` 
-                      : node.lifetimeBudget 
-                        ? `$${node.lifetimeBudget.toLocaleString()}`
-                        : ''}
-                  </span>
+          {/* Budget column - both views */}
+          <div className="w-28 text-right font-mono text-sm px-2 flex-shrink-0">
+            {node.budgetType ? (
+              <span className={cn(
+                'inline-flex items-center gap-1 rounded text-[10px] px-1.5 py-0.5 font-medium',
+                node.budgetType === 'CBO' 
+                  ? 'bg-blue-500/20 text-blue-400' 
+                  : 'bg-purple-500/20 text-purple-400'
+              )}>
+                <span>{node.budgetType}</span>
+                <span className="text-zinc-400">
+                  {node.dailyBudget 
+                    ? `$${node.dailyBudget.toLocaleString()}` 
+                    : node.lifetimeBudget 
+                      ? `$${node.lifetimeBudget.toLocaleString()}`
+                      : ''}
                 </span>
-              ) : '—'}
-            </div>
-          )}
+              </span>
+            ) : '—'}
+          </div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
           <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
@@ -743,10 +723,8 @@ export function PerformanceTable({
         </div>
       </div>
       <div className="flex-1 flex items-center">
-        {/* Simple mode: Budget column */}
-        {viewMode === 'simple' && (
-          <div className="w-28 text-right px-2 flex-shrink-0">Budget</div>
-        )}
+        {/* Budget column - both views */}
+        <div className="w-28 text-right px-2 flex-shrink-0">Budget</div>
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('spend')}>
           Spend <SortIcon field="spend" />
         </div>
@@ -817,10 +795,8 @@ export function PerformanceTable({
       )}
       <div className="px-3 text-white flex-shrink-0 text-sm font-semibold" style={{ width: nameColWidth }}>All Campaigns</div>
       <div className="flex-1 flex items-center">
-        {/* Simple mode: Budget column (empty for totals) */}
-        {viewMode === 'simple' && (
-          <div className="w-28 text-right font-mono text-sm px-2 flex-shrink-0">—</div>
-        )}
+        {/* Budget column - both views (empty for totals) */}
+        <div className="w-28 text-right font-mono text-sm px-2 flex-shrink-0">—</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
         <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
