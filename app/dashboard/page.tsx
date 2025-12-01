@@ -87,6 +87,23 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const searchParams = useSearchParams()
   
+  // Load saved date settings on mount
+  useEffect(() => {
+    const savedDatePreset = localStorage.getItem('killscale_datePreset')
+    const savedCustomStart = localStorage.getItem('killscale_customStartDate')
+    const savedCustomEnd = localStorage.getItem('killscale_customEndDate')
+    if (savedDatePreset) setDatePreset(savedDatePreset)
+    if (savedCustomStart) setCustomStartDate(savedCustomStart)
+    if (savedCustomEnd) setCustomEndDate(savedCustomEnd)
+  }, [])
+  
+  // Save date settings when they change
+  useEffect(() => {
+    localStorage.setItem('killscale_datePreset', datePreset)
+    if (customStartDate) localStorage.setItem('killscale_customStartDate', customStartDate)
+    if (customEndDate) localStorage.setItem('killscale_customEndDate', customEndDate)
+  }, [datePreset, customStartDate, customEndDate])
+  
   const canSync = plan === 'Pro' || plan === 'Agency'
   
   useEffect(() => {
@@ -353,7 +370,23 @@ export default function DashboardPage() {
     ? allCampaigns.slice(0, campaignLimit)
     : allCampaigns
   
-  const filteredData = data.filter(row => visibleCampaigns.includes(row.campaign_name))
+  const filteredData = useMemo(() => {
+    return data.filter(row => {
+      // Campaign limit filter
+      if (!visibleCampaigns.includes(row.campaign_name)) return false
+      
+      // Paused filter
+      if (!includePaused) {
+        const isPaused = 
+          row.status?.toUpperCase() === 'PAUSED' || 
+          row.adset_status?.toUpperCase() === 'PAUSED' || 
+          row.campaign_status?.toUpperCase() === 'PAUSED'
+        if (isPaused) return false
+      }
+      
+      return true
+    })
+  }, [data, visibleCampaigns, includePaused])
   
   const selectedData = useMemo(() => 
     filteredData.filter(row => selectedCampaigns.has(row.campaign_name)),
@@ -662,8 +695,8 @@ export default function DashboardPage() {
             </div>
           )}
           
-          {/* Primary Stats Row */}
-          <div className="grid grid-cols-4 gap-4 mb-4">
+          {/* Primary Stats Row - responsive grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4">
             <StatCard 
               label="Total Spend" 
               value={formatCurrency(totals.spend)}
@@ -686,8 +719,8 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* Secondary Stats Row */}
-          <div className="grid grid-cols-6 gap-4 mb-8">
+          {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
+          <div className="hidden lg:grid grid-cols-6 gap-4 mb-8">
             <StatCard 
               label="CPM" 
               value={formatCPM(totals.spend, totals.impressions)}
@@ -720,14 +753,14 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* Verdict Filters */}
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-sm text-zinc-500 mr-2">Filter:</span>
+          {/* Verdict Filters - scrollable on mobile */}
+          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 lg:pb-0 lg:overflow-visible">
+            <span className="text-sm text-zinc-500 mr-2 flex-shrink-0">Filter:</span>
             {filterButtons.map((filter) => (
               <button
                 key={filter.value}
                 onClick={() => setVerdictFilter(filter.value)}
-                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex-shrink-0 ${
                   verdictFilter === filter.value
                     ? filter.value === 'all' 
                       ? 'bg-zinc-700 border-zinc-600 text-white'
@@ -746,7 +779,7 @@ export default function DashboardPage() {
             ))}
             
             {/* Include Paused Toggle */}
-            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border">
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border flex-shrink-0">
               <button
                 onClick={() => setIncludePaused(!includePaused)}
                 className={`relative w-9 h-5 rounded-full transition-all ${
@@ -759,8 +792,11 @@ export default function DashboardPage() {
                   }`}
                 />
               </button>
-              <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+              <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'} hidden sm:inline`}>
                 Include Paused
+              </span>
+              <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'} sm:hidden`}>
+                Paused
               </span>
             </div>
           </div>
