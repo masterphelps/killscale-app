@@ -18,6 +18,11 @@ export type CSVRow = {
   status?: string | null
   adset_status?: string | null
   campaign_status?: string | null
+  // Budget fields from Meta API (null for CSV uploads)
+  campaign_daily_budget?: number | null
+  campaign_lifetime_budget?: number | null
+  adset_daily_budget?: number | null
+  adset_lifetime_budget?: number | null
 }
 
 const COLUMN_MAP: Record<string, string> = {

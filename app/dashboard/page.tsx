@@ -70,7 +70,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
   const [showUpload, setShowUpload] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
@@ -83,6 +84,7 @@ export default function DashboardPage() {
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [viewMode, setViewMode] = useState<'simple' | 'detailed'>('simple') // Simple by default
   const [statusChangeModal, setStatusChangeModal] = useState<{
     isOpen: boolean
     entityId: string
@@ -199,8 +201,8 @@ export default function DashboardPage() {
   const loadData = async (showLoading = true) => {
     if (!user) return
     
-    // Only show loading spinner on initial load (no existing data)
-    if (showLoading && data.length === 0) {
+    // Only show loading spinner on very first load (never loaded before)
+    if (showLoading && !hasLoadedOnce) {
       setIsLoading(true)
     }
     
@@ -228,15 +230,21 @@ export default function DashboardPage() {
         status: row.status, // Ad's effective status (includes parent inheritance)
         adset_status: row.adset_status, // Adset's own status
         campaign_status: row.campaign_status, // Campaign's own status
+        // Budget fields
+        campaign_daily_budget: row.campaign_daily_budget ? parseFloat(row.campaign_daily_budget) : null,
+        campaign_lifetime_budget: row.campaign_lifetime_budget ? parseFloat(row.campaign_lifetime_budget) : null,
+        adset_daily_budget: row.adset_daily_budget ? parseFloat(row.adset_daily_budget) : null,
+        adset_lifetime_budget: row.adset_lifetime_budget ? parseFloat(row.adset_lifetime_budget) : null,
       }))
       setData(rows)
       
       // Only reset campaign selection on initial load
-      if (data.length === 0) {
+      if (!hasLoadedOnce) {
         const campaigns = new Set(rows.map(r => r.campaign_name))
         setSelectedCampaigns(campaigns)
       }
     }
+    setHasLoadedOnce(true)
     setIsLoading(false)
   }
 
@@ -575,7 +583,7 @@ export default function DashboardPage() {
     return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
   }, [data, connection])
   
-  if (isLoading) {
+  if (isLoading && !hasLoadedOnce) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-zinc-500">Loading your data...</div>
@@ -887,6 +895,30 @@ export default function DashboardPage() {
                 Paused
               </span>
             </div>
+            
+            {/* Simple/Detailed Toggle */}
+            <div className="flex items-center gap-1 ml-4 pl-4 border-l border-border flex-shrink-0">
+              <button
+                onClick={() => setViewMode('simple')}
+                className={`px-2.5 py-1 text-xs rounded-l-md border transition-colors ${
+                  viewMode === 'simple'
+                    ? 'bg-accent border-accent text-white'
+                    : 'bg-bg-card border-border text-zinc-400 hover:text-white'
+                }`}
+              >
+                Simple
+              </button>
+              <button
+                onClick={() => setViewMode('detailed')}
+                className={`px-2.5 py-1 text-xs rounded-r-md border border-l-0 transition-colors ${
+                  viewMode === 'detailed'
+                    ? 'bg-accent border-accent text-white'
+                    : 'bg-bg-card border-border text-zinc-400 hover:text-white'
+                }`}
+              >
+                Detailed
+              </button>
+            </div>
           </div>
           
           <PerformanceTable 
@@ -895,6 +927,7 @@ export default function DashboardPage() {
             dateRange={dateRange}
             verdictFilter={verdictFilter}
             includePaused={includePaused}
+            viewMode={viewMode}
             selectedCampaigns={selectedCampaigns}
             onCampaignToggle={handleCampaignToggle}
             onSelectAll={handleSelectAll}

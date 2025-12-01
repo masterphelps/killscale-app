@@ -56,6 +56,8 @@ type EntityStatus = {
   id: string
   effective_status: string
   status?: string
+  daily_budget?: string
+  lifetime_budget?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -138,32 +140,44 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Build status maps for campaigns, adsets, and ads
+    // Build status and budget maps for campaigns, adsets, and ads
     const campaignStatusMap: Record<string, string> = {}
+    const campaignBudgetMap: Record<string, { daily?: number, lifetime?: number }> = {}
     const adsetStatusMap: Record<string, string> = {}
+    const adsetBudgetMap: Record<string, { daily?: number, lifetime?: number }> = {}
     const adStatusMap: Record<string, string> = {}
     
-    // Fetch campaign statuses (with pagination)
+    // Fetch campaign statuses and budgets (with pagination)
     const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
-    campaignsUrl.searchParams.set('fields', 'id,effective_status')
+    campaignsUrl.searchParams.set('fields', 'id,effective_status,daily_budget,lifetime_budget')
     campaignsUrl.searchParams.set('limit', '500')
     
     const allCampaigns = await fetchAllPages<EntityStatus>(campaignsUrl.toString())
     allCampaigns.forEach((c) => {
       campaignStatusMap[c.id] = c.effective_status
+      // Meta returns budget in cents, convert to dollars
+      campaignBudgetMap[c.id] = {
+        daily: c.daily_budget ? parseInt(c.daily_budget) / 100 : undefined,
+        lifetime: c.lifetime_budget ? parseInt(c.lifetime_budget) / 100 : undefined
+      }
     })
     console.log('Campaign status map:', Object.keys(campaignStatusMap).length, 'campaigns')
     
-    // Fetch adset statuses (with pagination)
+    // Fetch adset statuses and budgets (with pagination)
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
-    adsetsUrl.searchParams.set('fields', 'id,effective_status')
+    adsetsUrl.searchParams.set('fields', 'id,effective_status,daily_budget,lifetime_budget')
     adsetsUrl.searchParams.set('limit', '500')
     
     const allAdsets = await fetchAllPages<EntityStatus>(adsetsUrl.toString())
     allAdsets.forEach((a) => {
       adsetStatusMap[a.id] = a.effective_status
+      // Meta returns budget in cents, convert to dollars
+      adsetBudgetMap[a.id] = {
+        daily: a.daily_budget ? parseInt(a.daily_budget) / 100 : undefined,
+        lifetime: a.lifetime_budget ? parseInt(a.lifetime_budget) / 100 : undefined
+      }
     })
     console.log('Adset status map:', Object.keys(adsetStatusMap).length, 'adsets')
     
@@ -212,6 +226,11 @@ export async function POST(request: NextRequest) {
       
       // The ad's effective_status should reflect the true status
       // But we'll store all three for proper aggregation
+      
+      // Get budget info
+      const campaignBudget = campaignBudgetMap[insight.campaign_id] || {}
+      const adsetBudget = adsetBudgetMap[insight.adset_id] || {}
+      
       return {
         user_id: userId,
         source: 'meta_api',
@@ -227,6 +246,10 @@ export async function POST(request: NextRequest) {
         status: adStatus,  // Ad's effective status (includes parent inheritance)
         adset_status: adsetStatus,  // Adset's own status
         campaign_status: campaignStatus,  // Campaign's own status
+        campaign_daily_budget: campaignBudget.daily || null,
+        campaign_lifetime_budget: campaignBudget.lifetime || null,
+        adset_daily_budget: adsetBudget.daily || null,
+        adset_lifetime_budget: adsetBudget.lifetime || null,
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,

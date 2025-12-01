@@ -22,6 +22,11 @@ type AdRow = {
   status?: string | null  // Ad's effective status
   adset_status?: string | null  // Adset's own status
   campaign_status?: string | null  // Campaign's own status
+  // Budget fields
+  campaign_daily_budget?: number | null
+  campaign_lifetime_budget?: number | null
+  adset_daily_budget?: number | null
+  adset_lifetime_budget?: number | null
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -35,6 +40,7 @@ type PerformanceTableProps = {
   dateRange: { start: string; end: string }
   verdictFilter?: VerdictFilter
   includePaused?: boolean
+  viewMode?: 'simple' | 'detailed'
   selectedCampaigns?: Set<string>
   onCampaignToggle?: (campaignName: string) => void
   onSelectAll?: () => void
@@ -62,6 +68,10 @@ type HierarchyNode = {
   hasChildrenPaused?: boolean
   verdict: Verdict
   children?: HierarchyNode[]
+  // Budget info
+  budgetType?: 'CBO' | 'ABO' | null  // CBO = Campaign Budget, ABO = Ad Set Budget
+  dailyBudget?: number | null
+  lifetimeBudget?: number | null
 }
 
 const formatPercent = (value: number) => {
@@ -97,6 +107,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaignIds: Record<string, string | null> = {}  // Track campaign IDs by name
   const adsetIds: Record<string, string | null> = {}  // Track adset IDs by name
   
+  // Track budgets
+  const campaignBudgets: Record<string, { daily?: number | null, lifetime?: number | null }> = {}
+  const adsetBudgets: Record<string, { daily?: number | null, lifetime?: number | null }> = {}
+  
   data.forEach(row => {
     // Capture statuses and IDs from the first row we see for each entity
     if (row.campaign_status && !campaignStatuses[row.campaign_name]) {
@@ -110,6 +124,20 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     if (row.adset_id && !adsetIds[row.adset_name]) {
       adsetIds[row.adset_name] = row.adset_id
+    }
+    
+    // Capture budget info (only need to do once per campaign/adset)
+    if (!campaignBudgets[row.campaign_name] && (row.campaign_daily_budget || row.campaign_lifetime_budget)) {
+      campaignBudgets[row.campaign_name] = {
+        daily: row.campaign_daily_budget,
+        lifetime: row.campaign_lifetime_budget
+      }
+    }
+    if (!adsetBudgets[row.adset_name] && (row.adset_daily_budget || row.adset_lifetime_budget)) {
+      adsetBudgets[row.adset_name] = {
+        daily: row.adset_daily_budget,
+        lifetime: row.adset_lifetime_budget
+      }
     }
     
     if (!campaigns[row.campaign_name]) {
@@ -236,6 +264,14 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
       
+      // Add budget info for ABO (Ad Set Budget)
+      const adsetBudget = adsetBudgets[adset.name]
+      if (adsetBudget && (adsetBudget.daily || adsetBudget.lifetime)) {
+        adset.budgetType = 'ABO'
+        adset.dailyBudget = adsetBudget.daily
+        adset.lifetimeBudget = adsetBudget.lifetime
+      }
+      
       campaign.impressions += adset.impressions
       campaign.clicks += adset.clicks
       campaign.spend += adset.spend
@@ -270,6 +306,14 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     
     campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules)
+    
+    // Add budget info for CBO (Campaign Budget Optimization)
+    const campaignBudget = campaignBudgets[campaign.name]
+    if (campaignBudget && (campaignBudget.daily || campaignBudget.lifetime)) {
+      campaign.budgetType = 'CBO'
+      campaign.dailyBudget = campaignBudget.daily
+      campaign.lifetimeBudget = campaignBudget.lifetime
+    }
   })
   
   return Object.values(campaigns)
@@ -309,6 +353,7 @@ export function PerformanceTable({
   dateRange, 
   verdictFilter = 'all',
   includePaused = true,
+  viewMode = 'simple',
   selectedCampaigns,
   onCampaignToggle,
   onSelectAll,
@@ -568,6 +613,24 @@ export function PerformanceTable({
             {!onToggle && <div className="w-4" />}
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
             <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
+            {/* Budget badge - CBO on campaign, ABO on adset (only in detailed mode) */}
+            {viewMode === 'detailed' && node.budgetType && (
+              <span className={cn(
+                'flex-shrink-0 inline-flex items-center gap-1 rounded text-[9px] px-1.5 py-0.5 ml-1 font-medium',
+                node.budgetType === 'CBO' 
+                  ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' 
+                  : 'bg-purple-500/20 border border-purple-500/30 text-purple-400'
+              )}>
+                <span>{node.budgetType}</span>
+                <span className="text-zinc-400">
+                  {node.dailyBudget 
+                    ? `$${node.dailyBudget.toLocaleString()}/day` 
+                    : node.lifetimeBudget 
+                      ? `$${node.lifetimeBudget.toLocaleString()} LT`
+                      : ''}
+                </span>
+              </span>
+            )}
             {/* Paused indicator - only show when includePaused is true */}
             {includePaused && node.status && node.status !== 'ACTIVE' ? (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
@@ -590,16 +653,43 @@ export function PerformanceTable({
         
         {/* Data columns */}
         <div className="flex-1 flex items-center">
+          {/* Simple mode: Budget column */}
+          {viewMode === 'simple' && (
+            <div className="w-28 text-right font-mono text-sm px-2 flex-shrink-0">
+              {node.budgetType ? (
+                <span className={cn(
+                  'inline-flex items-center gap-1 rounded text-[10px] px-1.5 py-0.5 font-medium',
+                  node.budgetType === 'CBO' 
+                    ? 'bg-blue-500/20 text-blue-400' 
+                    : 'bg-purple-500/20 text-purple-400'
+                )}>
+                  <span>{node.budgetType}</span>
+                  <span className="text-zinc-400">
+                    {node.dailyBudget 
+                      ? `$${node.dailyBudget.toLocaleString()}` 
+                      : node.lifetimeBudget 
+                        ? `$${node.lifetimeBudget.toLocaleString()}`
+                        : ''}
+                  </span>
+                </span>
+              ) : '—'}
+            </div>
+          )}
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
           <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.purchases)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpc)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.ctr)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpa)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
+          {/* Detailed mode columns */}
+          {viewMode === 'detailed' && (
+            <>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.purchases)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpc)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.ctr)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpa)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
+            </>
+          )}
           <div className="w-20 flex justify-center px-2 flex-shrink-0">
             <VerdictBadge verdict={node.verdict} size="sm" />
           </div>
@@ -653,6 +743,10 @@ export function PerformanceTable({
         </div>
       </div>
       <div className="flex-1 flex items-center">
+        {/* Simple mode: Budget column */}
+        {viewMode === 'simple' && (
+          <div className="w-28 text-right px-2 flex-shrink-0">Budget</div>
+        )}
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('spend')}>
           Spend <SortIcon field="spend" />
         </div>
@@ -662,27 +756,32 @@ export function PerformanceTable({
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('roas')}>
           ROAS <SortIcon field="roas" />
         </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('purchases')}>
-          Purch <SortIcon field="purchases" />
-        </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpc')}>
-          CPC <SortIcon field="cpc" />
-        </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('ctr')}>
-          CTR <SortIcon field="ctr" />
-        </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpa')}>
-          CPA <SortIcon field="cpa" />
-        </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('convRate')}>
-          Conv% <SortIcon field="convRate" />
-        </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('clicks')}>
-          Clicks <SortIcon field="clicks" />
-        </div>
-        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('impressions')}>
-          Impr <SortIcon field="impressions" />
-        </div>
+        {/* Detailed mode columns */}
+        {viewMode === 'detailed' && (
+          <>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('purchases')}>
+              Purch <SortIcon field="purchases" />
+            </div>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpc')}>
+              CPC <SortIcon field="cpc" />
+            </div>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('ctr')}>
+              CTR <SortIcon field="ctr" />
+            </div>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpa')}>
+              CPA <SortIcon field="cpa" />
+            </div>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('convRate')}>
+              Conv% <SortIcon field="convRate" />
+            </div>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('clicks')}>
+              Clicks <SortIcon field="clicks" />
+            </div>
+            <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('impressions')}>
+              Impr <SortIcon field="impressions" />
+            </div>
+          </>
+        )}
         <div className="w-20 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
           Verdict <SortIcon field="verdict" />
         </div>
@@ -718,16 +817,25 @@ export function PerformanceTable({
       )}
       <div className="px-3 text-white flex-shrink-0 text-sm font-semibold" style={{ width: nameColWidth }}>All Campaigns</div>
       <div className="flex-1 flex items-center">
+        {/* Simple mode: Budget column (empty for totals) */}
+        {viewMode === 'simple' && (
+          <div className="w-28 text-right font-mono text-sm px-2 flex-shrink-0">—</div>
+        )}
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
         <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.purchases)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpc)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.ctr)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpa)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.convRate)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.clicks)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
+        {/* Detailed mode columns */}
+        {viewMode === 'detailed' && (
+          <>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.purchases)}</div>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpc)}</div>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.ctr)}</div>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpa)}</div>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.convRate)}</div>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.clicks)}</div>
+            <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
+          </>
+        )}
         <div className="w-20 flex justify-center px-2 flex-shrink-0">
           <VerdictBadge verdict={totals.verdict} size="sm" />
         </div>
@@ -769,11 +877,29 @@ export function PerformanceTable({
         {/* Header with name and verdict */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 pr-3">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-[10px] text-zinc-500 uppercase tracking-wide">{levelLabels[level]}</span>
               {isPaused && <Pause className="w-3 h-3 text-zinc-500" />}
               {hasChildrenPaused && !isPaused && (
                 <span className="text-[10px] text-zinc-500">(has paused)</span>
+              )}
+              {/* Budget badge */}
+              {node.budgetType && (
+                <span className={cn(
+                  'inline-flex items-center gap-1 rounded text-[9px] px-1.5 py-0.5 font-medium',
+                  node.budgetType === 'CBO' 
+                    ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400' 
+                    : 'bg-purple-500/20 border border-purple-500/30 text-purple-400'
+                )}>
+                  <span>{node.budgetType}</span>
+                  <span className="text-zinc-400">
+                    {node.dailyBudget 
+                      ? `$${node.dailyBudget.toLocaleString()}/day` 
+                      : node.lifetimeBudget 
+                        ? `$${node.lifetimeBudget.toLocaleString()} LT`
+                        : ''}
+                  </span>
+                </span>
               )}
             </div>
             <h3 className={cn(
