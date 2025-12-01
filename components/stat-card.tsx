@@ -17,7 +17,7 @@ export function StatCard({ label, value, change, icon }: StatCardProps) {
         {icon && <span className="text-sm lg:text-base">{icon}</span>}
         {label}
       </div>
-      <div className="text-xl lg:text-3xl font-bold font-mono truncate">{value}</div>
+      <div className="text-lg lg:text-3xl font-bold font-mono">{value}</div>
       {change && (
         <div className={cn(
           'text-xs mt-2 flex items-center gap-1',
