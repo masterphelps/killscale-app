@@ -55,7 +55,7 @@ export function Sidebar() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [dataSource, setDataSource] = useState<DataSource>('none')
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null)
-  const [unreadAlertCount, setUnreadAlertCount] = useState(0)
+  const [alertCount, setUnreadAlertCount] = useState(0)
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
   
@@ -312,14 +312,14 @@ export function Sidebar() {
             >
               <Icon className="w-5 h-5" />
               <span className="flex-1">{item.label}</span>
-              {isAlerts && unreadAlertCount > 0 && (
+              {isAlerts && alertCount > 0 && (
                 <span className={cn(
                   "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
                   isActive 
                     ? "bg-white/20 text-white" 
                     : "bg-red-500 text-white"
                 )}>
-                  {unreadAlertCount > 99 ? '99+' : unreadAlertCount}
+                  {alertCount > 99 ? '99+' : alertCount}
                 </span>
               )}
             </Link>

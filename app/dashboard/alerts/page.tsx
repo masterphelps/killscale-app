@@ -6,13 +6,9 @@ import {
   BellOff, 
   AlertTriangle, 
   TrendingDown, 
-  TrendingUp,
-  DollarSign,
   Pause,
-  Play,
   Check,
   X,
-  CheckCheck,
   Trash2,
   RefreshCw,
   Rocket,
@@ -138,7 +134,7 @@ export default function AlertsPage() {
   const [settings, setSettings] = useState<Record<string, AlertSetting>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'unread' | 'history'>('all')
+  const [filter, setFilter] = useState<'all' | 'history'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [statusModal, setStatusModal] = useState<{
     isOpen: boolean
@@ -249,30 +245,11 @@ export default function AlertsPage() {
     }
   }, [user])
 
-  const markAsRead = async (alertId: string) => {
-    if (!user) return
-    
-    try {
-      await fetch('/api/alerts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          alertId,
-          userId: user.id,
-          updates: { is_read: true }
-        })
-      })
-      
-      setAlerts(prev => prev.map(a => 
-        a.id === alertId ? { ...a, is_read: true } : a
-      ))
-    } catch (err) {
-      console.error('Failed to mark as read:', err)
-    }
-  }
-
   const dismissAlert = async (alertId: string) => {
     if (!user) return
+    
+    // Find the alert before removing it
+    const dismissedAlert = alerts.find(a => a.id === alertId)
     
     try {
       await fetch('/api/alerts', {
@@ -285,28 +262,15 @@ export default function AlertsPage() {
         })
       })
       
+      // Remove from active alerts
       setAlerts(prev => prev.filter(a => a.id !== alertId))
+      
+      // Add to history
+      if (dismissedAlert) {
+        setHistoryAlerts(prev => [{ ...dismissedAlert, is_dismissed: true }, ...prev])
+      }
     } catch (err) {
       console.error('Failed to dismiss:', err)
-    }
-  }
-
-  const markAllRead = async () => {
-    if (!user) return
-    
-    try {
-      await fetch('/api/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          action: 'mark_all_read'
-        })
-      })
-      
-      setAlerts(prev => prev.map(a => ({ ...a, is_read: true })))
-    } catch (err) {
-      console.error('Failed to mark all read:', err)
     }
   }
 
@@ -323,6 +287,8 @@ export default function AlertsPage() {
         })
       })
       
+      // Move all to history
+      setHistoryAlerts(prev => [...alerts.map(a => ({ ...a, is_dismissed: true })), ...prev])
       setAlerts([])
     } catch (err) {
       console.error('Failed to dismiss all:', err)
@@ -385,12 +351,8 @@ export default function AlertsPage() {
 
   const filteredAlerts = filter === 'history' 
     ? historyAlerts 
-    : alerts.filter(alert => {
-        if (filter === 'unread') return !alert.is_read
-        return true
-      })
+    : alerts
 
-  const unreadCount = alerts.filter(a => !a.is_read).length
   const historyCount = historyAlerts.length
 
   if (isLoading) {
@@ -409,8 +371,8 @@ export default function AlertsPage() {
           <h1 className="text-2xl font-bold mb-1">Alerts</h1>
           <p className="text-zinc-500">
             {activeTab === 'alerts' ? (
-              unreadCount > 0 
-                ? `${unreadCount} unread alert${unreadCount !== 1 ? 's' : ''}`
+              alerts.length > 0 
+                ? `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}`
                 : 'All caught up!'
             ) : (
               'Configure your alert preferences'
@@ -430,11 +392,11 @@ export default function AlertsPage() {
           >
             <List className="w-4 h-4" />
             Alerts
-            {unreadCount > 0 && (
+            {alerts.length > 0 && (
               <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-xs flex items-center justify-center ${
                 activeTab === 'alerts' ? 'bg-white/20' : 'bg-red-500 text-white'
               }`}>
-                {unreadCount}
+                {alerts.length}
               </span>
             )}
           </button>
@@ -460,8 +422,7 @@ export default function AlertsPage() {
             {/* Filters */}
             <div className="flex gap-2">
               {[
-                { key: 'all', label: 'All', count: alerts.length },
-                { key: 'unread', label: 'Unread', count: unreadCount },
+                { key: 'all', label: 'Active', count: alerts.length },
                 { key: 'history', label: 'History', count: historyCount },
               ].map(({ key, label, count }) => (
                 <button
@@ -495,26 +456,16 @@ export default function AlertsPage() {
                   <span className="hidden sm:inline">Scan</span>
                 </button>
                 
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllRead}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm hover:border-zinc-500 transition-colors"
-                  >
-                    <CheckCheck className="w-4 h-4" />
-                    <span className="hidden sm:inline">Read all</span>
-                  </button>
-                )}
-                
                 {alerts.length > 0 && (
                   <button
                     onClick={dismissAll}
                     className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-500/50 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Clear</span>
-                </button>
-              )}
-            </div>
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Clear all</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -526,9 +477,7 @@ export default function AlertsPage() {
               <p className="text-zinc-500">
                 {filter === 'all' 
                   ? "You're all caught up! Alerts will appear here when something needs your attention."
-                  : filter === 'unread'
-                    ? "No unread alerts. Nice work!"
-                    : "No cleared alerts yet."
+                  : "No cleared alerts yet."
                 }
               </p>
             </div>
@@ -542,9 +491,7 @@ export default function AlertsPage() {
                 return (
                   <div
                     key={alert.id}
-                    className={`bg-bg-card border border-border rounded-xl p-4 border-l-4 transition-all ${priorityClass} ${
-                      !alert.is_read ? 'ring-1 ring-accent/30' : 'opacity-80'
-                    }`}
+                    className={`bg-bg-card border border-border rounded-xl p-4 border-l-4 transition-all ${priorityClass}`}
                   >
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${iconClass}`}>
@@ -553,11 +500,8 @@ export default function AlertsPage() {
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 mb-1">
-                          <h3 className={`font-medium ${!alert.is_read ? 'text-white' : 'text-zinc-300'}`}>
+                          <h3 className="font-medium text-white">
                             {alert.title}
-                            {!alert.is_read && (
-                              <span className="ml-2 inline-block w-2 h-2 bg-accent rounded-full" />
-                            )}
                           </h3>
                           <span className="text-xs text-zinc-500 whitespace-nowrap">
                             {formatTimeAgo(alert.created_at)}
@@ -589,16 +533,6 @@ export default function AlertsPage() {
                                 <Check className="w-3.5 h-3.5" />
                                 {alert.action_taken === 'paused' ? 'Paused' : alert.action_taken}
                               </span>
-                            )}
-                            
-                            {!alert.is_read && (
-                              <button
-                                onClick={() => markAsRead(alert.id)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-dark border border-border text-zinc-400 rounded-lg text-sm hover:text-white hover:border-zinc-500 transition-colors"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                Mark read
-                              </button>
                             )}
                             
                             <button

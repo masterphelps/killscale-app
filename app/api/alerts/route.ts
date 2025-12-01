@@ -20,13 +20,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing user ID' }, { status: 400 })
     }
     
-    // If only count is requested
+    // If only count is requested (for sidebar badge)
     if (countOnly) {
       const { count, error } = await supabase
         .from('alerts')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('is_read', false)
         .eq('is_dismissed', false)
       
       if (error) {
