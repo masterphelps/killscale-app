@@ -408,7 +408,6 @@ export default function TrendsPage() {
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: true })
-      .limit(10000)
     
     if (adData && !error) {
       setData(adData.map(row => ({

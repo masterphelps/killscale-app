@@ -162,7 +162,6 @@ export default function DashboardPage() {
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: false })
-      .limit(10000)
 
     if (adData && !error) {
       const rows = adData.map(row => ({
