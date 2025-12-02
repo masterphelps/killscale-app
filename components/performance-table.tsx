@@ -86,6 +86,17 @@ const formatMetric = (value: number, prefix = '$') => {
   return prefix + value.toFixed(2)
 }
 
+// Format budget display with daily/lifetime indicator
+const formatBudget = (dailyBudget: number | null | undefined, lifetimeBudget: number | null | undefined): { value: string; type: string } => {
+  if (dailyBudget && dailyBudget > 0) {
+    return { value: `$${dailyBudget.toLocaleString()}`, type: '/day' }
+  }
+  if (lifetimeBudget && lifetimeBudget > 0) {
+    return { value: `$${lifetimeBudget.toLocaleString()}`, type: 'lifetime' }
+  }
+  return { value: '—', type: '' }
+}
+
 function calculateMetrics(node: { spend: number; clicks: number; impressions: number; purchases: number }) {
   return {
     cpc: node.clicks > 0 ? node.spend / node.clicks : 0,
@@ -655,6 +666,17 @@ export function PerformanceTable({
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
           <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
+          {/* Budget column - shows for campaigns (CBO) and adsets (ABO) */}
+          <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0">
+            {(level === 'campaign' || level === 'adset') && node.budgetType ? (
+              <span className="flex items-center justify-end gap-1">
+                <span>{formatBudget(node.dailyBudget, node.lifetimeBudget).value}</span>
+                <span className="text-[10px] text-zinc-500">{formatBudget(node.dailyBudget, node.lifetimeBudget).type}</span>
+              </span>
+            ) : (
+              <span className="text-zinc-600">—</span>
+            )}
+          </div>
           {/* Detailed mode columns */}
           {viewMode === 'detailed' && (
             <>
@@ -729,6 +751,10 @@ export function PerformanceTable({
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('roas')}>
           ROAS <SortIcon field="roas" />
         </div>
+        {/* Budget column header */}
+        <div className="w-24 text-right px-2 flex-shrink-0">
+          Budget
+        </div>
         {/* Detailed mode columns */}
         {viewMode === 'detailed' && (
           <>
@@ -793,6 +819,8 @@ export function PerformanceTable({
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
         <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
+        {/* Budget column - empty for totals row */}
+        <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0 text-zinc-600">—</div>
         {/* Detailed mode columns */}
         {viewMode === 'detailed' && (
           <>
@@ -899,7 +927,7 @@ export function PerformanceTable({
         </div>
         
         {/* Key Metrics */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="grid grid-cols-4 gap-2 mb-3">
           <div className="bg-bg-dark rounded-lg p-2 text-center">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Spend</div>
             <div className="font-mono text-sm font-semibold">{formatCurrency(node.spend)}</div>
@@ -916,6 +944,19 @@ export function PerformanceTable({
               node.roas >= rules.min_roas ? "text-verdict-watch" :
               node.spend >= rules.learning_spend ? "text-verdict-kill" : "text-zinc-400"
             )}>{formatROAS(node.roas)}</div>
+          </div>
+          <div className="bg-bg-dark rounded-lg p-2 text-center">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Budget</div>
+            <div className="font-mono text-sm font-semibold">
+              {(level === 'campaign' || level === 'adset') && node.budgetType ? (
+                <span className="flex items-center justify-center gap-0.5">
+                  <span>{formatBudget(node.dailyBudget, node.lifetimeBudget).value}</span>
+                  <span className="text-[9px] text-zinc-500">{formatBudget(node.dailyBudget, node.lifetimeBudget).type}</span>
+                </span>
+              ) : (
+                <span className="text-zinc-600">—</span>
+              )}
+            </div>
           </div>
         </div>
         
