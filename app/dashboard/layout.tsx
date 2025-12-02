@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Sidebar } from '@/components/sidebar'
 import { Menu, X } from 'lucide-react'
 
@@ -14,10 +14,16 @@ export default function DashboardLayout({
   const { user, loading } = useAuth()
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Track if we've completed initial auth check - prevents flash on tab switch
+  const hasAuthChecked = useRef(false)
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
+    }
+    // Mark auth as checked once we have a definitive answer
+    if (!loading) {
+      hasAuthChecked.current = true
     }
   }, [user, loading, router])
 
@@ -36,7 +42,8 @@ export default function DashboardLayout({
     }
   }, [sidebarOpen])
 
-  if (loading) {
+  // Only show loading screen on initial auth check, not on tab switches
+  if (loading && !hasAuthChecked.current) {
     return (
       <div className="min-h-screen bg-bg-dark flex items-center justify-center">
         <div className="text-zinc-500">Loading...</div>
