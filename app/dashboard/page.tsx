@@ -431,6 +431,37 @@ export default function DashboardPage() {
     setIsUpdatingStatus(false)
   }
 
+  // Handle budget change
+  const handleBudgetChange = async (
+    entityId: string,
+    entityType: 'campaign' | 'adset',
+    newBudget: number,
+    budgetType: 'daily' | 'lifetime'
+  ) => {
+    if (!user) throw new Error('Not authenticated')
+
+    const response = await fetch('/api/meta/update-budget', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
+        entityId,
+        entityType,
+        budget: newBudget,
+        budgetType
+      }),
+    })
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to update budget')
+    }
+
+    // Refresh data to reflect the change
+    await loadData(false)
+  }
+
   // Format time since last sync
   const getTimeSinceSync = () => {
     if (!lastSyncTime) return null
@@ -947,6 +978,7 @@ export default function DashboardPage() {
             someSelected={someSelected}
             onStatusChange={handleStatusChangeRequest}
             canManageAds={canSync && !!selectedAccountId}
+            onBudgetChange={handleBudgetChange}
           />
         </>
       )}

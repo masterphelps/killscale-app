@@ -4,6 +4,7 @@ import { useState, useMemo, useRef } from 'react'
 import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause, Play } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
+import { BudgetEditModal } from './budget-edit-modal'
 import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
 
 type AdRow = {
@@ -48,6 +49,7 @@ type PerformanceTableProps = {
   someSelected?: boolean
   onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED') => void
   canManageAds?: boolean
+  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime') => Promise<void>
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -358,10 +360,10 @@ function sortNodes(nodes: HierarchyNode[], field: SortField, direction: SortDire
   }))
 }
 
-export function PerformanceTable({ 
-  data, 
-  rules, 
-  dateRange, 
+export function PerformanceTable({
+  data,
+  rules,
+  dateRange,
   verdictFilter = 'all',
   includePaused = true,
   viewMode = 'simple',
@@ -371,7 +373,8 @@ export function PerformanceTable({
   allSelected = false,
   someSelected = false,
   onStatusChange,
-  canManageAds = false
+  canManageAds = false,
+  onBudgetChange
 }: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
@@ -379,6 +382,16 @@ export function PerformanceTable({
   const [nameColWidth, setNameColWidth] = useState(300)
   const [sortField, setSortField] = useState<SortField>('spend')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  // Budget edit modal state
+  const [budgetEditModal, setBudgetEditModal] = useState<{
+    isOpen: boolean
+    entityId: string
+    entityName: string
+    entityType: 'campaign' | 'adset'
+    currentBudget: number
+    currentBudgetType: 'daily' | 'lifetime'
+  } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
   const startX = useRef(0)
@@ -668,11 +681,32 @@ export function PerformanceTable({
           <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
           {/* Budget column - shows for campaigns (CBO) and adsets (ABO) */}
           <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0">
-            {(level === 'campaign' || level === 'adset') && node.budgetType ? (
-              <span className="flex items-center justify-end gap-1">
+            {(level === 'campaign' || level === 'adset') && node.budgetType && node.id ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (onBudgetChange && canManageAds) {
+                    const budgetType = node.dailyBudget ? 'daily' : 'lifetime'
+                    const currentBudget = node.dailyBudget || node.lifetimeBudget || 0
+                    setBudgetEditModal({
+                      isOpen: true,
+                      entityId: node.id!,
+                      entityName: node.name,
+                      entityType: level,
+                      currentBudget,
+                      currentBudgetType: budgetType,
+                    })
+                  }
+                }}
+                className={cn(
+                  "flex items-center justify-end gap-1 w-full",
+                  onBudgetChange && canManageAds && "hover:text-accent cursor-pointer transition-colors"
+                )}
+                disabled={!onBudgetChange || !canManageAds}
+              >
                 <span>{formatBudget(node.dailyBudget, node.lifetimeBudget).value}</span>
                 <span className="text-[10px] text-zinc-500">{formatBudget(node.dailyBudget, node.lifetimeBudget).type}</span>
-              </span>
+              </button>
             ) : (
               <span className="text-zinc-600">—</span>
             )}
@@ -1163,6 +1197,28 @@ export function PerformanceTable({
           ))
         )}
       </div>
+
+      {/* Budget Edit Modal */}
+      {budgetEditModal && (
+        <BudgetEditModal
+          isOpen={budgetEditModal.isOpen}
+          onClose={() => setBudgetEditModal(null)}
+          onSave={async (newBudget, budgetType) => {
+            if (onBudgetChange) {
+              await onBudgetChange(
+                budgetEditModal.entityId,
+                budgetEditModal.entityType,
+                newBudget,
+                budgetType
+              )
+            }
+          }}
+          entityName={budgetEditModal.entityName}
+          entityType={budgetEditModal.entityType}
+          currentBudget={budgetEditModal.currentBudget}
+          currentBudgetType={budgetEditModal.currentBudgetType}
+        />
+      )}
     </div>
   )
 }
