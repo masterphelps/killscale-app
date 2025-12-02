@@ -130,15 +130,11 @@ export default function SettingsPage() {
 
     const payload: Record<string, any> = {
       user_id: user.id,
+      ad_account_id: currentAccount?.id || null,
       scale_roas: parsedRules.scale_roas,
       min_roas: parsedRules.min_roas,
       learning_spend: parsedRules.learning_spend,
       updated_at: new Date().toISOString(),
-    }
-
-    // Include ad_account_id if we have a current account
-    if (currentAccount) {
-      payload.ad_account_id = currentAccount.id
     }
 
     console.log('Saving rules:', payload)
@@ -147,7 +143,7 @@ export default function SettingsPage() {
     const { data, error: upsertError } = await supabase
       .from('rules')
       .upsert(payload, {
-        onConflict: currentAccount ? 'user_id,ad_account_id' : 'user_id'
+        onConflict: 'user_id,ad_account_id'
       })
       .select()
 
