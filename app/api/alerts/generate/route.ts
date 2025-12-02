@@ -11,6 +11,7 @@ type Priority = 'high' | 'medium' | 'low'
 
 type Alert = {
   user_id: string
+  ad_account_id?: string
   type: AlertType
   priority: Priority
   title: string
@@ -37,18 +38,26 @@ const DEFAULT_SETTINGS: Record<AlertType, AlertSettings> = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await request.json()
-    
+    const { userId, adAccountId } = await request.json()
+
     if (!userId) {
       return NextResponse.json({ error: 'Missing user ID' }, { status: 400 })
     }
-    
-    // Get user's alert settings
-    const { data: userSettings } = await supabase
+
+    // Get user's alert settings for this account
+    let settingsQuery = supabase
       .from('alert_settings')
       .select('alert_type, enabled, threshold')
       .eq('user_id', userId)
-    
+
+    if (adAccountId) {
+      settingsQuery = settingsQuery.eq('ad_account_id', adAccountId)
+    } else {
+      settingsQuery = settingsQuery.is('ad_account_id', null)
+    }
+
+    const { data: userSettings } = await settingsQuery
+
     // Merge with defaults
     const settings: Record<AlertType, AlertSettings> = { ...DEFAULT_SETTINGS }
     userSettings?.forEach(s => {
@@ -59,24 +68,37 @@ export async function POST(request: NextRequest) {
         }
       }
     })
-    
-    // Get user's rules
-    const { data: rules } = await supabase
+
+    // Get user's rules for this account
+    let rulesQuery = supabase
       .from('rules')
       .select('*')
       .eq('user_id', userId)
-      .single()
-    
+
+    if (adAccountId) {
+      rulesQuery = rulesQuery.eq('ad_account_id', adAccountId)
+    } else {
+      rulesQuery = rulesQuery.is('ad_account_id', null)
+    }
+
+    const { data: rules } = await rulesQuery.single()
+
     const scaleRoas = rules?.scale_roas || 3.0
     const minRoas = rules?.min_roas || 1.5
     const learningSpend = rules?.learning_spend || 100
-    
-    // Get recent ad data (last 24 hours worth, or all current data)
-    const { data: adData } = await supabase
+
+    // Get recent ad data for this account
+    let adDataQuery = supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', userId)
-    
+
+    if (adAccountId) {
+      adDataQuery = adDataQuery.eq('ad_account_id', adAccountId)
+    }
+
+    const { data: adData } = await adDataQuery
+
     if (!adData || adData.length === 0) {
       return NextResponse.json({ message: 'No data to analyze', alerts: 0 })
     }
@@ -186,15 +208,21 @@ export async function POST(request: NextRequest) {
     })
     
     const newAlerts: Alert[] = []
-    
+
+    // Helper to create alert with account ID
+    const createAlert = (alert: Omit<Alert, 'ad_account_id'>): Alert => ({
+      ...alert,
+      ad_account_id: adAccountId || undefined,
+    })
+
     // Get threshold for high spend no conversions
     const highSpendThreshold = settings.high_spend_no_conv.threshold || 50
-    
+
     // Check for HIGH SPEND NO CONVERSIONS (campaigns and adsets with threshold+ spend, 0 purchases)
     if (settings.high_spend_no_conv.enabled) {
       Object.values(campaigns).forEach(campaign => {
         if (campaign.spend >= highSpendThreshold && campaign.purchases === 0 && campaign.status === 'ACTIVE') {
-          newAlerts.push({
+          newAlerts.push(createAlert({
             user_id: userId,
             type: 'high_spend_no_conv',
             priority: 'high',
@@ -204,13 +232,13 @@ export async function POST(request: NextRequest) {
             entity_id: campaign.id,
             entity_name: campaign.name,
             data: { spend: campaign.spend, purchases: 0 }
-          })
+          }))
         }
       })
-      
+
       Object.values(adsets).forEach(adset => {
         if (adset.spend >= highSpendThreshold && adset.purchases === 0 && adset.status === 'ACTIVE') {
-          newAlerts.push({
+          newAlerts.push(createAlert({
             user_id: userId,
             type: 'high_spend_no_conv',
             priority: 'high',
@@ -220,16 +248,16 @@ export async function POST(request: NextRequest) {
             entity_id: adset.id,
             entity_name: adset.name,
             data: { spend: adset.spend, purchases: 0, campaign: adset.campaign_name }
-          })
+          }))
         }
       })
     }
-    
+
     // Check for ROAS BELOW MIN (with significant spend)
     if (settings.roas_below_min.enabled) {
       Object.values(campaigns).forEach(campaign => {
         if (campaign.spend >= learningSpend && campaign.roas > 0 && campaign.roas < minRoas && campaign.status === 'ACTIVE') {
-          newAlerts.push({
+          newAlerts.push(createAlert({
             user_id: userId,
             type: 'roas_below_min',
             priority: 'medium',
@@ -239,13 +267,13 @@ export async function POST(request: NextRequest) {
             entity_id: campaign.id,
             entity_name: campaign.name,
             data: { roas: campaign.roas, minRoas, spend: campaign.spend }
-          })
+          }))
         }
       })
-      
+
       Object.values(adsets).forEach(adset => {
         if (adset.spend >= learningSpend && adset.roas > 0 && adset.roas < minRoas && adset.status === 'ACTIVE') {
-          newAlerts.push({
+          newAlerts.push(createAlert({
             user_id: userId,
             type: 'roas_below_min',
             priority: 'medium',
@@ -255,16 +283,16 @@ export async function POST(request: NextRequest) {
             entity_id: adset.id,
             entity_name: adset.name,
             data: { roas: adset.roas, minRoas, spend: adset.spend, campaign: adset.campaign_name }
-          })
+          }))
         }
       })
     }
-    
+
     // Check for ROAS ABOVE SCALE (opportunities!)
     if (settings.roas_above_scale.enabled) {
       Object.values(campaigns).forEach(campaign => {
         if (campaign.spend >= learningSpend && campaign.roas >= scaleRoas && campaign.status === 'ACTIVE') {
-          newAlerts.push({
+          newAlerts.push(createAlert({
             user_id: userId,
             type: 'roas_above_scale',
             priority: 'low',
@@ -274,13 +302,13 @@ export async function POST(request: NextRequest) {
             entity_id: campaign.id,
             entity_name: campaign.name,
             data: { roas: campaign.roas, scaleRoas, spend: campaign.spend, revenue: campaign.revenue }
-          })
+          }))
         }
       })
-      
+
       Object.values(ads).forEach(ad => {
         if (ad.spend >= learningSpend / 2 && ad.roas >= scaleRoas && ad.status === 'ACTIVE') {
-          newAlerts.push({
+          newAlerts.push(createAlert({
             user_id: userId,
             type: 'roas_above_scale',
             priority: 'low',
@@ -290,7 +318,7 @@ export async function POST(request: NextRequest) {
             entity_id: ad.id,
             entity_name: ad.name,
             data: { roas: ad.roas, scaleRoas, spend: ad.spend, revenue: ad.revenue, adset: ad.adset_name }
-          })
+          }))
         }
       })
     }
@@ -301,12 +329,20 @@ export async function POST(request: NextRequest) {
     
     // Check for duplicate alerts (same type + entity within last 24 hours)
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    
-    const { data: recentAlerts } = await supabase
+
+    let recentAlertsQuery = supabase
       .from('alerts')
       .select('type, entity_id')
       .eq('user_id', userId)
       .gte('created_at', twentyFourHoursAgo)
+
+    if (adAccountId) {
+      recentAlertsQuery = recentAlertsQuery.eq('ad_account_id', adAccountId)
+    } else {
+      recentAlertsQuery = recentAlertsQuery.is('ad_account_id', null)
+    }
+
+    const { data: recentAlerts } = await recentAlertsQuery
     
     const recentAlertKeys = new Set(
       recentAlerts?.map(a => `${a.type}|${a.entity_id}`) || []

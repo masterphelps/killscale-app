@@ -25,6 +25,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+type AdAccount = {
+  id: string
+  name: string
+}
+
 type Alert = {
   id: string
   type: 'high_spend_no_conv' | 'roas_below_min' | 'roas_above_scale' | 'status_changed' | 'ad_fatigue'
@@ -136,6 +141,7 @@ export default function AlertsPage() {
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
   const [filter, setFilter] = useState<'all' | 'history'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [currentAccount, setCurrentAccount] = useState<AdAccount | null>(null)
   const [statusModal, setStatusModal] = useState<{
     isOpen: boolean
     entityId: string
@@ -150,22 +156,58 @@ export default function AlertsPage() {
 
   const canManageAds = plan === 'Pro' || plan === 'Agency'
 
+  // Load current account
+  useEffect(() => {
+    const loadAccount = async () => {
+      if (!user) return
+
+      const { data: connection } = await supabase
+        .from('meta_connections')
+        .select('ad_accounts, selected_account_id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (connection?.selected_account_id && connection?.ad_accounts) {
+        const accounts = connection.ad_accounts as AdAccount[]
+        const account = accounts.find(a => a.id === connection.selected_account_id)
+        if (account) {
+          setCurrentAccount({ id: account.id, name: account.name })
+        }
+      }
+    }
+
+    loadAccount()
+  }, [user])
+
+  // Listen for account changes from sidebar
+  useEffect(() => {
+    const handleAccountsUpdated = () => {
+      if (user) {
+        setIsLoading(true)
+        window.location.reload()
+      }
+    }
+    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
+    return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
+  }, [user])
+
   const loadAlerts = async () => {
     if (!user) return
-    
+
     try {
-      // Load active alerts
-      const res = await fetch(`/api/alerts?userId=${user.id}`)
+      // Load active alerts (with account filter if available)
+      const accountParam = currentAccount ? `&adAccountId=${currentAccount.id}` : ''
+      const res = await fetch(`/api/alerts?userId=${user.id}${accountParam}`)
       const data = await res.json()
-      
+
       if (data.alerts) {
         setAlerts(data.alerts)
       }
-      
+
       // Load history (dismissed alerts)
-      const historyRes = await fetch(`/api/alerts?userId=${user.id}&dismissed=true`)
+      const historyRes = await fetch(`/api/alerts?userId=${user.id}&dismissed=true${accountParam}`)
       const historyData = await historyRes.json()
-      
+
       if (historyData.alerts) {
         setHistoryAlerts(historyData.alerts)
       }
@@ -178,11 +220,12 @@ export default function AlertsPage() {
 
   const loadSettings = async () => {
     if (!user) return
-    
+
     try {
-      const res = await fetch(`/api/alerts/settings?userId=${user.id}`)
+      const accountParam = currentAccount ? `&adAccountId=${currentAccount.id}` : ''
+      const res = await fetch(`/api/alerts/settings?userId=${user.id}${accountParam}`)
       const data = await res.json()
-      
+
       if (data.settings) {
         setSettings(data.settings)
       }
@@ -195,19 +238,20 @@ export default function AlertsPage() {
 
   const updateSetting = async (alertType: string, updates: Partial<AlertSetting>) => {
     if (!user) return
-    
+
     // Optimistic update
     setSettings(prev => ({
       ...prev,
       [alertType]: { ...prev[alertType], ...updates }
     }))
-    
+
     try {
       await fetch('/api/alerts/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
+          adAccountId: currentAccount?.id || null,
           alertType,
           updates
         })
@@ -221,15 +265,18 @@ export default function AlertsPage() {
 
   const refreshAlerts = async () => {
     if (!user) return
-    
+
     setIsRefreshing(true)
     try {
       await fetch('/api/alerts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccount?.id || null
+        })
       })
-      
+
       await loadAlerts()
     } catch (err) {
       console.error('Failed to refresh alerts:', err)
@@ -238,12 +285,13 @@ export default function AlertsPage() {
     }
   }
 
+  // Load alerts when user or account changes
   useEffect(() => {
     if (user) {
       loadAlerts()
       loadSettings()
     }
-  }, [user])
+  }, [user, currentAccount])
 
   const dismissAlert = async (alertId: string) => {
     if (!user) return

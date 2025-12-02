@@ -11,30 +11,38 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
+    const adAccountId = searchParams.get('adAccountId')
     const unreadOnly = searchParams.get('unreadOnly') === 'true'
     const countOnly = searchParams.get('countOnly') === 'true'
     const dismissed = searchParams.get('dismissed') === 'true'
     const limit = parseInt(searchParams.get('limit') || '50')
-    
+
     if (!userId) {
       return NextResponse.json({ error: 'Missing user ID' }, { status: 400 })
     }
-    
+
     // If only count is requested (for sidebar badge)
     if (countOnly) {
-      const { count, error } = await supabase
+      let countQuery = supabase
         .from('alerts')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('is_dismissed', false)
-      
+
+      // Filter by account if provided
+      if (adAccountId) {
+        countQuery = countQuery.eq('ad_account_id', adAccountId)
+      }
+
+      const { count, error } = await countQuery
+
       if (error) {
         return NextResponse.json({ error: 'Failed to count alerts' }, { status: 500 })
       }
-      
+
       return NextResponse.json({ count: count || 0 })
     }
-    
+
     // Fetch alerts
     let query = supabase
       .from('alerts')
@@ -43,20 +51,25 @@ export async function GET(request: NextRequest) {
       .eq('is_dismissed', dismissed) // false = active, true = history
       .order('created_at', { ascending: false })
       .limit(limit)
-    
+
+    // Filter by account if provided
+    if (adAccountId) {
+      query = query.eq('ad_account_id', adAccountId)
+    }
+
     if (unreadOnly && !dismissed) {
       query = query.eq('is_read', false)
     }
-    
+
     const { data, error } = await query
-    
+
     if (error) {
       console.error('Error fetching alerts:', error)
       return NextResponse.json({ error: 'Failed to fetch alerts' }, { status: 500 })
     }
-    
+
     return NextResponse.json({ alerts: data || [] })
-    
+
   } catch (err) {
     console.error('Alerts fetch error:', err)
     return NextResponse.json({ error: 'Failed to fetch alerts' }, { status: 500 })

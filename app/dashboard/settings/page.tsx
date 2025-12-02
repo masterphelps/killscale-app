@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, RotateCcw, Loader2 } from 'lucide-react'
+import { Save, RotateCcw, Loader2, AlertCircle } from 'lucide-react'
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
@@ -17,6 +17,11 @@ const DEFAULT_RULES = {
   learning_spend: '100',
 }
 
+type AdAccount = {
+  id: string
+  name: string
+}
+
 export default function SettingsPage() {
   const { user } = useAuth()
   // Store as strings to allow proper editing (backspace, etc.)
@@ -25,20 +30,49 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [currentAccount, setCurrentAccount] = useState<AdAccount | null>(null)
 
-  // Load rules on mount
+  // Load current account and rules on mount
   useEffect(() => {
     if (!user) return
 
-    const loadRules = async () => {
-      console.log('Loading rules for user:', user.id)
-      const { data, error } = await supabase
-        .from('rules')
-        .select('*')
+    const loadAccountAndRules = async () => {
+      // First, get the current selected account from meta_connections
+      const { data: connection } = await supabase
+        .from('meta_connections')
+        .select('ad_accounts, selected_account_id')
         .eq('user_id', user.id)
         .single()
 
-      console.log('Load result:', { data, error })
+      let accountId: string | null = null
+      let accountName: string | null = null
+
+      if (connection?.selected_account_id && connection?.ad_accounts) {
+        accountId = connection.selected_account_id
+        const accounts = connection.ad_accounts as AdAccount[]
+        const account = accounts.find(a => a.id === accountId)
+        if (account) {
+          accountId = account.id
+          accountName = account.name
+          setCurrentAccount({ id: account.id, name: account.name })
+        }
+      }
+
+      // Load rules for this account (or user-level if no account)
+      let query = supabase
+        .from('rules')
+        .select('*')
+        .eq('user_id', user.id)
+
+      if (accountId) {
+        query = query.eq('ad_account_id', accountId)
+      } else {
+        query = query.is('ad_account_id', null)
+      }
+
+      const { data, error } = await query.single()
+
+      console.log('Load result:', { data, error, accountId })
 
       if (data) {
         setRules({
@@ -50,7 +84,20 @@ export default function SettingsPage() {
       setLoading(false)
     }
 
-    loadRules()
+    loadAccountAndRules()
+  }, [user])
+
+  // Listen for account changes from sidebar
+  useEffect(() => {
+    const handleAccountsUpdated = () => {
+      // Reload when account changes
+      if (user) {
+        setLoading(true)
+        window.location.reload() // Simple reload to get new account's rules
+      }
+    }
+    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
+    return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
   }, [user])
 
   const handleChange = (field: keyof typeof rules, value: string) => {
@@ -81,20 +128,26 @@ export default function SettingsPage() {
     setSaving(true)
     setError('')
 
-    const payload = {
+    const payload: Record<string, any> = {
       user_id: user.id,
       scale_roas: parsedRules.scale_roas,
       min_roas: parsedRules.min_roas,
       learning_spend: parsedRules.learning_spend,
       updated_at: new Date().toISOString(),
     }
-    
+
+    // Include ad_account_id if we have a current account
+    if (currentAccount) {
+      payload.ad_account_id = currentAccount.id
+    }
+
     console.log('Saving rules:', payload)
-    
+
+    // Use user_id + ad_account_id as the conflict key
     const { data, error: upsertError } = await supabase
       .from('rules')
       .upsert(payload, {
-        onConflict: 'user_id'
+        onConflict: currentAccount ? 'user_id,ad_account_id' : 'user_id'
       })
       .select()
 
@@ -129,7 +182,17 @@ export default function SettingsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Rules</h1>
         <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
-        <p className="text-xs text-zinc-600 mt-1">User ID: {user?.id || 'none'}</p>
+        {currentAccount ? (
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
+            <span className="text-xs text-zinc-400">Rules for:</span>
+            <span className="text-sm font-medium text-accent">{currentAccount.name}</span>
+          </div>
+        ) : (
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+            <span className="text-sm text-amber-500">No account selected - rules will apply globally</span>
+          </div>
+        )}
       </div>
 
       <div className="bg-bg-card border border-border rounded-xl p-6 space-y-6">
