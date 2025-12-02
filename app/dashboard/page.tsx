@@ -126,9 +126,28 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) {
       loadData()
-      loadRules()
       loadConnection()
     }
+  }, [user])
+
+  // Load rules when account changes
+  useEffect(() => {
+    if (user && connection) {
+      const accountId = connection.selected_account_id ||
+        connection.ad_accounts?.find(a => a.in_dashboard)?.id
+      loadRules(accountId)
+    }
+  }, [user, connection?.selected_account_id])
+
+  // Reload connection and rules when account is switched from sidebar
+  useEffect(() => {
+    const handleAccountsUpdated = () => {
+      if (user) {
+        loadConnection()
+      }
+    }
+    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
+    return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
   }, [user])
 
   // Auto-sync when coming from sidebar account selection
@@ -179,18 +198,22 @@ export default function DashboardPage() {
 
   // Auto-sync when date preset changes (debounced, skip initial mount)
   useEffect(() => {
+    // Skip if we don't have the required data yet
+    if (!canSync || !selectedAccountId || !user) {
+      return
+    }
+
+    // Skip initial mount - only sync when date actually changes after initial load
     if (isInitialMount.current) {
       isInitialMount.current = false
       return
     }
-    
-    if (!canSync || !selectedAccountId || !user) return
-    
+
     // Debounce to avoid rapid syncs when clicking through presets
     const timeout = setTimeout(() => {
       handleSyncAccount(selectedAccountId)
     }, 500)
-    
+
     return () => clearTimeout(timeout)
   }, [datePreset, customStartDate, customEndDate, selectedAccountId, canSync, user])
 
@@ -255,14 +278,22 @@ export default function DashboardPage() {
     setIsLoading(false)
   }
 
-  const loadRules = async () => {
+  const loadRules = async (accountId?: string | null) => {
     if (!user) return
 
-    const { data: rulesData, error } = await supabase
+    // Load rules for the specific account, or user-level if no account
+    let query = supabase
       .from('rules')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+
+    if (accountId) {
+      query = query.eq('ad_account_id', accountId)
+    } else {
+      query = query.is('ad_account_id', null)
+    }
+
+    const { data: rulesData, error } = await query.single()
 
     if (rulesData && !error) {
       setRules({
@@ -274,6 +305,9 @@ export default function DashboardPage() {
         created_at: rulesData.created_at,
         updated_at: rulesData.updated_at
       })
+    } else {
+      // No account-specific rules, use defaults
+      setRules(DEFAULT_RULES)
     }
   }
 
