@@ -22,6 +22,11 @@ type AdRow = {
   status?: string | null  // Ad's effective status
   adset_status?: string | null  // Adset's own status
   campaign_status?: string | null  // Campaign's own status
+  // Budget fields from Meta API
+  campaign_daily_budget?: number | null
+  campaign_lifetime_budget?: number | null
+  adset_daily_budget?: number | null
+  adset_lifetime_budget?: number | null
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -45,6 +50,8 @@ type PerformanceTableProps = {
   canManageAds?: boolean
 }
 
+type BudgetType = 'CBO' | 'ABO' | null
+
 type HierarchyNode = {
   name: string
   id?: string | null  // Meta entity ID for API calls
@@ -63,6 +70,10 @@ type HierarchyNode = {
   hasChildrenPaused?: boolean
   verdict: Verdict
   children?: HierarchyNode[]
+  // Budget info
+  budgetType?: BudgetType  // CBO for campaign-level, ABO for ad set-level
+  dailyBudget?: number | null
+  lifetimeBudget?: number | null
 }
 
 const formatPercent = (value: number) => {
@@ -97,7 +108,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaignStatuses: Record<string, string | null> = {}  // Track campaign statuses by name
   const campaignIds: Record<string, string | null> = {}  // Track campaign IDs by name
   const adsetIds: Record<string, string | null> = {}  // Track adset IDs by name
-  
+  // Track budget info
+  const campaignBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
+  const adsetBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
+
   data.forEach(row => {
     // Capture statuses and IDs from the first row we see for each entity
     if (row.campaign_status && !campaignStatuses[row.campaign_name]) {
@@ -111,6 +125,19 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     if (row.adset_id && !adsetIds[row.adset_name]) {
       adsetIds[row.adset_name] = row.adset_id
+    }
+    // Capture budget info from the first row we see for each entity
+    if (!campaignBudgets[row.campaign_name]) {
+      campaignBudgets[row.campaign_name] = {
+        daily: row.campaign_daily_budget ?? null,
+        lifetime: row.campaign_lifetime_budget ?? null,
+      }
+    }
+    if (!adsetBudgets[row.adset_name]) {
+      adsetBudgets[row.adset_name] = {
+        daily: row.adset_daily_budget ?? null,
+        lifetime: row.adset_lifetime_budget ?? null,
+      }
     }
     
     if (!campaigns[row.campaign_name]) {
@@ -236,7 +263,15 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
       
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
-      
+
+      // Set budget info on adset
+      const adsetBudget = adsetBudgets[adset.name]
+      if (adsetBudget && (adsetBudget.daily || adsetBudget.lifetime)) {
+        adset.budgetType = 'ABO'
+        adset.dailyBudget = adsetBudget.daily
+        adset.lifetimeBudget = adsetBudget.lifetime
+      }
+
       campaign.impressions += adset.impressions
       campaign.clicks += adset.clicks
       campaign.spend += adset.spend
@@ -269,8 +304,16 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         return adsetIsPaused || adset.hasChildrenPaused
       })
     }
-    
+
     campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules)
+
+    // Set budget info on campaign
+    const campBudget = campaignBudgets[campaign.name]
+    if (campBudget && (campBudget.daily || campBudget.lifetime)) {
+      campaign.budgetType = 'CBO'
+      campaign.dailyBudget = campBudget.daily
+      campaign.lifetimeBudget = campBudget.lifetime
+    }
   })
   
   return Object.values(campaigns)
@@ -581,6 +624,23 @@ export function PerformanceTable({
                 <Pause className="w-3 h-3" strokeWidth={1.5} />
               </span>
             ) : null}
+            {/* CBO/ABO Budget Type Badge */}
+            {node.budgetType && (level === 'campaign' || level === 'adset') && (
+              <span
+                className={cn(
+                  'flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded ml-1',
+                  node.budgetType === 'CBO'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                )}
+                title={node.budgetType === 'CBO'
+                  ? `Campaign Budget: ${node.dailyBudget ? `$${node.dailyBudget}/day` : `$${node.lifetimeBudget} lifetime`}`
+                  : `Ad Set Budget: ${node.dailyBudget ? `$${node.dailyBudget}/day` : `$${node.lifetimeBudget} lifetime`}`
+                }
+              >
+                {node.budgetType}
+              </span>
+            )}
           </div>
           <div 
             className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center"
@@ -788,6 +848,19 @@ export function PerformanceTable({
           <div className="flex-1 pr-3">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-[10px] text-zinc-500 uppercase tracking-wide">{levelLabels[level]}</span>
+              {/* CBO/ABO Badge for mobile */}
+              {node.budgetType && (level === 'campaign' || level === 'adset') && (
+                <span
+                  className={cn(
+                    'text-[9px] font-semibold px-1.5 py-0.5 rounded',
+                    node.budgetType === 'CBO'
+                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                      : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                  )}
+                >
+                  {node.budgetType}
+                </span>
+              )}
               {isPaused && <Pause className="w-3 h-3 text-zinc-500" />}
               {hasChildrenPaused && !isPaused && (
                 <span className="text-[10px] text-zinc-500">(has paused)</span>
