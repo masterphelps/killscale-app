@@ -54,6 +54,15 @@ export function DatePicker({
     }
   }, [datePreset])
 
+  // Reset calendar view when opening
+  useEffect(() => {
+    if (isOpen) {
+      const now = new Date()
+      setViewMonth(now.getMonth())
+      setViewYear(now.getFullYear())
+    }
+  }, [isOpen])
+
   const getDaysInMonth = (month: number, year: number) => {
     return new Date(year, month + 1, 0).getDate()
   }
@@ -72,15 +81,23 @@ export function DatePicker({
     return new Date(year, month - 1, day)
   }
 
+  // Get today's date string for comparison
+  const today = new Date()
+  const todayStr = formatDate(today.getFullYear(), today.getMonth(), today.getDate())
+
+  const isDateInFuture = (dateStr: string) => {
+    return dateStr > todayStr
+  }
+
   const isInRange = (dateStr: string) => {
     if (!customStartDate) return false
     const date = parseDate(dateStr)
     const start = parseDate(customStartDate)
     const end = customEndDate ? parseDate(customEndDate) : (hoverDate ? parseDate(hoverDate) : null)
-    
+
     if (!date || !start) return false
     if (!end) return dateStr === customStartDate
-    
+
     return date >= start && date <= end
   }
 
@@ -88,13 +105,16 @@ export function DatePicker({
   const isRangeEnd = (dateStr: string) => dateStr === customEndDate || (!customEndDate && dateStr === hoverDate)
 
   const handleDateClick = (dateStr: string) => {
+    // Don't allow future dates
+    if (isDateInFuture(dateStr)) return
+
     if (selectingStart || !customStartDate) {
       onCustomDateChange(dateStr, '')
       setSelectingStart(false)
     } else {
       const start = parseDate(customStartDate)
       const clicked = parseDate(dateStr)
-      
+
       if (clicked && start && clicked < start) {
         onCustomDateChange(dateStr, customStartDate)
       } else {
@@ -121,6 +141,12 @@ export function DatePicker({
   }
 
   const nextMonth = () => {
+    // Don't allow navigating to future months
+    const now = new Date()
+    const currentYearMonth = now.getFullYear() * 12 + now.getMonth()
+    const nextYearMonth = viewYear * 12 + viewMonth + 1
+    if (nextYearMonth > currentYearMonth) return
+
     if (viewMonth === 11) {
       setViewMonth(0)
       setViewYear(viewYear + 1)
@@ -136,6 +162,10 @@ export function DatePicker({
       month = 0
       year++
     }
+    if (month < 0) {
+      month = 11
+      year--
+    }
 
     const daysInMonth = getDaysInMonth(month, year)
     const firstDay = getFirstDayOfMonth(month, year)
@@ -148,11 +178,8 @@ export function DatePicker({
       days.push(i)
     }
 
-    const today = new Date()
-    const todayStr = formatDate(today.getFullYear(), today.getMonth(), today.getDate())
-
     return (
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-3 px-1">
           {monthOffset === 0 ? (
             <button onClick={prevMonth} className="p-1 hover:bg-bg-hover rounded-md transition-colors">
@@ -162,13 +189,13 @@ export function DatePicker({
           <span className="text-sm font-medium text-white">
             {MONTHS[month]} {year}
           </span>
-          {monthOffset === 1 ? (
+          {(monthOffset === 1 || monthOffset === 0) && (
             <button onClick={nextMonth} className="p-1 hover:bg-bg-hover rounded-md transition-colors">
               <ChevronRight className="w-4 h-4 text-zinc-400" />
             </button>
-          ) : <div className="w-6" />}
+          )}
         </div>
-        
+
         <div className="grid grid-cols-7 gap-0.5 mb-1">
           {DAYS.map(day => (
             <div key={day} className="text-center text-xs text-zinc-500 py-1">
@@ -176,34 +203,38 @@ export function DatePicker({
             </div>
           ))}
         </div>
-        
+
         <div className="grid grid-cols-7 gap-0.5">
           {days.map((day, idx) => {
             if (day === null) {
               return <div key={`empty-${idx}`} className="h-8" />
             }
-            
+
             const dateStr = formatDate(year, month, day)
             const isToday = dateStr === todayStr
+            const isFuture = isDateInFuture(dateStr)
             const inRange = isInRange(dateStr)
             const isStart = isRangeStart(dateStr)
             const isEnd = isRangeEnd(dateStr)
-            
+
             return (
               <button
                 key={dateStr}
                 onClick={() => handleDateClick(dateStr)}
-                onMouseEnter={() => !customEndDate && customStartDate && setHoverDate(dateStr)}
+                onMouseEnter={() => !customEndDate && customStartDate && !isFuture && setHoverDate(dateStr)}
                 onMouseLeave={() => setHoverDate(null)}
+                disabled={isFuture}
                 className={`
                   h-8 text-sm rounded-md transition-all relative
-                  ${isStart || isEnd 
-                    ? 'bg-accent text-white font-medium' 
-                    : inRange 
-                      ? 'bg-accent/20 text-accent' 
-                      : 'text-zinc-300 hover:bg-bg-hover'
+                  ${isFuture
+                    ? 'text-zinc-600 cursor-not-allowed'
+                    : isStart || isEnd
+                      ? 'bg-accent text-white font-medium'
+                      : inRange
+                        ? 'bg-accent/20 text-accent'
+                        : 'text-zinc-300 hover:bg-bg-hover'
                   }
-                  ${isToday && !isStart && !isEnd && !inRange ? 'ring-1 ring-accent/50' : ''}
+                  ${isToday && !isStart && !isEnd && !inRange && !isFuture ? 'ring-1 ring-accent/50' : ''}
                 `}
               >
                 {day}
@@ -219,8 +250,97 @@ export function DatePicker({
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-0 top-full mt-2 bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/50 lg:bg-transparent" onClick={onClose} />
+
+      {/* Mobile: Full screen modal */}
+      <div className="lg:hidden fixed inset-0 z-50 flex items-end">
+        <div className="w-full bg-bg-card rounded-t-2xl max-h-[85vh] overflow-y-auto animate-slide-up">
+          {/* Header */}
+          <div className="sticky top-0 bg-bg-card border-b border-border px-4 py-3 flex items-center justify-between">
+            <span className="text-lg font-semibold text-white">Select Date Range</span>
+            <button onClick={onClose} className="p-2 hover:bg-bg-hover rounded-lg transition-colors">
+              <X className="w-5 h-5 text-zinc-400" />
+            </button>
+          </div>
+
+          {/* Presets */}
+          <div className="p-4 border-b border-border">
+            <div className="grid grid-cols-2 gap-2">
+              {DATE_PRESETS.filter(p => p.value !== 'custom').map((preset) => (
+                <button
+                  key={preset.value}
+                  onClick={() => handlePresetClick(preset.value)}
+                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    datePreset === preset.value
+                      ? 'bg-accent text-white'
+                      : 'bg-bg-hover text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Range Section */}
+          <div className="p-4">
+            <button
+              onClick={() => {
+                onPresetChange('custom')
+                setShowCalendar(true)
+              }}
+              className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition-colors mb-4 ${
+                datePreset === 'custom'
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-hover text-zinc-300 hover:text-white'
+              }`}
+            >
+              Custom Range
+            </button>
+
+            {showCalendar && (
+              <>
+                {/* Single calendar on mobile */}
+                <div className="mb-4">
+                  {renderCalendar(0)}
+                </div>
+
+                {/* Selected range display */}
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="flex-1 bg-bg-hover rounded-lg px-3 py-2 text-center">
+                    <div className="text-[10px] text-zinc-500 uppercase mb-1">From</div>
+                    <div className={`text-sm ${customStartDate ? 'text-white' : 'text-zinc-500'}`}>
+                      {customStartDate || 'Select'}
+                    </div>
+                  </div>
+                  <span className="text-zinc-600">→</span>
+                  <div className="flex-1 bg-bg-hover rounded-lg px-3 py-2 text-center">
+                    <div className="text-[10px] text-zinc-500 uppercase mb-1">To</div>
+                    <div className={`text-sm ${customEndDate ? 'text-white' : 'text-zinc-500'}`}>
+                      {customEndDate || 'Select'}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    onApply()
+                    onClose()
+                  }}
+                  disabled={!customStartDate || !customEndDate}
+                  className="w-full py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  Apply Range
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop: Dropdown */}
+      <div className="hidden lg:block absolute right-0 top-full mt-2 bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
         <div className="flex">
           {/* Presets sidebar */}
           <div className="w-40 border-r border-border py-2">
@@ -229,8 +349,8 @@ export function DatePicker({
                 key={preset.value}
                 onClick={() => handlePresetClick(preset.value)}
                 className={`w-full px-4 py-2 text-left text-sm transition-colors ${
-                  datePreset === preset.value 
-                    ? 'bg-accent/10 text-accent border-r-2 border-accent' 
+                  datePreset === preset.value
+                    ? 'bg-accent/10 text-accent border-r-2 border-accent'
                     : 'text-zinc-400 hover:text-white hover:bg-bg-hover'
                 }`}
               >
@@ -238,7 +358,7 @@ export function DatePicker({
               </button>
             ))}
           </div>
-          
+
           {/* Calendar area */}
           {showCalendar && (
             <div className="p-4">
@@ -246,7 +366,7 @@ export function DatePicker({
                 {renderCalendar(0)}
                 {renderCalendar(1)}
               </div>
-              
+
               {/* Selected range display */}
               <div className="mt-4 pt-4 border-t border-border">
                 <div className="flex items-center justify-between">
@@ -269,7 +389,7 @@ export function DatePicker({
                       </span>
                     </div>
                   </div>
-                  
+
                   <button
                     onClick={() => {
                       onApply()
@@ -303,14 +423,14 @@ export function DatePickerButton({
     <button
       onClick={onClick}
       className={`flex items-center gap-2 px-3 py-2 bg-bg-card border rounded-lg text-sm transition-all ${
-        isOpen 
-          ? 'border-accent text-accent' 
+        isOpen
+          ? 'border-accent text-accent'
           : 'border-border text-zinc-300 hover:border-zinc-600'
       }`}
     >
       <Calendar className="w-4 h-4" />
-      <span>{label}</span>
-      <ChevronRight className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+      <span className="truncate max-w-[120px] sm:max-w-none">{label}</span>
+      <ChevronRight className={`w-4 h-4 transition-transform flex-shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
     </button>
   )
 }
