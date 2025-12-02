@@ -66,7 +66,7 @@ export function BudgetEditModal({
 
   if (!isOpen) return null
 
-  const ModalContent = () => (
+  const modalContent = (
     <>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -195,7 +195,7 @@ export function BudgetEditModal({
 
         {/* Sheet */}
         <div className="relative w-full bg-bg-card rounded-t-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
-          <ModalContent />
+          {modalContent}
           {/* Safe area padding for iOS */}
           <div className="h-6" />
         </div>
@@ -208,7 +208,7 @@ export function BudgetEditModal({
 
         {/* Modal */}
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-          <ModalContent />
+          {modalContent}
         </div>
       </div>
     </>

@@ -12,13 +12,14 @@ const supabase = createClient(
 )
 
 const DEFAULT_RULES = {
-  scale_roas: 3.0,
-  min_roas: 1.5,
-  learning_spend: 100,
+  scale_roas: '3.0',
+  min_roas: '1.5',
+  learning_spend: '100',
 }
 
 export default function SettingsPage() {
   const { user } = useAuth()
+  // Store as strings to allow proper editing (backspace, etc.)
   const [rules, setRules] = useState(DEFAULT_RULES)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -41,9 +42,9 @@ export default function SettingsPage() {
 
       if (data) {
         setRules({
-          scale_roas: parseFloat(data.scale_roas) || DEFAULT_RULES.scale_roas,
-          min_roas: parseFloat(data.min_roas) || DEFAULT_RULES.min_roas,
-          learning_spend: parseFloat(data.learning_spend) || DEFAULT_RULES.learning_spend,
+          scale_roas: data.scale_roas?.toString() || DEFAULT_RULES.scale_roas,
+          min_roas: data.min_roas?.toString() || DEFAULT_RULES.min_roas,
+          learning_spend: data.learning_spend?.toString() || DEFAULT_RULES.learning_spend,
         })
       }
       setLoading(false)
@@ -53,9 +54,15 @@ export default function SettingsPage() {
   }, [user])
 
   const handleChange = (field: keyof typeof rules, value: string) => {
-    const numValue = parseFloat(value) || 0
-    setRules(prev => ({ ...prev, [field]: numValue }))
+    setRules(prev => ({ ...prev, [field]: value }))
     setSaved(false)
+  }
+
+  // Parse rules to numbers for saving and display
+  const parsedRules = {
+    scale_roas: parseFloat(rules.scale_roas) || 0,
+    min_roas: parseFloat(rules.min_roas) || 0,
+    learning_spend: parseFloat(rules.learning_spend) || 0,
   }
 
   const handleSave = async () => {
@@ -65,14 +72,20 @@ export default function SettingsPage() {
       return
     }
 
+    // Validate that we have valid numbers
+    if (parsedRules.scale_roas <= 0 || parsedRules.min_roas <= 0 || parsedRules.learning_spend <= 0) {
+      setError('All values must be greater than 0')
+      return
+    }
+
     setSaving(true)
     setError('')
-    
+
     const payload = {
       user_id: user.id,
-      scale_roas: rules.scale_roas,
-      min_roas: rules.min_roas,
-      learning_spend: rules.learning_spend,
+      scale_roas: parsedRules.scale_roas,
+      min_roas: parsedRules.min_roas,
+      learning_spend: parsedRules.learning_spend,
       updated_at: new Date().toISOString(),
     }
     
@@ -220,28 +233,28 @@ export default function SettingsPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2 border-b border-border">
             <div>
-              <span className="text-sm">ROAS ≥ {rules.scale_roas}x</span>
+              <span className="text-sm">ROAS ≥ {parsedRules.scale_roas}x</span>
               <p className="text-xs text-zinc-600">Crushing it — increase budget</p>
             </div>
             <VerdictBadge verdict="scale" />
           </div>
           <div className="flex items-center justify-between py-2 border-b border-border">
             <div>
-              <span className="text-sm">{rules.min_roas}x ≤ ROAS &lt; {rules.scale_roas}x</span>
+              <span className="text-sm">{parsedRules.min_roas}x ≤ ROAS &lt; {parsedRules.scale_roas}x</span>
               <p className="text-xs text-zinc-600">Acceptable — monitor closely</p>
             </div>
             <VerdictBadge verdict="watch" />
           </div>
           <div className="flex items-center justify-between py-2 border-b border-border">
             <div>
-              <span className="text-sm">ROAS &lt; {rules.min_roas}x (after ${rules.learning_spend} spend)</span>
+              <span className="text-sm">ROAS &lt; {parsedRules.min_roas}x (after ${parsedRules.learning_spend} spend)</span>
               <p className="text-xs text-zinc-600">Underperforming — turn it off</p>
             </div>
             <VerdictBadge verdict="kill" />
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
-              <span className="text-sm">Spend &lt; ${rules.learning_spend}</span>
+              <span className="text-sm">Spend &lt; ${parsedRules.learning_spend}</span>
               <p className="text-xs text-zinc-600">Still gathering data — let it run</p>
             </div>
             <VerdictBadge verdict="learn" />
