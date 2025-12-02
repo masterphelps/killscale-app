@@ -998,7 +998,28 @@ export function PerformanceTable({
               node.spend >= rules.learning_spend ? "text-verdict-kill" : "text-zinc-400"
             )}>{formatROAS(node.roas)}</div>
           </div>
-          <div className="bg-bg-dark rounded-lg p-2 text-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if ((level === 'campaign' || level === 'adset') && node.budgetType && node.id && onBudgetChange && canManageAds) {
+                const budgetType = node.dailyBudget ? 'daily' : 'lifetime'
+                const currentBudget = node.dailyBudget || node.lifetimeBudget || 0
+                setBudgetEditModal({
+                  isOpen: true,
+                  entityId: node.id,
+                  entityName: node.name,
+                  entityType: level,
+                  currentBudget,
+                  currentBudgetType: budgetType,
+                })
+              }
+            }}
+            disabled={!((level === 'campaign' || level === 'adset') && node.budgetType && node.id && onBudgetChange && canManageAds)}
+            className={cn(
+              "bg-bg-dark rounded-lg p-2 text-center w-full",
+              (level === 'campaign' || level === 'adset') && node.budgetType && node.id && onBudgetChange && canManageAds && "active:bg-bg-hover"
+            )}
+          >
             <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Budget</div>
             <div className="font-mono text-sm font-semibold">
               {(level === 'campaign' || level === 'adset') && node.budgetType ? (
@@ -1010,7 +1031,7 @@ export function PerformanceTable({
                 <span className="text-zinc-600">—</span>
               )}
             </div>
-          </div>
+          </button>
         </div>
         
         {/* Secondary metrics */}
