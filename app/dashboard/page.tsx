@@ -893,74 +893,97 @@ export default function DashboardPage() {
           </div>
           
           {/* Verdict Filters - scrollable on mobile */}
-          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 lg:pb-0 lg:overflow-visible">
-            <span className="text-sm text-zinc-500 mr-2 flex-shrink-0">Filter:</span>
-            {filterButtons.map((filter) => (
-              <button
-                key={filter.value}
-                onClick={() => setVerdictFilter(filter.value)}
-                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex-shrink-0 ${
-                  verdictFilter === filter.value
-                    ? filter.value === 'all' 
-                      ? 'bg-zinc-700 border-zinc-600 text-white'
-                      : filter.value === 'scale'
-                        ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
-                        : filter.value === 'watch'
-                          ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
-                          : filter.value === 'kill'
-                            ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
-                            : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
-                    : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
-            
-            {/* Include Paused Toggle */}
-            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border flex-shrink-0">
-              <button
-                onClick={() => setIncludePaused(!includePaused)}
-                className={`relative w-9 h-5 rounded-full transition-all ${
-                  includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                    includePaused ? 'left-4' : 'left-0.5'
+          <div className="mb-4">
+            {/* Mobile: Filter label with Paused toggle */}
+            <div className="flex items-center justify-between mb-2 lg:hidden">
+              <span className="text-sm text-zinc-500">Filter:</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIncludePaused(!includePaused)}
+                  className={`relative w-9 h-5 rounded-full transition-all ${
+                    includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
                   }`}
-                />
-              </button>
-              <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'} hidden sm:inline`}>
-                Include Paused
-              </span>
-              <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'} sm:hidden`}>
-                Paused
-              </span>
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                      includePaused ? 'left-4' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+                <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                  Paused
+                </span>
+              </div>
             </div>
-            
-            {/* Simple/Detailed Toggle */}
-            <div className="flex items-center gap-1 ml-4 pl-4 border-l border-border flex-shrink-0">
-              <button
-                onClick={() => setViewMode('simple')}
-                className={`px-2.5 py-1 text-xs rounded-l-md border transition-colors ${
-                  viewMode === 'simple'
-                    ? 'bg-accent border-accent text-white'
-                    : 'bg-bg-card border-border text-zinc-400 hover:text-white'
-                }`}
-              >
-                Simple
-              </button>
-              <button
-                onClick={() => setViewMode('detailed')}
-                className={`px-2.5 py-1 text-xs rounded-r-md border border-l-0 transition-colors ${
-                  viewMode === 'detailed'
-                    ? 'bg-accent border-accent text-white'
-                    : 'bg-bg-card border-border text-zinc-400 hover:text-white'
-                }`}
-              >
-                Detailed
-              </button>
+
+            {/* Filter buttons row */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-0 lg:overflow-visible">
+              {/* Desktop: Filter label inline */}
+              <span className="text-sm text-zinc-500 mr-2 flex-shrink-0 hidden lg:inline">Filter:</span>
+              {filterButtons.map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setVerdictFilter(filter.value)}
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex-shrink-0 ${
+                    verdictFilter === filter.value
+                      ? filter.value === 'all'
+                        ? 'bg-zinc-700 border-zinc-600 text-white'
+                        : filter.value === 'scale'
+                          ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
+                          : filter.value === 'watch'
+                            ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
+                            : filter.value === 'kill'
+                              ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
+                              : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
+                      : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+
+              {/* Desktop: Include Paused Toggle */}
+              <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-border flex-shrink-0">
+                <button
+                  onClick={() => setIncludePaused(!includePaused)}
+                  className={`relative w-9 h-5 rounded-full transition-all ${
+                    includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                      includePaused ? 'left-4' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+                <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                  Include Paused
+                </span>
+              </div>
+
+              {/* Desktop only: Simple/Detailed Toggle */}
+              <div className="hidden lg:flex items-center gap-1 ml-4 pl-4 border-l border-border flex-shrink-0">
+                <button
+                  onClick={() => setViewMode('simple')}
+                  className={`px-2.5 py-1 text-xs rounded-l-md border transition-colors ${
+                    viewMode === 'simple'
+                      ? 'bg-accent border-accent text-white'
+                      : 'bg-bg-card border-border text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Simple
+                </button>
+                <button
+                  onClick={() => setViewMode('detailed')}
+                  className={`px-2.5 py-1 text-xs rounded-r-md border border-l-0 transition-colors ${
+                    viewMode === 'detailed'
+                      ? 'bg-accent border-accent text-white'
+                      : 'bg-bg-card border-border text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Detailed
+                </button>
+              </div>
             </div>
           </div>
           

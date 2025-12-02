@@ -76,6 +76,8 @@ export default function ConnectPage() {
     if (success) {
       setMessage({ type: 'success', text: 'Meta account connected successfully!' })
       loadConnection()
+      // Dispatch custom event to notify sidebar of the new connection
+      window.dispatchEvent(new CustomEvent('meta-accounts-updated'))
     } else if (error) {
       const errorMessages: Record<string, string> = {
         declined: 'You declined the permissions request.',
@@ -127,6 +129,9 @@ export default function ConnectPage() {
     
     setConnection(null)
     setMessage({ type: 'success', text: 'Meta account disconnected.' })
+
+    // Dispatch custom event to notify sidebar of the change
+    window.dispatchEvent(new CustomEvent('meta-accounts-updated'))
   }
   
   const handleToggleDashboard = async (accountId: string) => {
@@ -170,12 +175,15 @@ export default function ConnectPage() {
         ad_accounts: updatedAccounts,
         selected_account_id: newSelectedId
       })
-      setMessage({ 
-        type: 'success', 
-        text: isCurrentlyInDashboard 
-          ? `${account.name} removed from dashboard` 
-          : `${account.name} added to dashboard` 
+      setMessage({
+        type: 'success',
+        text: isCurrentlyInDashboard
+          ? `${account.name} removed from dashboard`
+          : `${account.name} added to dashboard`
       })
+
+      // Dispatch custom event to notify sidebar of the change
+      window.dispatchEvent(new CustomEvent('meta-accounts-updated'))
     }
   }
   

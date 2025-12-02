@@ -83,14 +83,26 @@ export function Sidebar() {
     }
     window.addEventListener('storage', handleStorageChange)
     window.addEventListener('focus', handleStorageChange)
-    
+
     // Also check periodically for changes (handles same-tab updates)
     const interval = setInterval(checkDataSource, 2000)
-    
+
     return () => {
       window.removeEventListener('storage', handleStorageChange)
       window.removeEventListener('focus', handleStorageChange)
       clearInterval(interval)
+    }
+  }, [user])
+
+  // Listen for account updates from connect page
+  useEffect(() => {
+    const handleAccountsUpdated = () => {
+      loadConnection()
+    }
+    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
+
+    return () => {
+      window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
     }
   }, [user])
 
