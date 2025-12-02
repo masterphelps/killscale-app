@@ -97,14 +97,16 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const searchParams = useSearchParams()
   
-  // Load saved date settings on mount
+  // Load saved settings on mount
   useEffect(() => {
     const savedDatePreset = localStorage.getItem('killscale_datePreset')
     const savedCustomStart = localStorage.getItem('killscale_customStartDate')
     const savedCustomEnd = localStorage.getItem('killscale_customEndDate')
+    const savedViewMode = localStorage.getItem('killscale_viewMode')
     if (savedDatePreset) setDatePreset(savedDatePreset)
     if (savedCustomStart) setCustomStartDate(savedCustomStart)
     if (savedCustomEnd) setCustomEndDate(savedCustomEnd)
+    if (savedViewMode === 'simple' || savedViewMode === 'detailed') setViewMode(savedViewMode)
   }, [])
   
   // Save date settings when they change
@@ -113,6 +115,11 @@ export default function DashboardPage() {
     if (customStartDate) localStorage.setItem('killscale_customStartDate', customStartDate)
     if (customEndDate) localStorage.setItem('killscale_customEndDate', customEndDate)
   }, [datePreset, customStartDate, customEndDate])
+
+  // Save view mode when it changes
+  useEffect(() => {
+    localStorage.setItem('killscale_viewMode', viewMode)
+  }, [viewMode])
   
   const canSync = plan === 'Pro' || plan === 'Agency'
   
