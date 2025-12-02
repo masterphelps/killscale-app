@@ -16,14 +16,20 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Track if we've completed initial auth check - prevents flash on tab switch
   const hasAuthChecked = useRef(false)
+  // Track if we ever had a valid user - prevents blank screen on tab switch
+  const hadValidUser = useRef(false)
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !hadValidUser.current) {
+      // Only redirect if we never had a user (true login required)
       router.push('/login')
     }
     // Mark auth as checked once we have a definitive answer
     if (!loading) {
       hasAuthChecked.current = true
+      if (user) {
+        hadValidUser.current = true
+      }
     }
   }, [user, loading, router])
 
@@ -51,7 +57,9 @@ export default function DashboardLayout({
     )
   }
 
-  if (!user) {
+  // Don't render null if we previously had a valid user (prevents flash on tab switch)
+  // The auth check will redirect to login if truly logged out
+  if (!user && !hadValidUser.current) {
     return null
   }
 

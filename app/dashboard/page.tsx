@@ -244,9 +244,9 @@ export default function DashboardPage() {
         adset_lifetime_budget: row.adset_lifetime_budget,
       }))
       setData(rows)
-      
-      // Only reset campaign selection on initial load
-      if (!hasLoadedOnce) {
+
+      // Always select all campaigns on initial load, or if selection is empty
+      if (!hasLoadedOnce || selectedCampaigns.size === 0) {
         const campaigns = new Set(rows.map(r => r.campaign_name))
         setSelectedCampaigns(campaigns)
       }

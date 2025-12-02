@@ -759,8 +759,27 @@ export function PerformanceTable({
 
   const HeaderRow = () => (
     <div className="flex items-center bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 40 }}>
-      {hasCheckboxes && <div style={{ width: checkboxWidth }} className="flex-shrink-0" />}
-      <div 
+      {hasCheckboxes && (
+        <div
+          className="flex flex-col items-center justify-center flex-shrink-0 cursor-pointer"
+          style={{ width: checkboxWidth }}
+          onClick={onSelectAll}
+        >
+          <div className={cn(
+            'w-4 h-4 rounded border flex items-center justify-center transition-colors',
+            allSelected
+              ? 'bg-accent border-accent text-white'
+              : someSelected
+                ? 'bg-accent/50 border-accent text-white'
+                : 'border-zinc-600 hover:border-zinc-500'
+          )}>
+            {allSelected && <Check className="w-3 h-3" />}
+            {someSelected && !allSelected && <Minus className="w-3 h-3" />}
+          </div>
+          <span className="text-[8px] text-zinc-600 mt-0.5">All</span>
+        </div>
+      )}
+      <div
         className="px-3 relative flex-shrink-0 font-semibold flex items-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors"
         style={{ width: nameColWidth }}
         onClick={() => handleSort('name')}
@@ -1087,8 +1106,7 @@ export function PerformanceTable({
         {/* Table */}
         <div className="overflow-x-auto">
           <HeaderRow />
-          <TotalsRow />
-          
+
           <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
             {sortedHierarchy.length === 0 ? (
               <div className="px-5 py-8 text-center text-zinc-500">
@@ -1156,9 +1174,6 @@ export function PerformanceTable({
           </div>
         )}
 
-        {/* Totals Card */}
-        <MobileTotalsCard />
-        
         {/* Campaign Cards */}
         {sortedHierarchy.length === 0 ? (
           <div className="py-8 text-center text-zinc-500">
