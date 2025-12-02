@@ -337,9 +337,12 @@ export default function DashboardPage() {
   // Sync a specific account (used by sidebar dropdown)
   const handleSyncAccount = async (accountId: string) => {
     if (!user || !canSync) return
-    
+
     setIsSyncing(true)
-    
+
+    // Clear selection so all campaigns get selected after sync
+    setSelectedCampaigns(new Set())
+
     try {
       // Delete ALL existing data (CSV and API) before syncing
       await supabase
