@@ -72,10 +72,23 @@ type AdsetData = {
   lifetime_budget?: string
 }
 
+// Map our UI presets to valid Meta API date_preset values
+const VALID_META_PRESETS: Record<string, string> = {
+  'today': 'today',
+  'yesterday': 'yesterday',
+  'last_7d': 'last_7d',
+  'last_14d': 'last_14d',
+  'last_30d': 'last_30d',
+  'last_90d': 'last_90d',
+  'this_month': 'this_month',
+  'last_month': 'last_month',
+  'maximum': 'maximum',
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { userId, adAccountId, datePreset = 'last_30d', customStartDate, customEndDate } = await request.json()
-    
+
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
@@ -126,12 +139,10 @@ export async function POST(request: NextRequest) {
         since: customStartDate,
         until: customEndDate
       }))
-    } else if (datePreset === 'maximum') {
-      // Maximum = lifetime data (use 'maximum' preset)
-      insightsUrl.searchParams.set('date_preset', 'maximum')
     } else {
-      // Use preset
-      insightsUrl.searchParams.set('date_preset', datePreset)
+      // Map to valid Meta preset, default to last_30d if invalid
+      const metaPreset = VALID_META_PRESETS[datePreset] || 'last_30d'
+      insightsUrl.searchParams.set('date_preset', metaPreset)
     }
     
     // IMPORTANT: Add time_increment=1 to get daily breakdown for time series charts
