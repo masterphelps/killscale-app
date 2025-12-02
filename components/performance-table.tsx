@@ -679,7 +679,19 @@ export function PerformanceTable({
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
           <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
-          {/* Budget column - shows for campaigns (CBO) and adsets (ABO) */}
+          {/* Detailed mode columns */}
+          {viewMode === 'detailed' && (
+            <>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.purchases)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpc)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.ctr)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpa)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
+              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
+            </>
+          )}
+          {/* Budget column - shows for campaigns (CBO) and adsets (ABO) - positioned next to Verdict */}
           <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0">
             {(level === 'campaign' || level === 'adset') && node.budgetType && node.id ? (
               <button
@@ -711,18 +723,6 @@ export function PerformanceTable({
               <span className="text-zinc-600">—</span>
             )}
           </div>
-          {/* Detailed mode columns */}
-          {viewMode === 'detailed' && (
-            <>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.purchases)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpc)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.ctr)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpa)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
-            </>
-          )}
           <div className="w-20 flex justify-center px-2 flex-shrink-0">
             <VerdictBadge verdict={node.verdict} size="sm" />
           </div>
@@ -804,10 +804,6 @@ export function PerformanceTable({
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('roas')}>
           ROAS <SortIcon field="roas" />
         </div>
-        {/* Budget column header */}
-        <div className="w-24 text-right px-2 flex-shrink-0">
-          Budget
-        </div>
         {/* Detailed mode columns */}
         {viewMode === 'detailed' && (
           <>
@@ -834,6 +830,10 @@ export function PerformanceTable({
             </div>
           </>
         )}
+        {/* Budget column header - positioned next to Verdict */}
+        <div className="w-24 text-right px-2 flex-shrink-0">
+          Budget
+        </div>
         <div className="w-20 text-center px-2 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('verdict')}>
           Verdict <SortIcon field="verdict" />
         </div>
@@ -872,8 +872,6 @@ export function PerformanceTable({
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
         <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
-        {/* Budget column - empty for totals row */}
-        <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0 text-zinc-600">—</div>
         {/* Detailed mode columns */}
         {viewMode === 'detailed' && (
           <>
@@ -886,6 +884,8 @@ export function PerformanceTable({
             <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
           </>
         )}
+        {/* Budget column - empty for totals row */}
+        <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0 text-zinc-600">—</div>
         <div className="w-20 flex justify-center px-2 flex-shrink-0">
           <VerdictBadge verdict={totals.verdict} size="sm" />
         </div>
