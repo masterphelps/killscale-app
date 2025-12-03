@@ -1286,79 +1286,58 @@ export default function TrendsPage() {
               /* Time series for campaign/adset/ad level */
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={timeSeriesData}>
+                  <AreaChart data={timeSeriesData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis 
-                      dataKey="date" 
+                    <XAxis
+                      dataKey="date"
                       stroke="#3f3f46"
                       tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     />
-                    <YAxis 
-                      yAxisId="left" 
+                    <YAxis
                       stroke="#3f3f46"
                       tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(value) => `$${value}`}
                     />
-                    <YAxis 
-                      yAxisId="right" 
-                      orientation="right" 
-                      stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
-                      tickLine={{ stroke: '#3f3f46' }}
-                      tickFormatter={(value) => `${value.toFixed(1)}x`}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: '#18181b', 
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#18181b',
                         border: '1px solid #3f3f46',
-                        borderRadius: 8,
-                        color: '#e4e4e7'
+                        borderRadius: 8
                       }}
+                      itemStyle={{ color: '#e4e4e7' }}
                       labelStyle={{ color: '#a1a1aa' }}
-                      formatter={(value: number, name: string) => {
-                        // name is the display name from the series (e.g., "Spend", "Revenue", "ROAS")
-                        if (name === 'ROAS') return [`${value.toFixed(2)}x`, 'ROAS']
+                      formatter={(value: number, name: string, props: any) => {
                         if (name === 'Spend') return [formatCurrency(value), 'Spend']
                         if (name === 'Revenue') return [formatCurrency(value), 'Revenue']
                         return [value, name]
                       }}
-                      labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      labelFormatter={(label, payload) => {
+                        const date = new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                        const roas = payload?.[0]?.payload?.roas
+                        return roas !== undefined ? `${date} · ROAS: ${roas.toFixed(2)}x` : date
+                      }}
                     />
-                    <Legend 
-                      wrapperStyle={{ color: '#a1a1aa' }}
-                    />
-                    <Area 
-                      yAxisId="left"
-                      type="monotone" 
-                      dataKey="spend" 
-                      fill="rgba(139, 92, 246, 0.3)" 
+                    <Legend wrapperStyle={{ color: '#a1a1aa' }} />
+                    <Area
+                      type="monotone"
+                      dataKey="spend"
+                      fill="rgba(139, 92, 246, 0.3)"
                       stroke="#8b5cf6"
                       strokeWidth={2}
                       name="Spend"
                     />
-                    <Area 
-                      yAxisId="left"
-                      type="monotone" 
-                      dataKey="revenue" 
-                      fill="rgba(34, 197, 94, 0.3)" 
+                    <Area
+                      type="monotone"
+                      dataKey="revenue"
+                      fill="rgba(34, 197, 94, 0.3)"
                       stroke="#22c55e"
                       strokeWidth={2}
                       name="Revenue"
                     />
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="roas" 
-                      stroke="#f59e0b" 
-                      strokeWidth={3}
-                      dot={{ fill: '#f59e0b', strokeWidth: 0, r: 3 }}
-                      activeDot={{ r: 5, fill: '#f59e0b' }}
-                      name="ROAS"
-                    />
-                  </ComposedChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             )}
