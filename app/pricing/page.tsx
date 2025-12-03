@@ -202,7 +202,7 @@ export default function PricingPage() {
                     href={user ? '/dashboard' : '/signup'}
                     className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
                   >
-                    {user ? 'Go to Dashboard' : 'Get Started'}
+                    {user ? 'Get Free' : 'Get Started'}
                   </Link>
                 )}
               </div>
