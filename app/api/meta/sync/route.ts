@@ -229,14 +229,10 @@ export async function POST(request: NextRequest) {
     const adStatusMap: Record<string, string> = {}
 
     // Fetch campaign statuses and budgets (with pagination)
-    // Include ALL statuses to catch archived campaigns that may have historical data
     const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
     campaignsUrl.searchParams.set('fields', 'id,name,effective_status,daily_budget,lifetime_budget')
     campaignsUrl.searchParams.set('limit', '500')
-    campaignsUrl.searchParams.set('filtering', JSON.stringify([
-      { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED'] }
-    ]))
 
     const allCampaigns = await fetchAllPages<CampaignData>(campaignsUrl.toString())
     allCampaigns.forEach((c) => {
@@ -251,14 +247,10 @@ export async function POST(request: NextRequest) {
     console.log('Campaign map:', Object.keys(campaignMap).length, 'campaigns')
 
     // Fetch adset statuses and budgets (with pagination)
-    // Include ALL statuses to catch archived adsets that may have historical data
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
     adsetsUrl.searchParams.set('fields', 'id,name,campaign_id,effective_status,daily_budget,lifetime_budget')
     adsetsUrl.searchParams.set('limit', '500')
-    adsetsUrl.searchParams.set('filtering', JSON.stringify([
-      { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'DELETED', 'CAMPAIGN_PAUSED'] }
-    ]))
 
     const allAdsets = await fetchAllPages<AdsetData>(adsetsUrl.toString())
     allAdsets.forEach((a) => {
@@ -274,14 +266,10 @@ export async function POST(request: NextRequest) {
     console.log('Adset map:', Object.keys(adsetMap).length, 'adsets')
 
     // Fetch ad statuses (with pagination) - includes name and adset_id for complete hierarchy
-    // Include ALL statuses to catch archived/paused ads that may have historical data
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
     adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
     adsUrl.searchParams.set('limit', '500')
-    adsUrl.searchParams.set('filtering', JSON.stringify([
-      { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'DELETED', 'PENDING_REVIEW', 'DISAPPROVED', 'WITH_ISSUES'] }
-    ]))
 
     const allAdsData = await fetchAllPages<AdData>(adsUrl.toString())
     allAdsData.forEach((ad) => {
