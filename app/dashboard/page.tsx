@@ -197,6 +197,7 @@ export default function DashboardPage() {
   }, [datePreset, customEndDate])
 
   // Auto-sync when date preset changes (debounced, skip initial mount)
+  // NOTE: For custom dates, sync is triggered explicitly by handleCustomDateApply, not this effect
   useEffect(() => {
     // Skip if we don't have the required data yet
     if (!canSync || !selectedAccountId || !user) {
@@ -209,13 +210,18 @@ export default function DashboardPage() {
       return
     }
 
+    // Skip for custom dates - those are handled by handleCustomDateApply
+    if (datePreset === 'custom') {
+      return
+    }
+
     // Debounce to avoid rapid syncs when clicking through presets
     const timeout = setTimeout(() => {
       handleSyncAccount(selectedAccountId)
     }, 500)
 
     return () => clearTimeout(timeout)
-  }, [datePreset, customStartDate, customEndDate, selectedAccountId, canSync, user])
+  }, [datePreset, selectedAccountId, canSync, user])
 
   // Auto-refresh every 5 minutes when viewing live data
   useEffect(() => {
@@ -524,6 +530,10 @@ export default function DashboardPage() {
       setDatePreset('custom')
       setShowDatePicker(false)
       setShowCustomDateInputs(false)
+      // Trigger sync for custom date range
+      if (canSync && selectedAccountId) {
+        handleSyncAccount(selectedAccountId)
+      }
     }
   }
 
