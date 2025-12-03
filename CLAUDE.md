@@ -64,3 +64,35 @@ KillScale is a SaaS app for Meta Ads advertisers to monitor and manage their ad 
 - Show creative performance metrics alongside preview
 - Allow filtering by creative type
 - A/B test comparison view between ad creatives
+
+---
+
+### Show All Ads Regardless of Date Range (Priority: High - NEXT UP)
+**Problem:** Currently, ads only appear if they had activity during the selected date range. Selecting 7 days shows 93 ads, but 30 days shows 112 ads. Users expect to see ALL ads with metrics reflecting the selected period.
+
+**Current Behavior:**
+- Meta API insights endpoint only returns ads with activity in the date range
+- Ads that were paused or had no spend don't appear
+
+**Solution - Two-Step Sync:**
+1. **Step 1: Fetch all entities** (not time-bounded)
+   ```
+   GET /act_{ad_account_id}/campaigns?fields=id,name,status,daily_budget,lifetime_budget
+   GET /act_{ad_account_id}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget
+   GET /act_{ad_account_id}/ads?fields=id,name,status,adset_id,effective_status
+   ```
+
+2. **Step 2: Fetch insights for date range**
+   ```
+   GET /act_{ad_account_id}/insights?level=ad&fields=...&time_range={date_range}
+   ```
+
+3. **Step 3: Merge** - Join entities with insights, showing $0 for ads with no activity
+
+**Files to modify:**
+- `app/api/meta/sync/route.ts` - Update sync logic to two-step approach
+
+**Considerations:**
+- More API calls (3 entity calls + 1 insights call vs current 1 call)
+- Need to handle pagination for large accounts
+- Should cache entity data and only refresh insights on date change?
