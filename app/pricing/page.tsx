@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth'
+import { useSubscription } from '@/lib/subscription'
 
 const plans = [
   {
@@ -13,64 +14,58 @@ const plans = [
     description: 'Try it out',
     priceId: null,
     features: [
-      'CSV upload',
-      '1 ad account',
+      'CSV upload only',
       '2 campaigns max',
       'Full hierarchy view',
-      'Custom thresholds',
+      'Verdict system',
     ],
   },
   {
     name: 'Starter',
-    featured: true,
     price: '$9',
     period: '/mo',
     description: 'For growing advertisers',
     priceId: process.env.NEXT_PUBLIC_STRIPE_STARTER_PRICE_ID,
     features: [
       'CSV upload',
-      '1 ad account',
       '20 campaigns max',
+      'Custom rules & thresholds',
       'Full hierarchy view',
-      'Custom thresholds',
-      'Priority support',
     ],
   },
   {
     name: 'Pro',
+    featured: true,
     price: '$29',
     period: '/mo',
     description: 'For serious advertisers',
     priceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
     features: [
-      'Meta API connection',
-      '2 ad accounts',
+      'Meta API sync (live data)',
+      '5 ad accounts',
       'Unlimited campaigns',
-      'Daily auto-refresh',
-      'Alerts & Trends',
+      'Pause/resume ads',
+      'Budget editing',
+      'Alerts',
     ],
-    comingSoon: true,
   },
   {
     name: 'Agency',
     price: '$99',
     period: '/mo',
-    description: 'For teams & clients',
+    description: 'For teams & agencies',
     priceId: process.env.NEXT_PUBLIC_STRIPE_AGENCY_PRICE_ID,
     features: [
-      'Meta API connection',
-      '100 ad accounts',
-      'Unlimited campaigns',
-      'Hourly refresh',
-      'White-label reports',
-      'Team access',
+      'Everything in Pro',
+      'Unlimited ad accounts',
+      'Priority support',
     ],
-    comingSoon: true,
   },
 ]
 
 export default function PricingPage() {
   const { user } = useAuth()
+  const { plan: currentPlan } = useSubscription()
   const [loading, setLoading] = useState<string | null>(null)
 
   const handleCheckout = async (priceId: string, planName: string) => {
@@ -138,75 +133,81 @@ export default function PricingPage() {
         </div>
 
         <div className="grid md:grid-cols-4 gap-6 max-w-5xl mx-auto">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={`bg-bg-card border rounded-2xl p-6 relative ${
-                plan.featured 
-                  ? 'border-accent bg-gradient-to-b from-accent/10 to-bg-card' 
-                  : 'border-border'
-              }`}
-            >
-              {plan.featured && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-accent text-white text-xs font-bold rounded-full">
-                  POPULAR
-                </div>
-              )}
-              
-              {plan.comingSoon && (
-                <div className="absolute top-4 right-4 px-2 py-1 bg-zinc-700 text-zinc-300 text-xs font-medium rounded">
-                  COMING SOON
-                </div>
-              )}
+          {plans.map((plan) => {
+            const isCurrentPlan = user && currentPlan === plan.name
 
-              <div className="mb-6">
-                <div className="text-sm text-zinc-500 uppercase tracking-wide mb-1">
-                  {plan.name}
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">{plan.price}</span>
-                  <span className="text-zinc-500">{plan.period}</span>
-                </div>
-                <p className="text-zinc-500 mt-2 text-sm">{plan.description}</p>
-              </div>
+            return (
+              <div
+                key={plan.name}
+                className={`bg-bg-card border rounded-2xl p-6 relative ${
+                  isCurrentPlan
+                    ? 'border-green-500 bg-gradient-to-b from-green-500/10 to-bg-card'
+                    : plan.featured
+                      ? 'border-accent bg-gradient-to-b from-accent/10 to-bg-card'
+                      : 'border-border'
+                }`}
+              >
+                {isCurrentPlan && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full">
+                    CURRENT PLAN
+                  </div>
+                )}
 
-              <ul className="space-y-3 mb-6">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2 text-sm">
-                    <Check className="w-4 h-4 text-accent flex-shrink-0" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
+                {!isCurrentPlan && plan.featured && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-accent text-white text-xs font-bold rounded-full">
+                    POPULAR
+                  </div>
+                )}
 
-              {plan.priceId ? (
-                <button
-                  onClick={() => !plan.comingSoon && handleCheckout(plan.priceId!, plan.name)}
-                  disabled={loading !== null || plan.comingSoon}
-                  className={`w-full py-3 rounded-lg font-semibold transition-colors text-sm ${
-                    plan.comingSoon
-                      ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                      : plan.featured
+                <div className="mb-6">
+                  <div className="text-sm text-zinc-500 uppercase tracking-wide mb-1">
+                    {plan.name}
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold">{plan.price}</span>
+                    <span className="text-zinc-500">{plan.period}</span>
+                  </div>
+                  <p className="text-zinc-500 mt-2 text-sm">{plan.description}</p>
+                </div>
+
+                <ul className="space-y-3 mb-6">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-center gap-2 text-sm">
+                      <Check className="w-4 h-4 text-accent flex-shrink-0" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
+                {isCurrentPlan ? (
+                  <div className="w-full py-3 rounded-lg font-semibold text-center text-sm bg-green-500/20 border border-green-500/50 text-green-400">
+                    Current Plan
+                  </div>
+                ) : plan.priceId ? (
+                  <button
+                    onClick={() => handleCheckout(plan.priceId!, plan.name)}
+                    disabled={loading !== null}
+                    className={`w-full py-3 rounded-lg font-semibold transition-colors text-sm ${
+                      plan.featured
                         ? 'bg-accent hover:bg-accent-hover text-white'
                         : 'bg-bg-dark border border-border hover:border-accent text-white'
-                  } disabled:opacity-50`}
-                >
-                  {plan.comingSoon 
-                    ? 'Coming Soon' 
-                    : loading === plan.name 
-                      ? 'Loading...' 
+                    } disabled:opacity-50`}
+                  >
+                    {loading === plan.name
+                      ? 'Loading...'
                       : `Get ${plan.name}`}
-                </button>
-              ) : (
-                <Link
-                  href={user ? '/dashboard' : '/signup'}
-                  className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
-                >
-                  {user ? 'Current Plan' : 'Get Started'}
-                </Link>
-              )}
-            </div>
-          ))}
+                  </button>
+                ) : (
+                  <Link
+                    href={user ? '/dashboard' : '/signup'}
+                    className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
+                  >
+                    {user ? 'Go to Dashboard' : 'Get Started'}
+                  </Link>
+                )}
+              </div>
+            )
+          })}
         </div>
         
         <div className="mt-12 text-center text-zinc-500 text-sm">
