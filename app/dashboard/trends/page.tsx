@@ -1256,23 +1256,25 @@ export default function TrendsPage() {
                           width={140}
                           tickFormatter={(value) => value.length > 18 ? value.substring(0, 18) + '...' : value}
                         />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#18181b', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#18181b',
                             border: '1px solid #3f3f46',
-                            borderRadius: 8,
-                            color: '#e4e4e7'
+                            borderRadius: 8
                           }}
+                          itemStyle={{ color: '#e4e4e7' }}
+                          labelStyle={{ color: '#a1a1aa' }}
                           formatter={(value: number) => [`${value.toFixed(2)}x`, 'ROAS']}
+                          cursor={{ fill: 'transparent' }}
                         />
-                        <Bar 
-                          dataKey="roas" 
+                        <Bar
+                          dataKey="roas"
                           radius={[0, 4, 4, 0]}
                           onClick={(data) => setSelection({ campaign: data.name })}
                           style={{ cursor: 'pointer' }}
                         >
                           {[...hierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8).map((entry, index) => (
-                            <Cell key={index} fill={getROASColor(entry.roas)} />
+                            <Cell key={index} fill={getROASColor(entry.roas)} stroke="none" />
                           ))}
                         </Bar>
                       </BarChart>
@@ -1392,19 +1394,20 @@ export default function TrendsPage() {
                       width={200}
                       tickFormatter={(value) => value.length > 28 ? value.substring(0, 28) + '...' : value}
                     />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: '#18181b', 
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#18181b',
                         border: '1px solid #3f3f46',
-                        borderRadius: 8,
-                        color: '#e4e4e7'
+                        borderRadius: 8
                       }}
+                      itemStyle={{ color: '#e4e4e7' }}
                       labelStyle={{ color: '#a1a1aa' }}
                       formatter={(value: number) => [`${value.toFixed(2)}x`, 'ROAS']}
+                      cursor={{ fill: 'transparent' }}
                     />
                     <Bar dataKey="roas" radius={[0, 4, 4, 0]}>
                       {[...selectedData.children].sort((a, b) => b.roas - a.roas).map((entry, index) => (
-                        <Cell key={index} fill={getROASColor(entry.roas)} />
+                        <Cell key={index} fill={getROASColor(entry.roas)} stroke="none" />
                       ))}
                     </Bar>
                   </BarChart>
