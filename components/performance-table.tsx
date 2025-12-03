@@ -1,11 +1,42 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause, Play } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause, Play, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
 import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
+
+// Simple performance indicator for ads (shows arrow based on verdict without text)
+const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
+  if (verdict === 'scale') {
+    return (
+      <div className="flex items-center justify-center w-6 h-6 rounded bg-verdict-scale/20">
+        <TrendingUp className="w-3.5 h-3.5 text-verdict-scale" />
+      </div>
+    )
+  }
+  if (verdict === 'kill') {
+    return (
+      <div className="flex items-center justify-center w-6 h-6 rounded bg-verdict-kill/20">
+        <TrendingDown className="w-3.5 h-3.5 text-verdict-kill" />
+      </div>
+    )
+  }
+  if (verdict === 'watch') {
+    return (
+      <div className="flex items-center justify-center w-6 h-6 rounded bg-verdict-watch/20">
+        <Minus className="w-3.5 h-3.5 text-verdict-watch" />
+      </div>
+    )
+  }
+  // learn - gray neutral
+  return (
+    <div className="flex items-center justify-center w-6 h-6 rounded bg-zinc-700/30">
+      <Minus className="w-3.5 h-3.5 text-zinc-500" />
+    </div>
+  )
+}
 
 type AdRow = {
   campaign_name: string
@@ -724,7 +755,19 @@ export function PerformanceTable({
             )}
           </div>
           <div className="w-20 flex justify-center px-2 flex-shrink-0">
-            <VerdictBadge verdict={node.verdict} size="sm" />
+            {/* Show verdict only where budget lives:
+                - CBO: verdict at campaign level
+                - ABO: verdict at adset level
+                - Ads: always show performance arrow */}
+            {level === 'ad' ? (
+              <PerformanceArrow verdict={node.verdict} />
+            ) : level === 'campaign' && node.budgetType === 'CBO' ? (
+              <VerdictBadge verdict={node.verdict} size="sm" />
+            ) : level === 'adset' && node.budgetType === 'ABO' ? (
+              <VerdictBadge verdict={node.verdict} size="sm" />
+            ) : (
+              <span className="text-zinc-600">—</span>
+            )}
           </div>
           {/* Actions column */}
           {canManageAds && onStatusChange && node.id && (
@@ -953,7 +996,17 @@ export function PerformanceTable({
             )}>{node.name}</h3>
           </div>
           <div className="flex items-center gap-2">
-            <VerdictBadge verdict={node.verdict} size="sm" />
+            {/* Show verdict only where budget lives:
+                - CBO: verdict at campaign level
+                - ABO: verdict at adset level
+                - Ads: always show performance arrow */}
+            {level === 'ad' ? (
+              <PerformanceArrow verdict={node.verdict} />
+            ) : level === 'campaign' && node.budgetType === 'CBO' ? (
+              <VerdictBadge verdict={node.verdict} size="sm" />
+            ) : level === 'adset' && node.budgetType === 'ABO' ? (
+              <VerdictBadge verdict={node.verdict} size="sm" />
+            ) : null}
             {/* Pause/Resume button for mobile */}
             {canManageAds && onStatusChange && node.id && (
               <button
