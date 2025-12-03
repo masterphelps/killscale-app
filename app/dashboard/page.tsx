@@ -380,9 +380,6 @@ export default function DashboardPage() {
 
     setIsSyncing(true)
 
-    // Clear selection so all campaigns get selected after sync
-    setSelectedCampaigns(new Set())
-
     try {
       // Delete ALL existing data (CSV and API) before syncing
       await supabase
