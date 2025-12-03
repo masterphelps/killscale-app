@@ -1302,22 +1302,29 @@ export default function TrendsPage() {
                       tickFormatter={(value) => `$${value}`}
                     />
                     <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#18181b',
-                        border: '1px solid #3f3f46',
-                        borderRadius: 8
-                      }}
-                      itemStyle={{ color: '#e4e4e7' }}
-                      labelStyle={{ color: '#a1a1aa' }}
-                      formatter={(value: number, name: string, props: any) => {
-                        if (name === 'Spend') return [formatCurrency(value), 'Spend']
-                        if (name === 'Revenue') return [formatCurrency(value), 'Revenue']
-                        return [value, name]
-                      }}
-                      labelFormatter={(label, payload) => {
-                        const date = new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                        const roas = payload?.[0]?.payload?.roas
-                        return roas !== undefined ? `${date} · ROAS: ${roas.toFixed(2)}x` : date
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || !payload.length || !label) return null
+                        const data = payload[0]?.payload
+                        const date = new Date(label as string).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                        return (
+                          <div className="bg-[#18181b] border border-[#3f3f46] rounded-lg p-3 text-sm">
+                            <div className="text-zinc-400 mb-2">{date}</div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">ROAS</span>
+                                <span className="font-medium text-white">{data?.roas?.toFixed(2)}x</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-purple-400">Spend</span>
+                                <span className="font-medium text-white">{formatCurrency(data?.spend || 0)}</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-green-400">Revenue</span>
+                                <span className="font-medium text-white">{formatCurrency(data?.revenue || 0)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
                       }}
                     />
                     <Legend wrapperStyle={{ color: '#a1a1aa' }} />
