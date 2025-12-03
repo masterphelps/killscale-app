@@ -60,6 +60,7 @@ type EntityStatus = {
 
 type CampaignData = {
   id: string
+  name: string
   effective_status: string
   daily_budget?: string
   lifetime_budget?: string
@@ -67,9 +68,18 @@ type CampaignData = {
 
 type AdsetData = {
   id: string
+  name: string
+  campaign_id: string
   effective_status: string
   daily_budget?: string
   lifetime_budget?: string
+}
+
+type AdData = {
+  id: string
+  name: string
+  adset_id: string
+  effective_status: string
 }
 
 // Map our UI presets to valid Meta API date_preset values
@@ -83,6 +93,56 @@ const VALID_META_PRESETS: Record<string, string> = {
   'this_month': 'this_month',
   'last_month': 'last_month',
   'maximum': 'maximum',
+}
+
+// Helper to calculate date range from preset (for ads without insights)
+function getDateRangeFromPreset(datePreset: string): { since: string; until: string } {
+  const today = new Date()
+  const formatDate = (d: Date) => d.toISOString().split('T')[0]
+
+  switch (datePreset) {
+    case 'today':
+      return { since: formatDate(today), until: formatDate(today) }
+    case 'yesterday': {
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      return { since: formatDate(yesterday), until: formatDate(yesterday) }
+    }
+    case 'last_7d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 6)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_14d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 13)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_30d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 29)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_90d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 89)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'this_month': {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_month': {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const end = new Date(today.getFullYear(), today.getMonth(), 0)
+      return { since: formatDate(start), until: formatDate(end) }
+    }
+    default:
+      // Default to last 30 days
+      const start = new Date(today)
+      start.setDate(start.getDate() - 29)
+      return { since: formatDate(start), until: formatDate(today) }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -163,61 +223,67 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Build status and budget maps for campaigns, adsets, and ads
-    const campaignStatusMap: Record<string, string> = {}
-    const campaignBudgetMap: Record<string, { daily_budget: number | null; lifetime_budget: number | null }> = {}
-    const adsetStatusMap: Record<string, string> = {}
-    const adsetBudgetMap: Record<string, { daily_budget: number | null; lifetime_budget: number | null }> = {}
+    // Build status, budget, and name maps for campaigns, adsets, and ads
+    const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
+    const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adStatusMap: Record<string, string> = {}
 
     // Fetch campaign statuses and budgets (with pagination)
     const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
-    campaignsUrl.searchParams.set('fields', 'id,effective_status,daily_budget,lifetime_budget')
+    campaignsUrl.searchParams.set('fields', 'id,name,effective_status,daily_budget,lifetime_budget')
     campaignsUrl.searchParams.set('limit', '500')
 
     const allCampaigns = await fetchAllPages<CampaignData>(campaignsUrl.toString())
     allCampaigns.forEach((c) => {
-      campaignStatusMap[c.id] = c.effective_status
       // Budget values from Meta are in cents - convert to dollars
-      campaignBudgetMap[c.id] = {
+      campaignMap[c.id] = {
+        name: c.name,
+        status: c.effective_status,
         daily_budget: c.daily_budget ? parseInt(c.daily_budget) / 100 : null,
         lifetime_budget: c.lifetime_budget ? parseInt(c.lifetime_budget) / 100 : null,
       }
     })
-    console.log('Campaign status map:', Object.keys(campaignStatusMap).length, 'campaigns')
-    
+    console.log('Campaign map:', Object.keys(campaignMap).length, 'campaigns')
+
     // Fetch adset statuses and budgets (with pagination)
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
-    adsetsUrl.searchParams.set('fields', 'id,effective_status,daily_budget,lifetime_budget')
+    adsetsUrl.searchParams.set('fields', 'id,name,campaign_id,effective_status,daily_budget,lifetime_budget')
     adsetsUrl.searchParams.set('limit', '500')
 
     const allAdsets = await fetchAllPages<AdsetData>(adsetsUrl.toString())
     allAdsets.forEach((a) => {
-      adsetStatusMap[a.id] = a.effective_status
       // Budget values from Meta are in cents - convert to dollars
-      adsetBudgetMap[a.id] = {
+      adsetMap[a.id] = {
+        name: a.name,
+        campaign_id: a.campaign_id,
+        status: a.effective_status,
         daily_budget: a.daily_budget ? parseInt(a.daily_budget) / 100 : null,
         lifetime_budget: a.lifetime_budget ? parseInt(a.lifetime_budget) / 100 : null,
       }
     })
-    console.log('Adset status map:', Object.keys(adsetStatusMap).length, 'adsets')
-    
-    // Fetch ad statuses (with pagination)
+    console.log('Adset map:', Object.keys(adsetMap).length, 'adsets')
+
+    // Fetch ad statuses (with pagination) - includes name and adset_id for complete hierarchy
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
-    adsUrl.searchParams.set('fields', 'id,effective_status')
+    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
     adsUrl.searchParams.set('limit', '500')
-    
-    const allAds = await fetchAllPages<EntityStatus>(adsUrl.toString())
-    allAds.forEach((ad) => {
+
+    const allAdsData = await fetchAllPages<AdData>(adsUrl.toString())
+    allAdsData.forEach((ad) => {
       adStatusMap[ad.id] = ad.effective_status
     })
-    console.log('Ad status map:', Object.keys(adStatusMap).length, 'ads')
+    console.log('Ad map:', Object.keys(adStatusMap).length, 'ads')
     
+    // Track which ads have insights
+    const adsWithInsights = new Set<string>()
+
     // Transform Meta data to our format
     const adData = allInsights.map((insight: MetaInsight, idx: number) => {
+      adsWithInsights.add(insight.ad_id)
+
       // Log first few insights to debug
       if (idx < 3) {
         console.log(`Insight ${idx}:`, {
@@ -227,33 +293,31 @@ export async function POST(request: NextRequest) {
           ad_name: insight.ad_name
         })
       }
-      
-      // Find purchase actions
-      const purchases = insight.actions?.find(a => 
-        a.action_type === 'purchase' || a.action_type === 'omni_purchase'
-      )
-      const purchaseValue = insight.action_values?.find(a => 
-        a.action_type === 'purchase' || a.action_type === 'omni_purchase'
-      )
-      
-      // Get status at each level
-      // Priority: ad status > adset status > campaign status
-      // effective_status already includes parent status inheritance
-      const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
-      const adsetStatus = adsetStatusMap[insight.adset_id] || 'UNKNOWN'
-      const campaignStatus = campaignStatusMap[insight.campaign_id] || 'UNKNOWN'
 
-      // Get budget data
-      const campaignBudget = campaignBudgetMap[insight.campaign_id] || { daily_budget: null, lifetime_budget: null }
-      const adsetBudget = adsetBudgetMap[insight.adset_id] || { daily_budget: null, lifetime_budget: null }
+      // Find purchase actions
+      const purchases = insight.actions?.find(a =>
+        a.action_type === 'purchase' || a.action_type === 'omni_purchase'
+      )
+      const purchaseValue = insight.action_values?.find(a =>
+        a.action_type === 'purchase' || a.action_type === 'omni_purchase'
+      )
+
+      // Get status at each level using the new maps
+      const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
+      const adset = adsetMap[insight.adset_id]
+      const campaign = campaignMap[insight.campaign_id]
 
       if (idx < 3) {
-        console.log(`Status lookup ${idx}:`, { adStatus, adsetStatus, campaignStatus })
-        console.log(`Budget lookup ${idx}:`, { campaignBudget, adsetBudget })
+        console.log(`Status lookup ${idx}:`, {
+          adStatus,
+          adsetStatus: adset?.status,
+          campaignStatus: campaign?.status
+        })
+        console.log(`Budget lookup ${idx}:`, {
+          campaignBudget: { daily: campaign?.daily_budget, lifetime: campaign?.lifetime_budget },
+          adsetBudget: { daily: adset?.daily_budget, lifetime: adset?.lifetime_budget }
+        })
       }
-
-      // The ad's effective_status should reflect the true status
-      // But we'll store all three for proper aggregation
 
       return {
         user_id: userId,
@@ -267,14 +331,13 @@ export async function POST(request: NextRequest) {
         adset_id: insight.adset_id,
         ad_name: insight.ad_name,
         ad_id: insight.ad_id,
-        status: adStatus,  // Ad's effective status (includes parent inheritance)
-        adset_status: adsetStatus,  // Adset's own status
-        campaign_status: campaignStatus,  // Campaign's own status
-        // Budget fields (null if not set)
-        campaign_daily_budget: campaignBudget.daily_budget,
-        campaign_lifetime_budget: campaignBudget.lifetime_budget,
-        adset_daily_budget: adsetBudget.daily_budget,
-        adset_lifetime_budget: adsetBudget.lifetime_budget,
+        status: adStatus,
+        adset_status: adset?.status || 'UNKNOWN',
+        campaign_status: campaign?.status || 'UNKNOWN',
+        campaign_daily_budget: campaign?.daily_budget ?? null,
+        campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
+        adset_daily_budget: adset?.daily_budget ?? null,
+        adset_lifetime_budget: adset?.lifetime_budget ?? null,
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,
@@ -283,32 +346,86 @@ export async function POST(request: NextRequest) {
         synced_at: new Date().toISOString(),
       }
     })
-    
-    if (adData.length === 0) {
-      return NextResponse.json({ 
-        message: 'No ad data found for this period',
-        count: 0 
+
+    // Calculate date range for ads without insights
+    const dateRange = (datePreset === 'custom' && customStartDate && customEndDate)
+      ? { since: customStartDate, until: customEndDate }
+      : getDateRangeFromPreset(datePreset)
+
+    // Add entries for ads without any insights (no activity during date range)
+    const adsWithoutInsights: typeof adData = []
+    allAdsData.forEach((ad) => {
+      if (!adsWithInsights.has(ad.id)) {
+        const adset = adsetMap[ad.adset_id]
+        if (!adset) {
+          console.log(`Skipping ad ${ad.id} - adset ${ad.adset_id} not found`)
+          return
+        }
+        const campaign = campaignMap[adset.campaign_id]
+        if (!campaign) {
+          console.log(`Skipping ad ${ad.id} - campaign ${adset.campaign_id} not found`)
+          return
+        }
+
+        adsWithoutInsights.push({
+          user_id: userId,
+          source: 'meta_api',
+          ad_account_id: adAccountId,
+          date_start: dateRange.since,
+          date_end: dateRange.until,
+          campaign_name: campaign.name,
+          campaign_id: adset.campaign_id,
+          adset_name: adset.name,
+          adset_id: ad.adset_id,
+          ad_name: ad.name,
+          ad_id: ad.id,
+          status: ad.effective_status,
+          adset_status: adset.status,
+          campaign_status: campaign.status,
+          campaign_daily_budget: campaign.daily_budget,
+          campaign_lifetime_budget: campaign.lifetime_budget,
+          adset_daily_budget: adset.daily_budget,
+          adset_lifetime_budget: adset.lifetime_budget,
+          impressions: 0,
+          clicks: 0,
+          spend: 0,
+          purchases: 0,
+          revenue: 0,
+          synced_at: new Date().toISOString(),
+        })
+      }
+    })
+
+    console.log(`Ads with insights: ${adsWithInsights.size}, Ads without insights: ${adsWithoutInsights.length}`)
+
+    // Combine all ad data
+    const allAdData = [...adData, ...adsWithoutInsights]
+
+    if (allAdData.length === 0) {
+      return NextResponse.json({
+        message: 'No ads found in this account',
+        count: 0
       })
     }
     
     // Log sample data before insert
-    console.log('Sample data to insert:', JSON.stringify(adData[0], null, 2))
-    console.log('Total records to insert:', adData.length)
-    
+    console.log('Sample data to insert:', JSON.stringify(allAdData[0], null, 2))
+    console.log('Total records to insert:', allAdData.length)
+
     // Delete ALL existing data for this user (CSV and API)
     const { error: deleteError } = await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', userId)
-    
+
     if (deleteError) {
       console.error('Delete error:', deleteError)
     }
-    
+
     // Insert new data
     const { data: insertedData, error: insertError } = await supabase
       .from('ad_data')
-      .insert(adData)
+      .insert(allAdData)
       .select()
     
     console.log('Insert result - inserted:', insertedData?.length || 0, 'error:', insertError)
@@ -337,9 +454,11 @@ export async function POST(request: NextRequest) {
       // Don't fail the sync if alert generation fails
     }
     
-    return NextResponse.json({ 
+    return NextResponse.json({
       message: 'Sync complete',
-      count: adData.length 
+      count: allAdData.length,
+      adsWithActivity: adData.length,
+      adsWithoutActivity: adsWithoutInsights.length 
     })
     
   } catch (err) {

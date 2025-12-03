@@ -67,32 +67,18 @@ KillScale is a SaaS app for Meta Ads advertisers to monitor and manage their ad 
 
 ---
 
-### Show All Ads Regardless of Date Range (Priority: High - NEXT UP)
-**Problem:** Currently, ads only appear if they had activity during the selected date range. Selecting 7 days shows 93 ads, but 30 days shows 112 ads. Users expect to see ALL ads with metrics reflecting the selected period.
+### Custom Attribution Pixel (Priority: Medium - Exploration)
+**Goal:** Build independent tracking pixel for attribution since Meta's pixel is unreliable. Let advertisers "own their attribution."
 
-**Current Behavior:**
-- Meta API insights endpoint only returns ads with activity in the date range
-- Ads that were paused or had no spend don't appear
+**Target Platform:** Shopify stores
 
-**Solution - Two-Step Sync:**
-1. **Step 1: Fetch all entities** (not time-bounded)
-   ```
-   GET /act_{ad_account_id}/campaigns?fields=id,name,status,daily_budget,lifetime_budget
-   GET /act_{ad_account_id}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget
-   GET /act_{ad_account_id}/ads?fields=id,name,status,adset_id,effective_status
-   ```
+**Status:** Paused - user has a design laid out, waiting for them to share it
 
-2. **Step 2: Fetch insights for date range**
-   ```
-   GET /act_{ad_account_id}/insights?level=ad&fields=...&time_range={date_range}
-   ```
+**Key Technical Considerations:**
+- First-party cookie tracking (browser restrictions)
+- Shopify app integration points
+- Server-side vs client-side tracking
+- Data storage and privacy compliance (GDPR, CCPA)
+- Attribution models (first-touch, last-touch, multi-touch)
 
-3. **Step 3: Merge** - Join entities with insights, showing $0 for ads with no activity
-
-**Files to modify:**
-- `app/api/meta/sync/route.ts` - Update sync logic to two-step approach
-
-**Considerations:**
-- More API calls (3 entity calls + 1 insights call vs current 1 call)
-- Need to handle pagination for large accounts
-- Should cache entity data and only refresh insights on date change?
+**To Resume:** Ask user to share their design for the attribution system to assess technical feasibility
