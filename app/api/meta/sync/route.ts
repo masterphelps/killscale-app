@@ -170,12 +170,12 @@ export async function POST(request: NextRequest) {
     }
     
     const accessToken = connection.access_token
-    
-    // Fetch ad insights from Meta Marketing API
+
+    // Fields needed for insights
     const fields = [
       'campaign_name',
       'campaign_id',
-      'adset_name', 
+      'adset_name',
       'adset_id',
       'ad_name',
       'ad_id',
@@ -185,13 +185,43 @@ export async function POST(request: NextRequest) {
       'actions',
       'action_values',
     ].join(',')
-    
+
+    // STEP 1: Discovery fetch - get all ads that have EVER had activity (for hierarchy info)
+    // This uses 'maximum' date range to capture all ads, even those inactive in selected range
+    const discoveryUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/insights`)
+    discoveryUrl.searchParams.set('access_token', accessToken)
+    discoveryUrl.searchParams.set('fields', 'campaign_name,campaign_id,adset_name,adset_id,ad_name,ad_id')
+    // Note: ad_name is included so we can display it for ads without activity in selected range
+    discoveryUrl.searchParams.set('level', 'ad')
+    discoveryUrl.searchParams.set('limit', '500')
+    discoveryUrl.searchParams.set('date_preset', 'maximum')
+    // No time_increment needed - just want unique ads
+
+    console.log('Discovery fetch: getting all ads with activity history...')
+    const discoveryInsights = await fetchAllPages<MetaInsight>(discoveryUrl.toString())
+
+    // Build hierarchy cache from discovery data
+    const adHierarchyCache: Record<string, { campaign_name: string; campaign_id: string; adset_name: string; adset_id: string; ad_name: string }> = {}
+    discoveryInsights.forEach((insight) => {
+      if (!adHierarchyCache[insight.ad_id]) {
+        adHierarchyCache[insight.ad_id] = {
+          campaign_name: insight.campaign_name,
+          campaign_id: insight.campaign_id,
+          adset_name: insight.adset_name,
+          adset_id: insight.adset_id,
+          ad_name: insight.ad_name,
+        }
+      }
+    })
+    console.log(`Discovery found ${Object.keys(adHierarchyCache).length} unique ads`)
+
+    // STEP 2: Fetch insights for the selected date range (with daily breakdown)
     const insightsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/insights`)
     insightsUrl.searchParams.set('access_token', accessToken)
     insightsUrl.searchParams.set('fields', fields)
     insightsUrl.searchParams.set('level', 'ad')
     insightsUrl.searchParams.set('limit', '500')
-    
+
     // Handle different date options
     if (datePreset === 'custom' && customStartDate && customEndDate) {
       // Use custom time range
@@ -204,12 +234,12 @@ export async function POST(request: NextRequest) {
       const metaPreset = VALID_META_PRESETS[datePreset] || 'last_30d'
       insightsUrl.searchParams.set('date_preset', metaPreset)
     }
-    
+
     // IMPORTANT: Add time_increment=1 to get daily breakdown for time series charts
     insightsUrl.searchParams.set('time_increment', '1')
-    
-    // Fetch ALL pages of insights data
-    console.log('Fetching insights with pagination...')
+
+    // Fetch ALL pages of insights data for selected date range
+    console.log('Fetching insights for selected date range...')
     const allInsights = await fetchAllPages<MetaInsight>(insightsUrl.toString())
     console.log(`Total insights fetched: ${allInsights.length}`)
     
@@ -277,7 +307,7 @@ export async function POST(request: NextRequest) {
     })
     console.log('Ad map:', Object.keys(adStatusMap).length, 'ads')
     
-    // Track which ads have insights
+    // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
 
     // Transform Meta data to our format
@@ -353,19 +383,16 @@ export async function POST(request: NextRequest) {
       : getDateRangeFromPreset(datePreset)
 
     // Add entries for ads without any insights (no activity during date range)
+    // Use hierarchy cache from discovery fetch to get campaign/adset info
     const adsWithoutInsights: typeof adData = []
-    allAdsData.forEach((ad) => {
-      if (!adsWithInsights.has(ad.id)) {
-        const adset = adsetMap[ad.adset_id]
-        if (!adset) {
-          console.log(`Skipping ad ${ad.id} - adset ${ad.adset_id} not found`)
-          return
-        }
-        const campaign = campaignMap[adset.campaign_id]
-        if (!campaign) {
-          console.log(`Skipping ad ${ad.id} - campaign ${adset.campaign_id} not found`)
-          return
-        }
+
+    // First, add ads from discovery that aren't in the selected date range insights
+    Object.entries(adHierarchyCache).forEach(([adId, hierarchy]) => {
+      if (!adsWithInsights.has(adId)) {
+        // Get status and budget from entity maps if available
+        const adStatus = adStatusMap[adId] || 'UNKNOWN'
+        const adset = adsetMap[hierarchy.adset_id]
+        const campaign = campaignMap[hierarchy.campaign_id]
 
         adsWithoutInsights.push({
           user_id: userId,
@@ -373,19 +400,19 @@ export async function POST(request: NextRequest) {
           ad_account_id: adAccountId,
           date_start: dateRange.since,
           date_end: dateRange.until,
-          campaign_name: campaign.name,
-          campaign_id: adset.campaign_id,
-          adset_name: adset.name,
-          adset_id: ad.adset_id,
-          ad_name: ad.name,
-          ad_id: ad.id,
-          status: ad.effective_status,
-          adset_status: adset.status,
-          campaign_status: campaign.status,
-          campaign_daily_budget: campaign.daily_budget,
-          campaign_lifetime_budget: campaign.lifetime_budget,
-          adset_daily_budget: adset.daily_budget,
-          adset_lifetime_budget: adset.lifetime_budget,
+          campaign_name: hierarchy.campaign_name,
+          campaign_id: hierarchy.campaign_id,
+          adset_name: hierarchy.adset_name,
+          adset_id: hierarchy.adset_id,
+          ad_name: hierarchy.ad_name,
+          ad_id: adId,
+          status: adStatus,
+          adset_status: adset?.status || 'UNKNOWN',
+          campaign_status: campaign?.status || 'UNKNOWN',
+          campaign_daily_budget: campaign?.daily_budget ?? null,
+          campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
+          adset_daily_budget: adset?.daily_budget ?? null,
+          adset_lifetime_budget: adset?.lifetime_budget ?? null,
           impressions: 0,
           clicks: 0,
           spend: 0,
