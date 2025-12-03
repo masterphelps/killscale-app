@@ -30,6 +30,53 @@ const DATE_PRESETS = [
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+// Helper to calculate date range from preset
+function getDateRangeFromPreset(preset: string): { start: string; end: string } | null {
+  const today = new Date()
+  const formatDate = (d: Date) => d.toISOString().split('T')[0]
+
+  switch (preset) {
+    case 'today':
+      return { start: formatDate(today), end: formatDate(today) }
+    case 'yesterday': {
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      return { start: formatDate(yesterday), end: formatDate(yesterday) }
+    }
+    case 'last_7d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 6)
+      return { start: formatDate(start), end: formatDate(today) }
+    }
+    case 'last_14d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 13)
+      return { start: formatDate(start), end: formatDate(today) }
+    }
+    case 'last_30d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 29)
+      return { start: formatDate(start), end: formatDate(today) }
+    }
+    case 'last_90d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 89)
+      return { start: formatDate(start), end: formatDate(today) }
+    }
+    case 'this_month': {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      return { start: formatDate(start), end: formatDate(today) }
+    }
+    case 'last_month': {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const end = new Date(today.getFullYear(), today.getMonth(), 0)
+      return { start: formatDate(start), end: formatDate(end) }
+    }
+    default:
+      return null
+  }
+}
+
 export function DatePicker({
   isOpen,
   onClose,
@@ -54,12 +101,20 @@ export function DatePicker({
     }
   }, [datePreset])
 
-  // Reset calendar view when opening
+  // Reset calendar view when opening and pre-fill custom dates from current preset
   useEffect(() => {
     if (isOpen) {
       const now = new Date()
       setViewMonth(now.getMonth())
       setViewYear(now.getFullYear())
+
+      // If not already in custom mode, pre-fill custom dates from current preset
+      if (datePreset !== 'custom') {
+        const range = getDateRangeFromPreset(datePreset)
+        if (range) {
+          onCustomDateChange(range.start, range.end)
+        }
+      }
     }
   }, [isOpen])
 

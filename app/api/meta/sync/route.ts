@@ -52,12 +52,6 @@ type MetaInsight = {
   date_stop: string
 }
 
-type EntityStatus = {
-  id: string
-  effective_status: string
-  status?: string
-}
-
 type CampaignData = {
   id: string
   name: string
