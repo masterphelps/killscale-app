@@ -128,7 +128,7 @@ export default function DashboardPage() {
       loadData()
       loadConnection()
     }
-  }, [user])
+  }, [user?.id]) // Use user.id to avoid re-fetching when Supabase refreshes the session token on tab focus
 
   // Load rules when account changes
   useEffect(() => {
@@ -137,7 +137,7 @@ export default function DashboardPage() {
         connection.ad_accounts?.find(a => a.in_dashboard)?.id
       loadRules(accountId)
     }
-  }, [user, connection?.selected_account_id])
+  }, [user?.id, connection?.selected_account_id])
 
   // Reload connection and rules when account is switched from sidebar
   useEffect(() => {
@@ -148,7 +148,7 @@ export default function DashboardPage() {
     }
     window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
     return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
-  }, [user])
+  }, [user?.id])
 
   // Auto-sync when coming from sidebar account selection
   useEffect(() => {
@@ -159,7 +159,7 @@ export default function DashboardPage() {
       // Trigger sync for the selected account
       handleSyncAccount(syncAccountId)
     }
-  }, [searchParams, user, canSync])
+  }, [searchParams, user?.id, canSync])
 
   const loadConnection = async () => {
     if (!user) return
@@ -221,7 +221,7 @@ export default function DashboardPage() {
     }, 500)
 
     return () => clearTimeout(timeout)
-  }, [datePreset, selectedAccountId, canSync, user])
+  }, [datePreset, selectedAccountId, canSync, user?.id])
 
   // Auto-refresh every 5 minutes when viewing live data
   useEffect(() => {
