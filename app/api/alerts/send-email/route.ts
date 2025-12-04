@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazy initialize Resend to avoid build-time errors
+let resend: Resend | null = null
+function getResend() {
+  if (!resend) {
+    resend = new Resend(process.env.RESEND_API_KEY)
+  }
+  return resend
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -143,7 +150,7 @@ export async function POST(request: NextRequest) {
       : `${alerts.length} new alert${alerts.length > 1 ? 's' : ''} from KillScale`
 
     // Send email via Resend
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await getResend().emails.send({
       from: 'KillScale <alerts@killscale.com>',
       to: userEmail,
       subject,
