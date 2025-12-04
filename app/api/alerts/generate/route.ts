@@ -359,18 +359,40 @@ export async function POST(request: NextRequest) {
     }
     
     // Insert new alerts
-    const { error: insertError } = await supabase
+    const { data: insertedAlerts, error: insertError } = await supabase
       .from('alerts')
       .insert(uniqueAlerts)
-    
+      .select()
+
     if (insertError) {
       console.error('Error inserting alerts:', insertError)
       return NextResponse.json({ error: 'Failed to create alerts' }, { status: 500 })
     }
-    
-    return NextResponse.json({ 
+
+    // Send email notification for high priority alerts
+    const highPriorityAlerts = insertedAlerts?.filter(a => a.priority === 'high' || a.priority === 'medium') || []
+
+    if (highPriorityAlerts.length > 0) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'
+        await fetch(`${baseUrl}/api/alerts/send-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            alerts: highPriorityAlerts,
+          }),
+        })
+      } catch (emailError) {
+        // Log but don't fail the request if email fails
+        console.error('Failed to send alert email:', emailError)
+      }
+    }
+
+    return NextResponse.json({
       message: `Created ${uniqueAlerts.length} new alerts`,
-      alerts: uniqueAlerts.length
+      alerts: uniqueAlerts.length,
+      emailSent: highPriorityAlerts.length > 0
     })
     
   } catch (err) {
