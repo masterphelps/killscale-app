@@ -746,16 +746,16 @@ export default function TrendsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 lg:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Trends Explorer</h1>
-          <p className="text-zinc-500">Drill down into your performance data</p>
+          <h1 className="text-xl lg:text-2xl font-bold mb-1">Trends Explorer</h1>
+          <p className="text-zinc-500 text-sm lg:text-base">Drill down into your performance data</p>
         </div>
-        
-        {/* Controls */}
-        <div className="flex items-center gap-3">
+
+        {/* Controls - hidden on mobile, shown in sidebar instead */}
+        <div className="hidden lg:flex items-center gap-3">
           {/* Include Paused Toggle - same style as dashboard */}
           <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
             <button
@@ -774,7 +774,7 @@ export default function TrendsPage() {
               Include Paused
             </span>
           </div>
-          
+
           {/* Date Range Display - shows actual synced data range */}
           <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
             <Calendar className="w-4 h-4 text-zinc-500" />
@@ -803,11 +803,36 @@ export default function TrendsPage() {
         ))}
       </div>
 
-      {/* Main Layout */}
-      <div className="flex gap-6">
+      {/* Main Layout - stacked on mobile, side-by-side on desktop */}
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Left Sidebar - Hierarchy Navigator */}
-        <div className="w-[380px] flex-shrink-0">
-          <div className="bg-bg-card border border-border rounded-xl overflow-hidden sticky top-6">
+        <div className="w-full lg:w-[380px] lg:flex-shrink-0">
+          <div className="bg-bg-card border border-border rounded-xl overflow-hidden lg:sticky lg:top-6">
+            {/* Mobile Controls - Include Paused toggle */}
+            <div className="lg:hidden p-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIncludePaused(!includePaused)}
+                  className={`relative w-9 h-5 rounded-full transition-all ${
+                    includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                      includePaused ? 'left-4' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+                <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                  Include Paused
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Last 30 days</span>
+              </div>
+            </div>
+
             {/* Search */}
             <div className="p-3 border-b border-border">
               <div className="relative">
@@ -821,9 +846,9 @@ export default function TrendsPage() {
                 />
               </div>
             </div>
-            
+
             {/* Hierarchy */}
-            <div className="p-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+            <div className="p-2 max-h-[300px] lg:max-h-[calc(100vh-300px)] overflow-y-auto">
               {/* Account Level */}
               <div 
                 className={cn(
@@ -924,7 +949,7 @@ export default function TrendsPage() {
         {/* Main Content */}
         <div className="flex-1 space-y-6">
           {/* Insight Cards */}
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 lg:gap-4">
             <InsightCard
               icon={DollarSign}
               title="Total Spend"
@@ -957,14 +982,14 @@ export default function TrendsPage() {
             />
           </div>
           
-          {/* AI Insights */}
+          {/* AI Insights - hidden on mobile for cleaner view */}
           {insights.length > 0 && currentLevel === 'account' && (
-            <div className="bg-gradient-to-r from-accent/10 via-purple-500/10 to-pink-500/10 border border-accent/20 rounded-xl p-4">
+            <div className="hidden sm:block bg-gradient-to-r from-accent/10 via-purple-500/10 to-pink-500/10 border border-accent/20 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="w-4 h-4 text-accent" />
                 <span className="font-medium text-sm">AI Insights</span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {insights.map((insight, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm text-zinc-300 bg-black/20 rounded-lg p-3">
                     <span className="text-lg">{insight.type === 'success' ? '🔥' : insight.type === 'warning' ? '⚠️' : '💡'}</span>
@@ -976,47 +1001,48 @@ export default function TrendsPage() {
           )}
           
           {/* View Mode Tabs */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg overflow-x-auto">
               <button
                 onClick={() => setViewMode('overview')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
-                  viewMode === 'overview' 
-                    ? 'bg-accent text-white' 
+                  'flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-md text-xs lg:text-sm font-medium transition-all whitespace-nowrap',
+                  viewMode === 'overview'
+                    ? 'bg-accent text-white'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                 )}
               >
-                <BarChart3 className="w-4 h-4" />
+                <BarChart3 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
                 Overview
               </button>
               <button
                 onClick={() => setViewMode('funnel')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
-                  viewMode === 'funnel' 
-                    ? 'bg-accent text-white' 
+                  'flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-md text-xs lg:text-sm font-medium transition-all whitespace-nowrap',
+                  viewMode === 'funnel'
+                    ? 'bg-accent text-white'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                 )}
               >
-                <Filter className="w-4 h-4" />
+                <Filter className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
                 Funnel
               </button>
               <button
                 onClick={() => setViewMode('scatter')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
-                  viewMode === 'scatter' 
-                    ? 'bg-accent text-white' 
+                  'flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-md text-xs lg:text-sm font-medium transition-all whitespace-nowrap',
+                  viewMode === 'scatter'
+                    ? 'bg-accent text-white'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                 )}
               >
-                <Activity className="w-4 h-4" />
-                Spend vs ROAS
+                <Activity className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+                <span className="hidden sm:inline">Spend vs ROAS</span>
+                <span className="sm:hidden">ROAS</span>
               </button>
             </div>
-            
-            <div className="flex items-center gap-2">
+
+            <div className="hidden lg:flex items-center gap-2">
               <button className="flex items-center gap-2 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-white hover:border-zinc-600 transition-all">
                 <Download className="w-4 h-4" />
                 Export
@@ -1166,7 +1192,7 @@ export default function TrendsPage() {
               </div>
             ) : currentLevel === 'account' ? (
               /* Campaign breakdown for account level - Pie + Bar combo */
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Spend Distribution Pie Chart */}
                 <div>
                   <h4 className="text-sm font-medium text-zinc-400 mb-3">Spend by Campaign</h4>
@@ -1404,7 +1430,7 @@ export default function TrendsPage() {
           
           {/* Detailed metrics for ad level */}
           {currentLevel === 'ad' && selectedData && (
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
               <div className="bg-bg-card border border-border rounded-xl p-6">
                 <h3 className="font-semibold mb-4">Performance Metrics</h3>
                 <div className="space-y-4">
