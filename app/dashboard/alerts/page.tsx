@@ -168,11 +168,15 @@ export default function AlertsPage() {
     params.set('name', alert.entity_name)
 
     // For adsets and ads, we need the campaign name from the alert data
-    if (alert.data?.campaign_name) {
-      params.set('campaign', alert.data.campaign_name)
+    // Support both old field names (campaign, adset) and new ones (campaign_name, adset_name)
+    const campaignName = alert.data?.campaign_name || alert.data?.campaign
+    const adsetName = alert.data?.adset_name || alert.data?.adset
+
+    if (campaignName) {
+      params.set('campaign', campaignName)
     }
-    if (alert.data?.adset_name) {
-      params.set('adset', alert.data.adset_name)
+    if (adsetName) {
+      params.set('adset', adsetName)
     }
 
     router.push(`/dashboard?${params.toString()}`)

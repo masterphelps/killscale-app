@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
             entity_type: 'adset',
             entity_id: adset.id,
             entity_name: adset.name,
-            data: { spend: adset.spend, purchases: 0, campaign: adset.campaign_name }
+            data: { spend: adset.spend, purchases: 0, campaign_name: adset.campaign_name }
           }))
         }
       })
@@ -282,7 +282,7 @@ export async function POST(request: NextRequest) {
             entity_type: 'adset',
             entity_id: adset.id,
             entity_name: adset.name,
-            data: { roas: adset.roas, minRoas, spend: adset.spend, campaign: adset.campaign_name }
+            data: { roas: adset.roas, minRoas, spend: adset.spend, campaign_name: adset.campaign_name }
           }))
         }
       })
@@ -317,7 +317,7 @@ export async function POST(request: NextRequest) {
             entity_type: 'ad',
             entity_id: ad.id,
             entity_name: ad.name,
-            data: { roas: ad.roas, scaleRoas, spend: ad.spend, revenue: ad.revenue, adset: ad.adset_name }
+            data: { roas: ad.roas, scaleRoas, spend: ad.spend, revenue: ad.revenue, campaign_name: ad.campaign_name, adset_name: ad.adset_name }
           }))
         }
       })
