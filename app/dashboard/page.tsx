@@ -93,10 +93,35 @@ export default function DashboardPage() {
     action: 'pause' | 'resume'
   } | null>(null)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [highlightEntity, setHighlightEntity] = useState<{
+    type: 'campaign' | 'adset' | 'ad'
+    name: string
+    campaignName?: string
+    adsetName?: string
+  } | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
   const searchParams = useSearchParams()
-  
+
+  // Handle deep-linking from alerts page
+  useEffect(() => {
+    const entityType = searchParams.get('highlight') as 'campaign' | 'adset' | 'ad' | null
+    const entityName = searchParams.get('name')
+    const campaignName = searchParams.get('campaign')
+    const adsetName = searchParams.get('adset')
+
+    if (entityType && entityName) {
+      setHighlightEntity({
+        type: entityType,
+        name: entityName,
+        campaignName: campaignName || undefined,
+        adsetName: adsetName || undefined,
+      })
+      // Clear URL params after setting highlight
+      window.history.replaceState({}, '', '/dashboard')
+    }
+  }, [searchParams])
+
   // Load saved settings on mount (only view mode, not date - always start with last_30d)
   useEffect(() => {
     const savedViewMode = localStorage.getItem('killscale_viewMode')
@@ -1018,7 +1043,7 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          <PerformanceTable 
+          <PerformanceTable
             data={tableData}
             rules={rules}
             dateRange={dateRange}
@@ -1033,6 +1058,7 @@ export default function DashboardPage() {
             onStatusChange={handleStatusChangeRequest}
             canManageAds={canSync && !!selectedAccountId}
             onBudgetChange={handleBudgetChange}
+            highlightEntity={highlightEntity}
           />
         </>
       )}

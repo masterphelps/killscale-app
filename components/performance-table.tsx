@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause, Play, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
@@ -81,6 +81,13 @@ type PerformanceTableProps = {
   onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED') => void
   canManageAds?: boolean
   onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime') => Promise<void>
+  // For deep-linking from alerts
+  highlightEntity?: {
+    type: 'campaign' | 'adset' | 'ad'
+    name: string
+    campaignName?: string
+    adsetName?: string
+  } | null
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -405,10 +412,13 @@ export function PerformanceTable({
   someSelected = false,
   onStatusChange,
   canManageAds = false,
-  onBudgetChange
+  onBudgetChange,
+  highlightEntity
 }: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
+  const [highlightedRow, setHighlightedRow] = useState<string | null>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
   const [allExpanded, setAllExpanded] = useState(false)
   const [nameColWidth, setNameColWidth] = useState(300)
   const [sortField, setSortField] = useState<SortField>('spend')
@@ -427,8 +437,64 @@ export function PerformanceTable({
   const resizing = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
-  
+
   const hierarchy = useMemo(() => buildHierarchy(data, rules), [data, rules])
+
+  // Handle deep-linking highlight from alerts
+  useEffect(() => {
+    if (!highlightEntity || hierarchy.length === 0) return
+
+    const { type, name, campaignName, adsetName } = highlightEntity
+
+    // Find the entity in the hierarchy
+    let foundCampaign: string | null = null
+    let foundAdset: string | null = null
+
+    if (type === 'campaign') {
+      foundCampaign = hierarchy.find(c => c.name === name)?.name || null
+    } else if (type === 'adset' && campaignName) {
+      foundCampaign = campaignName
+      const campaign = hierarchy.find(c => c.name === campaignName)
+      foundAdset = campaign?.children?.find(a => a.name === name)?.name || null
+    } else if (type === 'ad' && campaignName && adsetName) {
+      foundCampaign = campaignName
+      foundAdset = adsetName
+    }
+
+    // Expand to show the entity
+    if (foundCampaign) {
+      setExpandedCampaigns(prev => {
+        const newSet = new Set(prev)
+        newSet.add(foundCampaign!)
+        return newSet
+      })
+    }
+    if (foundAdset && foundCampaign) {
+      setExpandedAdsets(prev => {
+        const newSet = new Set(prev)
+        newSet.add(`${foundCampaign}::${foundAdset}`)
+        return newSet
+      })
+    }
+
+    // Set the highlight
+    const rowKey = type === 'campaign' ? name
+      : type === 'adset' ? `${campaignName}::${name}`
+      : `${campaignName}::${adsetName}::${name}`
+    setHighlightedRow(rowKey)
+
+    // Scroll to the highlighted row after a short delay
+    setTimeout(() => {
+      highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+
+    // Clear highlight after 3 seconds
+    const timeout = setTimeout(() => {
+      setHighlightedRow(null)
+    }, 3000)
+
+    return () => clearTimeout(timeout)
+  }, [highlightEntity, hierarchy])
   
   const filteredHierarchy = useMemo(() => {
     // First filter by paused status if needed
@@ -585,37 +651,47 @@ export function PerformanceTable({
       : <ChevronDown className="w-3 h-3 text-accent" />
   }
 
-  const DataRow = ({ 
-    node, 
-    level, 
-    isExpanded, 
+  const DataRow = ({
+    node,
+    level,
+    isExpanded,
     onToggle,
     isSelected = true,
-  }: { 
+    rowKey,
+    campaignName,
+    adsetName,
+  }: {
     node: HierarchyNode
     level: 'campaign' | 'adset' | 'ad'
     isExpanded?: boolean
     onToggle?: () => void
     isSelected?: boolean
+    rowKey?: string
+    campaignName?: string
+    adsetName?: string
   }) => {
     const indent = level === 'campaign' ? 0 : level === 'adset' ? 24 : 48
-    const bgClass = level === 'campaign' 
-      ? (isSelected ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' : 'bg-bg-card/50 opacity-60 hover:opacity-80')
-      : level === 'adset'
-        ? 'bg-hierarchy-adset-bg hover:bg-purple-500/15'
-        : 'bg-bg-card hover:bg-bg-hover'
+    const isHighlighted = rowKey === highlightedRow
+    const bgClass = isHighlighted
+      ? 'bg-accent/20 ring-2 ring-accent/50'
+      : level === 'campaign'
+        ? (isSelected ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' : 'bg-bg-card/50 opacity-60 hover:opacity-80')
+        : level === 'adset'
+          ? 'bg-hierarchy-adset-bg hover:bg-purple-500/15'
+          : 'bg-bg-card hover:bg-bg-hover'
     const textClass = level === 'campaign' ? 'text-white' : level === 'adset' ? 'text-purple-200' : 'text-zinc-400'
-    const labelBg = level === 'campaign' 
-      ? 'bg-blue-500/30 text-blue-300' 
-      : level === 'adset' 
+    const labelBg = level === 'campaign'
+      ? 'bg-blue-500/30 text-blue-300'
+      : level === 'adset'
         ? 'bg-purple-500/30 text-purple-300'
         : 'bg-bg-dark text-zinc-500'
     const label = level === 'campaign' ? 'Camp' : level === 'adset' ? 'Set' : 'Ad'
 
     return (
-      <div 
+      <div
+        ref={isHighlighted ? highlightRef : undefined}
         className={cn(
-          'flex items-center border-b border-border transition-colors',
+          'flex items-center border-b border-border transition-all duration-300',
           bgClass,
           onToggle && 'cursor-pointer'
         )}
@@ -1192,28 +1268,34 @@ export function PerformanceTable({
                 
                 return (
                   <div key={campaign.name}>
-                    <DataRow 
+                    <DataRow
                       node={campaign}
                       level="campaign"
                       isExpanded={expandedCampaigns.has(campaign.name)}
                       onToggle={() => toggleCampaign(campaign.name)}
                       isSelected={isSelected}
+                      rowKey={campaign.name}
                     />
-                    
+
                     {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
                       <div key={`${campaign.name}::${adset.name}`}>
-                        <DataRow 
+                        <DataRow
                           node={adset}
                           level="adset"
                           isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
                           onToggle={() => toggleAdset(campaign.name, adset.name)}
+                          rowKey={`${campaign.name}::${adset.name}`}
+                          campaignName={campaign.name}
                         />
-                        
+
                         {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
-                          <DataRow 
+                          <DataRow
                             key={`${campaign.name}::${adset.name}::${ad.name}`}
                             node={ad}
                             level="ad"
+                            rowKey={`${campaign.name}::${adset.name}::${ad.name}`}
+                            campaignName={campaign.name}
+                            adsetName={adset.name}
                           />
                         ))}
                       </div>

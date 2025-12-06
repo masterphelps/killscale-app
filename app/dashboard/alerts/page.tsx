@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { 
-  Bell, 
-  BellOff, 
-  AlertTriangle, 
-  TrendingDown, 
+import {
+  Bell,
+  BellOff,
+  AlertTriangle,
+  TrendingDown,
   Pause,
   Check,
   X,
@@ -13,12 +13,14 @@ import {
   RefreshCw,
   Rocket,
   Settings,
-  List
+  List,
+  ExternalLink
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { createClient } from '@supabase/supabase-js'
 import { StatusChangeModal } from '@/components/confirm-modal'
+import { useRouter } from 'next/navigation'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -153,8 +155,28 @@ export default function AlertsPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { user } = useAuth()
   const { plan } = useSubscription()
+  const router = useRouter()
 
   const canManageAds = plan === 'Pro' || plan === 'Agency'
+
+  const handleViewInDashboard = (alert: Alert) => {
+    if (!alert.entity_type || !alert.entity_name) return
+
+    // Build URL params for deep-linking
+    const params = new URLSearchParams()
+    params.set('highlight', alert.entity_type)
+    params.set('name', alert.entity_name)
+
+    // For adsets and ads, we need the campaign name from the alert data
+    if (alert.data?.campaign_name) {
+      params.set('campaign', alert.data.campaign_name)
+    }
+    if (alert.data?.adset_name) {
+      params.set('adset', alert.data.adset_name)
+    }
+
+    router.push(`/dashboard?${params.toString()}`)
+  }
 
   // Load current account
   useEffect(() => {
@@ -563,8 +585,19 @@ export default function AlertsPage() {
                         {/* Actions - only show for non-history alerts */}
                         {filter !== 'history' ? (
                           <div className="flex flex-wrap items-center gap-2">
-                            {canManageAds && 
-                             alert.entity_id && 
+                            {/* View in Dashboard - only on desktop and if entity exists */}
+                            {alert.entity_type && alert.entity_name && (
+                              <button
+                                onClick={() => handleViewInDashboard(alert)}
+                                className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 border border-accent/30 text-accent rounded-lg text-sm font-medium hover:bg-accent/20 transition-colors"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                View
+                              </button>
+                            )}
+
+                            {canManageAds &&
+                             alert.entity_id &&
                              (alert.type === 'high_spend_no_conv' || alert.type === 'roas_below_min') &&
                              !alert.action_taken && (
                               <button
@@ -575,14 +608,14 @@ export default function AlertsPage() {
                                 Pause Now
                               </button>
                             )}
-                            
+
                             {alert.action_taken && (
                               <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-sm">
                                 <Check className="w-3.5 h-3.5" />
                                 {alert.action_taken === 'paused' ? 'Paused' : alert.action_taken}
                               </span>
                             )}
-                            
+
                             <button
                               onClick={() => dismissAlert(alert.id)}
                               className="flex items-center gap-1.5 px-3 py-1.5 text-zinc-500 rounded-lg text-sm hover:text-red-400 transition-colors"
