@@ -38,6 +38,10 @@ export default function SignupPage() {
       setError(error.message)
       setLoading(false)
     } else {
+      // Fire Meta Pixel CompleteRegistration event
+      if (typeof window !== 'undefined' && (window as any).fbq) {
+        (window as any).fbq('track', 'CompleteRegistration')
+      }
       setSuccess(true)
     }
   }
