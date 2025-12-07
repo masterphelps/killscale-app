@@ -298,8 +298,24 @@ export async function POST(request: NextRequest) {
     const allAdsData = await fetchAllPages<AdData>(adsUrl.toString())
     allAdsData.forEach((ad) => {
       adStatusMap[ad.id] = ad.effective_status
+
+      // Also add to hierarchy cache if not already present (catches brand new ads with no delivery)
+      if (!adHierarchyCache[ad.id] && ad.adset_id) {
+        const adset = adsetMap[ad.adset_id]
+        const campaign = adset ? campaignMap[adset.campaign_id] : null
+        if (adset && campaign) {
+          adHierarchyCache[ad.id] = {
+            campaign_name: campaign.name,
+            campaign_id: adset.campaign_id,
+            adset_name: adset.name,
+            adset_id: ad.adset_id,
+            ad_name: ad.name,
+          }
+        }
+      }
     })
     console.log('Ad map:', Object.keys(adStatusMap).length, 'ads')
+    console.log('Hierarchy cache after ads fetch:', Object.keys(adHierarchyCache).length, 'total ads')
     
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
