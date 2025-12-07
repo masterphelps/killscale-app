@@ -32,9 +32,14 @@ type AdAccount = {
   name: string
 }
 
+// New focused alert types + legacy types for backwards compatibility
+type AlertType =
+  | 'money_bleeding' | 'below_breakeven' | 'scale_candidate'
+  | 'high_spend_no_conv' | 'roas_below_min' | 'roas_above_scale' | 'status_changed' | 'ad_fatigue'
+
 type Alert = {
   id: string
-  type: 'high_spend_no_conv' | 'roas_below_min' | 'roas_above_scale' | 'status_changed' | 'ad_fatigue'
+  type: AlertType
   priority: 'high' | 'medium' | 'low'
   title: string
   message: string
@@ -55,7 +60,18 @@ type AlertSetting = {
   email_enabled: boolean
 }
 
+// Map legacy types to new types for display
+const LEGACY_TYPE_MAP: Record<string, string> = {
+  'high_spend_no_conv': 'money_bleeding',
+  'roas_below_min': 'below_breakeven',
+  'roas_above_scale': 'scale_candidate',
+}
+
 const ALERT_ICONS: Record<string, any> = {
+  money_bleeding: AlertTriangle,
+  below_breakeven: TrendingDown,
+  scale_candidate: Rocket,
+  // Legacy mappings
   high_spend_no_conv: AlertTriangle,
   roas_below_min: TrendingDown,
   roas_above_scale: Rocket,
@@ -75,7 +91,8 @@ const PRIORITY_ICON_COLORS: Record<string, string> = {
   low: 'text-green-500 bg-green-500/10',
 }
 
-const ALERT_TYPE_INFO: Record<string, { 
+// New focused alert types - only 3 types at budget level (CBO/ABO)
+const ALERT_TYPE_INFO: Record<string, {
   title: string
   description: string
   icon: any
@@ -83,39 +100,25 @@ const ALERT_TYPE_INFO: Record<string, {
   thresholdSuffix?: string
   priority: 'high' | 'medium' | 'low'
 }> = {
-  high_spend_no_conv: {
-    title: 'High Spend, No Conversions',
-    description: 'Alert when spend exceeds threshold with zero purchases',
+  money_bleeding: {
+    title: 'Money Bleeding',
+    description: 'Spending with zero conversions. Alerts at campaign level for CBO, ad set level for ABO.',
     icon: AlertTriangle,
-    thresholdLabel: 'Minimum spend',
+    thresholdLabel: 'Minimum spend before alerting',
     thresholdSuffix: '$',
     priority: 'high',
   },
-  roas_below_min: {
-    title: 'ROAS Below Minimum',
-    description: 'Alert when ROAS drops below your minimum threshold (set in Rules)',
+  below_breakeven: {
+    title: 'Below Breakeven',
+    description: 'ROAS below your minimum threshold (set in Rules). Alerts at campaign level for CBO, ad set level for ABO.',
     icon: TrendingDown,
     priority: 'medium',
   },
-  roas_above_scale: {
-    title: 'Scaling Opportunity',
-    description: 'Alert when ROAS exceeds your scale threshold (set in Rules)',
+  scale_candidate: {
+    title: 'Scale Candidate',
+    description: 'ROAS above your scale threshold - consider increasing budget. Alerts at campaign level for CBO, ad set level for ABO.',
     icon: Rocket,
     priority: 'low',
-  },
-  status_changed: {
-    title: 'Status Changed',
-    description: 'Alert when a campaign/ad is paused or activated externally',
-    icon: Bell,
-    priority: 'medium',
-  },
-  ad_fatigue: {
-    title: 'Ad Fatigue Detection',
-    description: 'Alert when CTR declines for consecutive days',
-    icon: TrendingDown,
-    thresholdLabel: 'Days of decline',
-    thresholdSuffix: 'days',
-    priority: 'medium',
   },
 }
 
@@ -132,6 +135,17 @@ function formatTimeAgo(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays < 7) return `${diffDays}d ago`
   return date.toLocaleDateString()
+}
+
+// Normalize alert type for display and actions
+function normalizeAlertType(type: string): string {
+  return LEGACY_TYPE_MAP[type] || type
+}
+
+// Check if alert type is a "problem" alert (money bleeding or below breakeven)
+function isProblemAlert(type: string): boolean {
+  const normalized = normalizeAlertType(type)
+  return normalized === 'money_bleeding' || normalized === 'below_breakeven'
 }
 
 export default function AlertsPage() {
@@ -321,10 +335,10 @@ export default function AlertsPage() {
 
   const dismissAlert = async (alertId: string) => {
     if (!user) return
-    
+
     // Find the alert before removing it
     const dismissedAlert = alerts.find(a => a.id === alertId)
-    
+
     try {
       await fetch('/api/alerts', {
         method: 'PATCH',
@@ -335,10 +349,10 @@ export default function AlertsPage() {
           updates: { is_dismissed: true }
         })
       })
-      
+
       // Remove from active alerts
       setAlerts(prev => prev.filter(a => a.id !== alertId))
-      
+
       // Add to history
       if (dismissedAlert) {
         setHistoryAlerts(prev => [{ ...dismissedAlert, is_dismissed: true }, ...prev])
@@ -350,7 +364,7 @@ export default function AlertsPage() {
 
   const dismissAll = async () => {
     if (!user) return
-    
+
     try {
       await fetch('/api/alerts', {
         method: 'POST',
@@ -360,7 +374,7 @@ export default function AlertsPage() {
           action: 'dismiss_all'
         })
       })
-      
+
       // Move all to history
       setHistoryAlerts(prev => [...alerts.map(a => ({ ...a, is_dismissed: true })), ...prev])
       setAlerts([])
@@ -371,7 +385,7 @@ export default function AlertsPage() {
 
   const handlePauseClick = (alert: Alert) => {
     if (!alert.entity_id || !alert.entity_type) return
-    
+
     setStatusModal({
       isOpen: true,
       entityId: alert.entity_id,
@@ -384,7 +398,7 @@ export default function AlertsPage() {
 
   const handleStatusConfirm = async () => {
     if (!statusModal || !user) return
-    
+
     setIsUpdatingStatus(true)
     try {
       const res = await fetch('/api/meta/update-status', {
@@ -397,7 +411,7 @@ export default function AlertsPage() {
           status: 'PAUSED'
         })
       })
-      
+
       if (res.ok) {
         await fetch('/api/alerts', {
           method: 'PATCH',
@@ -408,10 +422,10 @@ export default function AlertsPage() {
             updates: { action_taken: 'paused', is_read: true }
           })
         })
-        
-        setAlerts(prev => prev.map(a => 
-          a.id === statusModal.alertId 
-            ? { ...a, is_read: true, action_taken: 'paused' } 
+
+        setAlerts(prev => prev.map(a =>
+          a.id === statusModal.alertId
+            ? { ...a, is_read: true, action_taken: 'paused' }
             : a
         ))
       }
@@ -423,8 +437,8 @@ export default function AlertsPage() {
     }
   }
 
-  const filteredAlerts = filter === 'history' 
-    ? historyAlerts 
+  const filteredAlerts = filter === 'history'
+    ? historyAlerts
     : alerts
 
   const historyCount = historyAlerts.length
@@ -445,7 +459,7 @@ export default function AlertsPage() {
           <h1 className="text-2xl font-bold mb-1">Alerts</h1>
           <p className="text-zinc-500">
             {activeTab === 'alerts' ? (
-              alerts.length > 0 
+              alerts.length > 0
                 ? `${alerts.length} active alert${alerts.length !== 1 ? 's' : ''}`
                 : 'All caught up!'
             ) : (
@@ -453,7 +467,7 @@ export default function AlertsPage() {
             )}
           </p>
         </div>
-        
+
         {/* Tab Switcher */}
         <div className="flex bg-bg-card border border-border rounded-lg p-1">
           <button
@@ -529,7 +543,7 @@ export default function AlertsPage() {
                   <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">Scan</span>
                 </button>
-                
+
                 {alerts.length > 0 && (
                   <button
                     onClick={dismissAll}
@@ -549,7 +563,7 @@ export default function AlertsPage() {
               <BellOff className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">No alerts</h3>
               <p className="text-zinc-500">
-                {filter === 'all' 
+                {filter === 'all'
                   ? "You're all caught up! Alerts will appear here when something needs your attention."
                   : "No cleared alerts yet."
                 }
@@ -561,7 +575,7 @@ export default function AlertsPage() {
                 const Icon = ALERT_ICONS[alert.type] || Bell
                 const priorityClass = PRIORITY_COLORS[alert.priority]
                 const iconClass = PRIORITY_ICON_COLORS[alert.priority]
-                
+
                 return (
                   <div
                     key={alert.id}
@@ -571,7 +585,7 @@ export default function AlertsPage() {
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${iconClass}`}>
                         <Icon className="w-5 h-5" />
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <h3 className="font-medium text-white">
@@ -581,11 +595,11 @@ export default function AlertsPage() {
                             {formatTimeAgo(alert.created_at)}
                           </span>
                         </div>
-                        
+
                         <p className="text-sm text-zinc-400 mb-3">
                           {alert.message}
                         </p>
-                        
+
                         {/* Actions - only show for non-history alerts */}
                         {filter !== 'history' ? (
                           <div className="flex flex-wrap items-center gap-2">
@@ -602,7 +616,7 @@ export default function AlertsPage() {
 
                             {canManageAds &&
                              alert.entity_id &&
-                             (alert.type === 'high_spend_no_conv' || alert.type === 'roas_below_min') &&
+                             isProblemAlert(alert.type) &&
                              !alert.action_taken && (
                               <button
                                 onClick={() => handlePauseClick(alert)}
@@ -654,7 +668,7 @@ export default function AlertsPage() {
             const setting = settings[alertType]
             const Icon = info.icon
             const priorityColor = PRIORITY_ICON_COLORS[info.priority]
-            
+
             return (
               <div
                 key={alertType}
@@ -698,8 +712,8 @@ export default function AlertsPage() {
                       <input
                         type="number"
                         value={setting?.threshold || ''}
-                        onChange={(e) => updateSetting(alertType, { 
-                          threshold: e.target.value ? parseInt(e.target.value) : null 
+                        onChange={(e) => updateSetting(alertType, {
+                          threshold: e.target.value ? parseInt(e.target.value) : null
                         })}
                         className="w-24 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white font-mono focus:outline-none focus:border-accent"
                         placeholder="50"
@@ -718,10 +732,10 @@ export default function AlertsPage() {
           <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 flex items-start gap-3">
             <Bell className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-accent">How alerts work</p>
+              <p className="text-sm font-medium text-accent">Smart CBO/ABO Detection</p>
               <p className="text-sm text-zinc-400">
-                Alerts are generated automatically when you sync data. ROAS thresholds use the values from your Rules settings. 
-                High priority alerts (red) indicate money being wasted. Low priority alerts (green) are scaling opportunities.
+                Alerts only fire at the level where budget is controlled. For CBO campaigns, alerts appear at the campaign level.
+                For ABO campaigns, alerts appear at the ad set level. ROAS thresholds use values from your Rules settings.
               </p>
             </div>
           </div>

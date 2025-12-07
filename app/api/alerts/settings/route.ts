@@ -6,13 +6,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Default settings for each alert type
+// New focused alert types - only 3 types, all at budget level (CBO/ABO)
 const DEFAULT_SETTINGS = {
-  high_spend_no_conv: { enabled: true, threshold: 50, email_enabled: false },
-  roas_below_min: { enabled: true, threshold: null, email_enabled: false }, // Uses rules.min_roas
-  roas_above_scale: { enabled: true, threshold: null, email_enabled: false }, // Uses rules.scale_roas
-  status_changed: { enabled: false, threshold: null, email_enabled: false },
-  ad_fatigue: { enabled: false, threshold: 3, email_enabled: false }, // 3 days of decline
+  money_bleeding: { enabled: true, threshold: 50, email_enabled: false },
+  below_breakeven: { enabled: true, threshold: null, email_enabled: false }, // Uses rules.min_roas
+  scale_candidate: { enabled: true, threshold: null, email_enabled: false }, // Uses rules.scale_roas
+}
+
+// Map legacy types to new types
+const LEGACY_TYPE_MAP: Record<string, keyof typeof DEFAULT_SETTINGS> = {
+  'high_spend_no_conv': 'money_bleeding',
+  'roas_below_min': 'below_breakeven',
+  'roas_above_scale': 'scale_candidate',
 }
 
 export type AlertType = keyof typeof DEFAULT_SETTINGS
@@ -48,11 +53,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
     }
 
-    // Merge with defaults
+    // Merge with defaults (handle legacy type names)
     const settings: Record<string, any> = {}
 
     for (const [alertType, defaults] of Object.entries(DEFAULT_SETTINGS)) {
-      const existing = existingSettings?.find(s => s.alert_type === alertType)
+      // Look for both new and legacy type names
+      const existing = existingSettings?.find(s => {
+        const normalizedType = LEGACY_TYPE_MAP[s.alert_type] || s.alert_type
+        return normalizedType === alertType
+      })
 
       settings[alertType] = {
         alert_type: alertType,
@@ -79,15 +88,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing user ID or alert type' }, { status: 400 })
     }
 
-    // Validate alert type
-    if (!DEFAULT_SETTINGS[alertType as AlertType]) {
+    // Validate alert type (allow both new and legacy names)
+    const normalizedType = LEGACY_TYPE_MAP[alertType] || alertType
+    if (!DEFAULT_SETTINGS[normalizedType as AlertType]) {
       return NextResponse.json({ error: 'Invalid alert type' }, { status: 400 })
     }
 
-    // Build update object
+    // Build update object - always store with new type name
     const settingData: Record<string, any> = {
       user_id: userId,
-      alert_type: alertType,
+      alert_type: normalizedType,
       updated_at: new Date().toISOString(),
     }
 
