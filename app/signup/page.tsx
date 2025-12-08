@@ -24,7 +24,7 @@ export default function SignupPage() {
     setLoading(true)
     setError('')
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -34,8 +34,15 @@ export default function SignupPage() {
       },
     })
 
+    console.log('Signup response:', { data, error })
+
     if (error) {
+      console.error('Signup error:', error)
       setError(error.message)
+      setLoading(false)
+    } else if (!data.user) {
+      console.error('No user returned')
+      setError('Signup failed - please try again')
       setLoading(false)
     } else {
       // Fire Meta Pixel CompleteRegistration event
