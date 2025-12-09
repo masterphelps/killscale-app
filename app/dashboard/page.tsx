@@ -22,7 +22,7 @@ const supabase = createClient(
 )
 
 const FREE_CAMPAIGN_LIMIT = 2
-const STARTER_CAMPAIGN_LIMIT = 20
+const STARTER_CAMPAIGN_LIMIT = 10
 
 const DEFAULT_RULES: Rules = {
   id: '',

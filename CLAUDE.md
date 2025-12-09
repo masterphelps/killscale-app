@@ -104,10 +104,10 @@ NEXT_PUBLIC_META_APP_ID=...
 
 ## Pricing Tiers
 
-- **Free:** CSV upload only, 2 campaigns max
-- **Starter ($9/mo):** CSV upload, 20 campaigns, custom rules
-- **Pro ($29/mo):** Meta API sync, 5 ad accounts, pause/resume, budget editing, alerts
-- **Agency ($99/mo):** Unlimited ad accounts, priority support
+- **Free:** Meta API sync, 2 campaigns (auto-selected), 1 ad account
+- **Starter ($9/mo):** Meta API sync, 10 campaigns, 1 ad account, custom rules
+- **Pro ($29/mo):** Meta API sync, unlimited campaigns, 2 ad accounts, pause/resume, budget editing, alerts
+- **Agency ($99/mo):** Unlimited campaigns, unlimited ad accounts, priority support
 
 ## Custom Tailwind Colors
 

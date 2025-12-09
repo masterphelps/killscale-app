@@ -84,8 +84,8 @@ type Usage = {
 
 const PLAN_LIMITS: Record<string, { campaigns: number | null; adAccounts: number | null }> = {
   Free: { campaigns: 2, adAccounts: 1 },
-  Starter: { campaigns: 20, adAccounts: 1 },
-  Pro: { campaigns: null, adAccounts: 5 },
+  Starter: { campaigns: 10, adAccounts: 1 },
+  Pro: { campaigns: null, adAccounts: 2 },
   Agency: { campaigns: null, adAccounts: null },
 }
 
