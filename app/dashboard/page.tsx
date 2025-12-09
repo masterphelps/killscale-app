@@ -133,7 +133,7 @@ export default function DashboardPage() {
     localStorage.setItem('killscale_viewMode', viewMode)
   }, [viewMode])
   
-  const canSync = plan === 'Pro' || plan === 'Agency'
+  const canSync = true // All plans can sync via Meta API
   
   useEffect(() => {
     if (user) {

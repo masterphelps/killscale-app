@@ -59,7 +59,7 @@ export default function ConnectPage() {
   const [datePreset, setDatePreset] = useState('last_30d')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
-  const isPro = plan === 'Pro' || plan === 'Agency'
+  const isPro = true // All plans can connect Meta API
   const accountLimit = ACCOUNT_LIMITS[plan] || 1
   const dashboardAccountCount = connection?.ad_accounts?.filter(a => a.in_dashboard).length || 0
   

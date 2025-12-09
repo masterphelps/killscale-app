@@ -104,7 +104,7 @@ export default function DashboardPage() {
     if (customEndDate) localStorage.setItem('killscale_customEndDate', customEndDate)
   }, [datePreset, customStartDate, customEndDate])
   
-  const canSync = plan === 'Pro' || plan === 'Agency'
+  const canSync = true // All plans can sync via Meta API
   
   useEffect(() => {
     if (user) {

@@ -202,10 +202,10 @@ export function Sidebar() {
     window.location.href = `/dashboard?sync=${accountId}`
   }
   
-  const upgradeText = plan === 'Free' 
-    ? { title: 'Upgrade to Starter', subtitle: 'Unlimited campaigns' }
+  const upgradeText = plan === 'Free'
+    ? { title: 'Upgrade to Starter', subtitle: 'More campaigns' }
     : plan === 'Starter'
-      ? { title: 'Upgrade to Pro', subtitle: 'Meta API connection' }
+      ? { title: 'Upgrade to Pro', subtitle: 'Unlimited campaigns' }
       : null
   
   return (
