@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, DollarSign, Loader2, TrendingUp, TrendingDown, AlertTriangle, Clock } from 'lucide-react'
+import { X, DollarSign, Loader2, TrendingUp, TrendingDown, AlertTriangle, Clock, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const COOLDOWN_DAYS = 3
@@ -28,6 +28,8 @@ type BudgetHistory = {
   daysSinceChange: number | null
 }
 
+type ModalStep = 'edit' | 'confirm' | 'cooldown'
+
 export function BudgetEditModal({
   isOpen,
   onClose,
@@ -46,7 +48,7 @@ export function BudgetEditModal({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<BudgetHistory | null>(null)
-  const [showCooldownWarning, setShowCooldownWarning] = useState(false)
+  const [step, setStep] = useState<ModalStep>('edit')
   const [pendingBudget, setPendingBudget] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -86,7 +88,7 @@ export function BudgetEditModal({
       setBudget(currentBudget.toString())
       setBudgetType(currentBudgetType)
       setError(null)
-      setShowCooldownWarning(false)
+      setStep('edit')
       setPendingBudget(null)
       // Focus input after a short delay to allow modal animation
       setTimeout(() => {
@@ -98,7 +100,9 @@ export function BudgetEditModal({
 
   const handleQuickScale = (direction: 'up' | 'down') => {
     const newBudget = direction === 'up' ? scaleUpAmount : scaleDownAmount
-    attemptBudgetChange(newBudget)
+    setPendingBudget(newBudget)
+    setBudget(newBudget.toString())
+    setStep('confirm')
   }
 
   const handleSave = async () => {
@@ -109,52 +113,150 @@ export function BudgetEditModal({
       return
     }
 
-    attemptBudgetChange(numericBudget)
+    setPendingBudget(numericBudget)
+    setStep('confirm')
   }
 
-  const attemptBudgetChange = (newBudget: number) => {
-    // Check cooldown
+  const handleConfirm = () => {
+    // Check cooldown after user confirms
     if (history && history.daysSinceChange !== null && history.daysSinceChange < COOLDOWN_DAYS) {
-      setPendingBudget(newBudget)
-      setShowCooldownWarning(true)
+      setStep('cooldown')
     } else {
-      proceedWithSave(newBudget)
+      proceedWithSave()
     }
   }
 
-  const proceedWithSave = async (newBudget: number) => {
+  const handleBack = () => {
+    setStep('edit')
+    setError(null)
+  }
+
+  const proceedWithSave = async () => {
+    if (pendingBudget === null) return
+
     setIsLoading(true)
     setError(null)
-    setShowCooldownWarning(false)
 
     try {
-      await onSave(newBudget, budgetType)
+      await onSave(pendingBudget, budgetType)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update budget')
+      setStep('edit')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleCooldownConfirm = () => {
-    if (pendingBudget !== null) {
-      proceedWithSave(pendingBudget)
-    }
-  }
-
-  const handleCooldownCancel = () => {
-    setShowCooldownWarning(false)
-    setPendingBudget(null)
-  }
-
   if (!isOpen) return null
 
-  // Cooldown warning overlay
-  if (showCooldownWarning) {
+  // Helper to render modal wrapper
+  const renderModal = (content: React.ReactNode) => (
+    <>
+      {/* Mobile: Bottom sheet */}
+      <div className="lg:hidden fixed inset-0 z-50 flex items-end">
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+        <div className="relative w-full bg-bg-card rounded-t-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
+          {content}
+          <div className="h-6" />
+        </div>
+      </div>
+
+      {/* Desktop: Centered modal */}
+      <div className="hidden lg:block">
+        <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
+          {content}
+        </div>
+      </div>
+    </>
+  )
+
+  // Confirmation step
+  if (step === 'confirm' && pendingBudget !== null) {
+    const isIncrease = pendingBudget > currentBudget
+    const percentChange = Math.abs(((pendingBudget - currentBudget) / currentBudget) * 100).toFixed(0)
+
+    return renderModal(
+      <div className="p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className={cn(
+            "w-12 h-12 rounded-full flex items-center justify-center",
+            isIncrease ? "bg-verdict-scale/20" : "bg-red-500/20"
+          )}>
+            {isIncrease ? (
+              <TrendingUp className="w-6 h-6 text-verdict-scale" />
+            ) : (
+              <TrendingDown className="w-6 h-6 text-red-400" />
+            )}
+          </div>
+          <h3 className="text-lg font-semibold text-white">
+            {isIncrease ? 'Increase' : 'Decrease'} Budget?
+          </h3>
+        </div>
+
+        <div className="bg-bg-dark rounded-lg p-4 mb-4">
+          <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1">
+            {entityType === 'campaign' ? 'Campaign' : 'Ad Set'}
+          </div>
+          <div className="text-sm text-white font-medium truncate">{entityName}</div>
+        </div>
+
+        <div className="flex items-center justify-between mb-6">
+          <div className="text-center">
+            <div className="text-xs text-zinc-500 mb-1">Current</div>
+            <div className="text-lg font-mono text-zinc-400">${currentBudget.toFixed(2)}</div>
+          </div>
+          <div className={cn(
+            "px-3 py-1 rounded-full text-sm font-medium",
+            isIncrease ? "bg-verdict-scale/20 text-verdict-scale" : "bg-red-500/20 text-red-400"
+          )}>
+            {isIncrease ? '↑' : '↓'} {percentChange}%
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-zinc-500 mb-1">New</div>
+            <div className="text-lg font-mono text-white">${pendingBudget.toFixed(2)}</div>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={handleBack}
+            disabled={isLoading}
+            className="flex-1 py-3 px-4 bg-bg-hover text-zinc-300 rounded-lg font-medium hover:text-white transition-colors disabled:opacity-50"
+          >
+            Back
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={isLoading}
+            className={cn(
+              "flex-1 py-3 px-4 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2",
+              isIncrease ? "bg-verdict-scale hover:bg-green-600" : "bg-red-600 hover:bg-red-500"
+            )}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Updating...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4" />
+                Confirm
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Cooldown warning step
+  if (step === 'cooldown' && pendingBudget !== null) {
     const daysRemaining = COOLDOWN_DAYS - (history?.daysSinceChange ?? 0)
 
-    const warningContent = (
+    return renderModal(
       <div className="p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
@@ -180,20 +282,20 @@ export function BudgetEditModal({
 
         <div className="flex gap-3">
           <button
-            onClick={handleCooldownCancel}
+            onClick={handleBack}
             className="flex-1 py-3 px-4 bg-bg-hover text-zinc-300 rounded-lg font-medium hover:text-white transition-colors"
           >
-            Wait
+            Go Back
           </button>
           <button
-            onClick={handleCooldownConfirm}
+            onClick={proceedWithSave}
             disabled={isLoading}
             className="flex-1 py-3 px-4 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-500 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Saving...
+                Updating...
               </>
             ) : (
               'Scale Anyway'
@@ -202,30 +304,10 @@ export function BudgetEditModal({
         </div>
       </div>
     )
-
-    return (
-      <>
-        {/* Mobile: Bottom sheet */}
-        <div className="lg:hidden fixed inset-0 z-50 flex items-end">
-          <div className="absolute inset-0 bg-black/60" onClick={handleCooldownCancel} />
-          <div className="relative w-full bg-bg-card rounded-t-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
-            {warningContent}
-            <div className="h-6" />
-          </div>
-        </div>
-
-        {/* Desktop: Centered modal */}
-        <div className="hidden lg:block">
-          <div className="fixed inset-0 bg-black/50 z-50" onClick={handleCooldownCancel} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-            {warningContent}
-          </div>
-        </div>
-      </>
-    )
   }
 
-  const modalContent = (
+  // Edit step (main form)
+  const editContent = (
     <>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -388,45 +470,12 @@ export function BudgetEditModal({
             disabled={isLoading}
             className="flex-1 py-3 px-4 bg-accent text-white rounded-lg font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Budget'
-            )}
+            Continue
           </button>
         </div>
       </div>
     </>
   )
 
-  return (
-    <>
-      {/* Mobile: Bottom sheet */}
-      <div className="lg:hidden fixed inset-0 z-50 flex items-end">
-        {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-
-        {/* Sheet */}
-        <div className="relative w-full bg-bg-card rounded-t-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
-          {modalContent}
-          {/* Safe area padding for iOS */}
-          <div className="h-6" />
-        </div>
-      </div>
-
-      {/* Desktop: Centered modal */}
-      <div className="hidden lg:block">
-        {/* Backdrop */}
-        <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
-
-        {/* Modal */}
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-          {modalContent}
-        </div>
-      </div>
-    </>
-  )
+  return renderModal(editContent)
 }
