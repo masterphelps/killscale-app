@@ -80,7 +80,7 @@ type PerformanceTableProps = {
   someSelected?: boolean
   onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED') => void
   canManageAds?: boolean
-  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime') => Promise<void>
+  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number) => Promise<void>
   // For deep-linking from alerts
   highlightEntity?: {
     type: 'campaign' | 'adset' | 'ad'
@@ -88,6 +88,8 @@ type PerformanceTableProps = {
     campaignName?: string
     adsetName?: string
   } | null
+  // For budget modal enhancements
+  userId?: string
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -413,7 +415,8 @@ export function PerformanceTable({
   onStatusChange,
   canManageAds = false,
   onBudgetChange,
-  highlightEntity
+  highlightEntity,
+  userId
 }: PerformanceTableProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
@@ -1380,14 +1383,18 @@ export function PerformanceTable({
                 budgetEditModal.entityId,
                 budgetEditModal.entityType,
                 newBudget,
-                budgetType
+                budgetType,
+                budgetEditModal.currentBudget
               )
             }
           }}
           entityName={budgetEditModal.entityName}
           entityType={budgetEditModal.entityType}
+          entityId={budgetEditModal.entityId}
           currentBudget={budgetEditModal.currentBudget}
           currentBudgetType={budgetEditModal.currentBudgetType}
+          scalePercentage={rules.scale_percentage}
+          userId={userId}
         />
       )}
     </div>

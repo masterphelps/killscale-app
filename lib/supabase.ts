@@ -41,8 +41,20 @@ export type Rules = {
   scale_roas: number
   min_roas: number
   learning_spend: number
+  scale_percentage: number
   created_at: string
   updated_at: string
+}
+
+export type BudgetChange = {
+  id: string
+  user_id: string
+  ad_account_id: string
+  entity_type: 'campaign' | 'adset'
+  entity_id: string
+  old_budget: number
+  new_budget: number
+  changed_at: string
 }
 
 export type AdData = {

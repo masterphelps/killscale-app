@@ -15,6 +15,7 @@ const DEFAULT_RULES = {
   scale_roas: '3.0',
   min_roas: '1.5',
   learning_spend: '100',
+  scale_percentage: '20',
 }
 
 type AdAccount = {
@@ -79,6 +80,7 @@ export default function SettingsPage() {
           scale_roas: data.scale_roas?.toString() || DEFAULT_RULES.scale_roas,
           min_roas: data.min_roas?.toString() || DEFAULT_RULES.min_roas,
           learning_spend: data.learning_spend?.toString() || DEFAULT_RULES.learning_spend,
+          scale_percentage: data.scale_percentage?.toString() || DEFAULT_RULES.scale_percentage,
         })
       }
       setLoading(false)
@@ -110,6 +112,7 @@ export default function SettingsPage() {
     scale_roas: parseFloat(rules.scale_roas) || 0,
     min_roas: parseFloat(rules.min_roas) || 0,
     learning_spend: parseFloat(rules.learning_spend) || 0,
+    scale_percentage: parseFloat(rules.scale_percentage) || 20,
   }
 
   const handleSave = async () => {
@@ -124,6 +127,10 @@ export default function SettingsPage() {
       setError('All values must be greater than 0')
       return
     }
+    if (parsedRules.scale_percentage < 5 || parsedRules.scale_percentage > 50) {
+      setError('Scale percentage must be between 5% and 50%')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -134,6 +141,7 @@ export default function SettingsPage() {
       scale_roas: parsedRules.scale_roas,
       min_roas: parsedRules.min_roas,
       learning_spend: parsedRules.learning_spend,
+      scale_percentage: parsedRules.scale_percentage,
       updated_at: new Date().toISOString(),
     }
 
@@ -252,6 +260,33 @@ export default function SettingsPage() {
           </div>
           <p className="text-xs text-zinc-600 mt-2">
             Ads with spend below this get the <span className="text-verdict-learn font-medium">LEARNING</span> verdict (not enough data)
+          </p>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-border pt-6">
+          <h3 className="text-sm font-medium text-zinc-400 mb-4">Budget Scaling</h3>
+        </div>
+
+        {/* Scale Percentage */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            <span className="text-accent">↑↓</span> Quick Scale Percentage
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              step="5"
+              min="5"
+              max="50"
+              value={rules.scale_percentage}
+              onChange={(e) => handleChange('scale_percentage', e.target.value)}
+              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent"
+            />
+            <span className="text-zinc-500 text-lg">%</span>
+          </div>
+          <p className="text-xs text-zinc-600 mt-2">
+            How much to increase or decrease budgets with the quick ↑/↓ buttons (5-50%)
           </p>
         </div>
 

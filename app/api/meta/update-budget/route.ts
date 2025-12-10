@@ -11,12 +11,14 @@ type BudgetType = 'daily' | 'lifetime'
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, entityId, entityType, budget, budgetType } = await request.json() as {
+    const { userId, entityId, entityType, budget, budgetType, oldBudget, adAccountId } = await request.json() as {
       userId: string
       entityId: string
       entityType: EntityType
       budget: number
       budgetType: BudgetType
+      oldBudget?: number
+      adAccountId?: string
     }
 
     if (!userId || !entityId || !entityType || !budget || !budgetType) {
@@ -120,6 +122,25 @@ export async function POST(request: NextRequest) {
         .update(updateData)
         .eq('user_id', userId)
         .eq('adset_id', entityId)
+    }
+
+    // Log the budget change for cooldown tracking
+    if (oldBudget !== undefined && adAccountId) {
+      const { error: logError } = await supabase
+        .from('budget_changes')
+        .insert({
+          user_id: userId,
+          ad_account_id: adAccountId,
+          entity_type: entityType,
+          entity_id: entityId,
+          old_budget: oldBudget,
+          new_budget: budget
+        })
+
+      if (logError) {
+        // Log but don't fail the request
+        console.error('Failed to log budget change:', logError)
+      }
     }
 
     return NextResponse.json({
