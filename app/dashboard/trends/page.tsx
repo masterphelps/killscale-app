@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { 
-  ChevronRight, 
+import {
+  ChevronRight,
   ChevronDown,
-  TrendingUp, 
-  TrendingDown, 
+  TrendingUp,
+  TrendingDown,
   Minus,
   Zap,
   Target,
@@ -30,7 +30,12 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
-  Lightbulb
+  Lightbulb,
+  PanelLeftClose,
+  PanelLeft,
+  Pin,
+  PinOff,
+  X
 } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -365,7 +370,20 @@ export default function TrendsPage() {
   const [compareMode, setCompareMode] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
   const [includePaused, setIncludePaused] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false) // Fly-out panel open state
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    // Load pinned state from localStorage
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('trends_sidebar_pinned') === 'true'
+    }
+    return false
+  })
   const { user } = useAuth()
+
+  // Persist pinned state to localStorage
+  useEffect(() => {
+    localStorage.setItem('trends_sidebar_pinned', String(sidebarPinned))
+  }, [sidebarPinned])
   const { isPrivacyMode, maskText } = usePrivacyMode()
 
   // Privacy mode masking helper with numbered placeholders
@@ -780,17 +798,37 @@ export default function TrendsPage() {
         </div>
       </div>
       
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm">
+      {/* Breadcrumb + Navigator Toggle */}
+      <div className="flex items-center gap-3 text-sm">
+        {/* Navigator Toggle Button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className={cn(
+            "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-all",
+            (sidebarOpen || sidebarPinned)
+              ? "bg-accent/20 text-accent border border-accent/30"
+              : "bg-bg-card border border-border text-zinc-400 hover:text-white hover:border-zinc-600"
+          )}
+          title="Toggle hierarchy navigator"
+        >
+          {(sidebarOpen || sidebarPinned) ? (
+            <ChevronLeft className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+          <Layers className="w-4 h-4" />
+        </button>
+
+        {/* Breadcrumb */}
         {breadcrumb.map((item, index) => (
           <div key={index} className="flex items-center gap-2">
             {index > 0 && <ChevronRight className="w-4 h-4 text-zinc-600" />}
-            <button 
+            <button
               onClick={item.onClick}
               className={cn(
                 'px-2 py-1 rounded transition-colors',
-                index === breadcrumb.length - 1 
-                  ? 'bg-accent/20 text-accent font-medium' 
+                index === breadcrumb.length - 1
+                  ? 'bg-accent/20 text-accent font-medium'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
               )}
             >
@@ -800,66 +838,217 @@ export default function TrendsPage() {
         ))}
       </div>
 
-      {/* Main Layout - stacked on mobile, side-by-side on desktop */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
-        {/* Left Sidebar - Hierarchy Navigator */}
-        <div className="w-full lg:w-[380px] lg:flex-shrink-0">
-          <div className="bg-bg-card border border-border rounded-xl overflow-hidden lg:sticky lg:top-6">
-            {/* Mobile Controls - Include Paused toggle */}
-            <div className="lg:hidden p-3 border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIncludePaused(!includePaused)}
-                  className={`relative w-9 h-5 rounded-full transition-all ${
-                    includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                      includePaused ? 'left-4' : 'left-0.5'
-                    }`}
+      {/* Main Layout */}
+      <div className="relative flex gap-4 lg:gap-6">
+        {/* Fly-out Sidebar Overlay (when open but not pinned) */}
+        {sidebarOpen && !sidebarPinned && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/50 z-40 lg:bg-transparent"
+              onClick={() => setSidebarOpen(false)}
+            />
+            {/* Fly-out Panel */}
+            <div className="fixed left-[240px] top-0 bottom-0 w-[380px] bg-bg-card border-r border-border z-50 shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-left duration-200">
+              {/* Header */}
+              <div className="flex items-center justify-between p-3 border-b border-border bg-bg-dark">
+                <span className="font-medium text-sm">Hierarchy Navigator</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setSidebarPinned(true)
+                      setSidebarOpen(false)
+                    }}
+                    className="p-1.5 rounded hover:bg-bg-hover text-zinc-400 hover:text-white transition-colors"
+                    title="Pin sidebar"
+                  >
+                    <Pin className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className="p-1.5 rounded hover:bg-bg-hover text-zinc-400 hover:text-white transition-colors"
+                    title="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Search */}
+              <div className="p-3 border-b border-border">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <input
+                    type="text"
+                    placeholder="Search campaigns, ad sets, ads..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-accent"
                   />
+                </div>
+              </div>
+
+              {/* Hierarchy - full height scroll */}
+              <div className="flex-1 overflow-y-auto p-2">
+                {/* Account Level */}
+                <div
+                  className={cn(
+                    'flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all mb-2',
+                    !selection.campaign
+                      ? 'bg-accent/20 border border-accent/30'
+                      : 'hover:bg-zinc-800/50 border border-transparent'
+                  )}
+                  onClick={() => {
+                    setSelection({})
+                    if (!sidebarPinned) setSidebarOpen(false)
+                  }}
+                >
+                  <div className="w-6 h-6 rounded bg-accent/20 flex items-center justify-center">
+                    <Layers className="w-3.5 h-3.5 text-accent" />
+                  </div>
+                  <span className="flex-1 font-medium">All Campaigns</span>
+                  <span className={cn(
+                    'text-xs font-medium',
+                    accountTotals.roas >= 2 ? 'text-green-400' : accountTotals.roas >= 1 ? 'text-yellow-400' : 'text-red-400'
+                  )}>
+                    {accountTotals.roas.toFixed(1)}x
+                  </span>
+                </div>
+
+                <div className="h-px bg-border mb-2" />
+
+                {/* Campaigns */}
+                {filteredHierarchy.map((campaign, campaignIdx) => (
+                  <div key={campaign.name}>
+                    <NavItem
+                      name={campaign.name}
+                      displayName={maskName(campaign.name, 'campaign', campaignIdx)}
+                      level="campaign"
+                      isSelected={selection.campaign === campaign.name && !selection.adset}
+                      isExpanded={expandedCampaigns.has(campaign.name)}
+                      hasChildren={(campaign.children?.length || 0) > 0}
+                      metrics={{ spend: campaign.spend, roas: campaign.roas }}
+                      status={campaign.status}
+                      hasChildrenPaused={campaign.hasChildrenPaused}
+                      showPausedIndicators={includePaused}
+                      onClick={() => {
+                        setSelection({ campaign: campaign.name })
+                        if (!sidebarPinned) setSidebarOpen(false)
+                      }}
+                      onExpand={() => {
+                        const newSet = new Set(expandedCampaigns)
+                        if (newSet.has(campaign.name)) {
+                          newSet.delete(campaign.name)
+                        } else {
+                          newSet.add(campaign.name)
+                        }
+                        setExpandedCampaigns(newSet)
+                      }}
+                    />
+
+                    {expandedCampaigns.has(campaign.name) && campaign.children?.map((adset, adsetIdx) => (
+                      <div key={adset.name}>
+                        <NavItem
+                          name={adset.name}
+                          displayName={maskName(adset.name, 'adset', adsetIdx)}
+                          level="adset"
+                          isSelected={selection.adset === adset.name && !selection.ad}
+                          isExpanded={expandedAdsets.has(`${campaign.name}-${adset.name}`)}
+                          hasChildren={(adset.children?.length || 0) > 0}
+                          metrics={{ spend: adset.spend, roas: adset.roas }}
+                          status={adset.status}
+                          hasChildrenPaused={adset.hasChildrenPaused}
+                          showPausedIndicators={includePaused}
+                          onClick={() => {
+                            setSelection({ campaign: campaign.name, adset: adset.name })
+                            if (!sidebarPinned) setSidebarOpen(false)
+                          }}
+                          onExpand={() => {
+                            const key = `${campaign.name}-${adset.name}`
+                            const newSet = new Set(expandedAdsets)
+                            if (newSet.has(key)) {
+                              newSet.delete(key)
+                            } else {
+                              newSet.add(key)
+                            }
+                            setExpandedAdsets(newSet)
+                          }}
+                        />
+
+                        {expandedAdsets.has(`${campaign.name}-${adset.name}`) && adset.children?.map((ad, adIdx) => (
+                          <NavItem
+                            key={ad.name}
+                            name={ad.name}
+                            displayName={maskName(ad.name, 'ad', adIdx)}
+                            level="ad"
+                            isSelected={selection.ad === ad.name}
+                            isExpanded={false}
+                            hasChildren={false}
+                            metrics={{ spend: ad.spend, roas: ad.roas }}
+                            status={ad.status}
+                            showPausedIndicators={includePaused}
+                            onClick={() => {
+                              setSelection({ campaign: campaign.name, adset: adset.name, ad: ad.name })
+                              if (!sidebarPinned) setSidebarOpen(false)
+                            }}
+                            onExpand={() => {}}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Pinned Sidebar (resizes content) */}
+        {sidebarPinned && (
+          <div className="hidden lg:block w-[280px] flex-shrink-0">
+            <div className="bg-bg-card border border-border rounded-xl overflow-hidden sticky top-6">
+              {/* Header */}
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <span className="font-medium text-sm">Navigator</span>
+                <button
+                  onClick={() => setSidebarPinned(false)}
+                  className="p-1.5 rounded hover:bg-bg-hover text-accent hover:text-white transition-colors"
+                  title="Unpin sidebar"
+                >
+                  <PinOff className="w-4 h-4" />
                 </button>
-                <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                  Include Paused
-                </span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Last 30 days</span>
-              </div>
-            </div>
 
-            {/* Search */}
-            <div className="p-3 border-b border-border">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Search campaigns, ad sets, ads..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-accent"
-                />
+              {/* Search */}
+              <div className="p-3 border-b border-border">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-accent"
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Hierarchy */}
-            <div className="p-2 max-h-[300px] lg:max-h-[calc(100vh-300px)] overflow-y-auto">
-              {/* Account Level */}
-              <div 
-                className={cn(
-                  'flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all mb-2',
-                  !selection.campaign 
-                    ? 'bg-accent/20 border border-accent/30' 
-                    : 'hover:bg-zinc-800/50 border border-transparent'
+              {/* Hierarchy */}
+              <div className="p-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+                {/* Account Level */}
+                <div
+                  className={cn(
+                    'flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all mb-2',
+                    !selection.campaign
+                      ? 'bg-accent/20 border border-accent/30'
+                      : 'hover:bg-zinc-800/50 border border-transparent'
                 )}
                 onClick={() => setSelection({})}
               >
                 <div className="w-6 h-6 rounded bg-accent/20 flex items-center justify-center">
                   <Layers className="w-3.5 h-3.5 text-accent" />
                 </div>
-                <span className="flex-1 font-medium">All Campaigns</span>
+                <span className="flex-1 font-medium truncate">All Campaigns</span>
                 <span className={cn(
                   'text-xs font-medium',
                   accountTotals.roas >= 2 ? 'text-green-400' : accountTotals.roas >= 1 ? 'text-yellow-400' : 'text-red-400'
@@ -867,9 +1056,9 @@ export default function TrendsPage() {
                   {accountTotals.roas.toFixed(1)}x
                 </span>
               </div>
-              
+
               <div className="h-px bg-border mb-2" />
-              
+
               {/* Campaigns */}
               {filteredHierarchy.map((campaign, campaignIdx) => (
                 <div key={campaign.name}>
@@ -942,10 +1131,11 @@ export default function TrendsPage() {
                   ))}
                 </div>
               ))}
+              </div>
             </div>
           </div>
-        </div>
-        
+        )}
+
         {/* Main Content */}
         <div className="flex-1 space-y-6">
           {/* Stat Cards - matching dashboard style */}
