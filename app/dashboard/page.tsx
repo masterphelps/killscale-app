@@ -846,14 +846,11 @@ export default function DashboardPage() {
     let aboBudget = 0
 
     // Track campaigns and their budget type
-    const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean }>()
-    const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string }>()
+    const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean; selected: boolean }>()
+    const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string; campaignStatus: string | null | undefined }>()
 
-    // Only count budgets from selected campaigns
-    const relevantData = data.filter(row => selectedCampaigns.has(row.campaign_name))
-
-    // First pass: collect all budgets
-    relevantData.forEach(row => {
+    // Process ALL data to build budget maps, then filter by selection
+    data.forEach(row => {
       // Determine if this is CBO or ABO based on where budget lives
       // CBO: campaign has budget, adset does NOT have budget
       // ABO: adset has budget (regardless of campaign budget field)
@@ -865,7 +862,8 @@ export default function DashboardPage() {
         campaignBudgets.set(row.campaign_name, {
           budget: row.campaign_daily_budget,
           status: row.campaign_status,
-          isCBO: true
+          isCBO: true,
+          selected: selectedCampaigns.has(row.campaign_name)
         })
       }
 
@@ -877,7 +875,8 @@ export default function DashboardPage() {
           budget: row.adset_daily_budget,
           status: row.adset_status,
           selected: selectedCampaigns.has(adsetSelectionKey),
-          campaignName: row.campaign_name
+          campaignName: row.campaign_name,
+          campaignStatus: row.campaign_status
         })
 
         // Also track that this campaign is ABO (for status checking)
@@ -885,24 +884,24 @@ export default function DashboardPage() {
           campaignBudgets.set(row.campaign_name, {
             budget: 0,
             status: row.campaign_status,
-            isCBO: false
+            isCBO: false,
+            selected: selectedCampaigns.has(row.campaign_name)
           })
         }
       }
     })
 
-    // Sum CBO budgets (only non-paused)
-    campaignBudgets.forEach(({ budget, status, isCBO }) => {
-      if (isCBO && status?.toUpperCase() !== 'PAUSED') {
+    // Sum CBO budgets (only selected and non-paused)
+    campaignBudgets.forEach(({ budget, status, isCBO, selected }) => {
+      if (isCBO && selected && status?.toUpperCase() !== 'PAUSED') {
         cboBudget += budget
       }
     })
 
     // Sum ABO budgets (only selected and non-paused, check parent campaign too)
-    adsetBudgets.forEach(({ budget, status, selected, campaignName }) => {
+    adsetBudgets.forEach(({ budget, status, selected, campaignStatus }) => {
       if (!selected) return
 
-      const campaignStatus = campaignBudgets.get(campaignName)?.status
       if (status?.toUpperCase() !== 'PAUSED' && campaignStatus?.toUpperCase() !== 'PAUSED') {
         aboBudget += budget
       }
