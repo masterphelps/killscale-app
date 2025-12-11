@@ -107,7 +107,7 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
-  const [includePaused, setIncludePaused] = useState(true)
+  const [includePaused, setIncludePaused] = useState(false)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [datePreset, setDatePreset] = useState('last_30d')

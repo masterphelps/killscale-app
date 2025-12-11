@@ -35,6 +35,7 @@ import {
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
+import { StatCard } from '@/components/stat-card'
 import {
   AreaChart,
   Area,
@@ -238,43 +239,11 @@ const CustomTreemapContent = (props: any) => {
   )
 }
 
-// Insight Card component
-const InsightCard = ({ 
-  icon: Icon, 
-  title, 
-  value, 
-  subtitle,
-  trend,
-  color = 'accent'
-}: { 
-  icon: any
-  title: string
-  value: string
-  subtitle?: string
-  trend?: { current: number, previous: number }
-  color?: string
-}) => {
-  const colorClasses: Record<string, string> = {
-    accent: 'text-accent bg-accent/10 border-accent/20',
-    green: 'text-green-400 bg-green-400/10 border-green-400/20',
-    red: 'text-red-400 bg-red-400/10 border-red-400/20',
-    yellow: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-    purple: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
-  }
-  
-  return (
-    <div className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors">
-      <div className="flex items-start justify-between mb-2">
-        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center border', colorClasses[color])}>
-          <Icon className="w-4 h-4" />
-        </div>
-        {trend && <TrendIndicator current={trend.current} previous={trend.previous} />}
-      </div>
-      <div className="text-2xl font-bold mb-0.5">{value}</div>
-      <div className="text-sm text-zinc-500">{title}</div>
-      {subtitle && <div className="text-xs text-zinc-600 mt-1">{subtitle}</div>}
-    </div>
-  )
+// Color mapping for StatCard to match dashboard style
+const getROASColorName = (roas: number): 'green' | 'amber' | 'default' => {
+  if (roas >= 2) return 'green'
+  if (roas >= 1) return 'amber'
+  return 'default'
 }
 
 // Hierarchy Navigator Item
@@ -392,7 +361,7 @@ export default function TrendsPage() {
   const [viewMode, setViewMode] = useState<'overview' | 'compare' | 'funnel' | 'scatter'>('overview')
   const [compareMode, setCompareMode] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
-  const [includePaused, setIncludePaused] = useState(true)
+  const [includePaused, setIncludePaused] = useState(false)
   const { user } = useAuth()
   
   useEffect(() => {
@@ -948,37 +917,37 @@ export default function TrendsPage() {
         
         {/* Main Content */}
         <div className="flex-1 space-y-6">
-          {/* Insight Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 lg:gap-4">
-            <InsightCard
-              icon={DollarSign}
-              title="Total Spend"
+          {/* Stat Cards - matching dashboard style */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
+            <StatCard
+              label="Total Spend"
               value={formatCurrency(displayData.spend)}
-              color="purple"
+              icon="💰"
+              color="blue"
             />
-            <InsightCard
-              icon={TrendingUp}
-              title="Revenue"
+            <StatCard
+              label="Revenue"
               value={formatCurrency(displayData.revenue)}
+              icon="💵"
               color="green"
             />
-            <InsightCard
-              icon={Target}
-              title="ROAS"
+            <StatCard
+              label="ROAS"
               value={`${displayData.roas.toFixed(2)}x`}
-              color={displayData.roas >= 2 ? 'green' : displayData.roas >= 1 ? 'yellow' : 'red'}
+              icon="📈"
+              color={getROASColorName(displayData.roas)}
             />
-            <InsightCard
-              icon={ShoppingCart}
-              title="Purchases"
+            <StatCard
+              label="Purchases"
               value={formatNumber(displayData.purchases)}
-              color="accent"
+              icon="🛒"
+              color="amber"
             />
-            <InsightCard
-              icon={MousePointer}
-              title="CTR"
+            <StatCard
+              label="CTR"
               value={`${displayData.ctr.toFixed(2)}%`}
-              color="accent"
+              icon="🎯"
+              color="purple"
             />
           </div>
           
