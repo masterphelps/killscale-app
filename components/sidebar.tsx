@@ -15,7 +15,8 @@ import {
   FileSpreadsheet,
   Lightbulb,
   EyeOff,
-  Eye
+  Eye,
+  HelpCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -409,14 +410,23 @@ export function Sidebar() {
         </div>
       </Link>
       
-      {/* Logout */}
-      <button
-        onClick={signOut}
-        className="flex items-center gap-3 px-3 py-2 mt-2 rounded-lg text-sm text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors"
-      >
-        <LogOut className="w-4 h-4" />
-        Sign out
-      </button>
+      {/* Support & Logout */}
+      <div className="flex items-center gap-2 mt-2">
+        <a
+          href="mailto:contactkillscale@gmail.com"
+          className="flex items-center justify-center w-9 h-9 rounded-lg text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors"
+          title="Get Support"
+        >
+          <HelpCircle className="w-4 h-4" />
+        </a>
+        <button
+          onClick={signOut}
+          className="flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </button>
+      </div>
     </aside>
   )
 }
