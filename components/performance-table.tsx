@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown, Pause, Play, TrendingUp, TrendingDown } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
 import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
+import { usePrivacyMode } from '@/lib/privacy-mode'
 
 // Simple performance indicator for ads (shows arrow based on verdict without text)
 const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
@@ -90,6 +91,8 @@ type PerformanceTableProps = {
   } | null
   // For budget modal enhancements
   userId?: string
+  // For cascading selection (ABO adsets)
+  campaignAboAdsets?: Map<string, Set<string>>
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -416,8 +419,10 @@ export function PerformanceTable({
   canManageAds = false,
   onBudgetChange,
   highlightEntity,
-  userId
+  userId,
+  campaignAboAdsets
 }: PerformanceTableProps) {
+  const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null)
@@ -426,6 +431,13 @@ export function PerformanceTable({
   const [nameColWidth, setNameColWidth] = useState(300)
   const [sortField, setSortField] = useState<SortField>('spend')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  // Privacy mode masking for entity names
+  const maskName = (name: string, type: 'campaign' | 'adset' | 'ad', index: number): string => {
+    if (!isPrivacyMode) return name
+    const prefix = type === 'campaign' ? 'Campaign' : type === 'adset' ? 'Ad Set' : 'Ad'
+    return `${prefix} ${index + 1}`
+  }
 
   // Budget edit modal state
   const [budgetEditModal, setBudgetEditModal] = useState<{
@@ -663,6 +675,7 @@ export function PerformanceTable({
     rowKey,
     campaignName,
     adsetName,
+    displayName,
   }: {
     node: HierarchyNode
     level: 'campaign' | 'adset' | 'ad'
@@ -672,37 +685,40 @@ export function PerformanceTable({
     rowKey?: string
     campaignName?: string
     adsetName?: string
+    displayName?: string
   }) => {
+    // Use displayName if provided (for privacy mode), otherwise use node.name
+    const nameToShow = displayName ?? node.name
     const indent = level === 'campaign' ? 0 : level === 'adset' ? 24 : 48
     const isHighlighted = rowKey === highlightedRow
+    // Modern clean styling - subtle backgrounds, no heavy colors
     const bgClass = isHighlighted
       ? 'bg-accent/20 ring-2 ring-accent/50'
-      : level === 'campaign'
-        ? (isSelected ? 'bg-hierarchy-campaign-bg hover:bg-blue-500/20' : 'bg-bg-card/50 opacity-60 hover:opacity-80')
-        : level === 'adset'
-          ? 'bg-hierarchy-adset-bg hover:bg-purple-500/15'
-          : 'bg-bg-card hover:bg-bg-hover'
-    const textClass = level === 'campaign' ? 'text-white' : level === 'adset' ? 'text-purple-200' : 'text-zinc-400'
+      : level === 'ad'
+        ? 'hover:bg-bg-hover/50'
+        : (isSelected ? 'hover:bg-bg-hover/50' : 'opacity-60 hover:opacity-80')
+    const textClass = level === 'campaign' ? 'text-white font-medium' : level === 'adset' ? 'text-zinc-200' : 'text-zinc-400'
+    // Subtle labels without heavy backgrounds
     const labelBg = level === 'campaign'
-      ? 'bg-blue-500/30 text-blue-300'
+      ? 'bg-zinc-700/50 text-zinc-300'
       : level === 'adset'
-        ? 'bg-purple-500/30 text-purple-300'
-        : 'bg-bg-dark text-zinc-500'
+        ? 'bg-zinc-700/30 text-zinc-400'
+        : 'bg-zinc-800/50 text-zinc-500'
     const label = level === 'campaign' ? 'Camp' : level === 'adset' ? 'Set' : 'Ad'
 
     return (
       <div
         ref={isHighlighted ? highlightRef : undefined}
         className={cn(
-          'flex items-center border-b border-border transition-all duration-300',
+          'flex items-center border-b border-border/50 transition-colors',
           bgClass,
           onToggle && 'cursor-pointer'
         )}
-        style={{ height: level === 'ad' ? 38 : 46 }}
+        style={{ height: level === 'ad' ? 40 : 48 }}
       >
         {/* Checkbox */}
         {hasCheckboxes && (
-          <div 
+          <div
             className="flex items-center justify-center flex-shrink-0"
             style={{ width: checkboxWidth }}
             onClick={(e) => {
@@ -710,18 +726,52 @@ export function PerformanceTable({
                 e.stopPropagation()
                 onCampaignToggle(node.name)
               }
+              // ABO adsets also get checkboxes - use adset name prefixed with campaign for uniqueness
+              if (level === 'adset' && node.budgetType === 'ABO' && onCampaignToggle && campaignName) {
+                e.stopPropagation()
+                onCampaignToggle(`${campaignName}::${node.name}`)
+              }
             }}
           >
-            {level === 'campaign' && (
-              <div className={cn(
-                'w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer',
-                isSelected 
-                  ? 'bg-accent border-accent text-white' 
-                  : 'border-zinc-600 hover:border-zinc-500'
-              )}>
-                {isSelected && <Check className="w-3 h-3" />}
-              </div>
-            )}
+            {/* Show checkbox for campaigns and ABO adsets (where budget lives) */}
+            {(level === 'campaign' || (level === 'adset' && node.budgetType === 'ABO')) && (() => {
+              // For campaigns, check partial state (some but not all ABO adsets selected)
+              let isPartial = false
+              let isChecked = false
+
+              if (level === 'campaign') {
+                const aboAdsets = campaignAboAdsets?.get(node.name)
+                if (aboAdsets && aboAdsets.size > 0) {
+                  const aboArray = Array.from(aboAdsets)
+                  const selectedCount = aboArray.filter(k => selectedCampaigns?.has(k)).length
+                  isChecked = selectedCount === aboAdsets.size
+                  isPartial = selectedCount > 0 && selectedCount < aboAdsets.size
+                } else {
+                  // No ABO adsets - use isSelected directly
+                  isChecked = isSelected
+                }
+              } else {
+                // ABO adset
+                isChecked = selectedCampaigns?.has(`${campaignName}::${node.name}`) ?? false
+              }
+
+              return (
+                <div className={cn(
+                  'w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer',
+                  level === 'campaign'
+                    ? (isChecked || isPartial)
+                      ? 'bg-accent border-accent text-white'
+                      : 'border-zinc-600 hover:border-zinc-500'
+                    : isChecked
+                      ? 'bg-purple-500 border-purple-500 text-white'
+                      : 'border-purple-500/50 hover:border-purple-500'
+                )}>
+                  {level === 'campaign' && isChecked && <Check className="w-3 h-3" />}
+                  {level === 'campaign' && isPartial && <Minus className="w-3 h-3" />}
+                  {level === 'adset' && isChecked && <Check className="w-3 h-3" />}
+                </div>
+              )
+            })()}
           </div>
         )}
         
@@ -733,20 +783,13 @@ export function PerformanceTable({
         >
           <div style={{ paddingLeft: indent }} className="flex items-center gap-2 min-w-0 flex-1">
             {onToggle && (
-              <button className={cn(
-                'w-4 h-4 flex-shrink-0 flex items-center justify-center rounded border transition-colors',
-                level === 'campaign' 
-                  ? (isExpanded ? 'bg-accent border-accent text-white' : 'border-border text-zinc-500')
-                  : level === 'adset'
-                    ? (isExpanded ? 'bg-purple-500 border-purple-500 text-white' : 'border-purple-500/30 text-purple-400')
-                    : ''
-              )}>
-                {isExpanded ? <Minus className="w-2.5 h-2.5" /> : <Plus className="w-2.5 h-2.5" />}
+              <button className="text-zinc-500 hover:text-white transition-colors flex-shrink-0">
+                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
               </button>
             )}
             {!onToggle && <div className="w-4" />}
             <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
-            <span className={cn('truncate text-sm', textClass)} title={node.name}>{node.name}</span>
+            <span className={cn('truncate text-sm', textClass)} title={nameToShow}>{nameToShow}</span>
             {/* Paused indicator - only show when includePaused is true */}
             {includePaused && node.status && node.status !== 'ACTIVE' ? (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
@@ -880,7 +923,7 @@ export function PerformanceTable({
   }
 
   const HeaderRow = () => (
-    <div className="flex items-center bg-bg-dark text-[10px] text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 40 }}>
+    <div className="flex items-center text-xs text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 44 }}>
       {hasCheckboxes && (
         <div
           className="flex flex-col items-center justify-center flex-shrink-0 cursor-pointer"
@@ -969,7 +1012,7 @@ export function PerformanceTable({
   )
 
   const TotalsRow = () => (
-    <div className="flex items-center bg-zinc-900 border-b border-border font-medium" style={{ height: 46 }}>
+    <div className="flex items-center border-b border-border font-medium bg-bg-dark/50" style={{ height: 48 }}>
       {hasCheckboxes && (
         <div 
           className="flex items-center justify-center flex-shrink-0 cursor-pointer"
@@ -1019,27 +1062,29 @@ export function PerformanceTable({
   )
 
   // Mobile Card Component
-  const MobileCard = ({ node, level, isExpanded, onToggle }: { 
+  const MobileCard = ({ node, level, isExpanded, onToggle, displayName }: {
     node: HierarchyNode
     level: 'campaign' | 'adset' | 'ad'
     isExpanded?: boolean
-    onToggle?: () => void 
+    onToggle?: () => void
+    displayName?: string
   }) => {
+    const nameToShow = displayName ?? node.name
     const isPaused = node.status && !isEntityActive(node.status)
     const hasChildrenPaused = node.hasChildrenPaused
-    
+
     const levelColors = {
       campaign: 'border-l-hierarchy-campaign',
       adset: 'border-l-hierarchy-adset',
       ad: 'border-l-zinc-600'
     }
-    
+
     const levelLabels = {
       campaign: 'Campaign',
       adset: 'Ad Set',
       ad: 'Ad'
     }
-    
+
     return (
       <div className={cn(
         "bg-bg-card border border-border rounded-xl p-4 mb-3 border-l-4",
@@ -1072,7 +1117,7 @@ export function PerformanceTable({
             <h3 className={cn(
               "font-semibold text-sm",
               isPaused && "text-zinc-400"
-            )}>{node.name}</h3>
+            )}>{nameToShow}</h3>
           </div>
           <div className="flex items-center gap-2">
             {/* Show verdict only where budget lives:
@@ -1238,7 +1283,7 @@ export function PerformanceTable({
       {/* Desktop Table View */}
       <div className="desktop-table bg-bg-card border border-border rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
           <div className="flex items-center gap-3">
             <h2 className="font-semibold">Campaign Performance</h2>
             <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
@@ -1266,9 +1311,9 @@ export function PerformanceTable({
                 No ads match the selected filter
               </div>
             ) : (
-              sortedHierarchy.map(campaign => {
+              sortedHierarchy.map((campaign, campaignIndex) => {
                 const isSelected = selectedCampaigns?.has(campaign.name) ?? true
-                
+
                 return (
                   <div key={campaign.name}>
                     <DataRow
@@ -1278,9 +1323,10 @@ export function PerformanceTable({
                       onToggle={() => toggleCampaign(campaign.name)}
                       isSelected={isSelected}
                       rowKey={campaign.name}
+                      displayName={maskName(campaign.name, 'campaign', campaignIndex)}
                     />
 
-                    {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+                    {expandedCampaigns.has(campaign.name) && campaign.children?.map((adset, adsetIndex) => (
                       <div key={`${campaign.name}::${adset.name}`}>
                         <DataRow
                           node={adset}
@@ -1289,9 +1335,10 @@ export function PerformanceTable({
                           onToggle={() => toggleAdset(campaign.name, adset.name)}
                           rowKey={`${campaign.name}::${adset.name}`}
                           campaignName={campaign.name}
+                          displayName={maskName(adset.name, 'adset', adsetIndex)}
                         />
 
-                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
+                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map((ad, adIndex) => (
                           <DataRow
                             key={`${campaign.name}::${adset.name}::${ad.name}`}
                             node={ad}
@@ -1299,6 +1346,7 @@ export function PerformanceTable({
                             rowKey={`${campaign.name}::${adset.name}::${ad.name}`}
                             campaignName={campaign.name}
                             adsetName={adset.name}
+                            displayName={maskName(ad.name, 'ad', adIndex)}
                           />
                         ))}
                       </div>
@@ -1339,29 +1387,32 @@ export function PerformanceTable({
             No ads match the selected filter
           </div>
         ) : (
-          sortedHierarchy.map(campaign => (
+          sortedHierarchy.map((campaign, campaignIndex) => (
             <div key={campaign.name}>
               <MobileCard
                 node={campaign}
                 level="campaign"
                 isExpanded={expandedCampaigns.has(campaign.name)}
                 onToggle={() => toggleCampaign(campaign.name)}
+                displayName={maskName(campaign.name, 'campaign', campaignIndex)}
               />
-              
-              {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+
+              {expandedCampaigns.has(campaign.name) && campaign.children?.map((adset, adsetIndex) => (
                 <div key={`${campaign.name}::${adset.name}`} className="ml-3">
                   <MobileCard
                     node={adset}
                     level="adset"
                     isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
                     onToggle={() => toggleAdset(campaign.name, adset.name)}
+                    displayName={maskName(adset.name, 'adset', adsetIndex)}
                   />
-                  
-                  {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map(ad => (
+
+                  {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map((ad, adIndex) => (
                     <div key={`${campaign.name}::${adset.name}::${ad.name}`} className="ml-3">
                       <MobileCard
                         node={ad}
                         level="ad"
+                        displayName={maskName(ad.name, 'ad', adIndex)}
                       />
                     </div>
                   ))}

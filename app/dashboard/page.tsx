@@ -35,6 +35,37 @@ const DEFAULT_RULES: Rules = {
   updated_at: ''
 }
 
+// Shared localStorage keys for date preferences (used by dashboard and insights)
+const DATE_STORAGE_KEY = 'killscale_date_preference'
+
+type DatePreference = {
+  preset: string
+  customStart?: string
+  customEnd?: string
+}
+
+function loadDatePreference(): DatePreference {
+  if (typeof window === 'undefined') return { preset: 'last_30d' }
+  try {
+    const stored = localStorage.getItem(DATE_STORAGE_KEY)
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return { preset: 'last_30d' }
+}
+
+function saveDatePreference(pref: DatePreference): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(DATE_STORAGE_KEY, JSON.stringify(pref))
+  } catch (e) {
+    // Ignore storage errors
+  }
+}
+
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
 const formatPercent = (value: number) => {
@@ -123,16 +154,31 @@ export default function DashboardPage() {
     }
   }, [searchParams])
 
-  // Load saved settings on mount (only view mode, not date - always start with last_30d)
+  // Load saved settings on mount (view mode and date preferences)
   useEffect(() => {
     const savedViewMode = localStorage.getItem('killscale_viewMode')
     if (savedViewMode === 'simple' || savedViewMode === 'detailed') setViewMode(savedViewMode)
+
+    // Load date preferences from shared storage
+    const pref = loadDatePreference()
+    setDatePreset(pref.preset)
+    if (pref.customStart) setCustomStartDate(pref.customStart)
+    if (pref.customEnd) setCustomEndDate(pref.customEnd)
   }, [])
-  
+
   // Save view mode when it changes
   useEffect(() => {
     localStorage.setItem('killscale_viewMode', viewMode)
   }, [viewMode])
+
+  // Save date preferences when they change
+  useEffect(() => {
+    saveDatePreference({
+      preset: datePreset,
+      customStart: customStartDate || undefined,
+      customEnd: customEndDate || undefined
+    })
+  }, [datePreset, customStartDate, customEndDate])
   
   const canSync = true // All plans can sync via Meta API
   
@@ -287,10 +333,27 @@ export default function DashboardPage() {
       }))
       setData(rows)
 
-      // Always select all campaigns on initial load, or if selection is empty
+      // Always select all campaigns AND ABO adsets on initial load, or if selection is empty
       if (!hasLoadedOnce || selectedCampaigns.size === 0) {
-        const campaigns = new Set(rows.map(r => r.campaign_name))
-        setSelectedCampaigns(campaigns)
+        const selection = new Set<string>()
+        const seenAdsets = new Set<string>()
+
+        rows.forEach(r => {
+          // Add campaign
+          selection.add(r.campaign_name)
+
+          // Add ABO adsets (adset has budget, campaign doesn't)
+          const adsetKey = `${r.campaign_name}::${r.adset_name}`
+          if (!seenAdsets.has(adsetKey)) {
+            seenAdsets.add(adsetKey)
+            const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                          !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+            if (isAbo) {
+              selection.add(adsetKey)
+            }
+          }
+        })
+        setSelectedCampaigns(selection)
       }
     }
     setHasLoadedOnce(true)
@@ -599,8 +662,21 @@ export default function DashboardPage() {
     })
   }, [data, visibleCampaigns, includePaused])
   
-  const selectedData = useMemo(() => 
-    filteredData.filter(row => selectedCampaigns.has(row.campaign_name)),
+  const selectedData = useMemo(() =>
+    filteredData.filter(row => {
+      // Check if this is an ABO adset (adset has budget, campaign doesn't)
+      const isAbo = (row.adset_daily_budget || row.adset_lifetime_budget) &&
+                    !(row.campaign_daily_budget || row.campaign_lifetime_budget)
+
+      if (isAbo) {
+        // For ABO: include if the specific adset is selected (campaign selection is implicit)
+        const adsetKey = `${row.campaign_name}::${row.adset_name}`
+        return selectedCampaigns.has(adsetKey)
+      } else {
+        // For CBO: include if campaign is selected
+        return selectedCampaigns.has(row.campaign_name)
+      }
+    }),
     [filteredData, selectedCampaigns]
   )
   
@@ -657,21 +733,94 @@ export default function DashboardPage() {
     adset_lifetime_budget: row.adset_lifetime_budget,
   }))
 
-  const handleCampaignToggle = (campaignName: string) => {
+  // Build a map of campaign -> ABO adsets for selection cascading
+  const campaignAboAdsets = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    const seenAdsets = new Set<string>()
+
+    data.forEach(row => {
+      const adsetKey = `${row.campaign_name}::${row.adset_name}`
+      if (!seenAdsets.has(adsetKey)) {
+        seenAdsets.add(adsetKey)
+        // ABO = adset has budget, campaign doesn't
+        const isAbo = (row.adset_daily_budget || row.adset_lifetime_budget) &&
+                      !(row.campaign_daily_budget || row.campaign_lifetime_budget)
+        if (isAbo) {
+          if (!map.has(row.campaign_name)) {
+            map.set(row.campaign_name, new Set())
+          }
+          map.get(row.campaign_name)!.add(adsetKey)
+        }
+      }
+    })
+    return map
+  }, [data])
+
+  const handleCampaignToggle = (key: string) => {
     const newSelected = new Set(selectedCampaigns)
-    if (newSelected.has(campaignName)) {
-      newSelected.delete(campaignName)
+
+    // Check if this is an adset key (contains ::)
+    if (key.includes('::')) {
+      // It's an ABO adset toggle
+      const [campaignName] = key.split('::')
+      const aboAdsets = campaignAboAdsets.get(campaignName) || new Set()
+
+      if (newSelected.has(key)) {
+        // Unselecting this adset
+        newSelected.delete(key)
+        // If campaign was selected, remove it (now partial)
+        // Campaign stays selected only if all its ABO adsets are selected
+      } else {
+        // Selecting this adset
+        newSelected.add(key)
+      }
+
+      // Update campaign selection state based on children
+      const aboArray = Array.from(aboAdsets)
+      const allAboSelected = aboArray.every(k => newSelected.has(k))
+      const someAboSelected = aboArray.some(k => newSelected.has(k))
+
+      if (allAboSelected && aboAdsets.size > 0) {
+        newSelected.add(campaignName)
+      } else if (!someAboSelected) {
+        newSelected.delete(campaignName)
+      }
+      // If someAboSelected but not all, campaign stays in whatever state for partial indicator
+
     } else {
-      newSelected.add(campaignName)
+      // It's a campaign toggle
+      const aboAdsets = campaignAboAdsets.get(key) || new Set()
+
+      if (newSelected.has(key)) {
+        // Unselecting campaign - also unselect all its ABO adsets
+        newSelected.delete(key)
+        aboAdsets.forEach(adsetKey => newSelected.delete(adsetKey))
+      } else {
+        // Selecting campaign - also select all its ABO adsets
+        newSelected.add(key)
+        aboAdsets.forEach(adsetKey => newSelected.add(adsetKey))
+      }
     }
+
     setSelectedCampaigns(newSelected)
   }
 
   const handleSelectAll = () => {
-    if (selectedCampaigns.size === visibleCampaigns.length) {
+    // Check if all campaigns are selected (ABO adsets don't affect this check)
+    const allCampaignsSelected = visibleCampaigns.every(c => selectedCampaigns.has(c))
+
+    if (allCampaignsSelected) {
       setSelectedCampaigns(new Set())
     } else {
-      setSelectedCampaigns(new Set(visibleCampaigns))
+      // Select all campaigns and their ABO adsets
+      const newSelected = new Set<string>(visibleCampaigns)
+      visibleCampaigns.forEach(campaignName => {
+        const aboAdsets = campaignAboAdsets.get(campaignName)
+        if (aboAdsets) {
+          aboAdsets.forEach(adsetKey => newSelected.add(adsetKey))
+        }
+      })
+      setSelectedCampaigns(newSelected)
     }
   }
 
@@ -679,13 +828,92 @@ export default function DashboardPage() {
   const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c)) && !allSelected
   
   // Count entities - must be before early returns (hooks must be unconditional)
+  // Use filteredData so counts reflect what's visible (accounting for campaign limits and paused filter)
   const entityCounts = useMemo(() => {
-    const campaigns = new Set(data.map(r => r.campaign_name))
-    const adsets = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}`))
-    const ads = new Set(data.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
+    const campaigns = new Set(filteredData.map(r => r.campaign_name))
+    const adsets = new Set(filteredData.map(r => `${r.campaign_name}|${r.adset_name}`))
+    const ads = new Set(filteredData.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
     const accounts = connection?.ad_accounts?.filter(a => a.in_dashboard)?.length || 0
     return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
-  }, [data, connection])
+  }, [filteredData, connection])
+
+  // Calculate total daily budgets (CBO + ABO) - only count active (non-paused) items
+  // CBO = budget at campaign level, ABO = budget at adset level
+  // A campaign is CBO if it has campaign_daily_budget but adsets DON'T have their own budgets
+  // A campaign is ABO if adsets have their own budgets (adset_daily_budget)
+  const budgetTotals = useMemo(() => {
+    let cboBudget = 0
+    let aboBudget = 0
+
+    // Track campaigns and their budget type
+    const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean }>()
+    const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string }>()
+
+    // Only count budgets from selected campaigns
+    const relevantData = data.filter(row => selectedCampaigns.has(row.campaign_name))
+
+    // First pass: collect all budgets
+    relevantData.forEach(row => {
+      // Determine if this is CBO or ABO based on where budget lives
+      // CBO: campaign has budget, adset does NOT have budget
+      // ABO: adset has budget (regardless of campaign budget field)
+      const isCBO = !!(row.campaign_daily_budget || row.campaign_lifetime_budget) &&
+                    !(row.adset_daily_budget || row.adset_lifetime_budget)
+
+      // Track campaign-level budget (only for true CBO campaigns)
+      if (isCBO && row.campaign_daily_budget && !campaignBudgets.has(row.campaign_name)) {
+        campaignBudgets.set(row.campaign_name, {
+          budget: row.campaign_daily_budget,
+          status: row.campaign_status,
+          isCBO: true
+        })
+      }
+
+      // Track adset-level budgets (ABO)
+      const adsetKey = `${row.campaign_name}|${row.adset_name}`
+      const adsetSelectionKey = `${row.campaign_name}::${row.adset_name}`
+      if (row.adset_daily_budget && !adsetBudgets.has(adsetKey)) {
+        adsetBudgets.set(adsetKey, {
+          budget: row.adset_daily_budget,
+          status: row.adset_status,
+          selected: selectedCampaigns.has(adsetSelectionKey),
+          campaignName: row.campaign_name
+        })
+
+        // Also track that this campaign is ABO (for status checking)
+        if (!campaignBudgets.has(row.campaign_name)) {
+          campaignBudgets.set(row.campaign_name, {
+            budget: 0,
+            status: row.campaign_status,
+            isCBO: false
+          })
+        }
+      }
+    })
+
+    // Sum CBO budgets (only non-paused)
+    campaignBudgets.forEach(({ budget, status, isCBO }) => {
+      if (isCBO && status?.toUpperCase() !== 'PAUSED') {
+        cboBudget += budget
+      }
+    })
+
+    // Sum ABO budgets (only selected and non-paused, check parent campaign too)
+    adsetBudgets.forEach(({ budget, status, selected, campaignName }) => {
+      if (!selected) return
+
+      const campaignStatus = campaignBudgets.get(campaignName)?.status
+      if (status?.toUpperCase() !== 'PAUSED' && campaignStatus?.toUpperCase() !== 'PAUSED') {
+        aboBudget += budget
+      }
+    })
+
+    return {
+      cbo: cboBudget,
+      abo: aboBudget,
+      total: cboBudget + aboBudget
+    }
+  }, [data, selectedCampaigns])
   
   if (isLoading && !hasLoadedOnce) {
     return (
@@ -896,27 +1124,57 @@ export default function DashboardPage() {
           )}
           
           {/* Primary Stats Row - responsive grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4">
-            <StatCard 
-              label="Total Spend" 
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4">
+            <StatCard
+              label="Total Spend"
               value={formatCurrency(totals.spend)}
               icon="💰"
+              color="blue"
             />
-            <StatCard 
-              label="Revenue" 
+            <StatCard
+              label="Revenue"
               value={formatCurrency(totals.revenue)}
               icon="💵"
+              color="green"
             />
-            <StatCard 
-              label="ROAS" 
+            <StatCard
+              label="ROAS"
               value={formatROAS(totals.roas)}
               icon="📈"
+              color="purple"
             />
-            <StatCard 
-              label="Purchases" 
+            <StatCard
+              label="Purchases"
               value={formatNumber(totals.purchases)}
               icon="🛒"
+              color="amber"
             />
+            {/* Daily Budgets tile */}
+            <div className="relative overflow-hidden rounded-xl p-3 lg:p-5 col-span-2 lg:col-span-1 transition-all duration-300 bg-gradient-to-br from-zinc-800/80 to-zinc-900/90 border border-indigo-500/30 shadow-lg shadow-indigo-500/10 hover:border-indigo-500/50 hover:shadow-xl">
+              {/* Subtle gradient overlay */}
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none" />
+              <div className="relative">
+                <div className="flex items-center gap-1.5 lg:gap-2 mb-1 lg:mb-2">
+                  <span className="text-base lg:text-lg drop-shadow-sm">🎯</span>
+                  <span className="text-xs lg:text-sm text-zinc-400 uppercase tracking-wide">Daily Budgets</span>
+                </div>
+                <div className="text-xl lg:text-3xl font-bold font-mono text-white mb-2">
+                  {formatCurrency(budgetTotals.total)}
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 bg-hierarchy-campaign rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>
+                    <span className="text-zinc-500">CBO</span>
+                    <span className="text-zinc-300 font-mono">{formatCurrency(budgetTotals.cbo)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 bg-hierarchy-adset rounded-full shadow-[0_0_8px_rgba(168,85,247,0.6)]"></span>
+                    <span className="text-zinc-500">ABO</span>
+                    <span className="text-zinc-300 font-mono">{formatCurrency(budgetTotals.abo)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           
           {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
@@ -1065,6 +1323,7 @@ export default function DashboardPage() {
             onBudgetChange={handleBudgetChange}
             highlightEntity={highlightEntity}
             userId={user?.id}
+            campaignAboAdsets={campaignAboAdsets}
           />
         </>
       )}

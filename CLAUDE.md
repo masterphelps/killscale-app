@@ -387,3 +387,380 @@ ALTER TABLE rules ADD COLUMN scale_percentage DECIMAL(5,2) DEFAULT 20.0;
 - Server-side vs client-side tracking
 - GDPR/CCPA compliance
 - Attribution models (first-touch, last-touch, multi-touch)
+
+---
+
+## Holy Shit Features (Priority: Critical)
+
+The missing emotional element: **Urgency. Fear. Regret.**
+
+The user needs to feel: *"Every day I'm NOT using this is costing me money."*
+
+---
+
+### 1. The Bleed Counter (Priority: Critical)
+
+**Goal:** Show users the real cost of their inaction on KILL ads.
+
+Every KILL ad shows a running "bleed" number:
+```
+🔴 KILL
+Bleeding: $847 total ($23/day)
+Since: Nov 22 (17 days)
+```
+
+**Holy Shit Moment:** First sync, first thing they see:
+```
+"You have 4 ads actively bleeding $127/day. That's $3,810/month."
+```
+
+**Data Requirements:**
+- `verdict_changed_at` - When did this ad cross into KILL?
+- Daily spend tracking since verdict change
+- Bleed calculation: spend accumulated since verdict = KILL
+
+---
+
+### 2. The Opportunity Cost Calculator (Priority: Critical)
+
+**Goal:** Show users the money they're leaving on the table by not scaling winners.
+
+Every SCALE ad that hasn't been touched:
+```
+🟢 SCALE
+ROAS: 4.2x
+Budget: $50/day (unchanged 14 days)
+💰 Missed opportunity: ~$2,100
+   (if scaled 20% every 3 days)
+```
+
+**Data Requirements:**
+- `last_action_at` - When did user last touch this ad?
+- Projected revenue if scaled at safe rate (20% every 3 days)
+- Budget change history (already have from Andromeda-safe scaling)
+
+---
+
+### 3. The Action Center Dashboard (Priority: Critical)
+
+**Goal:** Replace "here's your data" with "here's what to do + instant insights into where you're losing/leaving money."
+
+**Current:** Data dashboard with verdicts
+**Better:** Action-first view that creates holy shit moments on every login
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  💸 YOUR MONEY SNAPSHOT                                    Dec 10, 2024 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │  BLEEDING   │  │  LEFT ON    │  │   TOTAL     │  │   ROAS      │    │
+│  │   $127/day  │  │   TABLE     │  │   SPEND     │  │   TODAY     │    │
+│  │  $3.8k/mo   │  │   $2,100    │  │   $4,230    │  │    2.4x     │    │
+│  │  4 KILL ads │  │  2 SCALE    │  │   7 days    │  │  vs 2.1 avg │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  🧠 ANDROMEDA SCORE: 72/100 "Needs Work"              [ View Audit → ] │
+│  └ 3 critical issues found                                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│  🔴 KILL NOW (3)                                         -$127/day     │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ ☐ Summer Sale - Image 3       $45/day bleeding    14 days      │   │
+│  │ ☐ Holiday Promo - Video 2     $52/day bleeding    8 days       │   │
+│  │ ☐ Retargeting - Carousel      $30/day bleeding    21 days      │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                    [ Kill Selected ]  [ Kill All ]     │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  🟢 READY TO SCALE (2)                               +$89/day est      │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ ☐ Winner Ad - UGC Video       4.2x ROAS   $50/day → $60 (+20%) │   │
+│  │ ☐ Best Performer - Static     3.8x ROAS   $75/day → $90 (+20%) │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                  [ Scale Selected ]  [ Scale All 20% ] │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  👀 WATCH LIST (4)                                      Monitoring...  │
+│  │ 4 ads hovering near thresholds                        [ Expand ▼ ] │
+├─────────────────────────────────────────────────────────────────────────┤
+│  📚 LEARNING (6)                                        $340 to go     │
+│  │ 6 ads still gathering data                            [ Expand ▼ ] │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  📊 TRENDS THIS WEEK                                                   │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  [Mini sparkline: ROAS trend]                                   │   │
+│  │  Mon: 2.1x  Tue: 2.3x  Wed: 2.0x  Thu: 2.4x  Fri: 2.6x         │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ⚡ RECENT ACTIVITY                                                     │
+│  │ • You killed "Bad Ad" 2 days ago - saved $90 so far                 │
+│  │ • You scaled "Winner" 5 days ago - earned +$340 since               │
+│  │ • "Watch Ad" dropped from SCALE → WATCH yesterday                   │
+│                                                          [ View All ]  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  [View Full Performance Table →]                                        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Sections:**
+
+| Section | Purpose |
+|---------|---------|
+| **Money Snapshot** | 4 key metrics: Bleeding, Left on Table, Total Spend, Current ROAS |
+| **Andromeda Score** | Quick score + link to full audit |
+| **Kill Now** | Expandable list with checkboxes, bulk kill, shows bleed/day |
+| **Ready to Scale** | Expandable list with checkboxes, bulk scale 20%, shows opportunity |
+| **Watch List** | Collapsed by default, count + "monitoring" |
+| **Learning** | Collapsed, shows "$ to go" until verdict threshold |
+| **Trends This Week** | Mini sparkline showing ROAS trajectory |
+| **Recent Activity** | Feed showing actions taken + money saved/earned |
+| **Link to Full Table** | For power users who want the data view |
+
+**Key Insight:** Not "here's your data." It's "here's what's costing you, here's what to do about it, with one button."
+
+**Implementation:**
+- New route: `app/dashboard/action-center/page.tsx` (or replace main dashboard)
+- New component: `components/action-center.tsx`
+- Bulk actions with confirmation modals
+- Integrates Andromeda Score, Bleed Counter, Opportunity Calculator
+
+---
+
+### 4. The Weekly Guilt Email (Priority: High)
+
+**Goal:** Make NOT logging in feel expensive.
+
+Every Monday:
+```
+Subject: Last week cost you $892
+
+You had 3 KILL ads that ran all week: -$612
+You had 2 SCALE ads you didn't touch: -$280 opportunity
+
+Total cost of inaction: $892
+
+[Open KillScale]
+```
+
+**Implementation:**
+- Scheduled job (Supabase Edge Function or Vercel Cron)
+- Track weekly bleed + opportunity costs
+- Email via Resend/SendGrid
+
+---
+
+### 5. Push Notifications That Matter (Priority: Medium)
+
+**Goal:** Money-focused alerts, not status updates.
+
+Examples:
+- 🔴 "Top performer just dropped below WATCH. Take a look."
+- 🟢 "Winner alert: Summer Ad hit 5.1x ROAS. Ready to scale."
+- 💸 "Your KILL list bled $45 today."
+
+Not "here's an update." It's "here's money moving."
+
+---
+
+### 6. The Hindsight Report (Priority: Medium)
+
+**Goal:** Monthly accountability showing the real cost of delay.
+
+Monthly email:
+```
+If you had acted on every KILL within 24 hours: Saved $2,340
+If you had scaled every SCALE on schedule: +$4,200 revenue
+
+Cost of delay: $6,540
+```
+
+---
+
+## Architectural Requirements for Holy Shit Features
+
+### New Data to Track
+
+| Field | Purpose |
+|-------|---------|
+| `verdict_changed_at` | When did this ad cross into KILL/SCALE? |
+| `last_action_at` | When did user last touch this ad? |
+| Daily snapshots | Spend/revenue for bleed/opportunity calcs |
+
+### New Calculations
+
+| Metric | Formula |
+|--------|---------|
+| Bleed | Spend accumulated since verdict = KILL |
+| Opportunity | Projected revenue if scaled at safe rate since verdict = SCALE |
+
+### New Surfaces
+
+1. Action Dashboard (the "do this now" view)
+2. Bleed counter on KILL badges
+3. Opportunity counter on SCALE badges
+4. Weekly email digest
+5. Push notifications
+
+---
+
+## The One-Liner Test
+
+**Current:** "Know what to scale, watch, and kill in 30 seconds."
+
+**Better options:**
+- "Stop bleeding money on bad ads. Stop leaving money on winners."
+- "KillScale shows you what your inaction costs. Every day."
+
+---
+
+## Andromeda Optimization Score (Priority: Critical)
+
+**Goal:** Audit account structure against Meta's Andromeda ML best practices. No other tool does this.
+
+**The Problem:** Users fragment their accounts - too many campaigns, too many ad sets, 1 creative per ad set, ABO instead of CBO. Andromeda can't optimize fragmented accounts.
+
+**The Insight:** "Your account structure is sabotaging Meta's algorithm."
+
+---
+
+### Andromeda Best Practices (What We Audit)
+
+| Rule | Why It Matters |
+|------|----------------|
+| Consolidation over fragmentation | Fewer campaigns/ad sets = more data per entity |
+| CBO over ABO | Let Meta allocate budget across ad sets |
+| Broad targeting | Small audiences fragment learning |
+| 50+ conversions/week/ad set | The learning phase threshold |
+| 15-25% budget changes max | Prevents algorithm destabilization |
+| Multiple creatives per ad set | Don't split creatives into separate ad sets |
+
+---
+
+### Anti-Patterns We Detect
+
+| Anti-Pattern | Detection Method | Recommendation |
+|--------------|------------------|----------------|
+| Too many campaigns | Count active campaigns | "You have 12 active campaigns. Consolidate to 2-3." |
+| ABO instead of CBO | `campaign_budget_optimization` field | "3 campaigns using ABO. Switch to CBO." |
+| 1 ad per ad set | Count ads per ad set | "8 ad sets with only 1 ad. Consolidate creatives." |
+| Too many ad sets | Count ad sets per campaign | "Campaign X has 15 ad sets. Aim for 3-5 max." |
+| Stuck in learning | Results per ad set per week | "4 ad sets below 50 conversions/week." |
+| Audience fragmentation | Audience size / overlap | "Multiple ad sets targeting similar audiences." |
+
+---
+
+### Score Card UI
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  🧠 ANDROMEDA OPTIMIZATION SCORE                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│                        72 / 100                                         │
+│                    ████████████░░░░                                     │
+│                      "Needs Work"                                       │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ✅ PASSING                                                             │
+│  • Using CBO on 4/5 campaigns                                          │
+│  • Budget changes within safe range                                     │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ⚠️ WARNINGS                                                            │
+│  • 3 ad sets with only 1 creative each                    [ Fix → ]    │
+│    "Consolidate into fewer ad sets with 3-5 creatives"                 │
+│                                                                         │
+│  • 2 ad sets below 50 conversions/week                    [ Fix → ]    │
+│    "Consider pausing or merging - stuck in learning"                   │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  🔴 CRITICAL                                                            │
+│  • Campaign "Holiday Sale" has 12 ad sets                 [ Fix → ]    │
+│    "Too fragmented. Consolidate to 3-4 ad sets max."                   │
+│                                                                         │
+│  • 1 campaign using ABO with $500/day budget              [ Fix → ]    │
+│    "Switch to CBO to let Meta optimize allocation"                     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Score Weighting
+
+| Factor | Weight | Scoring Logic |
+|--------|--------|---------------|
+| CBO adoption | 25% | % of spend on CBO campaigns |
+| Creative consolidation | 25% | Avg ads per ad set (target: 3-6) |
+| Ad set count per campaign | 20% | Penalty for >5 ad sets per campaign |
+| Learning phase exits | 20% | % of ad sets hitting 50 conv/week |
+| Budget stability | 10% | No aggressive scaling (from budget_changes) |
+
+**Score Ranges:**
+- 90-100: "Excellent" - Andromeda-optimized
+- 70-89: "Good" - Minor improvements possible
+- 50-69: "Needs Work" - Significant issues
+- 0-49: "Critical" - Account structure hurting performance
+
+---
+
+### Data Requirements
+
+**Already Have:**
+- Campaign count, ad set count, ad count
+- CBO vs ABO detection
+- Budget info and change history
+- Results/conversions per entity
+
+**Need to Add:**
+- `targeting` field from ad sets (for audience overlap detection)
+- Weekly conversion aggregation per ad set
+- Audience size estimates
+
+**API Fields to Fetch:**
+```
+GET /{adset_id}?fields=targeting,optimization_goal,daily_budget,lifetime_budget
+```
+
+---
+
+### Implementation
+
+**New Files:**
+- `lib/andromeda-score.ts` - Score calculation logic
+- `components/andromeda-score-card.tsx` - The score card UI component
+
+**Integration:**
+- Calculate score on sync completion
+- Store in new `andromeda_scores` table or as JSON in `ad_accounts`
+- Display on Action Center dashboard
+- "Fix →" buttons open relevant Ads Manager deep links
+
+**Database:**
+```sql
+CREATE TABLE andromeda_audits (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  ad_account_id TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  factors JSONB NOT NULL,  -- Breakdown of each factor
+  issues JSONB NOT NULL,   -- Array of detected issues
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_andromeda_audits_account ON andromeda_audits(ad_account_id, created_at DESC);
+```
+
+---
+
+### Future Enhancements
+
+- **Score history** - Track improvement over time
+- **Automated fix suggestions** - "Merge these 3 ad sets" with one click
+- **Competitor benchmarks** - "Your score is higher than 65% of accounts"
+- **Alerts** - "Your Andromeda score dropped 15 points this week"

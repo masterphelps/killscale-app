@@ -1072,30 +1072,30 @@ export default function TrendsPage() {
                   ].map((stage, i, arr) => {
                     const maxVal = arr[0].value || 1
                     const height = Math.max(10, (stage.value / maxVal) * 100)
-                    const rate = i > 0 ? ((stage.value / (arr[i-1].value || 1)) * 100).toFixed(2) : '100'
+                    const rate = i > 0 ? ((stage.value / (arr[i-1].value || 1)) * 100).toFixed(2) : null
                     return (
-                      <div key={stage.label} className="flex flex-col items-center gap-2">
+                      <div key={stage.label} className="flex flex-col items-center gap-2 h-full justify-end">
                         <div className="text-sm text-zinc-400">{stage.label}</div>
                         <div className="text-lg font-bold">{formatNumber(stage.value)}</div>
-                        <div 
+                        {rate && (
+                          <div className="text-xs text-zinc-500 font-medium">{rate}% rate</div>
+                        )}
+                        <div
                           className={cn('w-full rounded-t-lg transition-all', stage.color)}
                           style={{ height: `${height}%`, minHeight: 40 }}
                         />
-                        {i > 0 && (
-                          <div className="text-xs text-zinc-500">{rate}% rate</div>
-                        )}
                       </div>
                     )
                   })}
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-center gap-2 h-full justify-end">
                     <div className="text-sm text-zinc-400">Revenue</div>
                     <div className="text-lg font-bold text-green-400">{formatCurrency(displayData.revenue)}</div>
-                    <div 
+                    <div
                       className="w-full rounded-t-lg bg-green-500/50"
                       style={{ height: '60%', minHeight: 40 }}
                     />
                   </div>
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-center gap-2 h-full justify-end">
                     <div className="text-sm text-zinc-400">ROAS</div>
                     <div className={cn(
                       'text-2xl font-bold',
@@ -1103,7 +1103,7 @@ export default function TrendsPage() {
                     )}>
                       {displayData.roas.toFixed(2)}x
                     </div>
-                    <div 
+                    <div
                       className={cn(
                         'w-full rounded-t-lg',
                         displayData.roas >= 2 ? 'bg-green-500' : displayData.roas >= 1 ? 'bg-yellow-500' : 'bg-red-500'
@@ -1114,79 +1114,105 @@ export default function TrendsPage() {
                 </div>
               </div>
             ) : viewMode === 'scatter' ? (
-              /* Scatter Plot - Spend vs ROAS */
-              <div className="h-96">
+              /* Spend vs ROAS - Horizontal bar chart comparing spend and efficiency */
+              <div className="h-[500px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis 
-                      type="number" 
-                      dataKey="spend" 
-                      name="Spend"
+                  <ComposedChart
+                    data={[...hierarchy].sort((a, b) => b.spend - a.spend).slice(0, 12)}
+                    layout="vertical"
+                    margin={{ left: 10, right: 40, top: 10, bottom: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      orientation="top"
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
-                      tickFormatter={(v) => `$${v}`}
-                      label={{ value: 'Spend', position: 'bottom', fill: '#71717a', fontSize: 12 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 10 }}
+                      tickFormatter={(v) => `$${v >= 1000 ? `${(v/1000).toFixed(1)}k` : v}`}
                     />
-                    <YAxis 
-                      type="number" 
-                      dataKey="roas" 
-                      name="ROAS"
+                    <YAxis
+                      type="category"
+                      dataKey="name"
                       stroke="#3f3f46"
-                      tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
-                      tickFormatter={(v) => `${v.toFixed(1)}x`}
-                      label={{ value: 'ROAS', angle: -90, position: 'insideLeft', fill: '#71717a', fontSize: 12 }}
+                      tick={{ fill: '#a1a1aa', fontSize: 10 }}
+                      width={150}
+                      tickFormatter={(value) => value.length > 20 ? value.substring(0, 20) + '...' : value}
                     />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: '#18181b', 
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#18181b',
                         border: '1px solid #3f3f46',
-                        borderRadius: 8,
-                        color: '#e4e4e7'
+                        borderRadius: 8
                       }}
-                      formatter={(value: number, name: string) => {
-                        if (name === 'roas') return [`${value.toFixed(2)}x`, 'ROAS']
-                        if (name === 'spend') return [formatCurrency(value), 'Spend']
-                        return [value, name]
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null
+                        const data = payload[0]?.payload
+                        return (
+                          <div className="bg-[#18181b] border border-[#3f3f46] rounded-lg p-3 text-sm">
+                            <div className="font-medium text-white mb-2">{data?.name}</div>
+                            <div className="space-y-1 text-xs">
+                              <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Spend</span>
+                                <span className="font-medium text-purple-400">{formatCurrency(data?.spend)}</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Revenue</span>
+                                <span className="font-medium text-green-400">{formatCurrency(data?.revenue)}</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">ROAS</span>
+                                <span className={cn(
+                                  'font-bold',
+                                  data?.roas >= 2 ? 'text-green-400' : data?.roas >= 1 ? 'text-yellow-400' : 'text-red-400'
+                                )}>{data?.roas?.toFixed(2)}x</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Purchases</span>
+                                <span className="font-medium text-white">{data?.purchases}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
                       }}
-                      labelFormatter={(label) => `${label}`}
                     />
-                    <Scatter 
-                      name="Campaigns" 
-                      data={hierarchy.map(c => ({ name: c.name, spend: c.spend, roas: c.roas, revenue: c.revenue }))}
-                      fill="#8b5cf6"
+                    <Bar
+                      dataKey="spend"
+                      name="Spend"
+                      radius={[0, 4, 4, 0]}
+                      onClick={(data) => setSelection({ campaign: data.name })}
+                      style={{ cursor: 'pointer' }}
                     >
-                      {hierarchy.map((entry, index) => (
-                        <Cell 
-                          key={index} 
+                      {[...hierarchy].sort((a, b) => b.spend - a.spend).slice(0, 12).map((entry, index) => (
+                        <Cell
+                          key={index}
                           fill={getROASColor(entry.roas)}
-                          cursor="pointer"
-                          onClick={() => setSelection({ campaign: entry.name })}
+                          fillOpacity={0.8}
                         />
                       ))}
-                    </Scatter>
-                    {/* Reference line at ROAS 1.0 */}
-                    <Line 
-                      type="monotone" 
-                      dataKey={() => 1} 
-                      stroke="#ef4444" 
-                      strokeDasharray="5 5"
-                      dot={false}
-                    />
-                  </ScatterChart>
+                    </Bar>
+                  </ComposedChart>
                 </ResponsiveContainer>
-                <div className="flex items-center justify-center gap-6 mt-4 text-xs text-zinc-500">
+                <div className="flex flex-wrap items-center justify-center gap-4 lg:gap-6 mt-4 text-xs text-zinc-500">
+                  <span className="text-zinc-400 font-medium">Bar color = ROAS:</span>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-green-500" />
-                    <span>ROAS ≥ 2x (Scale)</span>
+                    <div className="w-3 h-3 rounded bg-green-500" />
+                    <span>≥ 3x Scale</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                    <span>ROAS 1-2x (Watch)</span>
+                    <div className="w-3 h-3 rounded bg-lime-500" />
+                    <span>2-3x Good</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-red-500" />
-                    <span>ROAS &lt; 1x (Kill)</span>
+                    <div className="w-3 h-3 rounded bg-yellow-500" />
+                    <span>1.5-2x Watch</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-orange-500" />
+                    <span>1-1.5x Break-even</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-red-500" />
+                    <span>&lt;1x Kill</span>
                   </div>
                 </div>
               </div>

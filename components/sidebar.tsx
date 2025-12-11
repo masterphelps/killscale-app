@@ -3,20 +3,24 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { 
-  BarChart3, 
-  TrendingUp, 
-  Bell, 
-  Settings, 
+import {
+  BarChart3,
+  TrendingUp,
+  Bell,
+  Settings,
   Link as LinkIcon,
   ChevronDown,
   LogOut,
   Check,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Lightbulb,
+  EyeOff,
+  Eye
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { usePrivacyMode } from '@/lib/privacy-mode'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -41,15 +45,17 @@ type DataSource = 'none' | 'csv' | 'meta_api'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
-  { href: '/dashboard/settings', label: 'Rules', icon: Settings },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
   const { user, signOut } = useAuth()
   const { plan } = useSubscription()
+  const { isPrivacyMode, togglePrivacyMode, maskText } = usePrivacyMode()
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
@@ -57,7 +63,8 @@ export function Sidebar() {
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null)
   const [alertCount, setUnreadAlertCount] = useState(0)
 
-  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
+  const rawUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
+  const userName = maskText(rawUserName, 'Demo User')
   
   // Load Meta connection data and check current data source
   useEffect(() => {
@@ -177,9 +184,9 @@ export function Sidebar() {
     if (dataSource === 'csv') return 'CSV Data'
     if (dataSource === 'meta_api') {
       // First try to find the account by currentAccountId
-      if (currentMetaAccount) return currentMetaAccount.name
+      if (currentMetaAccount) return maskText(currentMetaAccount.name, 'Demo Ad Account')
       // Fallback to selected account
-      if (selectedAccount) return selectedAccount.name
+      if (selectedAccount) return maskText(selectedAccount.name, 'Demo Ad Account')
       // Last resort
       return 'Meta Account'
     }
@@ -210,15 +217,31 @@ export function Sidebar() {
   
   return (
     <aside className="w-60 bg-bg-sidebar border-r border-border fixed h-screen overflow-y-auto flex flex-col p-4">
-      {/* Logo */}
-      <Link href="/dashboard" className="flex items-center gap-2 px-2 mb-6">
-      <svg width="180" height="36" viewBox="0 0 280 50">
-        <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-        <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-        <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-      </svg>
-    </Link>
+      {/* Logo + Privacy Toggle (Agency only) */}
+      <div className="flex items-center justify-between mb-6">
+        <Link href="/dashboard" className="flex items-center gap-2 px-2">
+          <svg width="150" height="30" viewBox="0 0 280 50">
+            <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
+            <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
+          </svg>
+        </Link>
+        {plan === 'Agency' && (
+          <button
+            onClick={togglePrivacyMode}
+            className={cn(
+              "p-2 rounded-lg transition-colors",
+              isPrivacyMode
+                ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover"
+            )}
+            title={isPrivacyMode ? "Privacy mode ON - click to show real data" : "Privacy mode OFF - click to hide sensitive data"}
+          >
+            {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
       
       {/* Account Selector */}
       <div className="relative mb-6">
@@ -263,7 +286,7 @@ export function Sidebar() {
               )}
               
               {/* Show Meta accounts */}
-              {displayAccounts.map((account) => (
+              {displayAccounts.map((account, index) => (
                 <button
                   key={account.id}
                   onClick={() => handleSelectAccount(account.id)}
@@ -272,7 +295,7 @@ export function Sidebar() {
                     dataSource === 'meta_api' && account.id === currentAccountId && "bg-accent/10"
                   )}
                 >
-                  <span className="truncate">{account.name}</span>
+                  <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
                   {dataSource === 'meta_api' && account.id === currentAccountId && (
                     <Check className="w-4 h-4 text-accent flex-shrink-0" />
                   )}

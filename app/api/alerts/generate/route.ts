@@ -427,7 +427,7 @@ export async function POST(request: NextRequest) {
 
     if (highPriorityAlerts.length > 0) {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
         await fetch(`${baseUrl}/api/alerts/send-email`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
