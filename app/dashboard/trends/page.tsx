@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { usePrivacyMode } from '@/lib/privacy-mode'
 import { createClient } from '@supabase/supabase-js'
 import { StatCard } from '@/components/stat-card'
 import {
@@ -247,11 +248,12 @@ const getROASColorName = (roas: number): 'green' | 'amber' | 'default' => {
 }
 
 // Hierarchy Navigator Item
-const NavItem = ({ 
-  name, 
-  level, 
-  isSelected, 
-  isExpanded, 
+const NavItem = ({
+  name,
+  displayName,
+  level,
+  isSelected,
+  isExpanded,
   hasChildren,
   metrics,
   onClick,
@@ -261,6 +263,7 @@ const NavItem = ({
   showPausedIndicators = true
 }: {
   name: string
+  displayName: string
   level: HierarchyLevel
   isSelected: boolean
   isExpanded: boolean
@@ -320,7 +323,7 @@ const NavItem = ({
         isSelected ? 'text-white' : 'text-zinc-300',
         isPaused && 'opacity-50'
       )}>
-        {name}
+        {displayName}
       </span>
       
       {/* Paused indicator - only show when includePaused is on */}
@@ -363,7 +366,15 @@ export default function TrendsPage() {
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
   const [includePaused, setIncludePaused] = useState(false)
   const { user } = useAuth()
-  
+  const { isPrivacyMode, maskText } = usePrivacyMode()
+
+  // Privacy mode masking helper with numbered placeholders
+  const maskName = (name: string, level: 'campaign' | 'adset' | 'ad', index: number): string => {
+    if (!isPrivacyMode) return name
+    const labels = { campaign: 'Campaign', adset: 'Ad Set', ad: 'Ad' }
+    return `${labels[level]} ${index + 1}`
+  }
+
   useEffect(() => {
     if (user) loadData()
   }, [user])
@@ -608,72 +619,89 @@ export default function TrendsPage() {
     }))
   }, [hierarchy])
   
-  // Generate insights
+  // Generate insights - use masked names in privacy mode
   const insights = useMemo(() => {
     const results: { type: 'success' | 'warning' | 'info', message: string }[] = []
-    
+
     if (hierarchy.length > 0) {
       // Best performer
-      const best = [...hierarchy].sort((a, b) => b.roas - a.roas)[0]
+      const bestIdx = hierarchy.reduce((best, curr, idx) =>
+        curr.roas > (hierarchy[best]?.roas || 0) ? idx : best, 0)
+      const best = hierarchy[bestIdx]
       if (best && best.roas > 0) {
+        const displayName = maskName(best.name, 'campaign', bestIdx)
         results.push({
           type: 'success',
-          message: `Top performer: "${best.name}" with ${best.roas.toFixed(2)}x ROAS`
+          message: `Top performer: "${displayName}" with ${best.roas.toFixed(2)}x ROAS`
         })
       }
-      
+
       // Worst performer with significant spend
-      const worst = [...hierarchy].filter(c => c.spend > 50).sort((a, b) => a.roas - b.roas)[0]
+      const worstFiltered = hierarchy
+        .map((c, idx) => ({ ...c, idx }))
+        .filter(c => c.spend > 50)
+        .sort((a, b) => a.roas - b.roas)
+      const worst = worstFiltered[0]
       if (worst && worst.roas < 1.5) {
+        const displayName = maskName(worst.name, 'campaign', worst.idx)
         results.push({
           type: 'warning',
-          message: `"${worst.name}" has ${worst.roas.toFixed(2)}x ROAS - consider optimizing`
+          message: `"${displayName}" has ${worst.roas.toFixed(2)}x ROAS - consider optimizing`
         })
       }
-      
+
       // High spender
-      const topSpender = [...hierarchy].sort((a, b) => b.spend - a.spend)[0]
+      const topSpenderIdx = hierarchy.reduce((top, curr, idx) =>
+        curr.spend > (hierarchy[top]?.spend || 0) ? idx : top, 0)
+      const topSpender = hierarchy[topSpenderIdx]
       if (topSpender && accountTotals.spend > 0) {
         const spendPercent = (topSpender.spend / accountTotals.spend) * 100
         if (spendPercent > 40) {
+          const displayName = maskName(topSpender.name, 'campaign', topSpenderIdx)
           results.push({
             type: 'info',
-            message: `"${topSpender.name}" represents ${spendPercent.toFixed(0)}% of total spend`
+            message: `"${displayName}" represents ${spendPercent.toFixed(0)}% of total spend`
           })
         }
       }
     }
-    
+
     return results
-  }, [hierarchy, accountTotals])
+  }, [hierarchy, accountTotals, isPrivacyMode])
   
-  // Breadcrumb
+  // Breadcrumb - use masked names in privacy mode
   const breadcrumb = useMemo(() => {
     const parts: { label: string, onClick: () => void }[] = [
       { label: 'Account', onClick: () => setSelection({}) }
     ]
-    
+
     if (selection.campaign) {
-      parts.push({ 
-        label: selection.campaign, 
-        onClick: () => setSelection({ campaign: selection.campaign }) 
+      const campaignIdx = hierarchy.findIndex(c => c.name === selection.campaign)
+      parts.push({
+        label: maskName(selection.campaign, 'campaign', Math.max(0, campaignIdx)),
+        onClick: () => setSelection({ campaign: selection.campaign })
       })
     }
     if (selection.adset) {
-      parts.push({ 
-        label: selection.adset, 
-        onClick: () => setSelection({ campaign: selection.campaign, adset: selection.adset }) 
+      const campaign = hierarchy.find(c => c.name === selection.campaign)
+      const adsetIdx = campaign?.children?.findIndex(a => a.name === selection.adset) ?? 0
+      parts.push({
+        label: maskName(selection.adset, 'adset', Math.max(0, adsetIdx)),
+        onClick: () => setSelection({ campaign: selection.campaign, adset: selection.adset })
       })
     }
     if (selection.ad) {
-      parts.push({ 
-        label: selection.ad, 
-        onClick: () => {} 
+      const campaign = hierarchy.find(c => c.name === selection.campaign)
+      const adset = campaign?.children?.find(a => a.name === selection.adset)
+      const adIdx = adset?.children?.findIndex(ad => ad.name === selection.ad) ?? 0
+      parts.push({
+        label: maskName(selection.ad, 'ad', Math.max(0, adIdx)),
+        onClick: () => {}
       })
     }
-    
+
     return parts
-  }, [selection])
+  }, [selection, hierarchy, isPrivacyMode])
   
   // Filter hierarchy by search
   const filteredHierarchy = useMemo(() => {
@@ -843,10 +871,11 @@ export default function TrendsPage() {
               <div className="h-px bg-border mb-2" />
               
               {/* Campaigns */}
-              {filteredHierarchy.map(campaign => (
+              {filteredHierarchy.map((campaign, campaignIdx) => (
                 <div key={campaign.name}>
                   <NavItem
                     name={campaign.name}
+                    displayName={maskName(campaign.name, 'campaign', campaignIdx)}
                     level="campaign"
                     isSelected={selection.campaign === campaign.name && !selection.adset}
                     isExpanded={expandedCampaigns.has(campaign.name)}
@@ -866,11 +895,12 @@ export default function TrendsPage() {
                       setExpandedCampaigns(newSet)
                     }}
                   />
-                  
-                  {expandedCampaigns.has(campaign.name) && campaign.children?.map(adset => (
+
+                  {expandedCampaigns.has(campaign.name) && campaign.children?.map((adset, adsetIdx) => (
                     <div key={adset.name}>
                       <NavItem
                         name={adset.name}
+                        displayName={maskName(adset.name, 'adset', adsetIdx)}
                         level="adset"
                         isSelected={selection.adset === adset.name && !selection.ad}
                         isExpanded={expandedAdsets.has(`${campaign.name}-${adset.name}`)}
@@ -891,11 +921,12 @@ export default function TrendsPage() {
                           setExpandedAdsets(newSet)
                         }}
                       />
-                      
-                      {expandedAdsets.has(`${campaign.name}-${adset.name}`) && adset.children?.map(ad => (
+
+                      {expandedAdsets.has(`${campaign.name}-${adset.name}`) && adset.children?.map((ad, adIdx) => (
                         <NavItem
                           key={ad.name}
                           name={ad.name}
+                          displayName={maskName(ad.name, 'ad', adIdx)}
                           level="ad"
                           isSelected={selection.ad === ad.name}
                           isExpanded={false}
