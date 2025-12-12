@@ -164,8 +164,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [locationResults, setLocationResults] = useState<LocationResult[]>([])
   const [locationQuery, setLocationQuery] = useState('')
   const [searchingLocations, setSearchingLocations] = useState(false)
-  const [activePixelEvents, setActivePixelEvents] = useState<{ value: string; label: string; count?: number }[]>([])
-  const [standardEvents, setStandardEvents] = useState<{ value: string; label: string }[]>(FALLBACK_CONVERSION_EVENTS)
+  const [conversionEvents, setConversionEvents] = useState<{ value: string; label: string }[]>(FALLBACK_CONVERSION_EVENTS)
   const [loadingPixelEvents, setLoadingPixelEvents] = useState(false)
 
   // Form state - adAccountId comes from prop (sidebar context)
@@ -243,7 +242,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     }
   }
 
-  // Load pixel events for this ad account (shows active + standard events)
+  // Load conversion events for the dropdown
   const loadPixelEvents = useCallback(async () => {
     if (!user || !adAccountId) return
 
@@ -252,33 +251,16 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       const res = await fetch(`/api/meta/pixel-events?userId=${user.id}&adAccountId=${encodeURIComponent(adAccountId)}`)
       const data = await res.json()
 
-      // Set active pixel events (events actually firing)
-      if (data.activeEvents && data.activeEvents.length > 0) {
-        setActivePixelEvents(data.activeEvents)
-        // Auto-select first active event if current selection not in any list
-        const allEventValues = [
-          ...data.activeEvents.map((e: { value: string }) => e.value.toUpperCase()),
-          ...(data.standardEvents || []).map((e: { value: string }) => e.value.toUpperCase())
-        ]
-        if (!allEventValues.includes(state.conversionEvent.toUpperCase())) {
-          setState(s => ({ ...s, conversionEvent: data.activeEvents[0].value }))
-        }
-      } else {
-        setActivePixelEvents([])
-      }
-
-      // Set standard events
-      if (data.standardEvents) {
-        setStandardEvents(data.standardEvents)
+      if (data.events && data.events.length > 0) {
+        setConversionEvents(data.events)
       }
     } catch (err) {
       console.error('Failed to load pixel events:', err)
-      setActivePixelEvents([])
-      setStandardEvents(FALLBACK_CONVERSION_EVENTS)
+      setConversionEvents(FALLBACK_CONVERSION_EVENTS)
     } finally {
       setLoadingPixelEvents(false)
     }
-  }, [user, adAccountId, state.conversionEvent])
+  }, [user, adAccountId])
 
   // Load pixel events when wizard opens
   useEffect(() => {
@@ -759,7 +741,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 {loadingPixelEvents ? (
                   <div className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-zinc-500 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading pixel events...
+                    Loading events...
                   </div>
                 ) : (
                   <select
@@ -767,28 +749,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                     onChange={(e) => setState(s => ({ ...s, conversionEvent: e.target.value }))}
                     className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
                   >
-                    {activePixelEvents.length > 0 && (
-                      <optgroup label="🟢 Active Pixel Events">
-                        {activePixelEvents.map((evt) => (
-                          <option key={evt.value} value={evt.value}>
-                            {evt.label} {evt.count ? `(${evt.count} events)` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    <optgroup label="Standard Events">
-                      {standardEvents.map((evt) => (
-                        <option key={evt.value} value={evt.value}>
-                          {evt.label}
-                        </option>
-                      ))}
-                    </optgroup>
+                    {conversionEvents.map((evt) => (
+                      <option key={evt.value} value={evt.value}>
+                        {evt.label}
+                      </option>
+                    ))}
                   </select>
-                )}
-                {activePixelEvents.length > 0 && (
-                  <p className="text-xs text-verdict-scale mt-2">
-                    ✓ {activePixelEvents.length} active event{activePixelEvents.length !== 1 ? 's' : ''} detected on your pixel
-                  </p>
                 )}
               </div>
             )}
