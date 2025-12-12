@@ -73,6 +73,7 @@ interface WizardState {
   creativeEnhancements: boolean
   primaryText: string
   headline: string
+  description: string
   websiteUrl: string
   ctaType: string
 }
@@ -188,6 +189,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     creativeEnhancements: false,
     primaryText: '',
     headline: '',
+    description: '',
     websiteUrl: '',
     ctaType: 'GET_QUOTE'
   })
@@ -452,6 +454,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           creatives: creativesWithHashes,
           primaryText: state.primaryText,
           headline: state.headline,
+          description: state.description,
           websiteUrl: state.websiteUrl,
           ctaType: state.ctaType,
           creativeEnhancements: state.creativeEnhancements
@@ -1045,6 +1048,18 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
               />
               <p className="text-xs text-zinc-500 mt-1">40 characters max</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Description <span className="text-zinc-500 font-normal">(optional)</span></label>
+              <input
+                type="text"
+                value={state.description}
+                onChange={(e) => setState(s => ({ ...s, description: e.target.value }))}
+                placeholder="Professional service you can trust"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
+              />
+              <p className="text-xs text-zinc-500 mt-1">Appears below headline in the link preview</p>
             </div>
 
             <div>

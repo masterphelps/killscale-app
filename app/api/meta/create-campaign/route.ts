@@ -37,6 +37,7 @@ interface CreateCampaignRequest {
   creatives: Creative[]
   primaryText: string
   headline: string
+  description?: string
   websiteUrl: string
   ctaType: string
   creativeEnhancements: boolean
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
       creatives,
       primaryText,
       headline,
+      description,
       websiteUrl,
       ctaType,
       creativeEnhancements
@@ -275,6 +277,11 @@ export async function POST(request: NextRequest) {
           type: ctaType,
           value: { link: websiteUrl }
         }
+      }
+
+      // Add description if provided
+      if (description) {
+        linkData.description = description
       }
 
       // Add image or video
