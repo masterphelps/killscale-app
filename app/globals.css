@@ -76,6 +76,36 @@ body {
   }
 }
 
+/* Modern flat select styling */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px !important;
+  cursor: pointer;
+}
+
+select:focus {
+  outline: none;
+}
+
+/* Style the dropdown options */
+select option {
+  background: #18181b;
+  color: #fafafa;
+  padding: 12px;
+}
+
+select option:hover,
+select option:focus,
+select option:checked {
+  background: #3b82f6;
+  color: white;
+}
+
 /* Mobile card styles */
 .mobile-card {
   @apply bg-bg-card border border-border rounded-xl p-4 mb-3;
