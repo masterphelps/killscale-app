@@ -82,16 +82,16 @@ const OBJECTIVES = [
   { value: 'traffic', label: 'Traffic (Website Visits)', hasEvents: false }
 ]
 
-// Specific conversion events - user picks exactly what their pixel sends
-const CONVERSION_EVENTS = [
-  { value: 'PURCHASE', label: 'Purchase', description: 'E-commerce sales' },
-  { value: 'COMPLETE_REGISTRATION', label: 'Sign Up / Registration', description: 'Account signups, registrations' },
-  { value: 'LEAD', label: 'Lead', description: 'Form submissions, lead captures' },
-  { value: 'ADD_TO_CART', label: 'Add to Cart', description: 'Shopping cart additions' },
-  { value: 'INITIATE_CHECKOUT', label: 'Initiate Checkout', description: 'Started checkout process' },
-  { value: 'SUBSCRIBE', label: 'Subscribe', description: 'Subscription signups' },
-  { value: 'CONTACT', label: 'Contact', description: 'Contact form submissions' },
-  { value: 'SUBMIT_APPLICATION', label: 'Submit Application', description: 'Application submissions' }
+// Fallback conversion events if pixel fetch fails
+const FALLBACK_CONVERSION_EVENTS = [
+  { value: 'PURCHASE', label: 'Purchase' },
+  { value: 'COMPLETE_REGISTRATION', label: 'Complete Registration' },
+  { value: 'LEAD', label: 'Lead' },
+  { value: 'ADD_TO_CART', label: 'Add to Cart' },
+  { value: 'INITIATE_CHECKOUT', label: 'Initiate Checkout' },
+  { value: 'SUBSCRIBE', label: 'Subscribe' },
+  { value: 'CONTACT', label: 'Contact' },
+  { value: 'SUBMIT_APPLICATION', label: 'Submit Application' }
 ]
 
 const CTA_OPTIONS = [
@@ -164,6 +164,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [locationResults, setLocationResults] = useState<LocationResult[]>([])
   const [locationQuery, setLocationQuery] = useState('')
   const [searchingLocations, setSearchingLocations] = useState(false)
+  const [activePixelEvents, setActivePixelEvents] = useState<{ value: string; label: string; count?: number }[]>([])
+  const [standardEvents, setStandardEvents] = useState<{ value: string; label: string }[]>(FALLBACK_CONVERSION_EVENTS)
+  const [loadingPixelEvents, setLoadingPixelEvents] = useState(false)
 
   // Form state - adAccountId comes from prop (sidebar context)
   const [state, setState] = useState<WizardState>({
@@ -239,6 +242,50 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       console.error('Failed to load campaigns:', err)
     }
   }
+
+  // Load pixel events for this ad account (shows active + standard events)
+  const loadPixelEvents = useCallback(async () => {
+    if (!user || !adAccountId) return
+
+    setLoadingPixelEvents(true)
+    try {
+      const res = await fetch(`/api/meta/pixel-events?userId=${user.id}&adAccountId=${encodeURIComponent(adAccountId)}`)
+      const data = await res.json()
+
+      // Set active pixel events (events actually firing)
+      if (data.activeEvents && data.activeEvents.length > 0) {
+        setActivePixelEvents(data.activeEvents)
+        // Auto-select first active event if current selection not in any list
+        const allEventValues = [
+          ...data.activeEvents.map((e: { value: string }) => e.value.toUpperCase()),
+          ...(data.standardEvents || []).map((e: { value: string }) => e.value.toUpperCase())
+        ]
+        if (!allEventValues.includes(state.conversionEvent.toUpperCase())) {
+          setState(s => ({ ...s, conversionEvent: data.activeEvents[0].value }))
+        }
+      } else {
+        setActivePixelEvents([])
+      }
+
+      // Set standard events
+      if (data.standardEvents) {
+        setStandardEvents(data.standardEvents)
+      }
+    } catch (err) {
+      console.error('Failed to load pixel events:', err)
+      setActivePixelEvents([])
+      setStandardEvents(FALLBACK_CONVERSION_EVENTS)
+    } finally {
+      setLoadingPixelEvents(false)
+    }
+  }, [user, adAccountId, state.conversionEvent])
+
+  // Load pixel events when wizard opens
+  useEffect(() => {
+    if (user && adAccountId) {
+      loadPixelEvents()
+    }
+  }, [user, adAccountId, loadPixelEvents])
 
   // Location search
   const searchLocations = useCallback(async (query: string) => {
@@ -530,7 +577,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                   <select
                     value={state.pageId}
                     onChange={(e) => setState(s => ({ ...s, pageId: e.target.value }))}
-                    className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                    className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
                   >
                     {pages.map((page) => (
                       <option key={page.id} value={page.id}>
@@ -659,7 +706,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 <select
                   value={state.existingCampaignId}
                   onChange={(e) => setState(s => ({ ...s, existingCampaignId: e.target.value }))}
-                  className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                  className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
                 >
                   <option value="">Choose a campaign...</option>
                   {existingCampaigns.map((campaign) => (
@@ -683,7 +730,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 value={state.campaignName}
                 onChange={(e) => setState(s => ({ ...s, campaignName: e.target.value }))}
                 placeholder="Summer Driveway Special"
-                className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
               />
             </div>
 
@@ -692,7 +739,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               <select
                 value={state.objective}
                 onChange={(e) => setState(s => ({ ...s, objective: e.target.value as WizardState['objective'] }))}
-                className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
               >
                 {OBJECTIVES.map((obj) => (
                   <option key={obj.value} value={obj.value}>
@@ -709,17 +756,40 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 <p className="text-xs text-zinc-500 mb-3">
                   Select the event your pixel sends when a conversion happens
                 </p>
-                <select
-                  value={state.conversionEvent}
-                  onChange={(e) => setState(s => ({ ...s, conversionEvent: e.target.value }))}
-                  className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
-                >
-                  {CONVERSION_EVENTS.map((evt) => (
-                    <option key={evt.value} value={evt.value}>
-                      {evt.label} - {evt.description}
-                    </option>
-                  ))}
-                </select>
+                {loadingPixelEvents ? (
+                  <div className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-zinc-500 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading pixel events...
+                  </div>
+                ) : (
+                  <select
+                    value={state.conversionEvent}
+                    onChange={(e) => setState(s => ({ ...s, conversionEvent: e.target.value }))}
+                    className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
+                  >
+                    {activePixelEvents.length > 0 && (
+                      <optgroup label="🟢 Active Pixel Events">
+                        {activePixelEvents.map((evt) => (
+                          <option key={evt.value} value={evt.value}>
+                            {evt.label} {evt.count ? `(${evt.count} events)` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Standard Events">
+                      {standardEvents.map((evt) => (
+                        <option key={evt.value} value={evt.value}>
+                          {evt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                )}
+                {activePixelEvents.length > 0 && (
+                  <p className="text-xs text-verdict-scale mt-2">
+                    ✓ {activePixelEvents.length} active event{activePixelEvents.length !== 1 ? 's' : ''} detected on your pixel
+                  </p>
+                )}
               </div>
             )}
 
@@ -731,7 +801,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                   type="number"
                   value={state.dailyBudget}
                   onChange={(e) => setState(s => ({ ...s, dailyBudget: parseFloat(e.target.value) || 0 }))}
-                  className="w-full bg-bg-hover border border-border rounded-lg pl-8 pr-16 py-3 focus:outline-none focus:border-accent"
+                  className="w-full bg-bg-dark border border-border rounded-lg pl-8 pr-16 py-3 text-white focus:outline-none focus:border-accent"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">/day</span>
               </div>
@@ -831,7 +901,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                         setState(s => ({ ...s, locationName: '', locationKey: '' }))
                       }}
                       placeholder="Search city..."
-                      className="w-full bg-bg-hover border border-border rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:border-accent"
+                      className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-accent"
                     />
                     {searchingLocations && (
                       <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
@@ -866,7 +936,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                       <select
                         value={state.locationRadius}
                         onChange={(e) => setState(s => ({ ...s, locationRadius: parseInt(e.target.value) }))}
-                        className="bg-bg-hover border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                        className="bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
                       >
                         {RADIUS_OPTIONS.map((r) => (
                           <option key={r} value={r}>{r} miles</option>
@@ -1019,7 +1089,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 onChange={(e) => setState(s => ({ ...s, primaryText: e.target.value }))}
                 placeholder="Your driveway looking rough? We'll make it look brand new..."
                 rows={4}
-                className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent resize-none"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent resize-none"
               />
               <p className="text-xs text-zinc-500 mt-1">125 characters recommended</p>
             </div>
@@ -1031,7 +1101,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 value={state.headline}
                 onChange={(e) => setState(s => ({ ...s, headline: e.target.value }))}
                 placeholder="Free Quote - Same Day Service"
-                className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
               />
               <p className="text-xs text-zinc-500 mt-1">40 characters max</p>
             </div>
@@ -1043,7 +1113,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 value={state.websiteUrl}
                 onChange={(e) => setState(s => ({ ...s, websiteUrl: e.target.value }))}
                 placeholder="https://example.com/quote"
-                className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
               />
             </div>
 
@@ -1052,7 +1122,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               <select
                 value={state.ctaType}
                 onChange={(e) => setState(s => ({ ...s, ctaType: e.target.value }))}
-                className="w-full bg-bg-hover border border-border rounded-lg px-4 py-3 focus:outline-none focus:border-accent"
+                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
               >
                 {CTA_OPTIONS.map((cta) => (
                   <option key={cta.value} value={cta.value}>
