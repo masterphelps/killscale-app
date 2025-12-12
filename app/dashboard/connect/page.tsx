@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
 import { Lock, Link2, Unlink, RefreshCw, CheckCircle, AlertCircle, Zap, LayoutDashboard, Calendar } from 'lucide-react'
 import Link from 'next/link'
@@ -52,6 +53,7 @@ const ACCOUNT_LIMITS: Record<string, number> = {
 export default function ConnectPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
+  const { refetch: refetchAccounts } = useAccount()
   const searchParams = useSearchParams()
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [loading, setLoading] = useState(true)
@@ -76,8 +78,8 @@ export default function ConnectPage() {
     if (success) {
       setMessage({ type: 'success', text: 'Meta account connected successfully!' })
       loadConnection()
-      // Dispatch custom event to notify sidebar of the new connection
-      window.dispatchEvent(new CustomEvent('meta-accounts-updated'))
+      // Refresh the global account context
+      refetchAccounts()
     } else if (error) {
       const errorMessages: Record<string, string> = {
         declined: 'You declined the permissions request.',
@@ -130,8 +132,8 @@ export default function ConnectPage() {
     setConnection(null)
     setMessage({ type: 'success', text: 'Meta account disconnected.' })
 
-    // Dispatch custom event to notify sidebar of the change
-    window.dispatchEvent(new CustomEvent('meta-accounts-updated'))
+    // Refresh the global account context
+    refetchAccounts()
   }
   
   const handleToggleDashboard = async (accountId: string) => {
@@ -182,8 +184,8 @@ export default function ConnectPage() {
           : `${account.name} added to dashboard`
       })
 
-      // Dispatch custom event to notify sidebar of the change
-      window.dispatchEvent(new CustomEvent('meta-accounts-updated'))
+      // Refresh the global account context
+      refetchAccounts()
     }
   }
   

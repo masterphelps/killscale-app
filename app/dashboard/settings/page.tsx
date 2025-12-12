@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Save, RotateCcw, Loader2, AlertCircle } from 'lucide-react'
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
+import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -28,39 +29,25 @@ type AdAccount = {
 
 export default function SettingsPage() {
   const { user } = useAuth()
+  const { currentAccountId, currentAccount: contextAccount } = useAccount()
+
   // Store as strings to allow proper editing (backspace, etc.)
   const [rules, setRules] = useState(DEFAULT_RULES)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const [currentAccount, setCurrentAccount] = useState<AdAccount | null>(null)
 
-  // Load current account and rules on mount
+  // Track last loaded account to detect changes
+  const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
+
+  // Load rules when account changes
   useEffect(() => {
     if (!user) return
+    if (currentAccountId === lastLoadedAccountId) return
 
-    const loadAccountAndRules = async () => {
-      // First, get the current selected account from meta_connections
-      const { data: connection } = await supabase
-        .from('meta_connections')
-        .select('ad_accounts, selected_account_id')
-        .eq('user_id', user.id)
-        .single()
-
-      let accountId: string | null = null
-      let accountName: string | null = null
-
-      if (connection?.selected_account_id && connection?.ad_accounts) {
-        accountId = connection.selected_account_id
-        const accounts = connection.ad_accounts as AdAccount[]
-        const account = accounts.find(a => a.id === accountId)
-        if (account) {
-          accountId = account.id
-          accountName = account.name
-          setCurrentAccount({ id: account.id, name: account.name })
-        }
-      }
+    const loadRules = async () => {
+      setLastLoadedAccountId(currentAccountId)
 
       // Load rules for this account (or user-level if no account)
       let query = supabase
@@ -68,8 +55,8 @@ export default function SettingsPage() {
         .select('*')
         .eq('user_id', user.id)
 
-      if (accountId) {
-        query = query.eq('ad_account_id', accountId)
+      if (currentAccountId) {
+        query = query.eq('ad_account_id', currentAccountId)
       } else {
         query = query.is('ad_account_id', null)
       }
@@ -89,21 +76,8 @@ export default function SettingsPage() {
       setLoading(false)
     }
 
-    loadAccountAndRules()
-  }, [user])
-
-  // Listen for account changes from sidebar
-  useEffect(() => {
-    const handleAccountsUpdated = () => {
-      // Reload when account changes
-      if (user) {
-        setLoading(true)
-        window.location.reload() // Simple reload to get new account's rules
-      }
-    }
-    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
-    return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
-  }, [user])
+    loadRules()
+  }, [user, currentAccountId, lastLoadedAccountId])
 
   const handleChange = (field: keyof typeof rules, value: string) => {
     setRules(prev => ({ ...prev, [field]: value }))
@@ -141,7 +115,7 @@ export default function SettingsPage() {
 
     const payload: Record<string, any> = {
       user_id: user.id,
-      ad_account_id: currentAccount?.id || null,
+      ad_account_id: currentAccountId || null,
       scale_roas: parsedRules.scale_roas,
       min_roas: parsedRules.min_roas,
       learning_spend: parsedRules.learning_spend,
@@ -183,22 +157,37 @@ export default function SettingsPage() {
     )
   }
 
+  // Require an account to be selected
+  if (!currentAccountId) {
+    return (
+      <div className="max-w-2xl">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold mb-1">Rules</h1>
+          <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
+        </div>
+        <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
+          <AlertCircle className="w-12 h-12 text-zinc-500 mx-auto mb-4" />
+          <h2 className="text-lg font-medium mb-2">No Account Selected</h2>
+          <p className="text-zinc-500 mb-4">
+            Select an ad account from the sidebar to configure rules.
+          </p>
+          <p className="text-xs text-zinc-600">
+            Rules are configured per ad account. Each account can have its own ROAS thresholds, learning spend, and CPR settings.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Rules</h1>
         <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
-        {currentAccount ? (
-          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
-            <span className="text-xs text-zinc-400">Rules for:</span>
-            <span className="text-sm font-medium text-accent">{currentAccount.name}</span>
-          </div>
-        ) : (
-          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-            <AlertCircle className="w-4 h-4 text-amber-500" />
-            <span className="text-sm text-amber-500">No account selected - rules will apply globally</span>
-          </div>
-        )}
+        <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
+          <span className="text-xs text-zinc-400">Rules for:</span>
+          <span className="text-sm font-medium text-accent">{contextAccount?.name}</span>
+        </div>
       </div>
 
       <div className="bg-bg-card border border-border rounded-xl p-6 space-y-6">

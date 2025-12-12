@@ -13,6 +13,7 @@ import { Rules } from '@/lib/supabase'
 import { formatCurrency, formatNumber, formatROAS, formatDateRange } from '@/lib/utils'
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
+import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
 
@@ -95,11 +96,6 @@ const formatCPC = (spend: number, clicks: number) => {
   return formatCurrency(spend / clicks)
 }
 
-type MetaConnection = {
-  ad_accounts: { id: string; name: string; in_dashboard?: boolean }[]
-  selected_account_id: string | null
-}
-
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
@@ -134,8 +130,7 @@ export default function DashboardPage() {
     return ''
   })
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
-  const [connection, setConnection] = useState<MetaConnection | null>(null)
-  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+    const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [viewMode, setViewMode] = useState<'simple' | 'detailed'>('simple') // Simple by default
   const [statusChangeModal, setStatusChangeModal] = useState<{
     isOpen: boolean
@@ -153,6 +148,7 @@ export default function DashboardPage() {
   } | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
+  const { currentAccountId, accounts } = useAccount()
   const searchParams = useSearchParams()
 
   // Handle deep-linking from alerts page
@@ -199,29 +195,15 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) {
       loadData()
-      loadConnection()
     }
   }, [user?.id]) // Use user.id to avoid re-fetching when Supabase refreshes the session token on tab focus
 
-  // Load rules when account changes
+  // Load rules when account changes (from context)
   useEffect(() => {
-    if (user && connection) {
-      const accountId = connection.selected_account_id ||
-        connection.ad_accounts?.find(a => a.in_dashboard)?.id
-      loadRules(accountId)
+    if (user) {
+      loadRules(currentAccountId)
     }
-  }, [user?.id, connection?.selected_account_id])
-
-  // Reload connection and rules when account is switched from sidebar
-  useEffect(() => {
-    const handleAccountsUpdated = () => {
-      if (user) {
-        loadConnection()
-      }
-    }
-    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
-    return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
-  }, [user?.id])
+  }, [user?.id, currentAccountId])
 
   // Track which sync param we've already processed (to prevent re-runs)
   const processedSyncRef = useRef<string | null>(null)
@@ -239,22 +221,8 @@ export default function DashboardPage() {
     }
   }, [searchParams, user?.id, canSync])
 
-  const loadConnection = async () => {
-    if (!user) return
-    
-    const { data, error } = await supabase
-      .from('meta_connections')
-      .select('ad_accounts, selected_account_id')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (data && !error) {
-      setConnection(data)
-    }
-  }
-
-  const selectedAccountId = connection?.selected_account_id ||
-    connection?.ad_accounts?.find(a => a.in_dashboard)?.id
+  // Use currentAccountId from AccountContext as the single source of truth
+  const selectedAccountId = currentAccountId
 
   // Track previous account to detect actual switches (not initial load)
   const prevAccountIdRef = useRef<string | undefined>(undefined)
@@ -364,19 +332,19 @@ export default function DashboardPage() {
   const loadRules = async (accountId?: string | null) => {
     if (!user) return
 
-    // Load rules for the specific account, or user-level if no account
-    let query = supabase
+    // No account selected - use default rules
+    if (!accountId) {
+      setRules(DEFAULT_RULES)
+      return
+    }
+
+    // Load rules for this specific account
+    const { data: rulesData, error } = await supabase
       .from('rules')
       .select('*')
       .eq('user_id', user.id)
-
-    if (accountId) {
-      query = query.eq('ad_account_id', accountId)
-    } else {
-      query = query.is('ad_account_id', null)
-    }
-
-    const { data: rulesData, error } = await query.single()
+      .eq('ad_account_id', accountId)
+      .single()
 
     if (rulesData && !error) {
       setRules({
@@ -392,7 +360,7 @@ export default function DashboardPage() {
         updated_at: rulesData.updated_at
       })
     } else {
-      // No account-specific rules, use defaults
+      // No rules configured for this account yet - use defaults
       setRules(DEFAULT_RULES)
     }
   }
@@ -487,8 +455,6 @@ export default function DashboardPage() {
       const result = await response.json()
       
       if (response.ok) {
-        // Refresh connection in background (don't await - prevents potential hanging)
-        loadConnection()
         // Silent refresh - don't show loading spinner, preserves table state
         await loadData(false)
         setLastSyncTime(new Date())
@@ -954,9 +920,9 @@ export default function DashboardPage() {
     const campaigns = new Set(filteredData.map(r => r.campaign_name))
     const adsets = new Set(filteredData.map(r => `${r.campaign_name}|${r.adset_name}`))
     const ads = new Set(filteredData.map(r => `${r.campaign_name}|${r.adset_name}|${r.ad_name}`))
-    const accounts = connection?.ad_accounts?.filter(a => a.in_dashboard)?.length || 0
-    return { accounts, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
-  }, [filteredData, connection])
+    // Use accounts from context (already filtered to dashboard accounts)
+    return { accounts: accounts.length, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
+  }, [filteredData, accounts])
 
   // Calculate total daily budgets (CBO + ABO) - only count active (non-paused) items
   // CBO = budget at campaign level, ABO = budget at adset level
@@ -1278,16 +1244,25 @@ export default function DashboardPage() {
               icon="🎯"
               color="amber"
             />
-            {/* Daily Budgets tile */}
-            <div className="relative overflow-hidden rounded-xl p-3 lg:p-5 col-span-2 lg:col-span-1 transition-all duration-300 bg-gradient-to-br from-zinc-800/80 to-zinc-900/90 border border-indigo-500/30 shadow-lg shadow-indigo-500/10 hover:border-indigo-500/50 hover:shadow-xl">
-              {/* Subtle gradient overlay */}
+            <StatCard
+              label="CPR/CPA"
+              value={totals.cpr > 0 ? formatCurrency(totals.cpr) : '—'}
+              icon="💳"
+              color="rose"
+            />
+          </div>
+
+          {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
+          <div className="hidden lg:grid grid-cols-5 gap-4 mb-8">
+            {/* Daily Budgets - left bookend */}
+            <div className="relative overflow-hidden rounded-xl p-4 transition-all duration-300 bg-gradient-to-br from-zinc-800/80 to-zinc-900/90 border border-indigo-500/30 shadow-lg shadow-indigo-500/10 hover:border-indigo-500/50 hover:shadow-xl">
               <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none" />
               <div className="relative">
-                <div className="flex items-center gap-1.5 lg:gap-2 mb-1 lg:mb-2">
-                  <span className="text-base lg:text-lg drop-shadow-sm">🎯</span>
-                  <span className="text-xs lg:text-sm text-zinc-400 uppercase tracking-wide">Daily Budgets</span>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg drop-shadow-sm">📊</span>
+                  <span className="text-sm text-zinc-400 uppercase tracking-wide">Daily Budgets</span>
                 </div>
-                <div className="text-xl lg:text-3xl font-bold font-mono text-white mb-2">
+                <div className="text-2xl font-bold font-mono text-white mb-2">
                   {formatCurrency(budgetTotals.total)}
                 </div>
                 <div className="flex items-center gap-3 text-xs">
@@ -1304,37 +1279,34 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-          </div>
-          
-          {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
-          <div className="hidden lg:grid grid-cols-6 gap-4 mb-8">
-            <StatCard 
-              label="CPM" 
-              value={formatCPM(totals.spend, totals.impressions)}
-              icon="👁️"
-            />
-            <StatCard 
-              label="CPC" 
-              value={formatCPC(totals.spend, totals.clicks)}
-              icon="👆"
-            />
-            <StatCard 
-              label="CTR" 
-              value={formatPercent(totals.ctr)}
-              icon="🎯"
-            />
+
+            {/* Middle metrics - 3 columns spanning the middle */}
+            <div className="col-span-3 grid grid-cols-4 gap-4">
+              <StatCard
+                label="CPM"
+                value={formatCPM(totals.spend, totals.impressions)}
+                icon="👁️"
+              />
+              <StatCard
+                label="CPC"
+                value={formatCPC(totals.spend, totals.clicks)}
+                icon="👆"
+              />
+              <StatCard
+                label="CTR"
+                value={formatPercent(totals.ctr)}
+                icon="🎯"
+              />
+              <StatCard
+                label="AOV"
+                value={formatAOV(totals.revenue, totals.purchases)}
+                icon="🧾"
+              />
+            </div>
+
+            {/* Conv Rate - right bookend */}
             <StatCard
-              label="CPR"
-              value={totals.cpr > 0 ? formatCurrency(totals.cpr) : '—'}
-              icon="💳"
-            />
-            <StatCard 
-              label="AOV" 
-              value={formatAOV(totals.revenue, totals.purchases)}
-              icon="🧾"
-            />
-            <StatCard 
-              label="Conv Rate" 
+              label="Conv Rate"
               value={formatPercent(totals.convRate)}
               icon="✅"
             />

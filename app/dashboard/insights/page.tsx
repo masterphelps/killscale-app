@@ -17,6 +17,7 @@ import { calculateAndromedaScore, CampaignData, BudgetChangeRecord, AndromedaSco
 import { Rules, calculateVerdict } from '@/lib/supabase'
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
+import { useAccount } from '@/lib/account'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
@@ -82,11 +83,6 @@ function getDateLabel(datePreset: string, customStartDate: string, customEndDate
 
   const preset = DATE_PRESETS.find(p => p.value === datePreset)
   return preset?.label || 'Select dates'
-}
-
-type MetaConnection = {
-  ad_accounts: { id: string; name: string; in_dashboard?: boolean }[]
-  selected_account_id: string | null
 }
 
 // Extended hierarchy item for action center
@@ -155,7 +151,6 @@ export default function InsightsPage() {
     }
     return ''
   })
-  const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [hasMounted, setHasMounted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAuditModal, setShowAuditModal] = useState(false)
@@ -183,6 +178,7 @@ export default function InsightsPage() {
 
   const { plan } = useSubscription()
   const { user } = useAuth()
+  const { currentAccountId, currentAccount } = useAccount()
   const { isPrivacyMode, maskText } = usePrivacyMode()
 
   // Privacy mode helper for entity names
@@ -206,40 +202,16 @@ export default function InsightsPage() {
     })
   }, [datePreset, customStartDate, customEndDate, hasMounted])
 
-  // Load connection on mount
+  // Load data when account or dates change (after mount to use correct dates)
   useEffect(() => {
-    if (user) {
-      loadConnection()
-    }
-  }, [user?.id])
-
-  // Load data when connection or dates change (after mount to use correct dates)
-  useEffect(() => {
-    if (user && connection && hasMounted) {
+    if (user && currentAccountId && hasMounted) {
       loadAllData()
     }
-  }, [user?.id, connection?.selected_account_id, datePreset, customStartDate, customEndDate, hasMounted])
+  }, [user?.id, currentAccountId, datePreset, customStartDate, customEndDate, hasMounted])
 
-  const loadConnection = async () => {
-    if (!user) return
-
-    const { data, error } = await supabase
-      .from('meta_connections')
-      .select('ad_accounts, selected_account_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (data && !error) {
-      setConnection(data)
-    }
-  }
-
-  const selectedAccountId = connection?.selected_account_id ||
-    connection?.ad_accounts?.find(a => a.in_dashboard)?.id
-
-  const selectedAccountName = connection?.ad_accounts?.find(
-    a => a.id === selectedAccountId
-  )?.name
+  // Use currentAccountId from AccountContext as the single source of truth
+  const selectedAccountId = currentAccountId
+  const selectedAccountName = currentAccount?.name
 
   // Calculate date range
   const getDateRange = () => {

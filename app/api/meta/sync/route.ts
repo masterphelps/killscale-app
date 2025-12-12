@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
     const adData = allInsights.map((insight: MetaInsight) => {
       adsWithInsights.add(insight.ad_id)
 
-      // Find purchase actions
+      // Find purchase actions (for revenue tracking)
       const purchases = insight.actions?.find(a =>
         a.action_type === 'purchase' || a.action_type === 'omni_purchase'
       )
@@ -288,11 +288,57 @@ export async function POST(request: NextRequest) {
         a.action_type === 'purchase' || a.action_type === 'omni_purchase'
       )
 
-      // Calculate results - for now, results = purchases (most common use case)
-      // Future: detect campaign objective and use appropriate action type
-      const resultCount = parseInt(purchases?.value || '0')
+      // Calculate results - look for the most relevant conversion action
+      // Priority: purchases > leads > registrations > custom conversions
+      const conversionActionTypes = [
+        // Purchases (ecommerce)
+        'purchase', 'omni_purchase',
+        // Leads
+        'lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead',
+        // Registrations
+        'complete_registration', 'offsite_conversion.fb_pixel_complete_registration',
+        // App installs
+        'app_install', 'mobile_app_install',
+        // Other valuable actions
+        'contact', 'submit_application', 'subscribe', 'start_trial',
+      ]
+
+      // Find the first matching conversion action
+      let resultAction = null
+      let resultType: string | null = null
+
+      // First check standard conversion types
+      for (const actionType of conversionActionTypes) {
+        const found = insight.actions?.find(a => a.action_type === actionType)
+        if (found && parseInt(found.value) > 0) {
+          resultAction = found
+          // Simplify the type for display
+          if (actionType.includes('purchase')) resultType = 'purchase'
+          else if (actionType.includes('lead')) resultType = 'lead'
+          else if (actionType.includes('registration')) resultType = 'registration'
+          else if (actionType.includes('install')) resultType = 'install'
+          else resultType = actionType.split('.').pop() || actionType
+          break
+        }
+      }
+
+      // If no standard conversion found, check for custom conversions only
+      // Be specific - don't catch view_content, add_to_cart, etc.
+      if (!resultAction) {
+        const customConversion = insight.actions?.find(a =>
+          a.action_type.startsWith('offsite_conversion.fb_pixel_custom.')
+        )
+        if (customConversion && parseInt(customConversion.value) > 0) {
+          resultAction = customConversion
+          // Extract the custom event name (last part after the dots)
+          const parts = customConversion.action_type.split('.')
+          resultType = parts[parts.length - 1] || 'conversion'
+        }
+      }
+
+      const resultCount = resultAction ? parseInt(resultAction.value) : 0
+      // Result value only exists for purchases (monetary value)
       const resultValue = purchaseValue ? parseFloat(purchaseValue.value) : null
-      const resultType = resultCount > 0 ? 'purchase' : null
 
       // Get status at each level using the new maps
       const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'

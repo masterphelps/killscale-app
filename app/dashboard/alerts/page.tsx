@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { useRouter } from 'next/navigation'
@@ -157,7 +158,6 @@ export default function AlertsPage() {
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
   const [filter, setFilter] = useState<'all' | 'history'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [currentAccount, setCurrentAccount] = useState<AdAccount | null>(null)
   const [statusModal, setStatusModal] = useState<{
     isOpen: boolean
     entityId: string
@@ -169,6 +169,7 @@ export default function AlertsPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { user } = useAuth()
   const { plan } = useSubscription()
+  const { currentAccountId, currentAccount } = useAccount()
   const router = useRouter()
 
   const canManageAds = plan === 'Pro' || plan === 'Agency'
@@ -196,47 +197,12 @@ export default function AlertsPage() {
     router.push(`/dashboard?${params.toString()}`)
   }
 
-  // Load current account
-  useEffect(() => {
-    const loadAccount = async () => {
-      if (!user) return
-
-      const { data: connection } = await supabase
-        .from('meta_connections')
-        .select('ad_accounts, selected_account_id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (connection?.selected_account_id && connection?.ad_accounts) {
-        const accounts = connection.ad_accounts as AdAccount[]
-        const account = accounts.find(a => a.id === connection.selected_account_id)
-        if (account) {
-          setCurrentAccount({ id: account.id, name: account.name })
-        }
-      }
-    }
-
-    loadAccount()
-  }, [user])
-
-  // Listen for account changes from sidebar
-  useEffect(() => {
-    const handleAccountsUpdated = () => {
-      if (user) {
-        setIsLoading(true)
-        window.location.reload()
-      }
-    }
-    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
-    return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
-  }, [user])
-
   const loadAlerts = async () => {
     if (!user) return
 
     try {
       // Load active alerts (with account filter if available)
-      const accountParam = currentAccount ? `&adAccountId=${currentAccount.id}` : ''
+      const accountParam = currentAccountId ? `&adAccountId=${currentAccountId}` : ''
       const res = await fetch(`/api/alerts?userId=${user.id}${accountParam}`)
       const data = await res.json()
 
@@ -262,7 +228,7 @@ export default function AlertsPage() {
     if (!user) return
 
     try {
-      const accountParam = currentAccount ? `&adAccountId=${currentAccount.id}` : ''
+      const accountParam = currentAccountId ? `&adAccountId=${currentAccountId}` : ''
       const res = await fetch(`/api/alerts/settings?userId=${user.id}${accountParam}`)
       const data = await res.json()
 
@@ -291,7 +257,7 @@ export default function AlertsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          adAccountId: currentAccount?.id || null,
+          adAccountId: currentAccountId || null,
           alertType,
           updates
         })
@@ -313,7 +279,7 @@ export default function AlertsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          adAccountId: currentAccount?.id || null
+          adAccountId: currentAccountId || null
         })
       })
 
@@ -331,7 +297,7 @@ export default function AlertsPage() {
       loadAlerts()
       loadSettings()
     }
-  }, [user, currentAccount])
+  }, [user, currentAccountId])
 
   const dismissAlert = async (alertId: string) => {
     if (!user) return

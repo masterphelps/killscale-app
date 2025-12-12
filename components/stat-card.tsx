@@ -10,7 +10,7 @@ type StatCardProps = {
   change?: { value: number; isPositive: boolean }
   icon?: string
   variant?: 'default' | 'highlight'
-  color?: 'default' | 'green' | 'blue' | 'purple' | 'amber'
+  color?: 'default' | 'green' | 'blue' | 'purple' | 'amber' | 'rose'
 }
 
 const colorStyles = {
@@ -43,6 +43,12 @@ const colorStyles = {
     shadow: 'shadow-lg shadow-amber-500/10',
     gradient: 'before:absolute before:inset-0 before:bg-gradient-to-br before:from-amber-500/10 before:to-transparent before:pointer-events-none',
     hoverBorder: 'hover:border-amber-500/50'
+  },
+  rose: {
+    border: 'border-rose-500/30',
+    shadow: 'shadow-lg shadow-rose-500/10',
+    gradient: 'before:absolute before:inset-0 before:bg-gradient-to-br before:from-rose-500/10 before:to-transparent before:pointer-events-none',
+    hoverBorder: 'hover:border-rose-500/50'
   }
 }
 

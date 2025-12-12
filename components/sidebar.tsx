@@ -23,31 +23,11 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { usePrivacyMode } from '@/lib/privacy-mode'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-type AdAccount = {
-  id: string
-  name: string
-  account_status: number
-  currency: string
-  in_dashboard?: boolean
-}
-
-type MetaConnection = {
-  ad_accounts: AdAccount[]
-  selected_account_id: string | null
-}
-
-type DataSource = 'none' | 'csv' | 'meta_api'
+import { useAccount } from '@/lib/account'
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/launch', label: 'Launch', icon: Rocket },
+  { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
@@ -59,21 +39,17 @@ export function Sidebar() {
   const { user, signOut } = useAuth()
   const { plan } = useSubscription()
   const { isPrivacyMode, togglePrivacyMode, maskText } = usePrivacyMode()
+  const { currentAccountId, currentAccount, accounts, dataSource, switchAccount } = useAccount()
+
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
-  const [connection, setConnection] = useState<MetaConnection | null>(null)
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
-  const [dataSource, setDataSource] = useState<DataSource>('none')
-  const [currentAccountId, setCurrentAccountId] = useState<string | null>(null)
   const [alertCount, setUnreadAlertCount] = useState(0)
 
   const rawUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
   const userName = maskText(rawUserName, 'Demo User')
-  
-  // Load Meta connection data and check current data source
+
+  // Load alert count
   useEffect(() => {
     if (user) {
-      loadConnection()
-      checkDataSource()
       loadAlertCount()
     }
   }, [user])
@@ -81,83 +57,14 @@ export function Sidebar() {
   // Periodically check alert count
   useEffect(() => {
     if (!user) return
-    
+
     const interval = setInterval(loadAlertCount, 30000) // Every 30 seconds
     return () => clearInterval(interval)
   }, [user])
 
-  // Listen for storage events to refresh when data changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      checkDataSource()
-    }
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener('focus', handleStorageChange)
-
-    // Also check periodically for changes (handles same-tab updates)
-    const interval = setInterval(checkDataSource, 2000)
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('focus', handleStorageChange)
-      clearInterval(interval)
-    }
-  }, [user])
-
-  // Listen for account updates from connect page
-  useEffect(() => {
-    const handleAccountsUpdated = () => {
-      loadConnection()
-    }
-    window.addEventListener('meta-accounts-updated', handleAccountsUpdated)
-
-    return () => {
-      window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
-    }
-  }, [user])
-
-  const loadConnection = async () => {
-    if (!user) return
-    
-    const { data, error } = await supabase
-      .from('meta_connections')
-      .select('ad_accounts, selected_account_id')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (data && !error) {
-      setConnection(data)
-      setSelectedAccountId(data.selected_account_id)
-    }
-  }
-
-  const checkDataSource = async () => {
-    if (!user) return
-    
-    // Check what type of data exists
-    const { data, error } = await supabase
-      .from('ad_data')
-      .select('source, ad_account_id')
-      .eq('user_id', user.id)
-      .limit(1)
-      .single()
-    
-    if (error || !data) {
-      setDataSource('none')
-      setCurrentAccountId(null)
-    } else if (data.source === 'meta_api') {
-      setDataSource('meta_api')
-      setCurrentAccountId(data.ad_account_id)
-    } else {
-      // Treat NULL or 'csv' as CSV data
-      setDataSource('csv')
-      setCurrentAccountId(null)
-    }
-  }
-
   const loadAlertCount = async () => {
     if (!user) return
-    
+
     try {
       const res = await fetch(`/api/alerts?userId=${user.id}&countOnly=true`)
       const data = await res.json()
@@ -169,55 +76,30 @@ export function Sidebar() {
     }
   }
 
-  // Get dashboard accounts - if none have in_dashboard set, show all accounts
-  const allAccounts = connection?.ad_accounts || []
-  const dashboardAccounts = allAccounts.filter(a => a.in_dashboard)
-  
-  // Fallback: if no accounts have in_dashboard set yet, use all accounts
-  const displayAccounts = dashboardAccounts.length > 0 ? dashboardAccounts : allAccounts
-  const selectedAccount = displayAccounts.find(a => a.id === selectedAccountId) || displayAccounts[0]
-  const currentMetaAccount = allAccounts.find(a => a.id === currentAccountId) // Search ALL accounts, not just display
-  
-  // Show dropdown if there are multiple dashboard accounts OR if there's at least one to switch to
-  const canShowDropdown = displayAccounts.length > 0
+  const canShowDropdown = accounts.length > 0
 
   // Determine what to show in the account selector
   const getDisplayName = () => {
     if (dataSource === 'none') return 'No data'
     if (dataSource === 'csv') return 'CSV Data'
     if (dataSource === 'meta_api') {
-      // Prioritize selected account (what user chose) over currentAccountId (random DB row)
-      if (selectedAccount) return maskText(selectedAccount.name, 'Demo Ad Account')
-      // Fallback to current data's account
-      if (currentMetaAccount) return maskText(currentMetaAccount.name, 'Demo Ad Account')
-      // Last resort
+      if (currentAccount) return maskText(currentAccount.name, 'Demo Ad Account')
       return 'Meta Account'
     }
     return 'No account selected'
   }
 
   const handleSelectAccount = async (accountId: string) => {
-    if (!user) return
-    
-    setSelectedAccountId(accountId)
     setShowAccountDropdown(false)
-    
-    // Save selection to database
-    await supabase
-      .from('meta_connections')
-      .update({ selected_account_id: accountId })
-      .eq('user_id', user.id)
-    
-    // Trigger sync for this account by navigating to dashboard with sync param
-    window.location.href = `/dashboard?sync=${accountId}`
+    await switchAccount(accountId)
   }
-  
+
   const upgradeText = plan === 'Free'
     ? { title: 'Upgrade to Starter', subtitle: 'More campaigns' }
     : plan === 'Starter'
       ? { title: 'Upgrade to Pro', subtitle: 'Unlimited campaigns' }
       : null
-  
+
   return (
     <aside className="w-60 bg-bg-sidebar border-r border-border fixed h-screen overflow-y-auto flex flex-col p-4">
       {/* Logo + Privacy Toggle (Agency only) */}
@@ -245,7 +127,7 @@ export function Sidebar() {
           </button>
         )}
       </div>
-      
+
       {/* Account Selector */}
       <div className="relative mb-6">
         <button
@@ -271,13 +153,13 @@ export function Sidebar() {
             )}
           </div>
         </button>
-        
+
         {/* Dropdown */}
         {showAccountDropdown && (
           <>
-            <div 
-              className="fixed inset-0 z-10" 
-              onClick={() => setShowAccountDropdown(false)} 
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setShowAccountDropdown(false)}
             />
             <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden">
               {/* Show CSV option if currently viewing CSV */}
@@ -287,24 +169,24 @@ export function Sidebar() {
                   CSV Data (current)
                 </div>
               )}
-              
+
               {/* Show Meta accounts */}
-              {displayAccounts.map((account, index) => (
+              {accounts.map((account, index) => (
                 <button
                   key={account.id}
                   onClick={() => handleSelectAccount(account.id)}
                   className={cn(
                     "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                    account.id === selectedAccountId && "bg-accent/10"
+                    account.id === currentAccountId && "bg-accent/10"
                   )}
                 >
                   <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
-                  {account.id === selectedAccountId && (
+                  {account.id === currentAccountId && (
                     <Check className="w-4 h-4 text-accent flex-shrink-0" />
                   )}
                 </button>
               ))}
-              
+
               <Link
                 href="/dashboard/connect"
                 className="w-full px-3 py-2 text-left text-sm text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors border-t border-border flex items-center gap-2"
@@ -315,10 +197,10 @@ export function Sidebar() {
             </div>
           </>
         )}
-        
+
         {/* No accounts tooltip */}
-        {dataSource === 'none' && displayAccounts.length === 0 && (
-          <Link 
+        {dataSource === 'none' && accounts.length === 0 && (
+          <Link
             href="/dashboard/connect"
             className="block mt-2 text-xs text-accent hover:text-accent-hover text-center"
           >
@@ -326,7 +208,7 @@ export function Sidebar() {
           </Link>
         )}
       </div>
-      
+
       {/* Navigation */}
       <nav className="space-y-1 mb-6">
         <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
@@ -336,15 +218,15 @@ export function Sidebar() {
           const Icon = item.icon
           const isActive = pathname === item.href
           const isAlerts = item.href === '/dashboard/alerts'
-          
+
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                isActive 
-                  ? 'bg-accent text-white' 
+                isActive
+                  ? 'bg-accent text-white'
                   : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
               )}
             >
@@ -353,8 +235,8 @@ export function Sidebar() {
               {isAlerts && alertCount > 0 && (
                 <span className={cn(
                   "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
-                  isActive 
-                    ? "bg-white/20 text-white" 
+                  isActive
+                    ? "bg-white/20 text-white"
                     : "bg-red-500 text-white"
                 )}>
                   {alertCount > 99 ? '99+' : alertCount}
@@ -364,7 +246,7 @@ export function Sidebar() {
           )
         })}
       </nav>
-      
+
       {/* Connect Account */}
       <div className="space-y-1 mb-6">
         <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
@@ -383,7 +265,7 @@ export function Sidebar() {
           Connect Account
         </Link>
       </div>
-      
+
       {/* Spacer */}
       <div className="flex-1" />
 
@@ -397,9 +279,9 @@ export function Sidebar() {
           <div className="text-xs text-zinc-500">{upgradeText.subtitle}</div>
         </Link>
       )}
-      
+
       {/* User Menu */}
-      <Link 
+      <Link
         href="/account"
         className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-bg-hover transition-colors"
       >
@@ -411,7 +293,7 @@ export function Sidebar() {
           <div className="text-xs text-zinc-500">{plan} Plan</div>
         </div>
       </Link>
-      
+
       {/* Support & Logout */}
       <div className="flex items-center gap-2 mt-2">
         <a
