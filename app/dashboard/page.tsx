@@ -602,9 +602,15 @@ export default function DashboardPage() {
   const userPlan = plan
 
   // Helper to calculate date range from preset for client-side filtering
+  // Use local date (not UTC) since Meta returns dates in ad account timezone
   const getDateRange = useMemo(() => {
     const today = new Date()
-    const formatDate = (d: Date) => d.toISOString().split('T')[0]
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
 
     if (datePreset === 'custom' && customStartDate && customEndDate) {
       return { since: customStartDate, until: customEndDate }

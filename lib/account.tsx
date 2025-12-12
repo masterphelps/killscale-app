@@ -50,8 +50,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // Load accounts and current selection
+  // Use user.id as dependency (not user object) to avoid re-fetching on token refresh
+  const userId = user?.id
   const fetchAccounts = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setAccounts([])
       setCurrentAccountId(null)
       setDataSource('none')
@@ -64,7 +66,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       const { data: connection, error } = await supabase
         .from('meta_connections')
         .select('ad_accounts, selected_account_id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single()
 
       if (error || !connection) {
@@ -72,7 +74,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         const { data: csvData } = await supabase
           .from('ad_data')
           .select('id')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .is('source', null)
           .limit(1)
           .single()
@@ -108,7 +110,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           await supabase
             .from('meta_connections')
             .update({ selected_account_id: selectedId })
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
         }
       }
 
@@ -119,7 +121,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [userId])
 
   // Initial load
   useEffect(() => {
@@ -128,14 +130,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
   // Switch account
   const switchAccount = useCallback(async (accountId: string) => {
-    if (!user || accountId === currentAccountId) return
+    if (!userId || accountId === currentAccountId) return
 
     try {
       // Update in database
       await supabase
         .from('meta_connections')
         .update({ selected_account_id: accountId })
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
 
       // Update local state immediately
       setCurrentAccountId(accountId)
@@ -143,7 +145,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('Failed to switch account:', err)
     }
-  }, [user, currentAccountId])
+  }, [userId, currentAccountId])
 
   // Get current account object
   const currentAccount = accounts.find(a => a.id === currentAccountId) || null
