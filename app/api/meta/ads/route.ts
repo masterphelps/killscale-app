@@ -34,8 +34,9 @@ export async function GET(request: NextRequest) {
 
     const accessToken = connection.access_token
 
-    // Fetch ads for the ad set
-    const adsUrl = `https://graph.facebook.com/v18.0/${adsetId}/ads?fields=id,name,status,creative{id,name,thumbnail_url,image_url,object_story_spec}&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]&access_token=${accessToken}`
+    // Fetch ads for the ad set - include all non-deleted statuses
+    // Statuses: ACTIVE, PAUSED, PENDING_REVIEW, IN_PROCESS, WITH_ISSUES, DISAPPROVED, PREAPPROVED, CAMPAIGN_PAUSED, ADSET_PAUSED
+    const adsUrl = `https://graph.facebook.com/v18.0/${adsetId}/ads?fields=id,name,status,effective_status,creative{id,name,thumbnail_url,image_url,object_story_spec}&filtering=[{"field":"effective_status","operator":"NOT_IN","value":["DELETED","ARCHIVED"]}]&access_token=${accessToken}`
 
     const response = await fetch(adsUrl)
     const result = await response.json()
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
         id: string
         name: string
         status: string
+        effective_status: string
         creative?: {
           id: string
           name?: string
@@ -66,6 +68,7 @@ export async function GET(request: NextRequest) {
         id: ad.id,
         name: ad.name,
         status: ad.status,
+        effectiveStatus: ad.effective_status,
         creative: ad.creative ? {
           id: ad.creative.id,
           name: ad.creative.name,

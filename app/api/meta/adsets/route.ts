@@ -35,7 +35,8 @@ export async function GET(request: NextRequest) {
     const accessToken = connection.access_token
 
     // Fetch ad sets for the campaign
-    const adsetsUrl = `https://graph.facebook.com/v18.0/${campaignId}/adsets?fields=id,name,status,daily_budget,lifetime_budget,optimization_goal,billing_event&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]&access_token=${accessToken}`
+    // Include CAMPAIGN_PAUSED to show ad sets when their parent campaign is paused
+    const adsetsUrl = `https://graph.facebook.com/v18.0/${campaignId}/adsets?fields=id,name,status,daily_budget,lifetime_budget,optimization_goal,billing_event&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED","CAMPAIGN_PAUSED"]}]&access_token=${accessToken}`
 
     const response = await fetch(adsetsUrl)
     const result = await response.json()

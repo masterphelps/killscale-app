@@ -54,6 +54,33 @@ export async function GET(request: NextRequest) {
     // Return campaigns list
     const campaigns = result.data || []
 
+    // Get ad set and ad counts from synced data in Supabase
+    const campaignIds = campaigns.map((c: { id: string }) => c.id)
+
+    // Query ad_data for counts - group by campaign and adset
+    const { data: adData } = await supabase
+      .from('ad_data')
+      .select('campaign_id, adset_id')
+      .eq('user_id', userId)
+      .eq('ad_account_id', adAccountId)
+      .in('campaign_id', campaignIds)
+
+    // Build counts map
+    const campaignCounts: Record<string, { adSetCount: number; adCount: number; adSetIds: Set<string> }> = {}
+
+    if (adData) {
+      for (const row of adData) {
+        if (!campaignCounts[row.campaign_id]) {
+          campaignCounts[row.campaign_id] = { adSetCount: 0, adCount: 0, adSetIds: new Set() }
+        }
+        campaignCounts[row.campaign_id].adCount++
+        if (!campaignCounts[row.campaign_id].adSetIds.has(row.adset_id)) {
+          campaignCounts[row.campaign_id].adSetIds.add(row.adset_id)
+          campaignCounts[row.campaign_id].adSetCount++
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       campaigns: campaigns.map((campaign: {
@@ -69,7 +96,9 @@ export async function GET(request: NextRequest) {
         status: campaign.status,
         dailyBudget: campaign.daily_budget ? parseInt(campaign.daily_budget) / 100 : null,
         lifetimeBudget: campaign.lifetime_budget ? parseInt(campaign.lifetime_budget) / 100 : null,
-        objective: campaign.objective
+        objective: campaign.objective,
+        adSetCount: campaignCounts[campaign.id]?.adSetCount || 0,
+        adCount: campaignCounts[campaign.id]?.adCount || 0
       }))
     })
 

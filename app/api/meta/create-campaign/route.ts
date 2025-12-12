@@ -10,6 +10,8 @@ interface Creative {
   type: 'image' | 'video'
   imageHash?: string
   videoId?: string
+  thumbnailUrl?: string  // Auto-generated thumbnail URL for videos
+  thumbnailHash?: string // Uploaded thumbnail image hash (more reliable)
   fileName: string
 }
 
@@ -19,6 +21,12 @@ interface LocationTarget {
   name?: string
   radius?: number
   countries?: string[]
+}
+
+interface TargetingOption {
+  id: string
+  name: string
+  type: 'interest' | 'behavior'
 }
 
 interface CreateCampaignRequest {
@@ -41,6 +49,9 @@ interface CreateCampaignRequest {
   websiteUrl: string
   ctaType: string
   creativeEnhancements: boolean
+  targetingMode?: 'broad' | 'custom'
+  selectedInterests?: TargetingOption[]
+  selectedBehaviors?: TargetingOption[]
 }
 
 // Map our objectives to Meta's
@@ -79,7 +90,10 @@ export async function POST(request: NextRequest) {
       description,
       websiteUrl,
       ctaType,
-      creativeEnhancements
+      creativeEnhancements,
+      targetingMode,
+      selectedInterests,
+      selectedBehaviors
     } = body
 
     // Validate required fields
@@ -216,6 +230,30 @@ export async function POST(request: NextRequest) {
           }
     }
 
+    // Add detailed targeting (flexible_spec) if custom mode
+    if (targetingMode === 'custom') {
+      const flexibleSpecEntry: Record<string, unknown> = {}
+
+      if (selectedInterests && selectedInterests.length > 0) {
+        flexibleSpecEntry.interests = selectedInterests.map(i => ({
+          id: i.id,
+          name: i.name
+        }))
+      }
+
+      if (selectedBehaviors && selectedBehaviors.length > 0) {
+        flexibleSpecEntry.behaviors = selectedBehaviors.map(b => ({
+          id: b.id,
+          name: b.name
+        }))
+      }
+
+      if (Object.keys(flexibleSpecEntry).length > 0) {
+        targeting.flexible_spec = [flexibleSpecEntry]
+        console.log('Custom targeting applied:', JSON.stringify(targeting.flexible_spec))
+      }
+    }
+
     // Ad set suffix based on creative enhancement setting
     // -ks = KillScale Recommended (no enhancements)
     // -ap = Meta Advantage+ (with enhancements)
@@ -268,40 +306,75 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < creatives.length; i++) {
       const creative = creatives[i]
 
-      // Build creative payload
-      const linkData: Record<string, unknown> = {
-        link: websiteUrl,
-        message: primaryText,
-        name: headline,
-        call_to_action: {
-          type: ctaType,
-          value: { link: websiteUrl }
+      // Build creative payload - different structure for images vs videos
+      let objectStorySpec: Record<string, unknown>
+
+      if (creative.type === 'video' && creative.videoId) {
+        // VIDEO: Use video_data structure
+        const videoData: Record<string, unknown> = {
+          video_id: creative.videoId,
+          message: primaryText,
+          title: headline,
+          link_description: description || undefined,
+          call_to_action: {
+            type: ctaType,
+            value: { link: websiteUrl }
+          }
         }
-      }
 
-      // Add description if provided
-      if (description) {
-        linkData.description = description
-      }
+        // Add thumbnail - required by Meta for video ads
+        // Prefer image_hash (uploaded thumbnail) over image_url (Meta auto-generated)
+        if (creative.thumbnailHash) {
+          videoData.image_hash = creative.thumbnailHash
+        } else if (creative.thumbnailUrl) {
+          videoData.image_url = creative.thumbnailUrl
+        }
 
-      // Add image or video
-      if (creative.type === 'image' && creative.imageHash) {
-        linkData.image_hash = creative.imageHash
-      } else if (creative.type === 'video' && creative.videoId) {
-        linkData.video_id = creative.videoId
+        objectStorySpec = {
+          page_id: pageId,
+          video_data: videoData
+        }
+      } else {
+        // IMAGE: Use link_data structure
+        const linkData: Record<string, unknown> = {
+          link: websiteUrl,
+          message: primaryText,
+          name: headline,
+          call_to_action: {
+            type: ctaType,
+            value: { link: websiteUrl }
+          }
+        }
+
+        if (description) {
+          linkData.description = description
+        }
+
+        if (creative.imageHash) {
+          linkData.image_hash = creative.imageHash
+        }
+
+        objectStorySpec = {
+          page_id: pageId,
+          link_data: linkData
+        }
       }
 
       const creativePayload: Record<string, unknown> = {
         name: `${campaignName} - Creative ${i + 1}`,
-        object_story_spec: {
-          page_id: pageId,
-          link_data: linkData
-        },
+        object_story_spec: objectStorySpec,
         access_token: accessToken
       }
 
-      // Note: degrees_of_freedom_spec with standard_enhancements is deprecated by Meta
-      // Creatives will use Meta's default enhancement behavior
+      // Log creative details for debugging
+      console.log(`Creating creative ${i + 1}:`, {
+        type: creative.type,
+        imageHash: creative.imageHash,
+        videoId: creative.videoId,
+        thumbnailHash: creative.thumbnailHash || 'none',
+        thumbnailUrl: creative.thumbnailUrl ? 'present' : 'missing',
+        fileName: creative.fileName
+      })
 
       const creativeResponse = await fetch(
         `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`,

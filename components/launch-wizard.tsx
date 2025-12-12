@@ -12,12 +12,18 @@ import {
   Search,
   Check,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  FolderOpen,
+  Image as ImageIcon,
+  Video
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
-import { cn } from '@/lib/utils'
+import { cn, formatFileSize } from '@/lib/utils'
 import { Select } from '@/components/ui/select'
+import { MediaLibraryModal } from '@/components/media-library-modal'
+import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
+import type { MediaImage, MediaVideo } from '@/app/api/meta/media/route'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,16 +41,25 @@ interface Campaign {
   id: string
   name: string
   status: string
+  adSetCount?: number
+  adCount?: number
 }
 
 interface Creative {
-  file: File
+  file?: File
   preview: string
   type: 'image' | 'video'
   uploading?: boolean
   uploaded?: boolean
+  uploadProgress?: number
   imageHash?: string
   videoId?: string
+  thumbnailUrl?: string  // Auto-generated thumbnail URL for videos
+  thumbnailHash?: string // Uploaded thumbnail image hash (more reliable)
+  // Library item fields
+  isFromLibrary?: boolean
+  libraryId?: string
+  name?: string
 }
 
 interface LocationResult {
@@ -52,6 +67,14 @@ interface LocationResult {
   name: string
   region: string
   countryName: string
+}
+
+interface TargetingOption {
+  id: string
+  name: string
+  type: 'interest' | 'behavior'
+  audienceSizeLower?: number
+  audienceSizeUpper?: number
 }
 
 interface WizardState {
@@ -69,6 +92,9 @@ interface WizardState {
   locationKey: string
   locationName: string
   locationRadius: number
+  targetingMode: 'broad' | 'custom'
+  selectedInterests: TargetingOption[]
+  selectedBehaviors: TargetingOption[]
   creatives: Creative[]
   creativeEnhancements: boolean
   primaryText: string
@@ -158,6 +184,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [step, setStep] = useState<Step>('account') // First step is now just Page selection
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [deploymentPhase, setDeploymentPhase] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
   // Data from APIs
@@ -166,8 +193,16 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [locationResults, setLocationResults] = useState<LocationResult[]>([])
   const [locationQuery, setLocationQuery] = useState('')
   const [searchingLocations, setSearchingLocations] = useState(false)
+  const [interestQuery, setInterestQuery] = useState('')
+  const [interestResults, setInterestResults] = useState<TargetingOption[]>([])
+  const [searchingInterests, setSearchingInterests] = useState(false)
+  const [behaviorQuery, setBehaviorQuery] = useState('')
+  const [behaviorResults, setBehaviorResults] = useState<TargetingOption[]>([])
+  const [searchingBehaviors, setSearchingBehaviors] = useState(false)
   const [conversionEvents, setConversionEvents] = useState<{ value: string; label: string }[]>(FALLBACK_CONVERSION_EVENTS)
   const [loadingPixelEvents, setLoadingPixelEvents] = useState(false)
+  const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
 
   // Form state - adAccountId comes from prop (sidebar context)
   const [state, setState] = useState<WizardState>({
@@ -185,6 +220,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     locationKey: '',
     locationName: '',
     locationRadius: 25,
+    targetingMode: 'broad',
+    selectedInterests: [],
+    selectedBehaviors: [],
     creatives: [],
     creativeEnhancements: false,
     primaryText: '',
@@ -302,8 +340,92 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     return () => clearTimeout(timer)
   }, [locationQuery, searchLocations])
 
-  // File handling
-  const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB - Vercel serverless limit
+  // Interest search
+  const searchInterests = useCallback(async (query: string) => {
+    if (!user || query.length < 2) {
+      setInterestResults([])
+      return
+    }
+
+    setSearchingInterests(true)
+    try {
+      const res = await fetch(`/api/meta/targeting?userId=${user.id}&type=interest&q=${encodeURIComponent(query)}`)
+      const data = await res.json()
+      if (data.options) {
+        setInterestResults(data.options)
+      }
+    } catch (err) {
+      console.error('Failed to search interests:', err)
+    } finally {
+      setSearchingInterests(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (interestQuery) {
+        searchInterests(interestQuery)
+      } else {
+        setInterestResults([])
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [interestQuery, searchInterests])
+
+  // Behavior search
+  const searchBehaviors = useCallback(async (query: string) => {
+    if (!user || query.length < 2) {
+      setBehaviorResults([])
+      return
+    }
+
+    setSearchingBehaviors(true)
+    try {
+      const res = await fetch(`/api/meta/targeting?userId=${user.id}&type=behavior&q=${encodeURIComponent(query)}`)
+      const data = await res.json()
+      if (data.options) {
+        setBehaviorResults(data.options)
+      }
+    } catch (err) {
+      console.error('Failed to search behaviors:', err)
+    } finally {
+      setSearchingBehaviors(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (behaviorQuery) {
+        searchBehaviors(behaviorQuery)
+      } else {
+        setBehaviorResults([])
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [behaviorQuery, searchBehaviors])
+
+  // Fetch access token for direct Meta uploads
+  const fetchAccessToken = useCallback(async () => {
+    if (!user) return
+    try {
+      const res = await fetch(`/api/meta/token?userId=${user.id}`)
+      const data = await res.json()
+      if (data.accessToken) {
+        setAccessToken(data.accessToken)
+      }
+    } catch (err) {
+      console.error('Failed to fetch access token:', err)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user) {
+      fetchAccessToken()
+    }
+  }, [user, fetchAccessToken])
+
+  // File handling - direct to Meta, so no size limit enforced by our server
+  const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1GB - Meta's limit for videos
 
   const processFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files)
@@ -317,21 +439,23 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
       if (!isImage && !isVideo) continue
 
-      // Check file size
-      if (file.size > MAX_FILE_SIZE) {
-        skippedFiles.push(`${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+      // Check file size (1GB for videos, 30MB for images)
+      const maxSize = isVideo ? MAX_FILE_SIZE : 30 * 1024 * 1024
+      if (file.size > maxSize) {
+        skippedFiles.push(`${file.name} (${formatFileSize(file.size)} - max ${isVideo ? '1GB' : '30MB'})`)
         continue
       }
 
       newCreatives.push({
         file,
         preview: URL.createObjectURL(file),
-        type: isImage ? 'image' : 'video'
+        type: isImage ? 'image' : 'video',
+        name: file.name
       })
     }
 
     if (skippedFiles.length > 0) {
-      setError(`Files too large (max 4MB): ${skippedFiles.join(', ')}. Please compress or use smaller files.`)
+      setError(`Files too large: ${skippedFiles.join(', ')}`)
     }
 
     setState(s => ({ ...s, creatives: [...s.creatives, ...newCreatives] }))
@@ -364,54 +488,105 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     }))
   }
 
-  // Upload creatives
-  const uploadCreatives = async () => {
-    if (!user) return false
+  // Handle library selection
+  const handleLibrarySelection = (items: ((MediaImage & { mediaType: 'image' }) | (MediaVideo & { mediaType: 'video' }))[]) => {
+    const newCreatives: Creative[] = items.map(item => {
+      if (item.mediaType === 'image') {
+        const img = item as MediaImage & { mediaType: 'image' }
+        return {
+          preview: img.url,
+          type: 'image' as const,
+          uploaded: true,
+          imageHash: img.hash,
+          isFromLibrary: true,
+          libraryId: img.id,
+          name: img.name
+        }
+      } else {
+        const vid = item as MediaVideo & { mediaType: 'video' }
+        return {
+          preview: vid.thumbnailUrl,
+          type: 'video' as const,
+          uploaded: true,
+          videoId: vid.id,
+          isFromLibrary: true,
+          libraryId: vid.id,
+          name: vid.title
+        }
+      }
+    })
+
+    // Add to existing creatives (up to 6 max)
+    setState(s => ({
+      ...s,
+      creatives: [...s.creatives, ...newCreatives].slice(0, 6)
+    }))
+  }
+
+  // Upload creatives directly to Meta
+  // Returns the updated creatives array (don't rely on state due to async)
+  const uploadCreatives = async (): Promise<{ success: boolean; creatives: Creative[] }> => {
+    if (!user || !accessToken) {
+      setError('Unable to upload - missing authentication')
+      return { success: false, creatives: state.creatives }
+    }
 
     const updatedCreatives = [...state.creatives]
     let allUploaded = true
+    const cleanAdAccountId = state.adAccountId.replace(/^act_/, '')
 
     for (let i = 0; i < updatedCreatives.length; i++) {
       const creative = updatedCreatives[i]
-      if (creative.uploaded) continue
 
-      updatedCreatives[i] = { ...creative, uploading: true }
-      setState(s => ({ ...s, creatives: updatedCreatives }))
+      // Skip already uploaded or library items
+      if (creative.uploaded || creative.isFromLibrary) continue
+      if (!creative.file) continue
+
+      updatedCreatives[i] = { ...creative, uploading: true, uploadProgress: 0 }
+      setState(s => ({ ...s, creatives: [...updatedCreatives] }))
 
       try {
-        const formData = new FormData()
-        formData.append('file', creative.file)
-        formData.append('userId', user.id)
-        formData.append('adAccountId', state.adAccountId)
+        const onProgress = (progress: number) => {
+          updatedCreatives[i] = { ...updatedCreatives[i], uploadProgress: progress }
+          setState(s => ({ ...s, creatives: [...updatedCreatives] }))
+        }
 
-        const res = await fetch('/api/meta/upload-creative', {
-          method: 'POST',
-          body: formData
-        })
+        let result
 
-        const data = await res.json()
+        if (creative.type === 'image') {
+          result = await uploadImageToMeta(creative.file, accessToken, cleanAdAccountId)
+        } else {
+          result = await uploadVideoToMeta(creative.file, accessToken, cleanAdAccountId, onProgress)
+        }
 
-        if (data.success) {
+        console.log('Upload result:', result)
+
+        if (result.success) {
           updatedCreatives[i] = {
             ...creative,
             uploading: false,
             uploaded: true,
-            imageHash: data.imageHash,
-            videoId: data.videoId
+            uploadProgress: 100,
+            imageHash: result.imageHash,
+            videoId: result.videoId,
+            thumbnailUrl: result.thumbnailUrl,
+            thumbnailHash: result.thumbnailHash
           }
         } else {
-          updatedCreatives[i] = { ...creative, uploading: false }
+          updatedCreatives[i] = { ...creative, uploading: false, uploadProgress: 0 }
+          console.error('Upload failed:', result.error)
           allUploaded = false
         }
-      } catch {
-        updatedCreatives[i] = { ...creative, uploading: false }
+      } catch (err) {
+        console.error('Upload error:', err)
+        updatedCreatives[i] = { ...creative, uploading: false, uploadProgress: 0 }
         allUploaded = false
       }
 
-      setState(s => ({ ...s, creatives: updatedCreatives }))
+      setState(s => ({ ...s, creatives: [...updatedCreatives] }))
     }
 
-    return allUploaded
+    return { success: allUploaded, creatives: updatedCreatives }
   }
 
   // Submit
@@ -420,21 +595,26 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
     setSubmitting(true)
     setError(null)
+    setDeploymentPhase('Uploading creatives to Meta...')
 
     try {
       // First upload any remaining creatives
-      const uploaded = await uploadCreatives()
-      if (!uploaded) {
+      const uploadResult = await uploadCreatives()
+      if (!uploadResult.success) {
         throw new Error('Failed to upload some creatives')
       }
 
-      // Get the updated creatives with hashes
-      const creativesWithHashes = state.creatives.map(c => ({
+      // Use the returned creatives (not state, due to async setState)
+      const creativesWithHashes = uploadResult.creatives.map(c => ({
         type: c.type,
         imageHash: c.imageHash,
         videoId: c.videoId,
-        fileName: c.file.name
+        thumbnailUrl: c.thumbnailUrl,
+        thumbnailHash: c.thumbnailHash,
+        fileName: c.name || c.file?.name || 'Untitled'
       }))
+
+      setDeploymentPhase('Creating campaign, ad set, and ads...')
 
       // Create campaign
       const res = await fetch('/api/meta/create-campaign', {
@@ -470,7 +650,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           description: state.description,
           websiteUrl: state.websiteUrl,
           ctaType: state.ctaType,
-          creativeEnhancements: state.creativeEnhancements
+          creativeEnhancements: state.creativeEnhancements,
+          targetingMode: state.targetingMode,
+          selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
+          selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
         })
       })
 
@@ -486,6 +669,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       setError(err instanceof Error ? err.message : 'Failed to create campaign')
     } finally {
       setSubmitting(false)
+      setDeploymentPhase('')
     }
   }
 
@@ -528,7 +712,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'details':
         return !!state.campaignName && state.dailyBudget > 0
       case 'targeting':
-        return state.locationType === 'country' || !!state.locationKey
+        const hasLocation = state.locationType === 'country' || !!state.locationKey
+        if (state.targetingMode === 'broad') {
+          return hasLocation
+        }
+        // Custom mode: require location AND at least one interest or behavior
+        return hasLocation && (state.selectedInterests.length > 0 || state.selectedBehaviors.length > 0)
       case 'creatives':
         return state.creatives.length > 0
       case 'copy':
@@ -700,7 +889,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 <Select
                   value={state.existingCampaignId}
                   onChange={(value) => setState(s => ({ ...s, existingCampaignId: value }))}
-                  options={existingCampaigns.map(c => ({ value: c.id, label: `${c.name} (${c.status})` }))}
+                  options={existingCampaigns.map(c => ({
+                    value: c.id,
+                    label: `${c.name} (${c.status})${c.adSetCount ? ` - ${c.adSetCount} ad set${c.adSetCount !== 1 ? 's' : ''}, ${c.adCount} ad${c.adCount !== 1 ? 's' : ''}` : ''}`
+                  }))}
                   placeholder="Choose a campaign..."
                 />
               </div>
@@ -908,6 +1100,235 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 Great for local service businesses like pressure washing, roofing, landscaping.
               </p>
             </div>
+
+            {/* Audience Targeting Mode */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Audience Targeting</label>
+              <div className="space-y-3">
+                <button
+                  onClick={() => setState(s => ({
+                    ...s,
+                    targetingMode: 'broad',
+                    selectedInterests: [],
+                    selectedBehaviors: []
+                  }))}
+                  className={cn(
+                    "w-full p-3 rounded-lg border text-left text-sm transition-all",
+                    state.targetingMode === 'broad'
+                      ? "border-accent bg-accent/10"
+                      : "border-border hover:border-zinc-600"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2",
+                      state.targetingMode === 'broad' ? "border-accent bg-accent" : "border-zinc-500"
+                    )} />
+                    <div>
+                      <span className="font-medium">Broad Audience</span>
+                      <span className="text-verdict-scale text-xs ml-2">(Recommended)</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1 ml-7">
+                    Let Meta's Advantage+ find your best customers automatically
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (!state.specialAdCategory) {
+                      setState(s => ({ ...s, targetingMode: 'custom' }))
+                    }
+                  }}
+                  disabled={!!state.specialAdCategory}
+                  className={cn(
+                    "w-full p-3 rounded-lg border text-left text-sm transition-all",
+                    state.targetingMode === 'custom'
+                      ? "border-accent bg-accent/10"
+                      : state.specialAdCategory
+                        ? "border-border opacity-50 cursor-not-allowed"
+                        : "border-border hover:border-zinc-600"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2",
+                      state.targetingMode === 'custom' ? "border-accent bg-accent" : "border-zinc-500"
+                    )} />
+                    <span className="font-medium">Custom Targeting</span>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1 ml-7">
+                    {state.specialAdCategory
+                      ? "Not available for Special Ad Categories"
+                      : "Specify interests and behaviors to narrow your audience"
+                    }
+                  </p>
+                </button>
+              </div>
+
+              {/* Custom Targeting Options */}
+              {state.targetingMode === 'custom' && !state.specialAdCategory && (
+                <div className="mt-4 space-y-4 pl-4 border-l-2 border-accent/30">
+                  {/* Interests Search */}
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-2">Interests</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                      <input
+                        type="text"
+                        value={interestQuery}
+                        onChange={(e) => setInterestQuery(e.target.value)}
+                        placeholder="Search interests (e.g., fitness, cooking)..."
+                        className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-accent"
+                      />
+                      {searchingInterests && (
+                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
+                      )}
+                    </div>
+
+                    {/* Interest Results Dropdown */}
+                    {interestResults.length > 0 && (
+                      <div className="mt-1 border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                        {interestResults.map((opt) => {
+                          const isSelected = state.selectedInterests.some(i => i.id === opt.id)
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                if (!isSelected) {
+                                  setState(s => ({
+                                    ...s,
+                                    selectedInterests: [...s.selectedInterests, opt]
+                                  }))
+                                }
+                                setInterestQuery('')
+                                setInterestResults([])
+                              }}
+                              disabled={isSelected}
+                              className={cn(
+                                "w-full px-3 py-2 text-left text-sm border-b border-border last:border-0",
+                                isSelected
+                                  ? "bg-accent/10 text-zinc-500"
+                                  : "hover:bg-bg-hover"
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span>{opt.name}</span>
+                                {isSelected && <Check className="w-4 h-4 text-accent" />}
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Selected Interests Chips */}
+                    {state.selectedInterests.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {state.selectedInterests.map((interest) => (
+                          <span
+                            key={interest.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-accent/20 text-accent rounded-full text-xs"
+                          >
+                            {interest.name}
+                            <button
+                              onClick={() => setState(s => ({
+                                ...s,
+                                selectedInterests: s.selectedInterests.filter(i => i.id !== interest.id)
+                              }))}
+                              className="hover:text-white"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Behaviors Search */}
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-2">Behaviors</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                      <input
+                        type="text"
+                        value={behaviorQuery}
+                        onChange={(e) => setBehaviorQuery(e.target.value)}
+                        placeholder="Search behaviors (e.g., engaged shoppers)..."
+                        className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-accent"
+                      />
+                      {searchingBehaviors && (
+                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
+                      )}
+                    </div>
+
+                    {/* Behavior Results Dropdown */}
+                    {behaviorResults.length > 0 && (
+                      <div className="mt-1 border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                        {behaviorResults.map((opt) => {
+                          const isSelected = state.selectedBehaviors.some(b => b.id === opt.id)
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                if (!isSelected) {
+                                  setState(s => ({
+                                    ...s,
+                                    selectedBehaviors: [...s.selectedBehaviors, opt]
+                                  }))
+                                }
+                                setBehaviorQuery('')
+                                setBehaviorResults([])
+                              }}
+                              disabled={isSelected}
+                              className={cn(
+                                "w-full px-3 py-2 text-left text-sm border-b border-border last:border-0",
+                                isSelected
+                                  ? "bg-accent/10 text-zinc-500"
+                                  : "hover:bg-bg-hover"
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span>{opt.name}</span>
+                                {isSelected && <Check className="w-4 h-4 text-accent" />}
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Selected Behaviors Chips */}
+                    {state.selectedBehaviors.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {state.selectedBehaviors.map((behavior) => (
+                          <span
+                            key={behavior.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-500/20 text-purple-400 rounded-full text-xs"
+                          >
+                            {behavior.name}
+                            <button
+                              onClick={() => setState(s => ({
+                                ...s,
+                                selectedBehaviors: s.selectedBehaviors.filter(b => b.id !== behavior.id)
+                              }))}
+                              className="hover:text-white"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-zinc-500">
+                    People matching ANY of these interests or behaviors will see your ads.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )
 
@@ -930,81 +1351,143 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               </div>
             )}
 
-            {/* Upload area */}
+            {/* Upload options */}
             <div>
-              <label className="block text-sm font-medium mb-2">Upload Creatives</label>
-              <div
-                className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-zinc-600 transition-colors"
-                onClick={() => document.getElementById('file-input')?.click()}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                <Upload className="w-10 h-10 text-zinc-500 mx-auto mb-3" />
-                <p className="text-sm text-zinc-400 mb-1">
-                  Drag images or videos here, or click to browse
-                </p>
-                <p className="text-xs text-zinc-600">
-                  JPG, PNG, MP4, MOV • Max 4MB per file • Max 6 creatives
-                </p>
-                <p className="text-xs text-zinc-500 mt-2">
-                  Tip: Compress large videos with HandBrake or similar tools
-                </p>
-                <input
-                  id="file-input"
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
+              <label className="block text-sm font-medium mb-3">Add Creatives</label>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Upload new */}
+                <div
+                  className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-zinc-600 hover:bg-bg-hover/50 transition-all"
+                  onClick={() => document.getElementById('file-input')?.click()}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                >
+                  <Upload className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-white mb-1">Upload New</p>
+                  <p className="text-xs text-zinc-500">
+                    Images up to 30MB • Videos up to 1GB
+                  </p>
+                  <input
+                    id="file-input"
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* Browse library */}
+                <button
+                  onClick={() => setMediaLibraryOpen(true)}
+                  className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-zinc-600 hover:bg-bg-hover/50 transition-all"
+                >
+                  <FolderOpen className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-white mb-1">Browse Library</p>
+                  <p className="text-xs text-zinc-500">
+                    Select from existing uploads
+                  </p>
+                </button>
               </div>
             </div>
 
             {/* Previews */}
             {state.creatives.length > 0 && (
-              <div className="grid grid-cols-3 gap-3">
-                {state.creatives.map((creative, index) => (
-                  <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-bg-hover">
-                    {creative.type === 'image' ? (
-                      <img
-                        src={creative.preview}
-                        alt={`Creative ${index + 1}`}
-                        className="w-full h-full object-cover pointer-events-none"
-                      />
-                    ) : (
-                      <video
-                        src={creative.preview}
-                        className="w-full h-full object-cover pointer-events-none"
-                        muted
-                        playsInline
-                      />
-                    )}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-medium">
+                    Selected ({state.creatives.length}/6)
+                  </label>
+                  {state.creatives.length > 0 && (
                     <button
-                      onClick={() => removeCreative(index)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center hover:bg-black/70 transition-colors"
+                      onClick={() => setState(s => ({ ...s, creatives: [] }))}
+                      className="text-xs text-zinc-500 hover:text-white transition-colors"
                     >
-                      <X className="w-4 h-4" />
+                      Clear all
                     </button>
-                    {creative.uploading && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <Loader2 className="w-6 h-6 animate-spin" />
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {state.creatives.map((creative, index) => (
+                    <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-bg-hover group">
+                      {creative.type === 'image' ? (
+                        <img
+                          src={creative.preview}
+                          alt={creative.name || `Creative ${index + 1}`}
+                          className="w-full h-full object-cover pointer-events-none"
+                        />
+                      ) : (
+                        <video
+                          src={creative.preview}
+                          className="w-full h-full object-cover pointer-events-none"
+                          muted
+                          playsInline
+                        />
+                      )}
+
+                      {/* Type badge */}
+                      <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 rounded text-xs flex items-center gap-1">
+                        {creative.type === 'video' ? (
+                          <Video className="w-3 h-3" />
+                        ) : (
+                          <ImageIcon className="w-3 h-3" />
+                        )}
+                        {creative.isFromLibrary && (
+                          <span className="text-accent">Library</span>
+                        )}
                       </div>
-                    )}
-                    {creative.uploaded && (
-                      <div className="absolute bottom-2 left-2 w-5 h-5 bg-verdict-scale rounded-full flex items-center justify-center">
-                        <Check className="w-3 h-3" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {state.creatives.length < 6 && (
-                  <button
-                    onClick={() => document.getElementById('file-input')?.click()}
-                    className="aspect-square rounded-lg border-2 border-dashed border-border flex items-center justify-center hover:border-zinc-600 transition-colors"
-                  >
-                    <span className="text-2xl text-zinc-500">+</span>
-                  </button>
-                )}
+
+                      {/* Remove button */}
+                      <button
+                        onClick={() => removeCreative(index)}
+                        className="absolute top-2 right-2 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+
+                      {/* Upload progress */}
+                      {creative.uploading && (
+                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2">
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                          {creative.uploadProgress !== undefined && (
+                            <>
+                              <span className="text-sm font-medium">{creative.uploadProgress}%</span>
+                              <div className="w-3/4 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-accent transition-all duration-300"
+                                  style={{ width: `${creative.uploadProgress}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Uploaded checkmark */}
+                      {creative.uploaded && !creative.uploading && (
+                        <div className="absolute bottom-2 right-2 w-5 h-5 bg-verdict-scale rounded-full flex items-center justify-center">
+                          <Check className="w-3 h-3" />
+                        </div>
+                      )}
+
+                      {/* File name */}
+                      {creative.name && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+                          <p className="text-xs text-white truncate">{creative.name}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {state.creatives.length < 6 && (
+                    <button
+                      onClick={() => document.getElementById('file-input')?.click()}
+                      className="aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 hover:border-zinc-600 transition-colors"
+                    >
+                      <span className="text-2xl text-zinc-500">+</span>
+                      <span className="text-xs text-zinc-600">Add more</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1143,6 +1626,15 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 </span>
               </div>
               <div className="flex justify-between">
+                <span className="text-zinc-400">Audience</span>
+                <span className="font-medium">
+                  {state.targetingMode === 'broad'
+                    ? 'Broad (Advantage+)'
+                    : `Custom (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
+                  }
+                </span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-zinc-400">Creatives</span>
                 <span className="font-medium">{state.creatives.length} {state.creatives.length === 1 ? 'creative' : 'creatives'}</span>
               </div>
@@ -1159,7 +1651,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               </div>
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />
-                <span>1 Ad Set - Advantage+ Audience (broad)</span>
+                <span>
+                  {state.targetingMode === 'broad'
+                    ? '1 Ad Set - Advantage+ Audience (broad)'
+                    : `1 Ad Set - Custom targeting (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
+                  }
+                </span>
               </div>
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />
@@ -1180,6 +1677,43 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 </p>
               </div>
             </div>
+
+            {/* Deployment Progress */}
+            {submitting && deploymentPhase && (
+              <div className="bg-accent/10 border border-accent/30 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 text-accent animate-spin" />
+                  <div>
+                    <p className="font-medium text-accent">{deploymentPhase}</p>
+                    <p className="text-sm text-zinc-400 mt-1">This may take a moment for video uploads...</p>
+                  </div>
+                </div>
+                {/* Show individual creative progress */}
+                {state.creatives.some(c => c.uploading) && (
+                  <div className="mt-4 space-y-2">
+                    {state.creatives.map((creative, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        {creative.type === 'video' ? (
+                          <Video className="w-4 h-4 text-zinc-400" />
+                        ) : (
+                          <ImageIcon className="w-4 h-4 text-zinc-400" />
+                        )}
+                        <span className="text-zinc-300 truncate flex-1">
+                          {creative.name || creative.file?.name || `Creative ${i + 1}`}
+                        </span>
+                        {creative.uploading ? (
+                          <span className="text-accent">{creative.uploadProgress || 0}%</span>
+                        ) : creative.uploaded ? (
+                          <Check className="w-4 h-4 text-verdict-scale" />
+                        ) : (
+                          <span className="text-zinc-500">Pending</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="bg-verdict-kill/10 border border-verdict-kill/30 rounded-lg p-4 text-sm text-verdict-kill">
@@ -1203,76 +1737,91 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onCancel}
-            className="p-2 hover:bg-bg-hover rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <Rocket className="w-5 h-5 text-accent" />
-              Launch Campaign
-            </h1>
-            <p className="text-sm text-zinc-500">{stepTitles[step]}</p>
+    <>
+      <div className="max-w-2xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onCancel}
+              className="p-2 hover:bg-bg-hover rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <Rocket className="w-5 h-5 text-accent" />
+                Launch Campaign
+              </h1>
+              <p className="text-sm text-zinc-500">{stepTitles[step]}</p>
+            </div>
           </div>
+        </div>
+
+        {/* Content */}
+        <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+          {renderStep()}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={handleBack}
+            disabled={!getPrevStep()}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+              getPrevStep()
+                ? "text-zinc-400 hover:text-white hover:bg-bg-hover"
+                : "text-zinc-700 cursor-not-allowed"
+            )}
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Back
+          </button>
+
+          {step === 'review' ? (
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-6 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Deploying...
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-4 h-4" />
+                  Deploy to Meta
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={handleNext}
+              disabled={!canProceed()}
+              className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-6 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Content */}
-      <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
-        {renderStep()}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={handleBack}
-          disabled={!getPrevStep()}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-            getPrevStep()
-              ? "text-zinc-400 hover:text-white hover:bg-bg-hover"
-              : "text-zinc-700 cursor-not-allowed"
-          )}
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Back
-        </button>
-
-        {step === 'review' ? (
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-6 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Deploying...
-              </>
-            ) : (
-              <>
-                <Rocket className="w-4 h-4" />
-                Deploy to Meta
-              </>
-            )}
-          </button>
-        ) : (
-          <button
-            onClick={handleNext}
-            disabled={!canProceed()}
-            className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-6 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Continue
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-    </div>
+      {/* Media Library Modal */}
+      {user && (
+        <MediaLibraryModal
+          isOpen={mediaLibraryOpen}
+          onClose={() => setMediaLibraryOpen(false)}
+          userId={user.id}
+          adAccountId={state.adAccountId}
+          selectedItems={[]}
+          onSelectionChange={handleLibrarySelection}
+          maxSelection={6 - state.creatives.length}
+        />
+      )}
+    </>
   )
 }

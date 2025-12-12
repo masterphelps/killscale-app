@@ -530,7 +530,7 @@ export function PerformanceTable({
   const filteredHierarchy = useMemo(() => {
     // First filter by paused status if needed
     let filtered = hierarchy
-    
+
     if (!includePaused) {
       // Exclude paused items at all levels
       filtered = hierarchy
