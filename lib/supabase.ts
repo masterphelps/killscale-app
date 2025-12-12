@@ -42,6 +42,8 @@ export type Rules = {
   min_roas: number
   learning_spend: number
   scale_percentage: number
+  target_cpr: number | null  // CPR threshold for SCALE (for lead-gen campaigns)
+  max_cpr: number | null     // CPR threshold for KILL (for lead-gen campaigns)
   created_at: string
   updated_at: string
 }

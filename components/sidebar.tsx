@@ -16,7 +16,8 @@ import {
   Lightbulb,
   EyeOff,
   Eye,
-  HelpCircle
+  HelpCircle,
+  Rocket
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -46,6 +47,7 @@ type DataSource = 'none' | 'csv' | 'meta_api'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { href: '/dashboard/launch', label: 'Launch', icon: Rocket },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
@@ -184,10 +186,10 @@ export function Sidebar() {
     if (dataSource === 'none') return 'No data'
     if (dataSource === 'csv') return 'CSV Data'
     if (dataSource === 'meta_api') {
-      // First try to find the account by currentAccountId
-      if (currentMetaAccount) return maskText(currentMetaAccount.name, 'Demo Ad Account')
-      // Fallback to selected account
+      // Prioritize selected account (what user chose) over currentAccountId (random DB row)
       if (selectedAccount) return maskText(selectedAccount.name, 'Demo Ad Account')
+      // Fallback to current data's account
+      if (currentMetaAccount) return maskText(currentMetaAccount.name, 'Demo Ad Account')
       // Last resort
       return 'Meta Account'
     }
@@ -293,11 +295,11 @@ export function Sidebar() {
                   onClick={() => handleSelectAccount(account.id)}
                   className={cn(
                     "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                    dataSource === 'meta_api' && account.id === currentAccountId && "bg-accent/10"
+                    account.id === selectedAccountId && "bg-accent/10"
                   )}
                 >
                   <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
-                  {dataSource === 'meta_api' && account.id === currentAccountId && (
+                  {account.id === selectedAccountId && (
                     <Check className="w-4 h-4 text-accent flex-shrink-0" />
                   )}
                 </button>

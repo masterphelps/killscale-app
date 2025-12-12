@@ -33,6 +33,8 @@ const DEFAULT_RULES: Rules = {
   min_roas: 1.5,
   learning_spend: 100,
   scale_percentage: 20,
+  target_cpr: null,
+  max_cpr: null,
   created_at: '',
   updated_at: ''
 }
@@ -49,7 +51,7 @@ type DatePreference = {
 function loadDatePreference(): DatePreference {
   if (typeof window === 'undefined') return { preset: 'last_30d' }
   try {
-    const stored = localStorage.getItem(DATE_STORAGE_KEY)
+    const stored = sessionStorage.getItem(DATE_STORAGE_KEY)
     if (stored) {
       return JSON.parse(stored)
     }
@@ -62,7 +64,7 @@ function loadDatePreference(): DatePreference {
 function saveDatePreference(pref: DatePreference): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(DATE_STORAGE_KEY, JSON.stringify(pref))
+    sessionStorage.setItem(DATE_STORAGE_KEY, JSON.stringify(pref))
   } catch (e) {
     // Ignore storage errors
   }
@@ -132,9 +134,27 @@ export default function InsightsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [datePreset, setDatePreset] = useState('last_30d')
-  const [customStartDate, setCustomStartDate] = useState('')
-  const [customEndDate, setCustomEndDate] = useState('')
+  const [datePreset, setDatePreset] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pref = loadDatePreference()
+      return pref.preset
+    }
+    return 'last_30d'
+  })
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pref = loadDatePreference()
+      return pref.customStart || ''
+    }
+    return ''
+  })
+  const [customEndDate, setCustomEndDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pref = loadDatePreference()
+      return pref.customEnd || ''
+    }
+    return ''
+  })
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [hasMounted, setHasMounted] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -171,12 +191,8 @@ export default function InsightsPage() {
     return entityType === 'campaign' ? `Campaign ${index + 1}` : `Ad Set ${index + 1}`
   }
 
-  // Load date preferences from localStorage on mount
+  // Mark as mounted (date preferences already loaded in useState initializers)
   useEffect(() => {
-    const pref = loadDatePreference()
-    setDatePreset(pref.preset)
-    if (pref.customStart) setCustomStartDate(pref.customStart)
-    if (pref.customEnd) setCustomEndDate(pref.customEnd)
     setHasMounted(true)
   }, [])
 
@@ -339,6 +355,8 @@ export default function InsightsPage() {
           min_roas: parseFloat(rulesData.min_roas) || DEFAULT_RULES.min_roas,
           learning_spend: parseFloat(rulesData.learning_spend) || DEFAULT_RULES.learning_spend,
           scale_percentage: parseFloat(rulesData.scale_percentage) || DEFAULT_RULES.scale_percentage,
+          target_cpr: rulesData.target_cpr ?? null,
+          max_cpr: rulesData.max_cpr ?? null,
           created_at: rulesData.created_at,
           updated_at: rulesData.updated_at
         })

@@ -14,6 +14,8 @@ export type CSVRow = {
   spend: number
   purchases: number
   revenue: number
+  // Account ID for multi-account filtering (null for CSV uploads)
+  ad_account_id?: string | null
   // Status fields from Meta API (null for CSV uploads)
   status?: string | null
   adset_status?: string | null
@@ -23,6 +25,10 @@ export type CSVRow = {
   campaign_lifetime_budget?: number | null
   adset_daily_budget?: number | null
   adset_lifetime_budget?: number | null
+  // Results-based tracking fields
+  results?: number
+  result_value?: number | null
+  result_type?: string | null
 }
 
 const COLUMN_MAP: Record<string, string> = {

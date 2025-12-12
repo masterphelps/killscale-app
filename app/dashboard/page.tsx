@@ -31,6 +31,8 @@ const DEFAULT_RULES: Rules = {
   min_roas: 1.5,
   learning_spend: 100,
   scale_percentage: 20,
+  target_cpr: null,
+  max_cpr: null,
   created_at: '',
   updated_at: ''
 }
@@ -47,7 +49,7 @@ type DatePreference = {
 function loadDatePreference(): DatePreference {
   if (typeof window === 'undefined') return { preset: 'last_30d' }
   try {
-    const stored = localStorage.getItem(DATE_STORAGE_KEY)
+    const stored = sessionStorage.getItem(DATE_STORAGE_KEY)
     if (stored) {
       return JSON.parse(stored)
     }
@@ -60,7 +62,7 @@ function loadDatePreference(): DatePreference {
 function saveDatePreference(pref: DatePreference): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(DATE_STORAGE_KEY, JSON.stringify(pref))
+    sessionStorage.setItem(DATE_STORAGE_KEY, JSON.stringify(pref))
   } catch (e) {
     // Ignore storage errors
   }
@@ -107,12 +109,30 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
-  const [includePaused, setIncludePaused] = useState(false)
+  const [includePaused, setIncludePaused] = useState(true)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [datePreset, setDatePreset] = useState('last_30d')
-  const [customStartDate, setCustomStartDate] = useState('')
-  const [customEndDate, setCustomEndDate] = useState('')
+  const [datePreset, setDatePreset] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pref = loadDatePreference()
+      return pref.preset
+    }
+    return 'last_30d'
+  })
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pref = loadDatePreference()
+      return pref.customStart || ''
+    }
+    return ''
+  })
+  const [customEndDate, setCustomEndDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pref = loadDatePreference()
+      return pref.customEnd || ''
+    }
+    return ''
+  })
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
@@ -154,16 +174,10 @@ export default function DashboardPage() {
     }
   }, [searchParams])
 
-  // Load saved settings on mount (view mode and date preferences)
+  // Load saved view mode on mount
   useEffect(() => {
     const savedViewMode = localStorage.getItem('killscale_viewMode')
     if (savedViewMode === 'simple' || savedViewMode === 'detailed') setViewMode(savedViewMode)
-
-    // Load date preferences from shared storage
-    const pref = loadDatePreference()
-    setDatePreset(pref.preset)
-    if (pref.customStart) setCustomStartDate(pref.customStart)
-    if (pref.customEnd) setCustomEndDate(pref.customEnd)
   }, [])
 
   // Save view mode when it changes
@@ -209,10 +223,15 @@ export default function DashboardPage() {
     return () => window.removeEventListener('meta-accounts-updated', handleAccountsUpdated)
   }, [user?.id])
 
+  // Track which sync param we've already processed (to prevent re-runs)
+  const processedSyncRef = useRef<string | null>(null)
+
   // Auto-sync when coming from sidebar account selection
   useEffect(() => {
     const syncAccountId = searchParams.get('sync')
-    if (syncAccountId && user && canSync) {
+    if (syncAccountId && user && canSync && processedSyncRef.current !== syncAccountId) {
+      // Mark as processed to prevent re-runs
+      processedSyncRef.current = syncAccountId
       // Clear the URL param
       window.history.replaceState({}, '', '/dashboard')
       // Trigger sync for the selected account
@@ -234,8 +253,22 @@ export default function DashboardPage() {
     }
   }
 
-  const selectedAccountId = connection?.selected_account_id || 
+  const selectedAccountId = connection?.selected_account_id ||
     connection?.ad_accounts?.find(a => a.in_dashboard)?.id
+
+  // Track previous account to detect actual switches (not initial load)
+  const prevAccountIdRef = useRef<string | undefined>(undefined)
+
+  // Reset campaign selection when switching accounts (not on initial load)
+  useEffect(() => {
+    if (selectedAccountId) {
+      // Only reset if this is an actual switch (not initial load)
+      if (prevAccountIdRef.current && prevAccountIdRef.current !== selectedAccountId) {
+        setSelectedCampaigns(new Set())
+      }
+      prevAccountIdRef.current = selectedAccountId
+    }
+  }, [selectedAccountId])
 
   // Track if this is the initial mount (to prevent auto-sync on page load)
   const isInitialMount = useRef(true)
@@ -255,32 +288,15 @@ export default function DashboardPage() {
     return livePresets.includes(datePreset)
   }, [datePreset, customEndDate])
 
-  // Auto-sync when date preset changes (debounced, skip initial mount)
-  // NOTE: For custom dates, sync is triggered explicitly by handleCustomDateApply, not this effect
+  // NOTE: Sync uses the selected date range from the date picker
+  // When user changes date preset, they need to click Sync to fetch new data
+  // Client-side filtering allows instant switching within the synced range
   useEffect(() => {
-    // Skip if we don't have the required data yet
-    if (!canSync || !selectedAccountId || !user) {
-      return
-    }
-
-    // Skip initial mount - only sync when date actually changes after initial load
+    // Just track mount state for other effects
     if (isInitialMount.current) {
       isInitialMount.current = false
-      return
     }
-
-    // Skip for custom dates - those are handled by handleCustomDateApply
-    if (datePreset === 'custom') {
-      return
-    }
-
-    // Debounce to avoid rapid syncs when clicking through presets
-    const timeout = setTimeout(() => {
-      handleSyncAccount(selectedAccountId)
-    }, 500)
-
-    return () => clearTimeout(timeout)
-  }, [datePreset, selectedAccountId, canSync, user?.id])
+  }, [datePreset])
 
   // Auto-refresh every 5 minutes when viewing live data
   useEffect(() => {
@@ -309,6 +325,7 @@ export default function DashboardPage() {
 
     if (adData && !error) {
       const rows = adData.map(row => ({
+        ad_account_id: row.ad_account_id, // Include for account filtering
         date_start: row.date_start,
         date_end: row.date_end,
         campaign_name: row.campaign_name,
@@ -322,6 +339,10 @@ export default function DashboardPage() {
         spend: parseFloat(row.spend),
         purchases: row.purchases,
         revenue: parseFloat(row.revenue),
+        // Results-based tracking fields
+        results: row.results || 0,
+        result_value: row.result_value ?? null,
+        result_type: row.result_type ?? null,
         status: row.status, // Ad's effective status (includes parent inheritance)
         adset_status: row.adset_status, // Adset's own status
         campaign_status: row.campaign_status, // Campaign's own status
@@ -333,28 +354,8 @@ export default function DashboardPage() {
       }))
       setData(rows)
 
-      // Always select all campaigns AND ABO adsets on initial load, or if selection is empty
-      if (!hasLoadedOnce || selectedCampaigns.size === 0) {
-        const selection = new Set<string>()
-        const seenAdsets = new Set<string>()
-
-        rows.forEach(r => {
-          // Add campaign
-          selection.add(r.campaign_name)
-
-          // Add ABO adsets (adset has budget, campaign doesn't)
-          const adsetKey = `${r.campaign_name}::${r.adset_name}`
-          if (!seenAdsets.has(adsetKey)) {
-            seenAdsets.add(adsetKey)
-            const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
-                          !(r.campaign_daily_budget || r.campaign_lifetime_budget)
-            if (isAbo) {
-              selection.add(adsetKey)
-            }
-          }
-        })
-        setSelectedCampaigns(selection)
-      }
+      // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
+      // This ensures selection is always for the currently selected account
     }
     setHasLoadedOnce(true)
     setIsLoading(false)
@@ -385,6 +386,8 @@ export default function DashboardPage() {
         min_roas: parseFloat(rulesData.min_roas) || DEFAULT_RULES.min_roas,
         learning_spend: parseFloat(rulesData.learning_spend) || DEFAULT_RULES.learning_spend,
         scale_percentage: parseFloat(rulesData.scale_percentage) || DEFAULT_RULES.scale_percentage,
+        target_cpr: rulesData.target_cpr ?? null,
+        max_cpr: rulesData.max_cpr ?? null,
         created_at: rulesData.created_at,
         updated_at: rulesData.updated_at
       })
@@ -451,34 +454,41 @@ export default function DashboardPage() {
     setSelectedCampaigns(new Set())
   }
 
+  // Ref-based guard for sync (state updates are async so we need synchronous check)
+  const syncingRef = useRef(false)
+
   // Sync a specific account (used by sidebar dropdown)
   const handleSyncAccount = async (accountId: string) => {
     if (!user || !canSync) return
 
+    // Prevent duplicate syncs (both state and ref check)
+    if (isSyncing || syncingRef.current) return
+    syncingRef.current = true
+
     setIsSyncing(true)
 
     try {
-      // Delete ALL existing data (CSV and API) before syncing
-      await supabase
-        .from('ad_data')
-        .delete()
-        .eq('user_id', user.id)
-      
+      // Note: The API handles deletion, no need to delete here
+      // Use the selected date preset from the date picker
       const response = await fetch('/api/meta/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
           adAccountId: accountId,
-          datePreset,
-          customStartDate: datePreset === 'custom' ? customStartDate : undefined,
-          customEndDate: datePreset === 'custom' ? customEndDate : undefined,
+          datePreset: datePreset,
+          ...(datePreset === 'custom' && customStartDate && customEndDate ? {
+            customStartDate,
+            customEndDate,
+          } : {}),
         }),
       })
       
       const result = await response.json()
       
       if (response.ok) {
+        // Refresh connection in background (don't await - prevents potential hanging)
+        loadConnection()
         // Silent refresh - don't show loading spinner, preserves table state
         await loadData(false)
         setLastSyncTime(new Date())
@@ -488,7 +498,8 @@ export default function DashboardPage() {
     } catch (err) {
       alert('Sync failed. Please try again.')
     }
-    
+
+    syncingRef.current = false
     setIsSyncing(false)
   }
 
@@ -623,12 +634,102 @@ export default function DashboardPage() {
   }
   
   const userPlan = plan
-  
-  const allCampaigns = useMemo(() => 
-    Array.from(new Set(data.map(row => row.campaign_name))),
-    [data]
+
+  // Helper to calculate date range from preset for client-side filtering
+  const getDateRange = useMemo(() => {
+    const today = new Date()
+    const formatDate = (d: Date) => d.toISOString().split('T')[0]
+
+    if (datePreset === 'custom' && customStartDate && customEndDate) {
+      return { since: customStartDate, until: customEndDate }
+    }
+
+    switch (datePreset) {
+      case 'today':
+        return { since: formatDate(today), until: formatDate(today) }
+      case 'yesterday': {
+        const yesterday = new Date(today)
+        yesterday.setDate(yesterday.getDate() - 1)
+        return { since: formatDate(yesterday), until: formatDate(yesterday) }
+      }
+      case 'last_7d': {
+        const start = new Date(today)
+        start.setDate(start.getDate() - 6)
+        return { since: formatDate(start), until: formatDate(today) }
+      }
+      case 'last_14d': {
+        const start = new Date(today)
+        start.setDate(start.getDate() - 13)
+        return { since: formatDate(start), until: formatDate(today) }
+      }
+      case 'last_30d': {
+        const start = new Date(today)
+        start.setDate(start.getDate() - 29)
+        return { since: formatDate(start), until: formatDate(today) }
+      }
+      case 'last_90d': {
+        const start = new Date(today)
+        start.setDate(start.getDate() - 89)
+        return { since: formatDate(start), until: formatDate(today) }
+      }
+      case 'this_month': {
+        const start = new Date(today.getFullYear(), today.getMonth(), 1)
+        return { since: formatDate(start), until: formatDate(today) }
+      }
+      case 'last_month': {
+        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        const end = new Date(today.getFullYear(), today.getMonth(), 0)
+        return { since: formatDate(start), until: formatDate(end) }
+      }
+      case 'maximum':
+      default: {
+        // Maximum: show all data (use very wide date range)
+        return { since: '2000-01-01', until: formatDate(today) }
+      }
+    }
+  }, [datePreset, customStartDate, customEndDate])
+
+  // Filter campaigns by selected account first
+  const accountFilteredData = useMemo(() => {
+    return data.filter(row => {
+      if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
+        return false
+      }
+      return true
+    })
+  }, [data, selectedAccountId])
+
+  const allCampaigns = useMemo(() =>
+    Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
+    [accountFilteredData]
   )
-  
+
+  // Auto-select all campaigns and ABO adsets when selection is empty but we have data
+  // This runs on initial load and after account switches (when we reset selection)
+  useEffect(() => {
+    if (selectedCampaigns.size === 0 && accountFilteredData.length > 0) {
+      const selection = new Set<string>()
+      const seenAdsets = new Set<string>()
+
+      accountFilteredData.forEach(r => {
+        // Add campaign
+        selection.add(r.campaign_name)
+
+        // Add ABO adsets (adset has budget, campaign doesn't)
+        const adsetKey = `${r.campaign_name}::${r.adset_name}`
+        if (!seenAdsets.has(adsetKey)) {
+          seenAdsets.add(adsetKey)
+          const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                        !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+          if (isAbo) {
+            selection.add(adsetKey)
+          }
+        }
+      })
+      setSelectedCampaigns(selection)
+    }
+  }, [accountFilteredData, selectedCampaigns.size])
+
   const totalCampaigns = allCampaigns.length
   const getCampaignLimit = () => {
     if (userPlan === 'Free') return FREE_CAMPAIGN_LIMIT
@@ -646,21 +747,34 @@ export default function DashboardPage() {
   
   const filteredData = useMemo(() => {
     return data.filter(row => {
+      // Account filter - only show data for the selected account
+      if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
+        return false
+      }
+
+      // Date range filter (client-side filtering for instant response)
+      // With daily data (time_increment=1), each row has date_start === date_end for a single day
+      if (row.date_start) {
+        if (row.date_start < getDateRange.since || row.date_start > getDateRange.until) {
+          return false
+        }
+      }
+
       // Campaign limit filter
       if (!visibleCampaigns.includes(row.campaign_name)) return false
-      
+
       // Paused filter
       if (!includePaused) {
-        const isPaused = 
-          row.status?.toUpperCase() === 'PAUSED' || 
-          row.adset_status?.toUpperCase() === 'PAUSED' || 
+        const isPaused =
+          row.status?.toUpperCase() === 'PAUSED' ||
+          row.adset_status?.toUpperCase() === 'PAUSED' ||
           row.campaign_status?.toUpperCase() === 'PAUSED'
         if (isPaused) return false
       }
-      
+
       return true
     })
-  }, [data, visibleCampaigns, includePaused])
+  }, [data, visibleCampaigns, includePaused, getDateRange, selectedAccountId])
   
   const selectedData = useMemo(() =>
     filteredData.filter(row => {
@@ -685,6 +799,7 @@ export default function DashboardPage() {
       spend: selectedData.reduce((sum, row) => sum + row.spend, 0),
       revenue: selectedData.reduce((sum, row) => sum + row.revenue, 0),
       purchases: selectedData.reduce((sum, row) => sum + row.purchases, 0),
+      results: selectedData.reduce((sum, row) => sum + (row.results || 0), 0),
       impressions: selectedData.reduce((sum, row) => sum + row.impressions, 0),
       clicks: selectedData.reduce((sum, row) => sum + row.clicks, 0),
       roas: 0,
@@ -692,6 +807,7 @@ export default function DashboardPage() {
       cpc: 0,
       ctr: 0,
       cpa: 0,
+      cpr: 0,
       aov: 0,
       convRate: 0
     }
@@ -700,6 +816,7 @@ export default function DashboardPage() {
     t.cpc = t.clicks > 0 ? t.spend / t.clicks : 0
     t.ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0
     t.cpa = t.purchases > 0 ? t.spend / t.purchases : 0
+    t.cpr = t.results > 0 ? t.spend / t.results : 0
     t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
     t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
     return t
@@ -723,6 +840,10 @@ export default function DashboardPage() {
     purchases: row.purchases,
     revenue: row.revenue,
     roas: row.spend > 0 ? row.revenue / row.spend : 0,
+    // Results-based tracking
+    results: row.results || 0,
+    result_value: row.result_value ?? null,
+    result_type: row.result_type ?? null,
     status: row.status,
     adset_status: row.adset_status,
     campaign_status: row.campaign_status,
@@ -961,15 +1082,24 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           {data.length > 0 && (
             <>
-              {/* Live Indicator - shows when viewing current data */}
-              {isLive && canSync && selectedAccountId && (
-                <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                  </span>
-                  <span className="text-sm text-green-400">Live</span>
-                </div>
+              {/* Live/Historical Indicator */}
+              {canSync && selectedAccountId && (
+                isLive ? (
+                  <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span className="text-sm text-green-400">Live</span>
+                  </div>
+                ) : (
+                  <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-zinc-500/10 border border-zinc-500/30 rounded-lg">
+                    <span className="relative flex h-2 w-2">
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
+                    </span>
+                    <span className="text-sm text-zinc-400">Historical</span>
+                  </div>
+                )
               )}
 
               {/* Date Picker Dropdown */}
@@ -1143,9 +1273,9 @@ export default function DashboardPage() {
               color="purple"
             />
             <StatCard
-              label="Purchases"
-              value={formatNumber(totals.purchases)}
-              icon="🛒"
+              label="Results"
+              value={formatNumber(totals.results)}
+              icon="🎯"
               color="amber"
             />
             {/* Daily Budgets tile */}
@@ -1193,9 +1323,9 @@ export default function DashboardPage() {
               value={formatPercent(totals.ctr)}
               icon="🎯"
             />
-            <StatCard 
-              label="CPA" 
-              value={formatCPA(totals.spend, totals.purchases)}
+            <StatCard
+              label="CPR"
+              value={totals.cpr > 0 ? formatCurrency(totals.cpr) : '—'}
               icon="💳"
             />
             <StatCard 

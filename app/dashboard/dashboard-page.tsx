@@ -8,17 +8,11 @@ import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CSVRow } from '@/lib/csv-parser'
-import { Rules } from '@/lib/supabase'
+import { Rules, createBrowserClient } from '@/lib/supabase'
 import { formatCurrency, formatNumber, formatROAS, formatDateRange } from '@/lib/utils'
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
-import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const FREE_CAMPAIGN_LIMIT = 2
 const STARTER_CAMPAIGN_LIMIT = 10
@@ -30,6 +24,8 @@ const DEFAULT_RULES: Rules = {
   min_roas: 1.5,
   learning_spend: 100,
   scale_percentage: 20,
+  target_cpr: null,
+  max_cpr: null,
   created_at: '',
   updated_at: ''
 }
@@ -67,6 +63,9 @@ type MetaConnection = {
 }
 
 export default function DashboardPage() {
+  // Create auth-aware supabase client inside component
+  const supabase = createBrowserClient()
+
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
   const [showUpload, setShowUpload] = useState(false)
@@ -77,9 +76,42 @@ export default function DashboardPage() {
   const [includePaused, setIncludePaused] = useState(true)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [datePreset, setDatePreset] = useState('last_30d')
-  const [customStartDate, setCustomStartDate] = useState('')
-  const [customEndDate, setCustomEndDate] = useState('')
+  const [datePreset, setDatePreset] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('killscale_date_preference')
+        if (stored) {
+          const pref = JSON.parse(stored)
+          return pref.preset || 'last_30d'
+        }
+      } catch (e) {}
+    }
+    return 'last_30d'
+  })
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('killscale_date_preference')
+        if (stored) {
+          const pref = JSON.parse(stored)
+          return pref.customStart || ''
+        }
+      } catch (e) {}
+    }
+    return ''
+  })
+  const [customEndDate, setCustomEndDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('killscale_date_preference')
+        if (stored) {
+          const pref = JSON.parse(stored)
+          return pref.customEnd || ''
+        }
+      } catch (e) {}
+    }
+    return ''
+  })
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
   const [connection, setConnection] = useState<MetaConnection | null>(null)
   const [isLiveMode, setIsLiveMode] = useState(false)
@@ -87,22 +119,18 @@ export default function DashboardPage() {
   const { plan } = useSubscription()
   const { user } = useAuth()
   const searchParams = useSearchParams()
-  
-  // Load saved date settings on mount
-  useEffect(() => {
-    const savedDatePreset = localStorage.getItem('killscale_datePreset')
-    const savedCustomStart = localStorage.getItem('killscale_customStartDate')
-    const savedCustomEnd = localStorage.getItem('killscale_customEndDate')
-    if (savedDatePreset) setDatePreset(savedDatePreset)
-    if (savedCustomStart) setCustomStartDate(savedCustomStart)
-    if (savedCustomEnd) setCustomEndDate(savedCustomEnd)
-  }, [])
-  
+
   // Save date settings when they change
   useEffect(() => {
-    localStorage.setItem('killscale_datePreset', datePreset)
-    if (customStartDate) localStorage.setItem('killscale_customStartDate', customStartDate)
-    if (customEndDate) localStorage.setItem('killscale_customEndDate', customEndDate)
+    try {
+      sessionStorage.setItem('killscale_date_preference', JSON.stringify({
+        preset: datePreset,
+        customStart: customStartDate || undefined,
+        customEnd: customEndDate || undefined
+      }))
+    } catch (e) {
+      // Ignore storage errors
+    }
   }, [datePreset, customStartDate, customEndDate])
   
   const canSync = true // All plans can sync via Meta API
@@ -156,7 +184,7 @@ export default function DashboardPage() {
 
   const loadData = async () => {
     if (!user) return
-    
+
     setIsLoading(true)
     const { data: adData, error } = await supabase
       .from('ad_data')
@@ -205,6 +233,8 @@ export default function DashboardPage() {
         min_roas: parseFloat(rulesData.min_roas) || DEFAULT_RULES.min_roas,
         learning_spend: parseFloat(rulesData.learning_spend) || DEFAULT_RULES.learning_spend,
         scale_percentage: parseFloat(rulesData.scale_percentage) || DEFAULT_RULES.scale_percentage,
+        target_cpr: rulesData.target_cpr ?? null,
+        max_cpr: rulesData.max_cpr ?? null,
         created_at: rulesData.created_at,
         updated_at: rulesData.updated_at
       })
@@ -352,10 +382,10 @@ export default function DashboardPage() {
   
   const userPlan = plan
   
-  const allCampaigns = useMemo(() => 
-    Array.from(new Set(data.map(row => row.campaign_name))),
-    [data]
-  )
+  const allCampaigns = useMemo(() => {
+    const campaigns = Array.from(new Set(data.map(row => row.campaign_name)))
+    return campaigns
+  }, [data])
   
   const totalCampaigns = allCampaigns.length
   const getCampaignLimit = () => {

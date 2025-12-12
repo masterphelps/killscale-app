@@ -35,8 +35,6 @@ export default function SignupPage() {
       },
     })
 
-    console.log('Signup response:', { data, error })
-
     if (error) {
       console.error('Signup error:', error)
       setError(error.message)

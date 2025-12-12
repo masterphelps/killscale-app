@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 const META_APP_ID = process.env.META_APP_ID!
 const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/api/auth/meta/callback`
 
-// Scopes needed for Marketing API
+// Scopes needed for Marketing API + Page access for campaign creation
 const SCOPES = [
   'ads_read',
   'ads_management',
   'business_management',
   'public_profile',
+  'pages_show_list',      // Required to list user's Facebook Pages
+  'pages_read_engagement', // Required to use Pages for ad creation
 ].join(',')
 
 export async function GET(request: NextRequest) {

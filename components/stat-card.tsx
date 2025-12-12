@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown } from 'lucide-react'
 type StatCardProps = {
   label: string
   value: string
+  subValue?: string  // Secondary value shown below the main value (e.g., "CPR" for Results)
   change?: { value: number; isPositive: boolean }
   icon?: string
   variant?: 'default' | 'highlight'
@@ -45,7 +46,7 @@ const colorStyles = {
   }
 }
 
-export function StatCard({ label, value, change, icon, variant = 'default', color = 'default' }: StatCardProps) {
+export function StatCard({ label, value, subValue, change, icon, variant = 'default', color = 'default' }: StatCardProps) {
   const styles = colorStyles[color]
 
   return (
@@ -67,6 +68,9 @@ export function StatCard({ label, value, change, icon, variant = 'default', colo
           <span className="text-xs lg:text-sm text-zinc-400 uppercase tracking-wide">{label}</span>
         </div>
         <div className="text-xl lg:text-3xl font-bold font-mono text-white">{value}</div>
+        {subValue && (
+          <div className="text-xs lg:text-sm text-zinc-400 mt-0.5">{subValue}</div>
+        )}
         {change && (
           <div className={cn(
             'text-xs mt-2 flex items-center gap-1',

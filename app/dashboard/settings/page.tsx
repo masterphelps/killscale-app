@@ -16,6 +16,9 @@ const DEFAULT_RULES = {
   min_roas: '1.5',
   learning_spend: '100',
   scale_percentage: '20',
+  // CPR thresholds for non-revenue campaigns (leads, registrations, etc.)
+  target_cpr: '',
+  max_cpr: '',
 }
 
 type AdAccount = {
@@ -73,14 +76,14 @@ export default function SettingsPage() {
 
       const { data, error } = await query.single()
 
-      console.log('Load result:', { data, error, accountId })
-
       if (data) {
         setRules({
           scale_roas: data.scale_roas?.toString() || DEFAULT_RULES.scale_roas,
           min_roas: data.min_roas?.toString() || DEFAULT_RULES.min_roas,
           learning_spend: data.learning_spend?.toString() || DEFAULT_RULES.learning_spend,
           scale_percentage: data.scale_percentage?.toString() || DEFAULT_RULES.scale_percentage,
+          target_cpr: data.target_cpr?.toString() || '',
+          max_cpr: data.max_cpr?.toString() || '',
         })
       }
       setLoading(false)
@@ -113,11 +116,12 @@ export default function SettingsPage() {
     min_roas: parseFloat(rules.min_roas) || 0,
     learning_spend: parseFloat(rules.learning_spend) || 0,
     scale_percentage: parseFloat(rules.scale_percentage) || 20,
+    target_cpr: rules.target_cpr ? parseFloat(rules.target_cpr) : null,
+    max_cpr: rules.max_cpr ? parseFloat(rules.max_cpr) : null,
   }
 
   const handleSave = async () => {
     if (!user) {
-      console.log('No user found!')
       setError('Not logged in')
       return
     }
@@ -142,10 +146,10 @@ export default function SettingsPage() {
       min_roas: parsedRules.min_roas,
       learning_spend: parsedRules.learning_spend,
       scale_percentage: parsedRules.scale_percentage,
+      target_cpr: parsedRules.target_cpr,
+      max_cpr: parsedRules.max_cpr,
       updated_at: new Date().toISOString(),
     }
-
-    console.log('Saving rules:', payload)
 
     // Use user_id + ad_account_id as the conflict key
     const { data, error: upsertError } = await supabase
@@ -154,8 +158,6 @@ export default function SettingsPage() {
         onConflict: 'user_id,ad_account_id'
       })
       .select()
-
-    console.log('Save result:', { data, error: upsertError })
 
     setSaving(false)
     
@@ -287,6 +289,58 @@ export default function SettingsPage() {
           </div>
           <p className="text-xs text-zinc-600 mt-2">
             How much to increase or decrease budgets with the quick ↑/↓ buttons (5-50%)
+          </p>
+        </div>
+
+        {/* Divider - CPR Thresholds */}
+        <div className="border-t border-border pt-6">
+          <h3 className="text-sm font-medium text-zinc-400 mb-2">Cost Per Result (Lead-Gen Campaigns)</h3>
+          <p className="text-xs text-zinc-600 mb-4">
+            For campaigns optimized for leads, registrations, or other non-revenue results, set CPR thresholds instead of ROAS. Leave blank to use ROAS-based verdicts for all campaigns.
+          </p>
+        </div>
+
+        {/* Target CPR */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            <span className="text-verdict-scale">↑</span> Target Cost Per Result (Scale)
+          </label>
+          <div className="flex items-center gap-3">
+            <span className="text-zinc-500 text-lg">$</span>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              placeholder="e.g., 25"
+              value={rules.target_cpr}
+              onChange={(e) => handleChange('target_cpr', e.target.value)}
+              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent placeholder:text-zinc-700"
+            />
+          </div>
+          <p className="text-xs text-zinc-600 mt-2">
+            Lead-gen ads with CPR at or below this get the <span className="text-verdict-scale font-medium">SCALE</span> verdict
+          </p>
+        </div>
+
+        {/* Max CPR */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            <span className="text-verdict-kill">↓</span> Maximum Cost Per Result (Kill)
+          </label>
+          <div className="flex items-center gap-3">
+            <span className="text-zinc-500 text-lg">$</span>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              placeholder="e.g., 50"
+              value={rules.max_cpr}
+              onChange={(e) => handleChange('max_cpr', e.target.value)}
+              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent placeholder:text-zinc-700"
+            />
+          </div>
+          <p className="text-xs text-zinc-600 mt-2">
+            Lead-gen ads with CPR above this get the <span className="text-verdict-kill font-medium">KILL</span> verdict
           </p>
         </div>
 

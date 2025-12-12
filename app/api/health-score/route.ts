@@ -16,6 +16,8 @@ const DEFAULT_RULES: Rules = {
   min_roas: 1.5,
   learning_spend: 100,
   scale_percentage: 20,
+  target_cpr: null,
+  max_cpr: null,
   created_at: '',
   updated_at: ''
 }
@@ -110,6 +112,8 @@ export async function POST(request: NextRequest) {
       min_roas: parseFloat(rulesData.min_roas) || DEFAULT_RULES.min_roas,
       learning_spend: parseFloat(rulesData.learning_spend) || DEFAULT_RULES.learning_spend,
       scale_percentage: parseFloat(rulesData.scale_percentage) || DEFAULT_RULES.scale_percentage,
+      target_cpr: rulesData.target_cpr ?? null,
+      max_cpr: rulesData.max_cpr ?? null,
       created_at: rulesData.created_at,
       updated_at: rulesData.updated_at
     } : DEFAULT_RULES

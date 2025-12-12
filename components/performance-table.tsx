@@ -52,6 +52,10 @@ type AdRow = {
   purchases: number
   revenue: number
   roas: number
+  // Results-based tracking
+  results?: number
+  result_value?: number | null
+  result_type?: string | null
   status?: string | null  // Ad's effective status
   adset_status?: string | null  // Adset's own status
   campaign_status?: string | null  // Campaign's own status
@@ -64,7 +68,7 @@ type AdRow = {
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 
-type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
+type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'results' | 'cpr' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
 type SortDirection = 'asc' | 'desc'
 
 type PerformanceTableProps = {
@@ -107,6 +111,8 @@ type HierarchyNode = {
   purchases: number
   revenue: number
   roas: number
+  results: number
+  cpr: number  // cost per result
   cpc: number
   ctr: number
   cpa: number
@@ -142,11 +148,12 @@ const formatBudget = (dailyBudget: number | null | undefined, lifetimeBudget: nu
   return { value: '—', type: '' }
 }
 
-function calculateMetrics(node: { spend: number; clicks: number; impressions: number; purchases: number }) {
+function calculateMetrics(node: { spend: number; clicks: number; impressions: number; purchases: number; results: number }) {
   return {
     cpc: node.clicks > 0 ? node.spend / node.clicks : 0,
     ctr: node.impressions > 0 ? (node.clicks / node.impressions) * 100 : 0,
     cpa: node.purchases > 0 ? node.spend / node.purchases : 0,
+    cpr: node.results > 0 ? node.spend / node.results : 0,
     convRate: node.clicks > 0 ? (node.purchases / node.clicks) * 100 : 0,
   }
 }
@@ -207,6 +214,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         purchases: 0,
         revenue: 0,
         roas: 0,
+        results: 0,
+        cpr: 0,
         cpc: 0,
         ctr: 0,
         cpa: 0,
@@ -231,6 +240,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         purchases: 0,
         revenue: 0,
         roas: 0,
+        results: 0,
+        cpr: 0,
         cpc: 0,
         ctr: 0,
         cpa: 0,
@@ -256,6 +267,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         purchases: 0,
         revenue: 0,
         roas: 0,
+        results: 0,
+        cpr: 0,
         cpc: 0,
         ctr: 0,
         cpa: 0,
@@ -274,14 +287,16 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     ad.spend += row.spend
     ad.purchases += row.purchases
     ad.revenue += row.revenue
+    ad.results += row.results || 0
     // Keep the status from any row (they should all be the same for a given ad)
     if (row.status) ad.status = row.status
-    
+
     adset.impressions += row.impressions
     adset.clicks += row.clicks
     adset.spend += row.spend
     adset.purchases += row.purchases
     adset.revenue += row.revenue
+    adset.results += row.results || 0
   })
   
   Object.values(campaigns).forEach(campaign => {
@@ -333,6 +348,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       campaign.spend += adset.spend
       campaign.purchases += adset.purchases
       campaign.revenue += adset.revenue
+      campaign.results += adset.results
     })
     
     campaign.roas = campaign.spend > 0 ? campaign.revenue / campaign.spend : 0
@@ -561,6 +577,8 @@ export function PerformanceTable({
       purchases: 0,
       revenue: 0,
       roas: 0,
+      results: 0,
+      cpr: 0,
       cpc: 0,
       ctr: 0,
       cpa: 0,
@@ -573,6 +591,7 @@ export function PerformanceTable({
       t.spend += c.spend
       t.purchases += c.purchases
       t.revenue += c.revenue
+      t.results += c.results
     })
     t.roas = t.spend > 0 ? t.revenue / t.spend : 0
     const metrics = calculateMetrics(t)
@@ -831,6 +850,8 @@ export function PerformanceTable({
         <div className="flex-1 flex items-center">
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
           <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.results)}</div>
+          <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpr)}</div>
           <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
           {/* Detailed mode columns */}
           {viewMode === 'detailed' && (
@@ -966,6 +987,12 @@ export function PerformanceTable({
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('revenue')}>
           Revenue <SortIcon field="revenue" />
         </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('results')}>
+          Results <SortIcon field="results" />
+        </div>
+        <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('cpr')}>
+          CPR <SortIcon field="cpr" />
+        </div>
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('roas')}>
           ROAS <SortIcon field="roas" />
         </div>
@@ -1036,6 +1063,8 @@ export function PerformanceTable({
       <div className="flex-1 flex items-center">
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
         <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.results)}</div>
+        <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpr)}</div>
         <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
         {/* Detailed mode columns */}
         {viewMode === 'detailed' && (

@@ -6,33 +6,44 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Helper function to fetch all pages from Meta API
-async function fetchAllPages<T>(initialUrl: string): Promise<T[]> {
+// Helper function to fetch all pages from Meta API with timeout
+async function fetchAllPages<T>(initialUrl: string, maxPages = 15): Promise<T[]> {
   const allData: T[] = []
   let nextUrl: string | null = initialUrl
   let pageCount = 0
-  const maxPages = 50 // Safety limit
-  
+  const timeoutMs = 20000 // 20 second timeout per request
+
   while (nextUrl && pageCount < maxPages) {
-    const res: Response = await fetch(nextUrl)
-    const result: { data?: T[], error?: unknown, paging?: { next?: string } } = await res.json()
-    
-    if (result.error) {
-      console.error('Meta API pagination error:', result.error)
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+      const res: Response = await fetch(nextUrl, { signal: controller.signal })
+      clearTimeout(timeoutId)
+
+      const result: { data?: T[], error?: unknown, paging?: { next?: string } } = await res.json()
+
+      if (result.error) {
+        console.error('Meta API pagination error:', result.error)
+        break
+      }
+
+      if (result.data && Array.isArray(result.data)) {
+        allData.push(...result.data)
+      }
+
+      nextUrl = result.paging?.next || null
+      pageCount++
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.error('Request timed out after', timeoutMs, 'ms')
+      } else {
+        console.error('Fetch error:', err)
+      }
       break
     }
-    
-    if (result.data && Array.isArray(result.data)) {
-      allData.push(...result.data)
-    }
-    
-    // Check for next page
-    nextUrl = result.paging?.next || null
-    pageCount++
-    
-    console.log(`Fetched page ${pageCount}, total records: ${allData.length}`)
   }
-  
+
   return allData
 }
 
@@ -180,87 +191,52 @@ export async function POST(request: NextRequest) {
       'action_values',
     ].join(',')
 
-    // STEP 1: Discovery fetch - get all ads that have EVER had activity (for hierarchy info)
-    // This uses 'maximum' date range to capture all ads, even those inactive in selected range
-    const discoveryUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/insights`)
-    discoveryUrl.searchParams.set('access_token', accessToken)
-    discoveryUrl.searchParams.set('fields', 'campaign_name,campaign_id,adset_name,adset_id,ad_name,ad_id')
-    // Note: ad_name is included so we can display it for ads without activity in selected range
-    discoveryUrl.searchParams.set('level', 'ad')
-    discoveryUrl.searchParams.set('limit', '500')
-    discoveryUrl.searchParams.set('date_preset', 'maximum')
-    // No time_increment needed - just want unique ads
-
-    console.log('Discovery fetch: getting all ads with activity history...')
-    const discoveryInsights = await fetchAllPages<MetaInsight>(discoveryUrl.toString())
-
-    // Build hierarchy cache from discovery data
+    // Hierarchy cache will be built from entity endpoints (faster than date_preset=maximum discovery)
     const adHierarchyCache: Record<string, { campaign_name: string; campaign_id: string; adset_name: string; adset_id: string; ad_name: string }> = {}
-    discoveryInsights.forEach((insight) => {
-      if (!adHierarchyCache[insight.ad_id]) {
-        adHierarchyCache[insight.ad_id] = {
-          campaign_name: insight.campaign_name,
-          campaign_id: insight.campaign_id,
-          adset_name: insight.adset_name,
-          adset_id: insight.adset_id,
-          ad_name: insight.ad_name,
-        }
-      }
-    })
-    console.log(`Discovery found ${Object.keys(adHierarchyCache).length} unique ads`)
 
-    // STEP 2: Fetch insights for the selected date range (with daily breakdown)
+    // Build URLs for all fetches
     const insightsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/insights`)
     insightsUrl.searchParams.set('access_token', accessToken)
     insightsUrl.searchParams.set('fields', fields)
     insightsUrl.searchParams.set('level', 'ad')
     insightsUrl.searchParams.set('limit', '500')
-
-    // Handle different date options
     if (datePreset === 'custom' && customStartDate && customEndDate) {
-      // Use custom time range
-      insightsUrl.searchParams.set('time_range', JSON.stringify({
-        since: customStartDate,
-        until: customEndDate
-      }))
+      insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
     } else {
-      // Map to valid Meta preset, default to last_30d if invalid
-      const metaPreset = VALID_META_PRESETS[datePreset] || 'last_30d'
-      insightsUrl.searchParams.set('date_preset', metaPreset)
+      insightsUrl.searchParams.set('date_preset', VALID_META_PRESETS[datePreset] || 'last_30d')
     }
-
-    // IMPORTANT: Add time_increment=1 to get daily breakdown for time series charts
+    // Use time_increment=1 to get daily data for proper client-side date filtering
     insightsUrl.searchParams.set('time_increment', '1')
 
-    // Fetch ALL pages of insights data for selected date range
-    console.log('Fetching insights for selected date range...')
-    const allInsights = await fetchAllPages<MetaInsight>(insightsUrl.toString())
-    console.log(`Total insights fetched: ${allInsights.length}`)
-    
-    if (allInsights.length === 0) {
-      // Check if there was an error on first request
-      const testResponse = await fetch(insightsUrl.toString())
-      const testData = await testResponse.json()
-      if (testData.error) {
-        console.error('Meta API error:', testData.error)
-        return NextResponse.json({ error: testData.error.message }, { status: 400 })
-      }
-    }
-    
-    // Build status, budget, and name maps for campaigns, adsets, and ads
-    const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
-    const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
-    const adStatusMap: Record<string, string> = {}
-
-    // Fetch campaign statuses and budgets (with pagination)
     const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
     campaignsUrl.searchParams.set('fields', 'id,name,effective_status,daily_budget,lifetime_budget')
     campaignsUrl.searchParams.set('limit', '500')
 
-    const allCampaigns = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+    const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
+    adsetsUrl.searchParams.set('access_token', accessToken)
+    adsetsUrl.searchParams.set('fields', 'id,name,campaign_id,effective_status,daily_budget,lifetime_budget')
+    adsetsUrl.searchParams.set('limit', '500')
+
+    const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
+    adsUrl.searchParams.set('access_token', accessToken)
+    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
+    adsUrl.searchParams.set('limit', '500')
+
+    // PARALLEL FETCH - all 4 calls at once for speed
+    const [allCampaigns, allAdsets, allAdsData, allInsights] = await Promise.all([
+      fetchAllPages<CampaignData>(campaignsUrl.toString()),
+      fetchAllPages<AdsetData>(adsetsUrl.toString()),
+      fetchAllPages<AdData>(adsUrl.toString()),
+      fetchAllPages<MetaInsight>(insightsUrl.toString()),
+    ])
+
+    // Build maps
+    const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
+    const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
+    const adStatusMap: Record<string, string> = {}
+
     allCampaigns.forEach((c) => {
-      // Budget values from Meta are in cents - convert to dollars
       campaignMap[c.id] = {
         name: c.name,
         status: c.effective_status,
@@ -268,17 +244,8 @@ export async function POST(request: NextRequest) {
         lifetime_budget: c.lifetime_budget ? parseInt(c.lifetime_budget) / 100 : null,
       }
     })
-    console.log('Campaign map:', Object.keys(campaignMap).length, 'campaigns')
 
-    // Fetch adset statuses and budgets (with pagination)
-    const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
-    adsetsUrl.searchParams.set('access_token', accessToken)
-    adsetsUrl.searchParams.set('fields', 'id,name,campaign_id,effective_status,daily_budget,lifetime_budget')
-    adsetsUrl.searchParams.set('limit', '500')
-
-    const allAdsets = await fetchAllPages<AdsetData>(adsetsUrl.toString())
     allAdsets.forEach((a) => {
-      // Budget values from Meta are in cents - convert to dollars
       adsetMap[a.id] = {
         name: a.name,
         campaign_id: a.campaign_id,
@@ -287,19 +254,10 @@ export async function POST(request: NextRequest) {
         lifetime_budget: a.lifetime_budget ? parseInt(a.lifetime_budget) / 100 : null,
       }
     })
-    console.log('Adset map:', Object.keys(adsetMap).length, 'adsets')
 
-    // Fetch ad statuses (with pagination) - includes name and adset_id for complete hierarchy
-    const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
-    adsUrl.searchParams.set('access_token', accessToken)
-    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
-    adsUrl.searchParams.set('limit', '500')
-
-    const allAdsData = await fetchAllPages<AdData>(adsUrl.toString())
     allAdsData.forEach((ad) => {
       adStatusMap[ad.id] = ad.effective_status
-
-      // Also add to hierarchy cache if not already present (catches brand new ads with no delivery)
+      // Build hierarchy cache from entity data
       if (!adHierarchyCache[ad.id] && ad.adset_id) {
         const adset = adsetMap[ad.adset_id]
         const campaign = adset ? campaignMap[adset.campaign_id] : null
@@ -314,25 +272,13 @@ export async function POST(request: NextRequest) {
         }
       }
     })
-    console.log('Ad map:', Object.keys(adStatusMap).length, 'ads')
-    console.log('Hierarchy cache after ads fetch:', Object.keys(adHierarchyCache).length, 'total ads')
     
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
 
     // Transform Meta data to our format
-    const adData = allInsights.map((insight: MetaInsight, idx: number) => {
+    const adData = allInsights.map((insight: MetaInsight) => {
       adsWithInsights.add(insight.ad_id)
-
-      // Log first few insights to debug
-      if (idx < 3) {
-        console.log(`Insight ${idx}:`, {
-          ad_id: insight.ad_id,
-          adset_id: insight.adset_id,
-          campaign_id: insight.campaign_id,
-          ad_name: insight.ad_name
-        })
-      }
 
       // Find purchase actions
       const purchases = insight.actions?.find(a =>
@@ -342,22 +288,16 @@ export async function POST(request: NextRequest) {
         a.action_type === 'purchase' || a.action_type === 'omni_purchase'
       )
 
+      // Calculate results - for now, results = purchases (most common use case)
+      // Future: detect campaign objective and use appropriate action type
+      const resultCount = parseInt(purchases?.value || '0')
+      const resultValue = purchaseValue ? parseFloat(purchaseValue.value) : null
+      const resultType = resultCount > 0 ? 'purchase' : null
+
       // Get status at each level using the new maps
       const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
       const adset = adsetMap[insight.adset_id]
       const campaign = campaignMap[insight.campaign_id]
-
-      if (idx < 3) {
-        console.log(`Status lookup ${idx}:`, {
-          adStatus,
-          adsetStatus: adset?.status,
-          campaignStatus: campaign?.status
-        })
-        console.log(`Budget lookup ${idx}:`, {
-          campaignBudget: { daily: campaign?.daily_budget, lifetime: campaign?.lifetime_budget },
-          adsetBudget: { daily: adset?.daily_budget, lifetime: adset?.lifetime_budget }
-        })
-      }
 
       return {
         user_id: userId,
@@ -383,6 +323,9 @@ export async function POST(request: NextRequest) {
         spend: parseFloat(insight.spend) || 0,
         purchases: parseInt(purchases?.value || '0'),
         revenue: parseFloat(purchaseValue?.value || '0'),
+        results: resultCount,
+        result_value: resultValue,
+        result_type: resultType,
         synced_at: new Date().toISOString(),
       }
     })
@@ -393,10 +336,10 @@ export async function POST(request: NextRequest) {
       : getDateRangeFromPreset(datePreset)
 
     // Add entries for ads without any insights (no activity during date range)
-    // Use hierarchy cache from discovery fetch to get campaign/adset info
+    // Use hierarchy cache built from /ads endpoint
     const adsWithoutInsights: typeof adData = []
 
-    // First, add ads from discovery that aren't in the selected date range insights
+    // Add ads from hierarchy cache that aren't in the selected date range insights
     Object.entries(adHierarchyCache).forEach(([adId, hierarchy]) => {
       if (!adsWithInsights.has(adId)) {
         // Get status and budget from entity maps if available
@@ -428,12 +371,13 @@ export async function POST(request: NextRequest) {
           spend: 0,
           purchases: 0,
           revenue: 0,
+          results: 0,
+          result_value: null,
+          result_type: null,
           synced_at: new Date().toISOString(),
         })
       }
     })
-
-    console.log(`Ads with insights: ${adsWithInsights.size}, Ads without insights: ${adsWithoutInsights.length}`)
 
     // Combine all ad data
     const allAdData = [...adData, ...adsWithoutInsights]
@@ -445,10 +389,6 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Log sample data before insert
-    console.log('Sample data to insert:', JSON.stringify(allAdData[0], null, 2))
-    console.log('Total records to insert:', allAdData.length)
-
     // Delete ALL existing data for this user (CSV and API)
     const { error: deleteError } = await supabase
       .from('ad_data')
@@ -460,13 +400,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert new data
-    const { data: insertedData, error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from('ad_data')
       .insert(allAdData)
-      .select()
-    
-    console.log('Insert result - inserted:', insertedData?.length || 0, 'error:', insertError)
-    
+
     if (insertError) {
       console.error('Insert error:', insertError)
       return NextResponse.json({ error: 'Failed to save ad data' }, { status: 500 })
