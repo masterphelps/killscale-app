@@ -8,6 +8,7 @@ import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
 import { Lock, Link2, Unlink, RefreshCw, CheckCircle, AlertCircle, Zap, LayoutDashboard, Calendar } from 'lucide-react'
 import Link from 'next/link'
+import { Select } from '@/components/ui/select'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -340,17 +341,12 @@ export default function ConnectPage() {
             <div className="flex items-center gap-3">
               <Calendar className="w-4 h-4 text-zinc-400" />
               <label className="text-sm text-zinc-400">Sync date range:</label>
-              <select
+              <Select
                 value={datePreset}
-                onChange={(e) => setDatePreset(e.target.value)}
-                className="flex-1 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-sm text-white focus:border-accent focus:outline-none"
-              >
-                {DATE_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setDatePreset}
+                options={DATE_PRESETS}
+                className="flex-1"
+              />
             </div>
           </div>
           

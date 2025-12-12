@@ -17,6 +17,7 @@ import {
 import { useAuth } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
+import { Select } from '@/components/ui/select'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -556,17 +557,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               </p>
               {pages.length > 0 ? (
                 <>
-                  <select
+                  <Select
                     value={state.pageId}
-                    onChange={(e) => setState(s => ({ ...s, pageId: e.target.value }))}
-                    className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
-                  >
-                    {pages.map((page) => (
-                      <option key={page.id} value={page.id}>
-                        {page.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setState(s => ({ ...s, pageId: value }))}
+                    options={pages.map(page => ({ value: page.id, label: page.name }))}
+                    placeholder="Select a page..."
+                  />
                   <p className="text-xs text-zinc-500 mt-2">
                     This Page will be shown as the advertiser on your ads
                   </p>
@@ -685,18 +681,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
             {state.aboOption === 'existing' && (
               <div className="mt-4 ml-7">
                 <label className="block text-sm font-medium mb-2">Select Campaign</label>
-                <select
+                <Select
                   value={state.existingCampaignId}
-                  onChange={(e) => setState(s => ({ ...s, existingCampaignId: e.target.value }))}
-                  className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
-                >
-                  <option value="">Choose a campaign...</option>
-                  {existingCampaigns.map((campaign) => (
-                    <option key={campaign.id} value={campaign.id}>
-                      {campaign.name} ({campaign.status})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setState(s => ({ ...s, existingCampaignId: value }))}
+                  options={existingCampaigns.map(c => ({ value: c.id, label: `${c.name} (${c.status})` }))}
+                  placeholder="Choose a campaign..."
+                />
               </div>
             )}
           </div>
@@ -718,17 +708,11 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
             <div>
               <label className="block text-sm font-medium mb-2">Objective</label>
-              <select
+              <Select
                 value={state.objective}
-                onChange={(e) => setState(s => ({ ...s, objective: e.target.value as WizardState['objective'] }))}
-                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
-              >
-                {OBJECTIVES.map((obj) => (
-                  <option key={obj.value} value={obj.value}>
-                    {obj.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setState(s => ({ ...s, objective: value as WizardState['objective'] }))}
+                options={OBJECTIVES.map(obj => ({ value: obj.value, label: obj.label }))}
+              />
             </div>
 
             {/* Conversion Event - only shown for conversions objective */}
@@ -744,17 +728,11 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                     Loading events...
                   </div>
                 ) : (
-                  <select
+                  <Select
                     value={state.conversionEvent}
-                    onChange={(e) => setState(s => ({ ...s, conversionEvent: e.target.value }))}
-                    className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
-                  >
-                    {conversionEvents.map((evt) => (
-                      <option key={evt.value} value={evt.value}>
-                        {evt.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setState(s => ({ ...s, conversionEvent: value }))}
+                    options={conversionEvents}
+                  />
                 )}
               </div>
             )}
@@ -899,15 +877,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                   {state.locationKey && (
                     <div className="flex items-center gap-3">
                       <span className="text-sm">Radius:</span>
-                      <select
-                        value={state.locationRadius}
-                        onChange={(e) => setState(s => ({ ...s, locationRadius: parseInt(e.target.value) }))}
-                        className="bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent"
-                      >
-                        {RADIUS_OPTIONS.map((r) => (
-                          <option key={r} value={r}>{r} miles</option>
-                        ))}
-                      </select>
+                      <Select
+                        value={state.locationRadius.toString()}
+                        onChange={(value) => setState(s => ({ ...s, locationRadius: parseInt(value) }))}
+                        options={RADIUS_OPTIONS.map(r => ({ value: r.toString(), label: `${r} miles` }))}
+                        className="w-32"
+                      />
                     </div>
                   )}
                 </div>
@@ -1085,17 +1060,11 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
             <div>
               <label className="block text-sm font-medium mb-2">Call to Action</label>
-              <select
+              <Select
                 value={state.ctaType}
-                onChange={(e) => setState(s => ({ ...s, ctaType: e.target.value }))}
-                className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent"
-              >
-                {CTA_OPTIONS.map((cta) => (
-                  <option key={cta.value} value={cta.value}>
-                    {cta.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setState(s => ({ ...s, ctaType: value }))}
+                options={CTA_OPTIONS.map(cta => ({ value: cta.value, label: cta.label }))}
+              />
             </div>
           </div>
         )
