@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// Vercel serverless config - increase limits for file uploads
+export const maxDuration = 60 // 60 seconds timeout (Pro plan required for >10s)
+export const dynamic = 'force-dynamic'
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -8,7 +12,16 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
+    let formData
+    try {
+      formData = await request.formData()
+    } catch (parseError) {
+      console.error('Failed to parse form data:', parseError)
+      return NextResponse.json({
+        error: 'Failed to parse upload. File may be too large (max 4MB on Vercel).'
+      }, { status: 413 })
+    }
+
     const file = formData.get('file') as File
     const userId = formData.get('userId') as string
     const adAccountId = formData.get('adAccountId') as string
@@ -16,6 +29,16 @@ export async function POST(request: NextRequest) {
     if (!file || !userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    // Check file size - Vercel has ~4.5MB limit for serverless functions
+    const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({
+        error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 4MB. Please compress your image or use a smaller file.`
+      }, { status: 413 })
+    }
+
+    console.log(`Uploading creative: ${file.name}, size: ${(file.size / 1024).toFixed(0)}KB, type: ${file.type}`)
 
     // Get user's Meta connection
     const { data: connection, error: connError } = await supabase

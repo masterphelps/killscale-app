@@ -303,22 +303,35 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   }, [locationQuery, searchLocations])
 
   // File handling
+  const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB - Vercel serverless limit
+
   const processFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files)
     const newCreatives: Creative[] = []
+    const skippedFiles: string[] = []
 
     for (let i = 0; i < fileArray.length && state.creatives.length + newCreatives.length < 6; i++) {
       const file = fileArray[i]
       const isImage = file.type.startsWith('image/')
       const isVideo = file.type.startsWith('video/')
 
-      if (isImage || isVideo) {
-        newCreatives.push({
-          file,
-          preview: URL.createObjectURL(file),
-          type: isImage ? 'image' : 'video'
-        })
+      if (!isImage && !isVideo) continue
+
+      // Check file size
+      if (file.size > MAX_FILE_SIZE) {
+        skippedFiles.push(`${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+        continue
       }
+
+      newCreatives.push({
+        file,
+        preview: URL.createObjectURL(file),
+        type: isImage ? 'image' : 'video'
+      })
+    }
+
+    if (skippedFiles.length > 0) {
+      setError(`Files too large (max 4MB): ${skippedFiles.join(', ')}. Please compress or use smaller files.`)
     }
 
     setState(s => ({ ...s, creatives: [...s.creatives, ...newCreatives] }))
@@ -901,6 +914,22 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'creatives':
         return (
           <div className="space-y-6">
+            {/* Error display */}
+            {error && (
+              <div className="bg-verdict-kill/10 border border-verdict-kill/30 rounded-lg p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-verdict-kill flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="text-verdict-kill">{error}</p>
+                  <button
+                    onClick={() => setError(null)}
+                    className="text-zinc-400 hover:text-white text-xs mt-1"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Upload area */}
             <div>
               <label className="block text-sm font-medium mb-2">Upload Creatives</label>
@@ -915,7 +944,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                   Drag images or videos here, or click to browse
                 </p>
                 <p className="text-xs text-zinc-600">
-                  JPG, PNG, MP4, MOV • Max 6 creatives
+                  JPG, PNG, MP4, MOV • Max 4MB per file • Max 6 creatives
+                </p>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Tip: Compress large videos with HandBrake or similar tools
                 </p>
                 <input
                   id="file-input"
