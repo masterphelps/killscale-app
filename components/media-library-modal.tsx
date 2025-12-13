@@ -187,9 +187,9 @@ export function MediaLibraryModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="fixed inset-4 lg:inset-8 z-40 flex flex-col bg-bg-card rounded-2xl overflow-hidden shadow-2xl">
+      <div className="fixed inset-4 lg:inset-8 z-50 flex flex-col bg-bg-card rounded-2xl overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 lg:p-6 border-b border-zinc-800">
           <div>

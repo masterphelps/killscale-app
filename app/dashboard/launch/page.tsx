@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video } from 'lucide-react'
+import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 import { LaunchWizard } from '@/components/launch-wizard'
+import { DeleteEntityModal } from '@/components/confirm-modal'
+import { CreativePreviewTooltip } from '@/components/creative-preview-tooltip'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -65,6 +67,7 @@ interface Creative {
   thumbnailUrl?: string
   imageUrl?: string
   previewUrl?: string
+  videoSource?: string
   mediaType: 'image' | 'video' | 'unknown'
 }
 
@@ -78,6 +81,26 @@ export default function LaunchPage() {
   const [loading, setLoading] = useState(true)
   const [showWizard, setShowWizard] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
+
+  // Delete modal state
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean
+    entityId: string
+    entityType: 'campaign' | 'adset' | 'ad'
+    entityName: string
+    childCount?: { adsets?: number; ads?: number }
+    parentCampaignId?: string
+    parentAdSetId?: string
+  } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  // Creative preview modal state
+  const [previewModal, setPreviewModal] = useState<{
+    isOpen: boolean
+    previewUrl: string
+    mediaType: 'image' | 'video' | 'unknown'
+    name: string
+  } | null>(null)
 
   // Explorer state
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -202,6 +225,119 @@ export default function LaunchPage() {
       console.error('Failed to update status:', err)
     } finally {
       setUpdatingStatus(null)
+    }
+  }
+
+  // Generic status toggle for ad sets and ads
+  const handleEntityStatusToggle = async (
+    entityId: string,
+    entityType: 'adset' | 'ad',
+    currentStatus: string,
+    parentCampaignId: string,
+    parentAdSetId?: string
+  ) => {
+    if (!user) return
+
+    const newStatus = currentStatus === 'PAUSED' ? 'ACTIVE' : 'PAUSED'
+    setUpdatingStatus(entityId)
+
+    try {
+      const res = await fetch('/api/meta/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entityId,
+          entityType,
+          status: newStatus
+        })
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to update status')
+      }
+
+      // Update local state
+      if (entityType === 'adset') {
+        setAdSetsData(prev => ({
+          ...prev,
+          [parentCampaignId]: prev[parentCampaignId]?.map(as =>
+            as.id === entityId ? { ...as, status: newStatus } : as
+          ) || []
+        }))
+      } else if (entityType === 'ad' && parentAdSetId) {
+        setAdsData(prev => ({
+          ...prev,
+          [parentAdSetId]: prev[parentAdSetId]?.map(ad =>
+            ad.id === entityId ? { ...ad, status: newStatus } : ad
+          ) || []
+        }))
+      }
+    } catch (err) {
+      console.error('Failed to update status:', err)
+    } finally {
+      setUpdatingStatus(null)
+    }
+  }
+
+  // Handle delete
+  const handleDelete = async () => {
+    if (!user || !deleteModal) return
+
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/meta/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entityId: deleteModal.entityId,
+          entityType: deleteModal.entityType
+        })
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete')
+      }
+
+      // Update local state based on entity type
+      if (deleteModal.entityType === 'campaign') {
+        setCampaigns(prev => prev.filter(c => c.id !== deleteModal.entityId))
+        // Also remove cached ad sets and ads for this campaign
+        setAdSetsData(prev => {
+          const next = { ...prev }
+          delete next[deleteModal.entityId]
+          return next
+        })
+      } else if (deleteModal.entityType === 'adset' && deleteModal.parentCampaignId) {
+        setAdSetsData(prev => ({
+          ...prev,
+          [deleteModal.parentCampaignId!]: prev[deleteModal.parentCampaignId!]?.filter(
+            as => as.id !== deleteModal.entityId
+          ) || []
+        }))
+        // Also remove cached ads for this ad set
+        setAdsData(prev => {
+          const next = { ...prev }
+          delete next[deleteModal.entityId]
+          return next
+        })
+      } else if (deleteModal.entityType === 'ad' && deleteModal.parentAdSetId) {
+        setAdsData(prev => ({
+          ...prev,
+          [deleteModal.parentAdSetId!]: prev[deleteModal.parentAdSetId!]?.filter(
+            ad => ad.id !== deleteModal.entityId
+          ) || []
+        }))
+      }
+
+      setDeleteModal(null)
+    } catch (err) {
+      console.error('Failed to delete:', err)
+      alert(err instanceof Error ? err.message : 'Failed to delete')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -552,6 +688,26 @@ export default function LaunchPage() {
                             </>
                           )}
                         </button>
+                        <button
+                          onClick={() => {
+                            const adSetCount = adSetsData[campaign.id]?.length || 0
+                            const adCount = Object.values(adsData)
+                              .flat()
+                              .filter(ad => adSetsData[campaign.id]?.some(as => adsData[as.id]?.includes(ad)))
+                              .length || 0
+                            setDeleteModal({
+                              isOpen: true,
+                              entityId: campaign.id,
+                              entityType: 'campaign',
+                              entityName: campaign.name,
+                              childCount: { adsets: adSetCount, ads: adCount }
+                            })
+                          }}
+                          className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Delete campaign"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                         <a
                           href={`https://business.facebook.com/adsmanager/manage/campaigns?act=${currentAccountId?.replace('act_', '')}&selected_campaign_ids=${campaign.id}`}
                           target="_blank"
@@ -623,6 +779,45 @@ export default function LaunchPage() {
                                       </div>
                                     )}
                                   </div>
+                                  {/* Ad Set Actions */}
+                                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => handleEntityStatusToggle(adSet.id, 'adset', adSet.status, campaign.id)}
+                                      disabled={updatingStatus === adSet.id}
+                                      className={cn(
+                                        "p-1.5 rounded-lg transition-colors",
+                                        adSet.status === 'PAUSED'
+                                          ? "text-green-500 hover:bg-green-500/20"
+                                          : "text-amber-500 hover:bg-amber-500/20"
+                                      )}
+                                      title={adSet.status === 'PAUSED' ? 'Activate' : 'Pause'}
+                                    >
+                                      {updatingStatus === adSet.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : adSet.status === 'PAUSED' ? (
+                                        <Play className="w-4 h-4" />
+                                      ) : (
+                                        <Pause className="w-4 h-4" />
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const adCount = adsData[adSet.id]?.length || 0
+                                        setDeleteModal({
+                                          isOpen: true,
+                                          entityId: adSet.id,
+                                          entityType: 'adset',
+                                          entityName: adSet.name,
+                                          childCount: { ads: adCount },
+                                          parentCampaignId: campaign.id
+                                        })
+                                      }}
+                                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                      title="Delete ad set"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
 
@@ -646,28 +841,48 @@ export default function LaunchPage() {
                                       return (
                                         <div key={ad.id} className="pl-20 pr-4 py-3 border-t border-border/30 hover:bg-bg-hover/20 transition-colors">
                                           <div className="flex items-center gap-3">
-                                            {/* Creative Preview */}
-                                            <div className="w-12 h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
-                                              {isLoadingCreative ? (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                  <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
-                                                </div>
-                                              ) : previewUrl ? (
-                                                <img
-                                                  src={previewUrl}
-                                                  alt={ad.name}
-                                                  className="w-full h-full object-cover"
-                                                />
-                                              ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                  {creative?.mediaType === 'video' ? (
-                                                    <Video className="w-5 h-5 text-zinc-600" />
-                                                  ) : (
-                                                    <ImageIcon className="w-5 h-5 text-zinc-600" />
-                                                  )}
-                                                </div>
-                                              )}
-                                            </div>
+                                            {/* Creative Preview with Tooltip */}
+                                            <CreativePreviewTooltip
+                                              previewUrl={previewUrl}
+                                              mediaType={creative?.mediaType}
+                                              alt={ad.name}
+                                              onFullPreview={() => {
+                                                // For videos, use videoSource (actual playable URL), fallback to previewUrl (thumbnail)
+                                                const playbackUrl = creative?.mediaType === 'video' && creative?.videoSource
+                                                  ? creative.videoSource
+                                                  : previewUrl
+                                                if (playbackUrl) {
+                                                  setPreviewModal({
+                                                    isOpen: true,
+                                                    previewUrl: playbackUrl,
+                                                    mediaType: creative?.mediaType || 'unknown',
+                                                    name: ad.name
+                                                  })
+                                                }
+                                              }}
+                                            >
+                                              <div className="w-12 h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
+                                                {isLoadingCreative ? (
+                                                  <div className="w-full h-full flex items-center justify-center">
+                                                    <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                                                  </div>
+                                                ) : previewUrl ? (
+                                                  <img
+                                                    src={previewUrl}
+                                                    alt={ad.name}
+                                                    className="w-full h-full object-cover"
+                                                  />
+                                                ) : (
+                                                  <div className="w-full h-full flex items-center justify-center">
+                                                    {creative?.mediaType === 'video' ? (
+                                                      <Video className="w-5 h-5 text-zinc-600" />
+                                                    ) : (
+                                                      <ImageIcon className="w-5 h-5 text-zinc-600" />
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </CreativePreviewTooltip>
                                             <div className="flex-1 min-w-0">
                                               <div className="flex items-center gap-3">
                                                 <span className="px-1.5 py-0.5 bg-zinc-700 text-zinc-300 text-xs font-medium rounded">
@@ -694,6 +909,42 @@ export default function LaunchPage() {
                                                 )}
                                               </div>
                                             </div>
+                                            {/* Ad Actions */}
+                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                              <button
+                                                onClick={() => handleEntityStatusToggle(ad.id, 'ad', ad.status, campaign.id, adSet.id)}
+                                                disabled={updatingStatus === ad.id}
+                                                className={cn(
+                                                  "p-1.5 rounded-lg transition-colors",
+                                                  ad.status === 'PAUSED'
+                                                    ? "text-green-500 hover:bg-green-500/20"
+                                                    : "text-amber-500 hover:bg-amber-500/20"
+                                                )}
+                                                title={ad.status === 'PAUSED' ? 'Activate' : 'Pause'}
+                                              >
+                                                {updatingStatus === ad.id ? (
+                                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : ad.status === 'PAUSED' ? (
+                                                  <Play className="w-4 h-4" />
+                                                ) : (
+                                                  <Pause className="w-4 h-4" />
+                                                )}
+                                              </button>
+                                              <button
+                                                onClick={() => setDeleteModal({
+                                                  isOpen: true,
+                                                  entityId: ad.id,
+                                                  entityType: 'ad',
+                                                  entityName: ad.name,
+                                                  parentCampaignId: campaign.id,
+                                                  parentAdSetId: adSet.id
+                                                })}
+                                                className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                title="Delete ad"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
                                       )
@@ -710,6 +961,60 @@ export default function LaunchPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* Delete Modal */}
+        <DeleteEntityModal
+          isOpen={deleteModal?.isOpen || false}
+          onClose={() => setDeleteModal(null)}
+          onConfirm={handleDelete}
+          entityName={deleteModal?.entityName || ''}
+          entityType={deleteModal?.entityType || 'campaign'}
+          childCount={deleteModal?.childCount}
+          isLoading={deleting}
+        />
+
+        {/* Creative Full Preview Modal */}
+        {previewModal?.isOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+            onClick={() => setPreviewModal(null)}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setPreviewModal(null)}
+              className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
+            >
+              <X className="w-6 h-6 text-white" />
+            </button>
+
+            {/* Media preview */}
+            <div className="max-w-4xl max-h-[80vh] relative" onClick={(e) => e.stopPropagation()}>
+              {previewModal.mediaType === 'video' ? (
+                <video
+                  src={previewModal.previewUrl}
+                  controls
+                  autoPlay
+                  muted
+                  playsInline
+                  className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
+                >
+                  Your browser does not support video playback.
+                </video>
+              ) : (
+                <img
+                  src={previewModal.previewUrl}
+                  alt={previewModal.name}
+                  className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain"
+                />
+              )}
+            </div>
+
+            {/* Title bar */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-4 py-2 rounded-lg">
+              <p className="text-white text-sm font-medium">{previewModal.name}</p>
+            </div>
           </div>
         )}
       </div>

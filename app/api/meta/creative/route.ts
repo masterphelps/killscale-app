@@ -51,11 +51,25 @@ export async function GET(request: NextRequest) {
     let previewUrl = result.thumbnail_url || result.image_url
     let mediaType: 'image' | 'video' | 'unknown' = 'unknown'
 
+    let videoSource: string | undefined
+
     if (result.video_id) {
       mediaType = 'video'
       // Try to get video thumbnail
       if (result.thumbnail_url) {
         previewUrl = result.thumbnail_url
+      }
+
+      // Fetch actual video source URL for playback
+      try {
+        const videoUrl = `https://graph.facebook.com/v18.0/${result.video_id}?fields=source&access_token=${accessToken}`
+        const videoResponse = await fetch(videoUrl)
+        const videoData = await videoResponse.json()
+        if (videoData.source) {
+          videoSource = videoData.source
+        }
+      } catch (videoErr) {
+        console.error('Failed to fetch video source:', videoErr)
       }
     } else if (result.image_url || result.image_hash) {
       mediaType = 'image'
@@ -68,6 +82,20 @@ export async function GET(request: NextRequest) {
       if (storySpec.video_data?.video_id) {
         mediaType = 'video'
         previewUrl = storySpec.video_data.image_url || previewUrl
+
+        // Fetch video source if not already fetched
+        if (!videoSource) {
+          try {
+            const videoUrl = `https://graph.facebook.com/v18.0/${storySpec.video_data.video_id}?fields=source&access_token=${accessToken}`
+            const videoResponse = await fetch(videoUrl)
+            const videoData = await videoResponse.json()
+            if (videoData.source) {
+              videoSource = videoData.source
+            }
+          } catch (videoErr) {
+            console.error('Failed to fetch video source from story spec:', videoErr)
+          }
+        }
       } else if (storySpec.link_data?.image_hash || storySpec.link_data?.picture) {
         mediaType = 'image'
         previewUrl = storySpec.link_data.picture || previewUrl
@@ -86,6 +114,7 @@ export async function GET(request: NextRequest) {
         previewUrl,
         mediaType,
         videoId: result.video_id,
+        videoSource,
         imageHash: result.image_hash
       }
     })

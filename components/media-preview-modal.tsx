@@ -11,12 +11,13 @@ type MediaItem = (MediaImage & { mediaType: 'image' }) | (MediaVideo & { mediaTy
 interface MediaPreviewModalProps {
   item: MediaItem | null
   isOpen: boolean
-  isSelected: boolean
+  isSelected?: boolean
   onClose: () => void
-  onSelect: () => void
+  onSelect?: () => void
+  readOnly?: boolean
 }
 
-export function MediaPreviewModal({ item, isOpen, isSelected, onClose, onSelect }: MediaPreviewModalProps) {
+export function MediaPreviewModal({ item, isOpen, isSelected = false, onClose, onSelect, readOnly = false }: MediaPreviewModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
   // Handle escape key
@@ -65,7 +66,7 @@ export function MediaPreviewModal({ item, isOpen, isSelected, onClose, onSelect 
   }
 
   const handleSelectClick = () => {
-    onSelect()
+    onSelect?.()
     onClose()
   }
 
@@ -157,25 +158,27 @@ export function MediaPreviewModal({ item, isOpen, isSelected, onClose, onSelect 
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Select button */}
-          <button
-            onClick={handleSelectClick}
-            className={cn(
-              "w-full py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2",
-              isSelected
-                ? "bg-accent/20 text-accent border border-accent"
-                : "bg-accent hover:bg-accent-hover text-white"
-            )}
-          >
-            {isSelected ? (
-              <>
-                <Check className="w-5 h-5" />
-                Selected
-              </>
-            ) : (
-              'Select for Ad'
-            )}
-          </button>
+          {/* Select button (only shown when not readOnly) */}
+          {!readOnly && onSelect && (
+            <button
+              onClick={handleSelectClick}
+              className={cn(
+                "w-full py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2",
+                isSelected
+                  ? "bg-accent/20 text-accent border border-accent"
+                  : "bg-accent hover:bg-accent-hover text-white"
+              )}
+            >
+              {isSelected ? (
+                <>
+                  <Check className="w-5 h-5" />
+                  Selected
+                </>
+              ) : (
+                'Select for Ad'
+              )}
+            </button>
+          )}
 
           {/* Hint */}
           <p className="text-xs text-zinc-600 text-center">

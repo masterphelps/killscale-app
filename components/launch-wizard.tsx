@@ -22,6 +22,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cn, formatFileSize } from '@/lib/utils'
 import { Select } from '@/components/ui/select'
 import { MediaLibraryModal } from '@/components/media-library-modal'
+import { AdPreviewPanel } from '@/components/ad-preview-panel'
 import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import type { MediaImage, MediaVideo } from '@/app/api/meta/media/route'
 
@@ -1736,9 +1737,16 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     review: 'Review & Deploy'
   }
 
+  // Check if we should show preview panel (creatives, copy, review steps)
+  const showPreviewPanel = ['creatives', 'copy', 'review'].includes(step)
+  const selectedPage = pages.find(p => p.id === state.pageId)
+
   return (
     <>
-      <div className="max-w-2xl mx-auto">
+      <div className={cn(
+        "mx-auto transition-all duration-300",
+        showPreviewPanel ? "max-w-5xl" : "max-w-2xl"
+      )}>
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -1758,9 +1766,35 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           </div>
         </div>
 
-        {/* Content */}
-        <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
-          {renderStep()}
+        {/* Content - Two column layout for creatives/copy/review */}
+        <div className={cn(
+          "mb-6",
+          showPreviewPanel ? "grid lg:grid-cols-2 gap-6" : ""
+        )}>
+          {/* Form Panel */}
+          <div className="bg-bg-card border border-border rounded-xl p-6">
+            {renderStep()}
+          </div>
+
+          {/* Preview Panel */}
+          {showPreviewPanel && (
+            <div className="bg-bg-card border border-border rounded-xl p-6 lg:sticky lg:top-6 lg:self-start">
+              <h3 className="text-sm font-medium text-zinc-400 mb-4">Ad Preview</h3>
+              <AdPreviewPanel
+                creatives={state.creatives.map(c => ({
+                  preview: c.preview,
+                  type: c.type
+                }))}
+                primaryText={state.primaryText}
+                headline={state.headline}
+                description={state.description}
+                websiteUrl={state.websiteUrl}
+                ctaType={state.ctaType}
+                pageName={selectedPage?.name || 'Your Page'}
+                className="min-h-[400px]"
+              />
+            </div>
+          )}
         </div>
 
         {/* Footer */}
