@@ -61,7 +61,19 @@ export function AdPreviewPanel({
 
   const currentCreative = creatives[creativeIndex]
   const ctaLabel = CTA_LABELS[ctaType] || ctaType || 'Learn More'
-  const displayUrl = websiteUrl ? new URL(websiteUrl.startsWith('http') ? websiteUrl : `https://${websiteUrl}`).hostname.toUpperCase().replace('WWW.', '') : 'WEBSITE.COM'
+
+  // Safely parse URL for display
+  const getDisplayUrl = (url: string): string => {
+    if (!url) return 'WEBSITE.COM'
+    try {
+      const fullUrl = url.startsWith('http') ? url : `https://${url}`
+      return new URL(fullUrl).hostname.toUpperCase().replace('WWW.', '')
+    } catch {
+      // Invalid URL - just show what they typed (truncated)
+      return url.replace(/^https?:\/\//, '').split('/')[0].toUpperCase().slice(0, 30) || 'WEBSITE.COM'
+    }
+  }
+  const displayUrl = getDisplayUrl(websiteUrl)
 
   // Truncate text for preview
   const truncateText = (text: string, maxLength: number) => {
