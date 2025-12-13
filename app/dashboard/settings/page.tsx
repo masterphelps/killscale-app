@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, RotateCcw, Loader2, AlertCircle } from 'lucide-react'
+import { Save, RotateCcw, Loader2, AlertCircle, Plus, X } from 'lucide-react'
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -22,6 +22,23 @@ const DEFAULT_RULES = {
   max_cpr: '',
 }
 
+// All standard Meta conversion events (matches pixel-events API)
+const STANDARD_EVENTS = [
+  { key: 'purchase', label: 'Purchase' },
+  { key: 'lead', label: 'Lead' },
+  { key: 'complete_registration', label: 'Complete Registration' },
+  { key: 'add_to_cart', label: 'Add to Cart' },
+  { key: 'initiate_checkout', label: 'Initiate Checkout' },
+  { key: 'add_payment_info', label: 'Add Payment Info' },
+  { key: 'subscribe', label: 'Subscribe' },
+  { key: 'contact', label: 'Contact' },
+  { key: 'submit_application', label: 'Submit Application' },
+  { key: 'start_trial', label: 'Start Trial' },
+  { key: 'schedule', label: 'Schedule' },
+]
+
+type EventValues = Record<string, number>
+
 type AdAccount = {
   id: string
   name: string
@@ -33,6 +50,7 @@ export default function SettingsPage() {
 
   // Store as strings to allow proper editing (backspace, etc.)
   const [rules, setRules] = useState(DEFAULT_RULES)
+  const [eventValues, setEventValues] = useState<EventValues>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -72,6 +90,11 @@ export default function SettingsPage() {
           target_cpr: data.target_cpr?.toString() || '',
           max_cpr: data.max_cpr?.toString() || '',
         })
+        // Load event values
+        setEventValues(data.event_values || {})
+      } else {
+        // Reset to defaults when no rules found
+        setEventValues({})
       }
       setLoading(false)
     }
@@ -122,6 +145,7 @@ export default function SettingsPage() {
       scale_percentage: parsedRules.scale_percentage,
       target_cpr: parsedRules.target_cpr,
       max_cpr: parsedRules.max_cpr,
+      event_values: eventValues,
       updated_at: new Date().toISOString(),
     }
 
@@ -146,8 +170,41 @@ export default function SettingsPage() {
 
   const handleReset = async () => {
     setRules(DEFAULT_RULES)
+    setEventValues({})
     setSaved(false)
   }
+
+  // Event values handlers
+  const handleEventValueChange = (eventType: string, value: string) => {
+    setSaved(false)
+    const numValue = parseFloat(value)
+    if (!isNaN(numValue) && numValue >= 0) {
+      setEventValues(prev => ({ ...prev, [eventType]: numValue }))
+    }
+  }
+
+  const handleRemoveEventValue = (eventType: string) => {
+    setSaved(false)
+    setEventValues(prev => {
+      const next = { ...prev }
+      delete next[eventType]
+      return next
+    })
+  }
+
+  const handleAddEventValue = (eventType: string) => {
+    setSaved(false)
+    setEventValues(prev => ({ ...prev, [eventType]: 0 }))
+  }
+
+  // Get events that haven't been added yet
+  const availableEvents = STANDARD_EVENTS.filter(e => !(e.key in eventValues))
+
+  // Get configured events for display
+  const configuredEvents = Object.entries(eventValues).map(([key, value]) => {
+    const event = STANDARD_EVENTS.find(e => e.key === key)
+    return { key, label: event?.label || key, value }
+  })
 
   if (loading) {
     return (
@@ -281,11 +338,84 @@ export default function SettingsPage() {
           </p>
         </div>
 
+        {/* Divider - Event Values */}
+        <div className="border-t border-border pt-6">
+          <h3 className="text-sm font-medium text-zinc-400 mb-2">Event Values</h3>
+          <p className="text-xs text-zinc-600 mb-4">
+            Assign dollar values to conversion events. When your campaigns generate results (leads, registrations, etc.), ROAS will be calculated using these values.
+          </p>
+        </div>
+
+        {/* Configured Event Values */}
+        <div className="space-y-3">
+          {configuredEvents.map(({ key, label, value }) => (
+            <div key={key} className="flex items-center gap-3 bg-bg-hover rounded-lg p-3">
+              <div className="flex-1">
+                <span className="text-sm font-medium text-white">{label}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500 text-sm">$</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={value}
+                  onChange={(e) => handleEventValueChange(key, e.target.value)}
+                  className="w-24 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white font-mono text-sm focus:outline-none focus:border-accent"
+                />
+              </div>
+              <button
+                onClick={() => handleRemoveEventValue(key)}
+                className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+
+          {configuredEvents.length === 0 && (
+            <div className="text-sm text-zinc-500 py-2">
+              No event values configured. Add events below to track their value.
+            </div>
+          )}
+        </div>
+
+        {/* Add Event Dropdown */}
+        {availableEvents.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center gap-2">
+              <select
+                id="add-event-select"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleAddEventValue(e.target.value)
+                    e.target.value = ''
+                  }
+                }}
+                className="flex-1 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white text-sm focus:outline-none focus:border-accent appearance-none cursor-pointer"
+              >
+                <option value="" disabled>Select an event to add...</option>
+                {availableEvents.map(({ key, label }) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+              <div className="p-2 text-accent">
+                <Plus className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-zinc-600 mt-4">
+          ROAS = (Results × Event Value) / Spend. For example: 10 leads × $29 value = $290 revenue.
+        </p>
+
         {/* Divider - CPR Thresholds */}
         <div className="border-t border-border pt-6">
-          <h3 className="text-sm font-medium text-zinc-400 mb-2">Cost Per Result (Lead-Gen Campaigns)</h3>
+          <h3 className="text-sm font-medium text-zinc-400 mb-2">Cost Per Result Thresholds</h3>
           <p className="text-xs text-zinc-600 mb-4">
-            For campaigns optimized for leads, registrations, or other non-revenue results, set CPR thresholds instead of ROAS. Leave blank to use ROAS-based verdicts for all campaigns.
+            Set CPR thresholds to judge lead-gen campaigns by cost instead of ROAS. Optional - leave blank to use event values above.
           </p>
         </div>
 

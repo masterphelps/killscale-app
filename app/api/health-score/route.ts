@@ -65,7 +65,8 @@ export async function POST(request: NextRequest) {
       clicks: row.clicks || 0,
       spend: parseFloat(row.spend) || 0,
       purchases: row.purchases || 0,
-      revenue: parseFloat(row.revenue) || 0,
+      // Use result_value (calculated from event_values for lead-gen) if available, otherwise fall back to revenue
+      revenue: parseFloat(row.result_value) || parseFloat(row.revenue) || 0,
       status: row.status,
       adset_status: row.adset_status,
       campaign_status: row.campaign_status,

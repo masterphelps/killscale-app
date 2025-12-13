@@ -306,7 +306,8 @@ export default function DashboardPage() {
         clicks: row.clicks,
         spend: parseFloat(row.spend),
         purchases: row.purchases,
-        revenue: parseFloat(row.revenue),
+        // Use result_value (calculated from event_values for lead-gen) if available, otherwise fall back to revenue
+        revenue: parseFloat(row.result_value) || parseFloat(row.revenue) || 0,
         // Results-based tracking fields
         results: row.results || 0,
         result_value: row.result_value ?? null,

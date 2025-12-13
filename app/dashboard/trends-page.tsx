@@ -420,7 +420,8 @@ export default function TrendsPage() {
         clicks: row.clicks,
         spend: parseFloat(row.spend),
         purchases: row.purchases,
-        revenue: parseFloat(row.revenue),
+        // Use result_value (calculated from event_values for lead-gen) if available, otherwise fall back to revenue
+        revenue: parseFloat(row.result_value) || parseFloat(row.revenue) || 0,
         status: row.status,
         adset_status: row.adset_status,
         campaign_status: row.campaign_status
@@ -428,7 +429,7 @@ export default function TrendsPage() {
     }
     setIsLoading(false)
   }
-  
+
   // Get display label for current date selection
   const getDateLabel = () => {
     if (dataDateRange) {

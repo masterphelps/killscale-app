@@ -142,7 +142,8 @@ export async function POST(request: NextRequest) {
 
     adData.forEach(row => {
       const spend = parseFloat(row.spend) || 0
-      const revenue = parseFloat(row.revenue) || 0
+      // Use result_value (calculated from event_values for lead-gen) if available, otherwise fall back to revenue
+      const revenue = parseFloat(row.result_value) || parseFloat(row.revenue) || 0
       const purchases = row.purchases || 0
 
       // Campaign aggregation with budget detection

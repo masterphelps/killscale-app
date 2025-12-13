@@ -176,6 +176,16 @@ export async function POST(request: NextRequest) {
     
     const accessToken = connection.access_token
 
+    // Fetch rules (including event_values) for this ad account
+    const { data: rulesData } = await supabase
+      .from('rules')
+      .select('event_values')
+      .eq('user_id', userId)
+      .eq('ad_account_id', adAccountId)
+      .single()
+
+    const eventValues: Record<string, number> = rulesData?.event_values || {}
+
     // Fields needed for insights
     const fields = [
       'campaign_name',
@@ -337,8 +347,35 @@ export async function POST(request: NextRequest) {
       }
 
       const resultCount = resultAction ? parseInt(resultAction.value) : 0
-      // Result value only exists for purchases (monetary value)
-      const resultValue = purchaseValue ? parseFloat(purchaseValue.value) : null
+
+      // Calculate result value
+      // 1. If we have a purchase value from Meta, use it (ecommerce)
+      // 2. If no purchase value but we have results and event_values, calculate it (lead-gen)
+      let resultValue: number | null = null
+
+      if (purchaseValue) {
+        // Use purchase value from Meta (ecommerce campaigns)
+        resultValue = parseFloat(purchaseValue.value)
+      } else if (resultCount > 0 && resultType) {
+        // Check if we have an event value configured for this result type
+        // Normalize the result type to match our event_values keys
+        const normalizedType = resultType.toLowerCase().replace(/-/g, '_')
+
+        // Try various key formats to find a match
+        const eventValue = eventValues[normalizedType]
+          || eventValues[resultType]
+          || eventValues[resultType.toLowerCase()]
+          // Handle common variations
+          || (normalizedType === 'registration' ? eventValues['complete_registration'] : null)
+          || (normalizedType === 'complete_registration' ? eventValues['registration'] : null)
+          || (normalizedType === 'omni_purchase' ? eventValues['purchase'] : null)
+          || (normalizedType === 'app_install' ? eventValues['install'] : null)
+          || (normalizedType === 'mobile_app_install' ? eventValues['install'] : null)
+
+        if (eventValue && eventValue > 0) {
+          resultValue = resultCount * eventValue
+        }
+      }
 
       // Get status at each level using the new maps
       const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
