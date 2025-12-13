@@ -137,21 +137,23 @@ export function HealthScoreCard({ score, isLoading }: HealthScoreCardProps) {
         </p>
 
         {/* Trend Indicator */}
-        <div className="flex items-center justify-center gap-2 pt-4 border-t border-border">
-          {getTrendIcon()}
-          <span className={cn(
-            'text-sm font-medium',
-            score.trend.direction === 'improving' ? 'text-verdict-scale' :
-            score.trend.direction === 'declining' ? 'text-verdict-kill' :
-            'text-zinc-400'
-          )}>
-            {score.trend.direction === 'improving'
-              ? `ROAS up ${score.trend.changePercent.toFixed(1)}%`
-              : score.trend.direction === 'declining'
-              ? `ROAS down ${Math.abs(score.trend.changePercent).toFixed(1)}%`
-              : 'ROAS stable'}
-          </span>
-          <span className="text-xs text-zinc-500">vs previous period</span>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 pt-4 border-t border-border">
+          <div className="flex items-center gap-1">
+            {getTrendIcon()}
+            <span className={cn(
+              'text-sm font-medium',
+              score.trend.direction === 'improving' ? 'text-verdict-scale' :
+              score.trend.direction === 'declining' ? 'text-verdict-kill' :
+              'text-zinc-400'
+            )}>
+              {score.trend.direction === 'improving'
+                ? `ROAS up ${score.trend.changePercent.toFixed(1)}%`
+                : score.trend.direction === 'declining'
+                ? `ROAS down ${Math.abs(score.trend.changePercent).toFixed(1)}%`
+                : 'ROAS stable'}
+            </span>
+          </div>
+          <span className="text-xs text-zinc-500">vs previous</span>
         </div>
       </div>
     </div>

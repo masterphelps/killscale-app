@@ -95,43 +95,43 @@ export function AndromedaPreview({ score, isLoading, onViewAudit }: AndromedaPre
         {/* Main Content - fills space */}
         <div className="flex-1 flex flex-col justify-between py-2">
           {/* Score + Label + Message Row */}
-          <div className="flex items-center gap-6">
-            {/* Score Circle - matches health score size */}
+          <div className="flex items-center gap-4 sm:gap-6">
+            {/* Score Circle - smaller on mobile */}
             <div className="relative flex-shrink-0">
-              <svg className="w-32 h-32 transform -rotate-90">
+              <svg className="w-20 h-20 sm:w-32 sm:h-32 transform -rotate-90">
                 <circle
-                  cx="64"
-                  cy="64"
-                  r="56"
+                  cx="50%"
+                  cy="50%"
+                  r="40%"
                   stroke="currentColor"
                   strokeWidth="8"
                   fill="transparent"
                   className="text-bg-dark"
                 />
                 <circle
-                  cx="64"
-                  cy="64"
-                  r="56"
+                  cx="50%"
+                  cy="50%"
+                  r="40%"
                   stroke="currentColor"
                   strokeWidth="8"
                   fill="transparent"
-                  strokeDasharray={`${score.totalScore * 3.52} 352`}
+                  strokeDasharray={`${score.totalScore * 2.51} 251`}
                   strokeLinecap="round"
                   className={getScoreColor(score.totalScore)}
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={cn('text-4xl font-bold font-mono', getScoreColor(score.totalScore))}>
+                <span className={cn('text-2xl sm:text-4xl font-bold font-mono', getScoreColor(score.totalScore))}>
                   {score.totalScore}
                 </span>
-                <span className="text-xs text-zinc-500">/ 100</span>
+                <span className="text-[10px] sm:text-xs text-zinc-500">/ 100</span>
               </div>
             </div>
 
             {/* Label + Insight */}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className={cn(
-                'inline-block px-3 py-1 rounded-full text-sm font-semibold mb-2',
+                'inline-block px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-semibold mb-2',
                 score.totalScore >= 90 ? 'bg-verdict-scale/20 text-verdict-scale' :
                 score.totalScore >= 70 ? 'bg-verdict-watch/20 text-verdict-watch' :
                 score.totalScore >= 50 ? 'bg-orange-500/20 text-orange-400' :
@@ -139,11 +139,11 @@ export function AndromedaPreview({ score, isLoading, onViewAudit }: AndromedaPre
               )}>
                 {score.label}
               </div>
-              <p className="text-sm text-zinc-300">{getInsightMessage()}</p>
+              <p className="text-xs sm:text-sm text-zinc-300">{getInsightMessage()}</p>
 
               {/* Issue counts */}
               {(criticalCount > 0 || warningCount > 0) && (
-                <div className="flex items-center gap-3 mt-2">
+                <div className="flex items-center gap-2 sm:gap-3 mt-2">
                   {criticalCount > 0 && (
                     <span className="flex items-center gap-1 text-xs text-verdict-kill">
                       <AlertCircle className="w-3.5 h-3.5" />
@@ -161,8 +161,8 @@ export function AndromedaPreview({ score, isLoading, onViewAudit }: AndromedaPre
             </div>
           </div>
 
-          {/* Factor Mini-Gauges - at bottom */}
-          <div className="grid grid-cols-5 gap-2">
+          {/* Factor Mini-Gauges - at bottom, scrollable on mobile */}
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-4 sm:mt-0">
             {(Object.entries(score.factors) as [AndromedaFactor, typeof score.factors.cbo][]).map(([key, factor]) => {
               // Skip factors with 0 weight
               if (factor.weight === 0) {

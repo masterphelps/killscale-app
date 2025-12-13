@@ -164,21 +164,21 @@ function KillCard({ items, onKill, isLoading, fullWidth }: KillCardProps) {
 
       <div className="relative">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-verdict-kill/20 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-verdict-kill/20 flex items-center justify-center flex-shrink-0">
               <TrendingDown className="w-5 h-5 text-verdict-kill" />
             </div>
             <div>
               <h3 className="font-semibold text-white">Wasted Spend</h3>
-              <p className="text-sm text-zinc-500">{items.length} budget{items.length !== 1 ? 's' : ''} bleeding money</p>
+              <p className="text-sm text-zinc-500">{items.length} budget{items.length !== 1 ? 's' : ''} bleeding</p>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold font-mono text-verdict-kill">
+          <div className="text-right flex-shrink-0">
+            <div className="text-lg sm:text-2xl font-bold font-mono text-verdict-kill">
               {formatCurrency(totalWastedPerDay)}/day
             </div>
-            <div className="text-sm text-zinc-500">
+            <div className="text-xs sm:text-sm text-zinc-500">
               {formatCurrency(totalWastedPerMonth)}/mo
             </div>
           </div>
@@ -207,7 +207,7 @@ function KillCard({ items, onKill, isLoading, fullWidth }: KillCardProps) {
               />
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-white truncate">{maskEntityName(item.name, item.entityType, index)}</div>
-                <div className="text-xs text-zinc-500 flex items-center gap-2">
+                <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-1 sm:gap-2">
                   <span className={cn(
                     'px-1.5 py-0.5 rounded text-[10px] font-medium',
                     item.budgetType === 'CBO' ? 'bg-hierarchy-campaign/20 text-hierarchy-campaign' : 'bg-hierarchy-adset/20 text-hierarchy-adset'
@@ -215,7 +215,7 @@ function KillCard({ items, onKill, isLoading, fullWidth }: KillCardProps) {
                     {item.budgetType || 'ABO'}
                   </span>
                   <span>{formatCurrency(item.dailyBudget || 0)}/day</span>
-                  <span className="text-verdict-kill">{item.roas.toFixed(1)}x ROAS</span>
+                  <span className="text-verdict-kill">{item.roas.toFixed(1)}x</span>
                 </div>
               </div>
             </label>
@@ -394,21 +394,21 @@ function ScaleCard({ items, scalePercentage, onScale, isLoading, fullWidth }: Sc
 
       <div className="relative">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-verdict-scale/20 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-verdict-scale/20 flex items-center justify-center flex-shrink-0">
               <TrendingUp className="w-5 h-5 text-verdict-scale" />
             </div>
             <div>
               <h3 className="font-semibold text-white">Profit Potential</h3>
-              <p className="text-sm text-zinc-500">{items.length} budget{items.length !== 1 ? 's' : ''} ready to scale</p>
+              <p className="text-sm text-zinc-500">{items.length} ready to scale</p>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold font-mono text-verdict-scale">
+          <div className="text-right flex-shrink-0">
+            <div className="text-lg sm:text-2xl font-bold font-mono text-verdict-scale">
               +{formatCurrency(totalOpportunityPerDay)}/day
             </div>
-            <div className="text-sm text-zinc-500">
+            <div className="text-xs sm:text-sm text-zinc-500">
               +{formatCurrency(totalOpportunityPerMonth)}/mo
             </div>
           </div>
@@ -439,7 +439,7 @@ function ScaleCard({ items, scalePercentage, onScale, isLoading, fullWidth }: Sc
                 />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-white truncate">{maskEntityName(item.name, item.entityType, index)}</div>
-                  <div className="text-xs text-zinc-500 flex items-center gap-2">
+                  <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-1 sm:gap-2">
                     <span className={cn(
                       'px-1.5 py-0.5 rounded text-[10px] font-medium',
                       item.budgetType === 'CBO' ? 'bg-hierarchy-campaign/20 text-hierarchy-campaign' : 'bg-hierarchy-adset/20 text-hierarchy-adset'
@@ -449,7 +449,7 @@ function ScaleCard({ items, scalePercentage, onScale, isLoading, fullWidth }: Sc
                     <span>
                       {formatCurrency(item.dailyBudget || 0)} → {formatCurrency(newBudget)}
                     </span>
-                    <span className="text-verdict-scale">{item.roas.toFixed(1)}x ROAS</span>
+                    <span className="text-verdict-scale">{item.roas.toFixed(1)}x</span>
                   </div>
                 </div>
               </label>

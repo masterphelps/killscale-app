@@ -731,12 +731,20 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
   const handleNext = () => {
     const next = getNextStep()
-    if (next) setStep(next)
+    if (next) {
+      setStep(next)
+      // Scroll to top of page on mobile
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
   }
 
   const handleBack = () => {
     const prev = getPrevStep()
-    if (prev) setStep(prev)
+    if (prev) {
+      setStep(prev)
+      // Scroll to top of page on mobile
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
   }
 
   // Loading state
@@ -1356,7 +1364,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
             {/* Upload options */}
             <div>
               <label className="block text-sm font-medium mb-3">Add Creatives</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Upload new */}
                 <div
                   className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-zinc-600 hover:bg-bg-hover/50 transition-all"
@@ -1409,7 +1417,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {state.creatives.map((creative, index) => (
                     <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-bg-hover group">
                       {creative.type === 'image' ? (
@@ -1770,16 +1778,16 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         {/* Content - Two column layout for creatives/copy/review */}
         <div className={cn(
           "mb-6",
-          showPreviewPanel ? "grid lg:grid-cols-2 gap-6" : ""
+          showPreviewPanel ? "grid lg:grid-cols-2 gap-4 lg:gap-6" : ""
         )}>
           {/* Form Panel */}
-          <div className="bg-bg-card border border-border rounded-xl p-6">
+          <div className="bg-bg-card border border-border rounded-xl p-4 sm:p-6">
             {renderStep()}
           </div>
 
           {/* Preview Panel */}
           {showPreviewPanel && (
-            <div className="bg-bg-card border border-border rounded-xl p-6 lg:sticky lg:top-6 lg:self-start">
+            <div className="bg-bg-card border border-border rounded-xl p-4 sm:p-6 lg:sticky lg:top-6 lg:self-start">
               <h3 className="text-sm font-medium text-zinc-400 mb-4">Ad Preview</h3>
               <AdPreviewPanel
                 creatives={state.creatives.map(c => ({
@@ -1798,8 +1806,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between">
+        {/* Footer - with extra padding on mobile for iOS home bar */}
+        <div className="flex items-center justify-between pb-safe-6 sm:pb-0">
           <button
             onClick={handleBack}
             disabled={!getPrevStep()}

@@ -17,6 +17,19 @@ body {
   color: #fafafa;
 }
 
+/* Safe area utilities for iOS home bar */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pb-safe-6 {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -303,7 +303,14 @@ export default function InsightsPage() {
         .order('date_start', { ascending: false })
 
       if (adData && !adError) {
-        setData(adData)
+        // Transform data to use result_value for revenue when available
+        const transformedData = adData.map(row => ({
+          ...row,
+          // Use result_value (calculated from event_values for lead-gen) if available
+          revenue: parseFloat(row.result_value) || parseFloat(row.revenue) || 0,
+          spend: parseFloat(row.spend) || 0,
+        }))
+        setData(transformedData)
       }
 
       // Load rules
@@ -408,8 +415,8 @@ export default function InsightsPage() {
         campaignMap.set(row.campaign_name, campaign)
       }
 
-      campaign.spend += parseFloat(row.spend) || 0
-      campaign.revenue += parseFloat(row.revenue) || 0
+      campaign.spend += row.spend
+      campaign.revenue += row.revenue
       campaign.purchases += row.purchases || 0
 
       let adset = campaign.children?.find(a => a.name === row.adset_name)
@@ -431,8 +438,8 @@ export default function InsightsPage() {
         campaign.children?.push(adset)
       }
 
-      adset.spend += parseFloat(row.spend) || 0
-      adset.revenue += parseFloat(row.revenue) || 0
+      adset.spend += row.spend
+      adset.revenue += row.revenue
       adset.purchases += row.purchases || 0
     })
 
@@ -886,9 +893,9 @@ export default function InsightsPage() {
         {/* Main Content */}
         {!error && (
           <div className="space-y-6">
-            {/* Scores Row: Health (smaller) + Andromeda (fills rest, same height) */}
-            <div className="flex gap-6 items-stretch">
-              <div className="w-72 flex-shrink-0">
+            {/* Scores Row: Stack on mobile, side-by-side on desktop */}
+            <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 lg:items-stretch">
+              <div className="w-full lg:w-72 lg:flex-shrink-0">
                 <HealthScoreCard score={healthScore} isLoading={isLoading} />
               </div>
               <div className="flex-1 [&>div]:h-full [&>div]:mb-0">

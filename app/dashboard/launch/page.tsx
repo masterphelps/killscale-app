@@ -472,8 +472,7 @@ export default function LaunchPage() {
   // Upgrade prompt for non-Pro users
   if (!canLaunch) {
     return (
-      <div className="min-h-screen bg-bg-dark text-white pl-60">
-        <div className="p-8">
+      <div>
           <div className="max-w-2xl mx-auto text-center py-16">
             <div className="w-16 h-16 bg-accent/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <Rocket className="w-8 h-8 text-accent" />
@@ -495,7 +494,6 @@ export default function LaunchPage() {
               </button>
             </div>
           </div>
-        </div>
       </div>
     )
   }
@@ -503,27 +501,19 @@ export default function LaunchPage() {
   // Show wizard
   if (showWizard && currentAccountId) {
     return (
-      <div className="min-h-screen bg-bg-dark text-white pl-60">
-        <div className="p-8">
-          <LaunchWizard
-            adAccountId={currentAccountId}
-            onComplete={handleWizardComplete}
-            onCancel={() => setShowWizard(false)}
-          />
-        </div>
-      </div>
+      <LaunchWizard
+        adAccountId={currentAccountId}
+        onComplete={handleWizardComplete}
+        onCancel={() => setShowWizard(false)}
+      />
     )
   }
 
   // Loading state
   if (loading && campaigns.length === 0) {
     return (
-      <div className="min-h-screen bg-bg-dark text-white pl-60">
-        <div className="p-8">
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 animate-spin text-accent" />
-          </div>
-        </div>
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" />
       </div>
     )
   }
@@ -531,392 +521,381 @@ export default function LaunchPage() {
   // No account selected
   if (!currentAccountId && !loading) {
     return (
-      <div className="min-h-screen bg-bg-dark text-white pl-60">
-        <div className="p-8">
-          <div className="max-w-2xl mx-auto text-center py-16">
-            <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Rocket className="w-8 h-8 text-zinc-500" />
-            </div>
-            <h1 className="text-2xl font-bold mb-4">No Ad Account Selected</h1>
-            <p className="text-zinc-400 mb-6">
-              Select an ad account from the sidebar to view and create campaigns.
-            </p>
-            <button
-              onClick={() => router.push('/dashboard/connect')}
-              className="text-accent hover:underline"
-            >
-              Connect an account →
-            </button>
-          </div>
+      <div className="max-w-2xl mx-auto text-center py-16">
+        <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <Rocket className="w-8 h-8 text-zinc-500" />
         </div>
+        <h1 className="text-2xl font-bold mb-4">No Ad Account Selected</h1>
+        <p className="text-zinc-400 mb-6">
+          Select an ad account from the sidebar to view and create campaigns.
+        </p>
+        <button
+          onClick={() => router.push('/dashboard/connect')}
+          className="text-accent hover:underline"
+        >
+          Connect an account →
+        </button>
       </div>
     )
   }
 
   // Main view
   return (
-    <div className="min-h-screen bg-bg-dark text-white pl-60">
-      <div className="p-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <Rocket className="w-7 h-7 text-accent" />
-              Launch
-            </h1>
-            <p className="text-zinc-500 mt-1">
-              Manage and create campaigns
-            </p>
+    <div>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <Rocket className="w-7 h-7 text-accent" />
+            Launch
+          </h1>
+          <p className="text-zinc-500 mt-1">
+            Manage and create campaigns
+          </p>
+        </div>
+        <button
+          onClick={() => setShowWizard(true)}
+          className="inline-flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">Launch New Campaign</span>
+          <span className="sm:hidden">New Campaign</span>
+        </button>
+      </div>
+
+      {/* Empty state */}
+      {campaigns.length === 0 && !loading && (
+        <div className="max-w-2xl mx-auto text-center py-16">
+          <div className="w-20 h-20 bg-gradient-to-br from-accent/20 to-purple-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Rocket className="w-10 h-10 text-accent" />
           </div>
+          <h2 className="text-2xl font-bold mb-4">No Campaigns Yet</h2>
+          <p className="text-zinc-400 mb-8 max-w-md mx-auto">
+            Launch your first Andromeda-compliant campaign in 60 seconds.
+          </p>
           <button
             onClick={() => setShowWizard(true)}
-            className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+            className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Launch New Campaign
+            <Plus className="w-5 h-5" />
+            Launch Campaign
           </button>
         </div>
+      )}
 
-        {/* Empty state */}
-        {campaigns.length === 0 && !loading && (
-          <div className="max-w-2xl mx-auto text-center py-16">
-            <div className="w-20 h-20 bg-gradient-to-br from-accent/20 to-purple-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Rocket className="w-10 h-10 text-accent" />
+      {/* Campaigns List */}
+      {campaigns.length > 0 && (
+        <div className="space-y-2">
+          {loading && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-accent" />
             </div>
-            <h2 className="text-2xl font-bold mb-4">No Campaigns Yet</h2>
-            <p className="text-zinc-400 mb-8 max-w-md mx-auto">
-              Launch your first Andromeda-compliant campaign in 60 seconds.
-            </p>
-            <button
-              onClick={() => setShowWizard(true)}
-              className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Launch Campaign
-            </button>
-          </div>
-        )}
+          )}
+          {campaigns.map((campaign) => {
+            const isExpanded = expandedCampaigns.has(campaign.id)
+            const campaignAdSets = adSetsData[campaign.id] || []
+            const isLoadingAdSets = loadingAdSets.has(campaign.id)
 
-        {/* Campaigns List */}
-        {campaigns.length > 0 && (
-          <div className="space-y-2">
-            {loading && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="w-5 h-5 animate-spin text-accent" />
-              </div>
-            )}
-            {campaigns.map((campaign) => {
-              const isExpanded = expandedCampaigns.has(campaign.id)
-              const campaignAdSets = adSetsData[campaign.id] || []
-              const isLoadingAdSets = loadingAdSets.has(campaign.id)
-
-              return (
-                <div key={campaign.id} className="bg-bg-card border border-border rounded-xl overflow-hidden">
-                  {/* Campaign Row */}
-                  <div
-                    className={cn(
-                      "p-4 cursor-pointer hover:bg-bg-hover/50 transition-colors",
-                      isExpanded && "border-b border-border"
-                    )}
-                    onClick={() => toggleCampaign(campaign.id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button className="p-1 hover:bg-bg-hover rounded transition-colors">
-                        {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-zinc-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-zinc-400" />
+            return (
+              <div key={campaign.id} className="bg-bg-card border border-border rounded-xl overflow-hidden">
+                {/* Campaign Row */}
+                <div
+                  className={cn(
+                    "p-3 sm:p-4 cursor-pointer hover:bg-bg-hover/50 transition-colors",
+                    isExpanded && "border-b border-border"
+                  )}
+                  onClick={() => toggleCampaign(campaign.id)}
+                >
+                  {/* Mobile: Stack layout / Desktop: Row layout */}
+                  <div className="flex items-start sm:items-center gap-2 sm:gap-3">
+                    <button className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0 mt-0.5 sm:mt-0">
+                      {isExpanded ? (
+                        <ChevronDown className="w-4 h-4 text-zinc-400" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-zinc-400" />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      {/* Campaign name and badges */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="hidden sm:inline px-1.5 py-0.5 bg-hierarchy-campaign/20 text-hierarchy-campaign text-xs font-medium rounded">
+                          Campaign
+                        </span>
+                        <h3 className="font-semibold truncate max-w-[200px] sm:max-w-none">{campaign.name}</h3>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-xs font-medium uppercase",
+                          campaign.status === 'ACTIVE'
+                            ? "bg-verdict-scale/20 text-verdict-scale"
+                            : "bg-zinc-700 text-zinc-400"
+                        )}>
+                          {campaign.status}
+                        </span>
+                        {campaign.isKillScaleCreated && (
+                          <span className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-accent/20 text-accent">
+                            <Sparkles className="w-3 h-3" />
+                            KillScale
+                          </span>
                         )}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3">
-                          <span className="px-1.5 py-0.5 bg-hierarchy-campaign/20 text-hierarchy-campaign text-xs font-medium rounded">
-                            Campaign
-                          </span>
-                          <h3 className="font-semibold truncate">{campaign.name}</h3>
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-xs font-medium uppercase flex-shrink-0",
-                            campaign.status === 'ACTIVE'
-                              ? "bg-verdict-scale/20 text-verdict-scale"
-                              : "bg-zinc-700 text-zinc-400"
-                          )}>
-                            {campaign.status}
-                          </span>
-                          {campaign.isKillScaleCreated && (
-                            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-accent/20 text-accent flex-shrink-0">
-                              <Sparkles className="w-3 h-3" />
-                              KillScale
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-sm text-zinc-500 mt-1 ml-[74px]">
-                          <span className={cn(
-                            "text-[10px] font-semibold px-1.5 py-0.5 rounded",
-                            getBudgetType(campaign) === 'CBO'
-                              ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                              : "bg-purple-500/20 text-purple-400 border border-purple-500/30"
-                          )}>
-                            {getBudgetType(campaign)}
-                          </span>
-                          {campaign.objective && (
-                            <span>{formatObjective(campaign.objective)}</span>
-                          )}
-                        </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => handleStatusToggle(campaign)}
-                          disabled={updatingStatus === campaign.id}
-                          className={cn(
-                            "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                            campaign.status === 'PAUSED'
-                              ? "bg-verdict-scale/20 text-verdict-scale hover:bg-verdict-scale/30"
-                              : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
-                          )}
-                        >
-                          {updatingStatus === campaign.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : campaign.status === 'PAUSED' ? (
-                            <>
-                              <Play className="w-3.5 h-3.5" />
-                              Activate
-                            </>
-                          ) : (
-                            <>
-                              <Pause className="w-3.5 h-3.5" />
-                              Pause
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => {
-                            const adSetCount = adSetsData[campaign.id]?.length || 0
-                            const adCount = Object.values(adsData)
-                              .flat()
-                              .filter(ad => adSetsData[campaign.id]?.some(as => adsData[as.id]?.includes(ad)))
-                              .length || 0
-                            setDeleteModal({
-                              isOpen: true,
-                              entityId: campaign.id,
-                              entityType: 'campaign',
-                              entityName: campaign.name,
-                              childCount: { adsets: adSetCount, ads: adCount }
-                            })
-                          }}
-                          className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Delete campaign"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <a
-                          href={`https://business.facebook.com/adsmanager/manage/campaigns?act=${currentAccountId?.replace('act_', '')}&selected_campaign_ids=${campaign.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 text-zinc-500 hover:text-white hover:bg-bg-hover rounded-lg transition-colors"
-                          title="View in Ads Manager"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
+                      {/* Meta info row */}
+                      <div className="flex items-center gap-2 sm:gap-3 text-sm text-zinc-500 mt-1 sm:ml-[74px]">
+                        <span className={cn(
+                          "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                          getBudgetType(campaign) === 'CBO'
+                            ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                            : "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                        )}>
+                          {getBudgetType(campaign)}
+                        </span>
+                        {campaign.objective && (
+                          <span className="hidden sm:inline">{formatObjective(campaign.objective)}</span>
+                        )}
                       </div>
                     </div>
+                    {/* Action buttons - icon only on mobile */}
+                    <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleStatusToggle(campaign)}
+                        disabled={updatingStatus === campaign.id}
+                        className={cn(
+                          "flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 rounded-lg text-sm font-medium transition-colors",
+                          campaign.status === 'PAUSED'
+                            ? "bg-verdict-scale/20 text-verdict-scale hover:bg-verdict-scale/30"
+                            : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+                        )}
+                      >
+                        {updatingStatus === campaign.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : campaign.status === 'PAUSED' ? (
+                          <>
+                            <Play className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Activate</span>
+                          </>
+                        ) : (
+                          <>
+                            <Pause className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Pause</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const adSetCount = adSetsData[campaign.id]?.length || 0
+                          const adCount = Object.values(adsData)
+                            .flat()
+                            .filter(ad => adSetsData[campaign.id]?.some(as => adsData[as.id]?.includes(ad)))
+                            .length || 0
+                          setDeleteModal({
+                            isOpen: true,
+                            entityId: campaign.id,
+                            entityType: 'campaign',
+                            entityName: campaign.name,
+                            childCount: { adsets: adSetCount, ads: adCount }
+                          })
+                        }}
+                        className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Delete campaign"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <a
+                        href={`https://business.facebook.com/adsmanager/manage/campaigns?act=${currentAccountId?.replace('act_', '')}&selected_campaign_ids=${campaign.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hidden sm:flex p-2 text-zinc-500 hover:text-white hover:bg-bg-hover rounded-lg transition-colors"
+                        title="View in Ads Manager"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
                   </div>
+                </div>
 
-                  {/* Ad Sets (expanded) */}
-                  {isExpanded && (
-                    <div className="bg-bg-dark/50">
-                      {isLoadingAdSets ? (
-                        <div className="flex items-center justify-center py-6">
-                          <Loader2 className="w-5 h-5 animate-spin text-accent" />
-                        </div>
-                      ) : campaignAdSets.length === 0 ? (
-                        <div className="py-6 text-center text-zinc-500 text-sm">
-                          No ad sets found
-                        </div>
-                      ) : (
-                        campaignAdSets.map((adSet) => {
-                          const isAdSetExpanded = expandedAdSets.has(adSet.id)
-                          const adSetAds = adsData[adSet.id] || []
-                          const isLoadingAdSetAds = loadingAds.has(adSet.id)
+                {/* Ad Sets (expanded) */}
+                {isExpanded && (
+                  <div className="bg-bg-dark/50">
+                    {isLoadingAdSets ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="w-5 h-5 animate-spin text-accent" />
+                      </div>
+                    ) : campaignAdSets.length === 0 ? (
+                      <div className="py-6 text-center text-zinc-500 text-sm">
+                        No ad sets found
+                      </div>
+                    ) : (
+                      campaignAdSets.map((adSet) => {
+                        const isAdSetExpanded = expandedAdSets.has(adSet.id)
+                        const adSetAds = adsData[adSet.id] || []
+                        const isLoadingAdSetAds = loadingAds.has(adSet.id)
 
-                          return (
-                            <div key={adSet.id} className="border-t border-border/50">
-                              {/* Ad Set Row */}
-                              <div
-                                className="pl-10 pr-4 py-3 cursor-pointer hover:bg-bg-hover/30 transition-colors"
-                                onClick={() => toggleAdSet(adSet.id)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <button className="p-1 hover:bg-bg-hover rounded transition-colors">
-                                    {isAdSetExpanded ? (
-                                      <ChevronDown className="w-4 h-4 text-zinc-400" />
+                        return (
+                          <div key={adSet.id} className="border-t border-border/50">
+                            {/* Ad Set Row */}
+                            <div
+                              className="pl-4 sm:pl-10 pr-3 sm:pr-4 py-3 cursor-pointer hover:bg-bg-hover/30 transition-colors"
+                              onClick={() => toggleAdSet(adSet.id)}
+                            >
+                              <div className="flex items-start sm:items-center gap-2">
+                                <button className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0">
+                                  {isAdSetExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-zinc-400" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-zinc-400" />
+                                  )}
+                                </button>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="hidden sm:inline px-1.5 py-0.5 bg-hierarchy-adset/20 text-hierarchy-adset text-xs font-medium rounded">
+                                      Ad Set
+                                    </span>
+                                    <span className="font-medium truncate max-w-[150px] sm:max-w-none">{adSet.name}</span>
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded text-xs font-medium uppercase",
+                                      adSet.status === 'ACTIVE'
+                                        ? "bg-verdict-scale/20 text-verdict-scale"
+                                        : "bg-zinc-700 text-zinc-400"
+                                    )}>
+                                      {adSet.status}
+                                    </span>
+                                  </div>
+                                  {(adSet.dailyBudget || adSet.lifetimeBudget) && (
+                                    <div className="flex items-center gap-2 text-sm text-zinc-500 mt-0.5">
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                                        ABO
+                                      </span>
+                                      <span>
+                                        {adSet.dailyBudget ? `$${adSet.dailyBudget}/day` : `$${adSet.lifetimeBudget} lifetime`}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                {/* Ad Set Actions */}
+                                <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleEntityStatusToggle(adSet.id, 'adset', adSet.status, campaign.id)}
+                                    disabled={updatingStatus === adSet.id}
+                                    className={cn(
+                                      "p-1.5 rounded-lg transition-colors",
+                                      adSet.status === 'PAUSED'
+                                        ? "text-green-500 hover:bg-green-500/20"
+                                        : "text-amber-500 hover:bg-amber-500/20"
+                                    )}
+                                    title={adSet.status === 'PAUSED' ? 'Activate' : 'Pause'}
+                                  >
+                                    {updatingStatus === adSet.id ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : adSet.status === 'PAUSED' ? (
+                                      <Play className="w-4 h-4" />
                                     ) : (
-                                      <ChevronRight className="w-4 h-4 text-zinc-400" />
+                                      <Pause className="w-4 h-4" />
                                     )}
                                   </button>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-3">
-                                      <span className="px-1.5 py-0.5 bg-hierarchy-adset/20 text-hierarchy-adset text-xs font-medium rounded">
-                                        Ad Set
-                                      </span>
-                                      <span className="font-medium truncate">{adSet.name}</span>
-                                      <span className={cn(
-                                        "px-2 py-0.5 rounded text-xs font-medium uppercase flex-shrink-0",
-                                        adSet.status === 'ACTIVE'
-                                          ? "bg-verdict-scale/20 text-verdict-scale"
-                                          : "bg-zinc-700 text-zinc-400"
-                                      )}>
-                                        {adSet.status}
-                                      </span>
-                                    </div>
-                                    {(adSet.dailyBudget || adSet.lifetimeBudget) && (
-                                      <div className="flex items-center gap-3 text-sm text-zinc-500 mt-0.5 ml-[60px]">
-                                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                                          ABO
-                                        </span>
-                                        <span>
-                                          {adSet.dailyBudget ? `$${adSet.dailyBudget}/day` : `$${adSet.lifetimeBudget} lifetime`}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {/* Ad Set Actions */}
-                                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                    <button
-                                      onClick={() => handleEntityStatusToggle(adSet.id, 'adset', adSet.status, campaign.id)}
-                                      disabled={updatingStatus === adSet.id}
-                                      className={cn(
-                                        "p-1.5 rounded-lg transition-colors",
-                                        adSet.status === 'PAUSED'
-                                          ? "text-green-500 hover:bg-green-500/20"
-                                          : "text-amber-500 hover:bg-amber-500/20"
-                                      )}
-                                      title={adSet.status === 'PAUSED' ? 'Activate' : 'Pause'}
-                                    >
-                                      {updatingStatus === adSet.id ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                      ) : adSet.status === 'PAUSED' ? (
-                                        <Play className="w-4 h-4" />
-                                      ) : (
-                                        <Pause className="w-4 h-4" />
-                                      )}
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        const adCount = adsData[adSet.id]?.length || 0
-                                        setDeleteModal({
-                                          isOpen: true,
-                                          entityId: adSet.id,
-                                          entityType: 'adset',
-                                          entityName: adSet.name,
-                                          childCount: { ads: adCount },
-                                          parentCampaignId: campaign.id
-                                        })
-                                      }}
-                                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                                      title="Delete ad set"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      const adCount = adsData[adSet.id]?.length || 0
+                                      setDeleteModal({
+                                        isOpen: true,
+                                        entityId: adSet.id,
+                                        entityType: 'adset',
+                                        entityName: adSet.name,
+                                        childCount: { ads: adCount },
+                                        parentCampaignId: campaign.id
+                                      })
+                                    }}
+                                    className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                    title="Delete ad set"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </div>
+                            </div>
 
-                              {/* Ads (expanded) */}
-                              {isAdSetExpanded && (
-                                <div className="bg-bg-dark/30">
-                                  {isLoadingAdSetAds ? (
-                                    <div className="flex items-center justify-center py-4">
-                                      <Loader2 className="w-4 h-4 animate-spin text-accent" />
-                                    </div>
-                                  ) : adSetAds.length === 0 ? (
-                                    <div className="py-4 text-center text-zinc-500 text-sm">
-                                      No ads found
-                                    </div>
-                                  ) : (
-                                    adSetAds.map((ad) => {
-                                      const creative = ad.creative?.id ? creativesData[ad.creative.id] : null
-                                      const isLoadingCreative = ad.creative?.id ? loadingCreatives.has(ad.creative.id) : false
-                                      const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl || ad.creative?.thumbnailUrl || ad.creative?.imageUrl
+                            {/* Ads (expanded) */}
+                            {isAdSetExpanded && (
+                              <div className="bg-bg-dark/30">
+                                {isLoadingAdSetAds ? (
+                                  <div className="flex items-center justify-center py-4">
+                                    <Loader2 className="w-4 h-4 animate-spin text-accent" />
+                                  </div>
+                                ) : adSetAds.length === 0 ? (
+                                  <div className="py-4 text-center text-zinc-500 text-sm">
+                                    No ads found
+                                  </div>
+                                ) : (
+                                  adSetAds.map((ad) => {
+                                    const creative = ad.creative?.id ? creativesData[ad.creative.id] : null
+                                    const isLoadingCreative = ad.creative?.id ? loadingCreatives.has(ad.creative.id) : false
+                                    const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl || ad.creative?.thumbnailUrl || ad.creative?.imageUrl
 
-                                      return (
-                                        <div key={ad.id} className="pl-20 pr-4 py-3 border-t border-border/30 hover:bg-bg-hover/20 transition-colors">
-                                          <div className="flex items-center gap-3">
-                                            {/* Creative Preview with Tooltip */}
-                                            <CreativePreviewTooltip
-                                              previewUrl={previewUrl}
-                                              mediaType={creative?.mediaType}
-                                              alt={ad.name}
-                                              onFullPreview={() => {
-                                                // For videos, use videoSource (actual playable URL), fallback to previewUrl (thumbnail)
-                                                const playbackUrl = creative?.mediaType === 'video' && creative?.videoSource
-                                                  ? creative.videoSource
-                                                  : previewUrl
-                                                if (playbackUrl) {
-                                                  setPreviewModal({
-                                                    isOpen: true,
-                                                    previewUrl: playbackUrl,
-                                                    mediaType: creative?.mediaType || 'unknown',
-                                                    name: ad.name
-                                                  })
-                                                }
-                                              }}
-                                            >
-                                              <div className="w-12 h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
-                                                {isLoadingCreative ? (
-                                                  <div className="w-full h-full flex items-center justify-center">
-                                                    <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
-                                                  </div>
-                                                ) : previewUrl ? (
-                                                  <img
-                                                    src={previewUrl}
-                                                    alt={ad.name}
-                                                    className="w-full h-full object-cover"
-                                                  />
-                                                ) : (
-                                                  <div className="w-full h-full flex items-center justify-center">
-                                                    {creative?.mediaType === 'video' ? (
-                                                      <Video className="w-5 h-5 text-zinc-600" />
-                                                    ) : (
-                                                      <ImageIcon className="w-5 h-5 text-zinc-600" />
-                                                    )}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </CreativePreviewTooltip>
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-3">
-                                                <span className="px-1.5 py-0.5 bg-zinc-700 text-zinc-300 text-xs font-medium rounded">
-                                                  Ad
-                                                </span>
-                                                <span className="font-medium truncate">{ad.name}</span>
-                                                <span className={cn(
-                                                  "px-2 py-0.5 rounded text-xs font-medium uppercase flex-shrink-0",
-                                                  ad.status === 'ACTIVE'
-                                                    ? "bg-verdict-scale/20 text-verdict-scale"
-                                                    : "bg-zinc-700 text-zinc-400"
-                                                )}>
-                                                  {ad.status}
-                                                </span>
-                                                {creative?.mediaType && creative.mediaType !== 'unknown' && (
-                                                  <span className="flex items-center gap-1 text-xs text-zinc-500">
-                                                    {creative.mediaType === 'video' ? (
-                                                      <Video className="w-3 h-3" />
-                                                    ) : (
-                                                      <ImageIcon className="w-3 h-3" />
-                                                    )}
-                                                    {creative.mediaType}
-                                                  </span>
-                                                )}
-                                              </div>
+                                    return (
+                                      <div key={ad.id} className="pl-6 sm:pl-20 pr-3 sm:pr-4 py-3 border-t border-border/30 hover:bg-bg-hover/20 transition-colors">
+                                        <div className="flex items-center gap-2 sm:gap-3">
+                                          {/* Creative Preview with Tooltip */}
+                                          <CreativePreviewTooltip
+                                            previewUrl={previewUrl}
+                                            mediaType={creative?.mediaType}
+                                            alt={ad.name}
+                                            onFullPreview={() => {
+                                              const playbackUrl = creative?.mediaType === 'video' && creative?.videoSource
+                                                ? creative.videoSource
+                                                : previewUrl
+                                              if (playbackUrl) {
+                                                setPreviewModal({
+                                                  isOpen: true,
+                                                  previewUrl: playbackUrl,
+                                                  mediaType: creative?.mediaType || 'unknown',
+                                                  name: ad.name
+                                                })
+                                              }
+                                            }}
+                                          >
+                                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
+                                              {isLoadingCreative ? (
+                                                <div className="w-full h-full flex items-center justify-center">
+                                                  <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                                                </div>
+                                              ) : previewUrl ? (
+                                                <img
+                                                  src={previewUrl}
+                                                  alt={ad.name}
+                                                  className="w-full h-full object-cover"
+                                                />
+                                              ) : (
+                                                <div className="w-full h-full flex items-center justify-center">
+                                                  {creative?.mediaType === 'video' ? (
+                                                    <Video className="w-5 h-5 text-zinc-600" />
+                                                  ) : (
+                                                    <ImageIcon className="w-5 h-5 text-zinc-600" />
+                                                  )}
+                                                </div>
+                                              )}
                                             </div>
-                                            {/* Ad Actions */}
-                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                              <button
-                                                onClick={() => handleEntityStatusToggle(ad.id, 'ad', ad.status, campaign.id, adSet.id)}
-                                                disabled={updatingStatus === ad.id}
-                                                className={cn(
-                                                  "p-1.5 rounded-lg transition-colors",
-                                                  ad.status === 'PAUSED'
+                                          </CreativePreviewTooltip>
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <span className="hidden sm:inline px-1.5 py-0.5 bg-zinc-700 text-zinc-300 text-xs font-medium rounded">
+                                                Ad
+                                              </span>
+                                              <span className="font-medium truncate max-w-[120px] sm:max-w-none">{ad.name}</span>
+                                              <span className={cn(
+                                                "px-2 py-0.5 rounded text-xs font-medium uppercase",
+                                                ad.status === 'ACTIVE'
+                                                  ? "bg-verdict-scale/20 text-verdict-scale"
+                                                  : "bg-zinc-700 text-zinc-400"
+                                              )}>
+                                                {ad.status}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          {/* Ad Actions */}
+                                          <div className="flex items-center gap-1 flex-shrink-0">
+                                            <button
+                                              onClick={() => handleEntityStatusToggle(ad.id, 'ad', ad.status, campaign.id, adSet.id)}
+                                              disabled={updatingStatus === ad.id}
+                                              className={cn(
+                                                "p-1.5 rounded-lg transition-colors",
+                                                ad.status === 'PAUSED'
                                                     ? "text-green-500 hover:bg-green-500/20"
                                                     : "text-amber-500 hover:bg-amber-500/20"
                                                 )}
@@ -964,60 +943,59 @@ export default function LaunchPage() {
           </div>
         )}
 
-        {/* Delete Modal */}
-        <DeleteEntityModal
-          isOpen={deleteModal?.isOpen || false}
-          onClose={() => setDeleteModal(null)}
-          onConfirm={handleDelete}
-          entityName={deleteModal?.entityName || ''}
-          entityType={deleteModal?.entityType || 'campaign'}
-          childCount={deleteModal?.childCount}
-          isLoading={deleting}
-        />
+      {/* Delete Modal */}
+      <DeleteEntityModal
+        isOpen={deleteModal?.isOpen || false}
+        onClose={() => setDeleteModal(null)}
+        onConfirm={handleDelete}
+        entityName={deleteModal?.entityName || ''}
+        entityType={deleteModal?.entityType || 'campaign'}
+        childCount={deleteModal?.childCount}
+        isLoading={deleting}
+      />
 
-        {/* Creative Full Preview Modal */}
-        {previewModal?.isOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      {/* Creative Full Preview Modal */}
+      {previewModal?.isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setPreviewModal(null)}
+        >
+          {/* Close button */}
+          <button
             onClick={() => setPreviewModal(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
           >
-            {/* Close button */}
-            <button
-              onClick={() => setPreviewModal(null)}
-              className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
-            >
-              <X className="w-6 h-6 text-white" />
-            </button>
+            <X className="w-6 h-6 text-white" />
+          </button>
 
-            {/* Media preview */}
-            <div className="max-w-4xl max-h-[80vh] relative" onClick={(e) => e.stopPropagation()}>
-              {previewModal.mediaType === 'video' ? (
-                <video
-                  src={previewModal.previewUrl}
-                  controls
-                  autoPlay
-                  muted
-                  playsInline
-                  className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
-                >
-                  Your browser does not support video playback.
-                </video>
-              ) : (
-                <img
-                  src={previewModal.previewUrl}
-                  alt={previewModal.name}
-                  className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain"
-                />
-              )}
-            </div>
-
-            {/* Title bar */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-4 py-2 rounded-lg">
-              <p className="text-white text-sm font-medium">{previewModal.name}</p>
-            </div>
+          {/* Media preview */}
+          <div className="max-w-[90vw] sm:max-w-4xl max-h-[80vh] relative" onClick={(e) => e.stopPropagation()}>
+            {previewModal.mediaType === 'video' ? (
+              <video
+                src={previewModal.previewUrl}
+                controls
+                autoPlay
+                muted
+                playsInline
+                className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
+              >
+                Your browser does not support video playback.
+              </video>
+            ) : (
+              <img
+                src={previewModal.previewUrl}
+                alt={previewModal.name}
+                className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain"
+              />
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Title bar */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-4 py-2 rounded-lg max-w-[90vw]">
+            <p className="text-white text-sm font-medium truncate">{previewModal.name}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

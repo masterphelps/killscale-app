@@ -436,66 +436,7 @@ export function AndromedaAuditModal({ isOpen, onClose, score }: AndromedaAuditMo
             </div>
           )}
 
-          {/* Ask AI Chat Section */}
-          <div className="mt-8 border-t border-border pt-6">
-            <button
-              onClick={() => setShowChat(!showChat)}
-              className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors mb-4"
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span>Ask AI about your account</span>
-              <ChevronRight className={cn('w-4 h-4 transition-transform', showChat && 'rotate-90')} />
-            </button>
-
-            {showChat && (
-              <div className="space-y-4">
-                {/* Chat Messages */}
-                {chatMessages.length > 0 && (
-                  <div className="space-y-3 max-h-60 overflow-y-auto">
-                    {chatMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          'rounded-lg p-3 text-sm',
-                          msg.role === 'user'
-                            ? 'bg-accent/20 text-white ml-8'
-                            : 'bg-bg-dark text-zinc-300 mr-8'
-                        )}
-                      >
-                        {msg.content}
-                      </div>
-                    ))}
-                    {isLoadingChat && (
-                      <div className="bg-bg-dark rounded-lg p-3 text-sm text-zinc-400 mr-8 flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Thinking...</span>
-                      </div>
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-                )}
-
-                {/* Chat Input */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="How should I consolidate my ad sets?"
-                    className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-accent"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!chatInput.trim() || isLoadingChat}
-                    className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Ask AI Chat Section - hidden for now */}
         </div>
 
         {/* Footer */}

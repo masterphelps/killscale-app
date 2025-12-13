@@ -369,7 +369,7 @@ export default function TrendsPage() {
   const [viewMode, setViewMode] = useState<'overview' | 'compare' | 'funnel' | 'scatter'>('overview')
   const [compareMode, setCompareMode] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<'roas' | 'spend' | 'revenue' | 'ctr'>('roas')
-  const [includePaused, setIncludePaused] = useState(false)
+  const [includePaused, setIncludePaused] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false) // Fly-out panel open state
   const [sidebarPinned, setSidebarPinned] = useState(() => {
     // Load pinned state from localStorage
@@ -418,7 +418,8 @@ export default function TrendsPage() {
         clicks: row.clicks,
         spend: parseFloat(row.spend),
         purchases: row.purchases,
-        revenue: parseFloat(row.revenue),
+        // Use result_value (calculated from event_values for lead-gen) if available, otherwise fall back to revenue
+        revenue: parseFloat(row.result_value) || parseFloat(row.revenue) || 0,
         status: row.status,
         adset_status: row.adset_status,
         campaign_status: row.campaign_status
@@ -763,16 +764,16 @@ export default function TrendsPage() {
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold mb-1">Trends Explorer</h1>
-          <p className="text-zinc-500 text-sm lg:text-base">Drill down into your performance data</p>
+          <p className="text-zinc-500 text-sm lg:text-base hidden sm:block">Drill down into your performance data</p>
         </div>
 
-        {/* Controls - hidden on mobile, shown in sidebar instead */}
-        <div className="hidden lg:flex items-center gap-3">
-          {/* Include Paused Toggle - same style as dashboard */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
+        {/* Controls */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Include Paused Toggle */}
+          <div className="flex items-center gap-2 px-2 sm:px-3 py-2 bg-bg-card border border-border rounded-lg">
             <button
               onClick={() => setIncludePaused(!includePaused)}
               className={`relative w-9 h-5 rounded-full transition-all ${
@@ -785,13 +786,16 @@ export default function TrendsPage() {
                 }`}
               />
             </button>
-            <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+            <span className={`text-sm hidden sm:inline ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
               Include Paused
+            </span>
+            <span className={`text-sm sm:hidden ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+              Paused
             </span>
           </div>
 
-          {/* Date Range Display - shows actual synced data range */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
+          {/* Date Range Display - hidden on mobile */}
+          <div className="hidden lg:flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg">
             <Calendar className="w-4 h-4 text-zinc-500" />
             <span className="text-sm">{getDateLabel()}</span>
           </div>

@@ -9,6 +9,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: 'cover', // Enables safe-area-inset for iOS notch/home bar
 }
 
 export const metadata: Metadata = {

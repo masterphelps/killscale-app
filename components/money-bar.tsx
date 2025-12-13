@@ -64,41 +64,41 @@ export function MoneyBar({
       </div>
 
       {/* Stats Row */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
         {/* Losing */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-verdict-kill/20 flex items-center justify-center">
-            <TrendingDown className="w-4 h-4 text-verdict-kill" />
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-verdict-kill/20 flex items-center justify-center flex-shrink-0">
+            <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4 text-verdict-kill" />
           </div>
-          <div>
-            <div className="text-xs text-zinc-500 uppercase tracking-wide">Losing</div>
-            <div className="text-lg font-bold font-mono text-verdict-kill">
+          <div className="min-w-0">
+            <div className="text-[10px] sm:text-xs text-zinc-500 uppercase tracking-wide">Losing</div>
+            <div className="text-sm sm:text-lg font-bold font-mono text-verdict-kill truncate">
               {formatCurrency(losingBudget)}
             </div>
           </div>
         </div>
 
         {/* Neutral */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-zinc-700/50 flex items-center justify-center">
-            <Minus className="w-4 h-4 text-zinc-400" />
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-zinc-700/50 flex items-center justify-center flex-shrink-0">
+            <Minus className="w-3 h-3 sm:w-4 sm:h-4 text-zinc-400" />
           </div>
-          <div>
-            <div className="text-xs text-zinc-500 uppercase tracking-wide">Breaking Even</div>
-            <div className="text-lg font-bold font-mono text-zinc-300">
+          <div className="min-w-0">
+            <div className="text-[10px] sm:text-xs text-zinc-500 uppercase tracking-wide">Even</div>
+            <div className="text-sm sm:text-lg font-bold font-mono text-zinc-300 truncate">
               {formatCurrency(neutralBudget)}
             </div>
           </div>
         </div>
 
         {/* Profitable */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-verdict-scale/20 flex items-center justify-center">
-            <TrendingUp className="w-4 h-4 text-verdict-scale" />
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-verdict-scale/20 flex items-center justify-center flex-shrink-0">
+            <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-verdict-scale" />
           </div>
-          <div>
-            <div className="text-xs text-zinc-500 uppercase tracking-wide">Profitable</div>
-            <div className="text-lg font-bold font-mono text-verdict-scale">
+          <div className="min-w-0">
+            <div className="text-[10px] sm:text-xs text-zinc-500 uppercase tracking-wide">Profit</div>
+            <div className="text-sm sm:text-lg font-bold font-mono text-verdict-scale truncate">
               {formatCurrency(profitableBudget)}
             </div>
           </div>
