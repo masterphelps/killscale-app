@@ -510,6 +510,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           type: 'video' as const,
           uploaded: true,
           videoId: vid.id,
+          thumbnailUrl: vid.thumbnailUrl,  // Required for Meta API
           isFromLibrary: true,
           libraryId: vid.id,
           name: vid.title
