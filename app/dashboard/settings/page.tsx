@@ -5,6 +5,7 @@ import { Save, RotateCcw, Loader2, AlertCircle, Plus, X, Copy, Check, ExternalLi
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
+import { useAttribution, AttributionSource } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -71,6 +72,7 @@ type PixelEvent = {
 export default function SettingsPage() {
   const { user } = useAuth()
   const { currentAccountId, currentAccount: contextAccount } = useAccount()
+  const { source: attributionSource, setSource: setAttributionSource, pixelConfig } = useAttribution()
 
   // Store as strings to allow proper editing (backspace, etc.)
   const [rules, setRules] = useState(DEFAULT_RULES)
@@ -194,11 +196,11 @@ export default function SettingsPage() {
 
   // Load pixel events
   const loadPixelEvents = useCallback(async () => {
-    if (!pixelData?.pixel_id) return
+    if (!pixelData?.pixel_id || !user?.id) return
 
     setLoadingEvents(true)
     try {
-      const res = await fetch(`/api/pixel/events?pixelId=${pixelData.pixel_id}&limit=20`)
+      const res = await fetch(`/api/pixel/events?pixelId=${pixelData.pixel_id}&userId=${user.id}&limit=20`)
       const data = await res.json()
       if (data.events) {
         setPixelEvents(data.events)
@@ -208,7 +210,7 @@ export default function SettingsPage() {
     } finally {
       setLoadingEvents(false)
     }
-  }, [pixelData?.pixel_id])
+  }, [pixelData?.pixel_id, user?.id])
 
   // Load events when section is expanded
   useEffect(() => {
@@ -537,10 +539,10 @@ ks('pageview');
             <div className="mb-4">
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => handlePixelSettingChange('attribution_source', 'meta')}
+                  onClick={() => setAttributionSource('meta')}
                   disabled={savingPixel}
                   className={`p-3 rounded-lg border-2 text-left transition-all ${
-                    pixelData.attribution_source === 'meta'
+                    attributionSource === 'meta'
                       ? 'border-accent bg-accent/10'
                       : 'border-border hover:border-zinc-600'
                   }`}
@@ -549,10 +551,10 @@ ks('pageview');
                   <div className="text-xs text-zinc-500 mt-0.5">Use Meta's reported conversions</div>
                 </button>
                 <button
-                  onClick={() => handlePixelSettingChange('attribution_source', 'killscale')}
+                  onClick={() => setAttributionSource('killscale')}
                   disabled={savingPixel || !pixelStatus?.is_active}
                   className={`p-3 rounded-lg border-2 text-left transition-all relative ${
-                    pixelData.attribution_source === 'killscale'
+                    attributionSource === 'killscale'
                       ? 'border-accent bg-accent/10'
                       : 'border-border hover:border-zinc-600'
                   } ${!pixelStatus?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -691,9 +693,15 @@ ks('pageview');
                               </span>
                             )}
                             {event.utm_content && (
-                              <span className="text-zinc-600 truncate max-w-[100px]" title={`Ad ID: ${event.utm_content}`}>
-                                ad:{event.utm_content.slice(0, 8)}...
-                              </span>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(event.utm_content!)
+                                }}
+                                className="text-zinc-500 hover:text-zinc-300 font-mono text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded cursor-pointer"
+                                title={`Click to copy: ${event.utm_content}`}
+                              >
+                                {event.utm_content}
+                              </button>
                             )}
                           </div>
                           <span className="text-zinc-600 flex-shrink-0">

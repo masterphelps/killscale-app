@@ -14,6 +14,7 @@ import { formatCurrency, formatNumber, formatROAS, formatDateRange } from '@/lib
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
+import { useAttribution } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
 
@@ -24,16 +25,6 @@ const supabase = createClient(
 
 const FREE_CAMPAIGN_LIMIT = 2
 const STARTER_CAMPAIGN_LIMIT = 10
-
-type PixelConfig = {
-  pixel_id: string
-  attribution_source: 'meta' | 'killscale'
-}
-
-type AttributionData = Record<string, {
-  conversions: number
-  revenue: number
-}>
 
 const DEFAULT_RULES: Rules = {
   id: '',
@@ -159,11 +150,8 @@ export default function DashboardPage() {
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts } = useAccount()
+  const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
   const searchParams = useSearchParams()
-
-  // KillScale Pixel attribution state
-  const [pixelConfig, setPixelConfig] = useState<PixelConfig | null>(null)
-  const [attributionData, setAttributionData] = useState<AttributionData>({})
 
   // Handle deep-linking from alerts page
   useEffect(() => {
@@ -219,89 +207,36 @@ export default function DashboardPage() {
     }
   }, [user?.id, currentAccountId])
 
-  // Load pixel config when account changes
+  // Refresh KillScale attribution when date range changes
   useEffect(() => {
-    if (!user || !currentAccountId) {
-      setPixelConfig(null)
-      setAttributionData({})
-      return
+    console.log('[Dashboard] Attribution effect running, isKillScaleActive:', isKillScaleActive)
+    if (!isKillScaleActive) return
+
+    // Calculate date range for attribution refresh
+    const today = new Date()
+    const formatDate = (d: Date) => {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
 
-    const loadPixelConfig = async () => {
-      const { data: pixels, error } = await supabase
-        .from('pixels')
-        .select('pixel_id, attribution_source')
-        .eq('meta_account_id', currentAccountId)
-        .eq('user_id', user.id)
-        .limit(1)
-
-      if (error) {
-        console.error('Failed to load pixel config:', error)
-        setPixelConfig(null)
-        return
+    let since: string, until: string
+    if (datePreset === 'custom' && customStartDate && customEndDate) {
+      since = customStartDate
+      until = customEndDate
+    } else {
+      const daysMap: Record<string, number> = {
+        'today': 0, 'yesterday': 1, 'last_7d': 6, 'last_14d': 13,
+        'last_30d': 29, 'last_90d': 89, 'maximum': 365 * 10
       }
-
-      if (pixels && pixels.length > 0) {
-        setPixelConfig(pixels[0] as PixelConfig)
-      } else {
-        setPixelConfig(null)
-      }
+      const days = daysMap[datePreset] ?? 29
+      const start = new Date(today)
+      start.setDate(start.getDate() - days)
+      since = formatDate(start)
+      until = formatDate(today)
     }
 
-    loadPixelConfig()
-  }, [user?.id, currentAccountId])
-
-  // Load KillScale attribution data when enabled
-  useEffect(() => {
-    if (!pixelConfig || pixelConfig.attribution_source !== 'killscale') {
-      setAttributionData({})
-      return
-    }
-
-    const loadAttribution = async () => {
-      try {
-        // Calculate date range (same logic as activeDateRange but inline to avoid circular dep)
-        const today = new Date()
-        const formatDate = (d: Date) => {
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        }
-        let since: string, until: string
-
-        if (datePreset === 'custom' && customStartDate && customEndDate) {
-          since = customStartDate
-          until = customEndDate
-        } else {
-          const daysMap: Record<string, number> = {
-            'today': 0, 'yesterday': 1, 'last_7d': 6, 'last_14d': 13,
-            'last_30d': 29, 'last_90d': 89, 'maximum': 365 * 10
-          }
-          const days = daysMap[datePreset] ?? 29
-          const start = new Date(today)
-          start.setDate(start.getDate() - days)
-          since = formatDate(start)
-          until = formatDate(today)
-        }
-
-        const res = await fetch(
-          `/api/pixel/attribution?pixelId=${pixelConfig.pixel_id}&dateStart=${since}&dateEnd=${until}`
-        )
-        const data = await res.json()
-
-        if (data.attribution) {
-          console.log('[KS Attribution] Loaded:', {
-            totalEvents: data.totalEvents,
-            uniqueAds: data.uniqueAds,
-            adIds: Object.keys(data.attribution)
-          })
-          setAttributionData(data.attribution)
-        }
-      } catch (err) {
-        console.error('Failed to load KillScale attribution:', err)
-      }
-    }
-
-    loadAttribution()
-  }, [pixelConfig?.pixel_id, pixelConfig?.attribution_source, datePreset, customStartDate, customEndDate])
+    console.log('[Dashboard] Calling refreshAttribution with:', { since, until })
+    refreshAttribution(since, until)
+  }, [isKillScaleActive, datePreset, customStartDate, customEndDate, refreshAttribution])
 
   // Track which sync param we've already processed (to prevent re-runs)
   const processedSyncRef = useRef<string | null>(null)
@@ -769,43 +704,44 @@ export default function DashboardPage() {
       return true
     })
 
-    // If KillScale attribution is enabled, override revenue/purchases with pixel data
-    if (pixelConfig?.attribution_source === 'killscale' && Object.keys(attributionData).length > 0) {
+    // If KillScale attribution is active, REPLACE all attribution data with KillScale pixel data
+    // NO META FALLBACK - if no KillScale data for an ad, show 0 conversions
+    if (isKillScaleActive) {
       // Debug: log Meta ad IDs for comparison with attribution data
       const metaAdIds = Array.from(new Set(filtered.map(r => r.ad_id).filter((id): id is string => !!id)))
       const attrAdIds = Object.keys(attributionData)
       const matches = metaAdIds.filter(id => attributionData[id])
-      console.log('[KS Attribution] Matching:', {
+      console.log('[KS Attribution] Active - replacing all data:', {
         metaAdIds: metaAdIds.slice(0, 10), // First 10
         attrAdIds,
         matches,
-        matchCount: matches.length
+        matchCount: matches.length,
+        totalAds: metaAdIds.length
       })
 
       return filtered.map(row => {
+        // Get KillScale attribution for this ad, or default to 0
         const adAttribution = row.ad_id ? attributionData[row.ad_id] : null
-        if (adAttribution) {
-          const newRevenue = adAttribution.revenue
-          const newPurchases = adAttribution.conversions
-          const newRoas = row.spend > 0 ? newRevenue / row.spend : 0
-          return {
-            ...row,
-            purchases: newPurchases,
-            revenue: newRevenue,
-            // Also update results for results-based tracking
-            results: newPurchases,
-            result_value: newRevenue,
-            // Recalculate ROAS with KillScale data
-            _ksRoas: newRoas,
-            _ksAttribution: true  // Flag to indicate KillScale attribution was applied
-          }
+        const newRevenue = adAttribution?.revenue ?? 0
+        const newPurchases = adAttribution?.conversions ?? 0
+        const newRoas = row.spend > 0 ? newRevenue / row.spend : 0
+
+        return {
+          ...row,
+          purchases: newPurchases,
+          revenue: newRevenue,
+          // Also update results for results-based tracking
+          results: newPurchases,
+          result_value: newRevenue,
+          // Recalculate ROAS with KillScale data
+          _ksRoas: newRoas,
+          _ksAttribution: true  // Flag to indicate KillScale attribution is active
         }
-        return row
       })
     }
 
     return filtered
-  }, [data, selectedAccountId, pixelConfig?.attribution_source, attributionData])
+  }, [data, selectedAccountId, isKillScaleActive, attributionData])
 
   const allCampaigns = useMemo(() =>
     Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
@@ -1359,7 +1295,7 @@ export default function DashboardPage() {
           )}
 
           {/* KillScale Attribution Indicator */}
-          {pixelConfig?.attribution_source === 'killscale' && (
+          {isKillScaleActive && (
             <div className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
               <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
               <span className="text-xs text-accent font-medium">KillScale Attribution Active</span>

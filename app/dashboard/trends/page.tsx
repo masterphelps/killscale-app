@@ -40,6 +40,7 @@ import {
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { usePrivacyMode } from '@/lib/privacy-mode'
+import { useAttribution } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
 import { StatCard } from '@/components/stat-card'
 import {
@@ -81,6 +82,7 @@ type AdData = {
   campaign_name: string
   adset_name: string
   ad_name: string
+  ad_id?: string
   date_start: string
   date_end: string
   impressions: number
@@ -379,6 +381,7 @@ export default function TrendsPage() {
     return false
   })
   const { user } = useAuth()
+  const { isKillScaleActive, attributionData } = useAttribution()
 
   // Persist pinned state to localStorage
   useEffect(() => {
@@ -412,6 +415,7 @@ export default function TrendsPage() {
         campaign_name: row.campaign_name,
         adset_name: row.adset_name,
         ad_name: row.ad_name,
+        ad_id: row.ad_id,
         date_start: row.date_start,
         date_end: row.date_end,
         impressions: row.impressions,
@@ -449,20 +453,39 @@ export default function TrendsPage() {
     }
   }, [data])
 
+  // Apply KillScale attribution to data when active
+  const dataWithAttribution = useMemo(() => {
+    if (!isKillScaleActive) return data
+
+    // When KillScale is active, replace revenue/purchases with KillScale data
+    // NO META FALLBACK - if no KillScale data for an ad, show 0
+    return data.map(row => {
+      const adAttribution = row.ad_id ? attributionData[row.ad_id] : null
+      const newRevenue = adAttribution?.revenue ?? 0
+      const newPurchases = adAttribution?.conversions ?? 0
+
+      return {
+        ...row,
+        revenue: newRevenue,
+        purchases: newPurchases,
+      }
+    })
+  }, [data, isKillScaleActive, attributionData])
+
   const filteredData = useMemo(() => {
-    return data.filter(row => {
+    return dataWithAttribution.filter(row => {
       // Paused filter - exclude if not including paused and any level is paused
       if (!includePaused) {
-        const isPaused = 
-          row.status?.toUpperCase() === 'PAUSED' || 
-          row.adset_status?.toUpperCase() === 'PAUSED' || 
+        const isPaused =
+          row.status?.toUpperCase() === 'PAUSED' ||
+          row.adset_status?.toUpperCase() === 'PAUSED' ||
           row.campaign_status?.toUpperCase() === 'PAUSED'
         if (isPaused) return false
       }
-      
+
       return true
     })
-  }, [data, includePaused])
+  }, [dataWithAttribution, includePaused])
   
   // Build hierarchy
   const hierarchy = useMemo(() => {

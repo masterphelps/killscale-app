@@ -332,6 +332,16 @@ export async function POST(request: NextRequest) {
           videoData.image_url = creative.thumbnailUrl
         }
 
+        // For video ads, url_tags is not supported in video_data
+        // Instead, append UTM params directly to the CTA link
+        if (urlTags) {
+          const separator = websiteUrl.includes('?') ? '&' : '?'
+          videoData.call_to_action = {
+            type: ctaType,
+            value: { link: `${websiteUrl}${separator}${urlTags}` }
+          }
+        }
+
         objectStorySpec = {
           page_id: pageId,
           video_data: videoData
@@ -354,6 +364,11 @@ export async function POST(request: NextRequest) {
 
         if (creative.imageHash) {
           linkData.image_hash = creative.imageHash
+        }
+
+        // Add URL tags for tracking (Meta substitutes {{ad.id}} etc. at click time)
+        if (urlTags) {
+          linkData.url_tags = urlTags
         }
 
         objectStorySpec = {
@@ -402,11 +417,6 @@ export async function POST(request: NextRequest) {
         creative: { creative_id: creativeResult.id },
         status: 'PAUSED',
         access_token: accessToken
-      }
-
-      // Add URL tags for tracking at ad level (Meta substitutes {{ad.id}} etc. at click time)
-      if (urlTags) {
-        adPayload.url_tags = urlTags
       }
 
       const adResponse = await fetch(

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -9,13 +11,26 @@ const supabase = createClient(
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const pixelId = searchParams.get('pixelId')
+  const userId = searchParams.get('userId')
   const limit = parseInt(searchParams.get('limit') || '20')
 
-  if (!pixelId) {
-    return NextResponse.json({ error: 'pixelId required' }, { status: 400 })
+  if (!pixelId || !userId) {
+    return NextResponse.json({ error: 'pixelId and userId required' }, { status: 400 })
   }
 
   try {
+    // Verify pixel ownership
+    const { data: pixel, error: pixelError } = await supabase
+      .from('pixels')
+      .select('pixel_id')
+      .eq('pixel_id', pixelId)
+      .eq('user_id', userId)
+      .single()
+
+    if (pixelError || !pixel) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     // Fetch recent events for this pixel
     const { data: events, error } = await supabase
       .from('pixel_events')

@@ -6,6 +6,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Sidebar } from '@/components/sidebar'
 import { PrivacyProvider } from '@/lib/privacy-mode'
 import { AccountProvider } from '@/lib/account'
+import { AttributionProvider } from '@/lib/attribution'
 import { Menu, X } from 'lucide-react'
 
 export default function DashboardLayout({
@@ -67,8 +68,9 @@ export default function DashboardLayout({
 
   return (
     <AccountProvider>
-      <PrivacyProvider>
-        <div className="min-h-screen bg-bg-dark text-white">
+      <AttributionProvider>
+        <PrivacyProvider>
+          <div className="min-h-screen bg-bg-dark text-white">
           {/* Mobile Header - only shows on mobile */}
           <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-bg-sidebar border-b border-border z-50 flex items-center justify-between px-4">
             <svg width="140" height="28" viewBox="0 0 240 40">
@@ -106,8 +108,9 @@ export default function DashboardLayout({
           <main className="lg:ml-60 p-4 lg:p-8 pt-20 lg:pt-8">
             {children}
           </main>
-        </div>
-      </PrivacyProvider>
+          </div>
+        </PrivacyProvider>
+      </AttributionProvider>
     </AccountProvider>
   )
 }

@@ -19,6 +19,7 @@ import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { usePrivacyMode } from '@/lib/privacy-mode'
+import { useAttribution } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 
@@ -180,6 +181,7 @@ export default function InsightsPage() {
   const { user } = useAuth()
   const { currentAccountId, currentAccount } = useAccount()
   const { isPrivacyMode, maskText } = usePrivacyMode()
+  const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
 
   // Privacy mode helper for entity names
   const maskEntityName = (name: string, entityType: 'campaign' | 'adset', index: number): string => {
@@ -208,6 +210,14 @@ export default function InsightsPage() {
       loadAllData()
     }
   }, [user?.id, currentAccountId, datePreset, customStartDate, customEndDate, hasMounted])
+
+  // Refresh KillScale attribution when date range changes
+  useEffect(() => {
+    if (!isKillScaleActive || !hasMounted) return
+
+    const dateRange = getDateRange()
+    refreshAttribution(dateRange.start, dateRange.end)
+  }, [isKillScaleActive, datePreset, customStartDate, customEndDate, hasMounted])
 
   // Use currentAccountId from AccountContext as the single source of truth
   const selectedAccountId = currentAccountId
@@ -362,12 +372,31 @@ export default function InsightsPage() {
     }
   }
 
+  // Apply KillScale attribution to data when active
+  const dataWithAttribution = useMemo(() => {
+    if (!isKillScaleActive) return data
+
+    // When KillScale is active, replace revenue/purchases with KillScale data
+    // NO META FALLBACK - if no KillScale data for an ad, show 0
+    return data.map(row => {
+      const adAttribution = row.ad_id ? attributionData[row.ad_id] : null
+      const newRevenue = adAttribution?.revenue ?? 0
+      const newPurchases = adAttribution?.conversions ?? 0
+
+      return {
+        ...row,
+        revenue: newRevenue,
+        purchases: newPurchases,
+      }
+    })
+  }, [data, isKillScaleActive, attributionData])
+
   // Build hierarchy from data (filtered by date range)
   const hierarchy = useMemo<HierarchyItem[]>(() => {
-    if (data.length === 0) return []
+    if (dataWithAttribution.length === 0) return []
 
     const dateRange = getDateRange()
-    const filteredData = data.filter(row => {
+    const filteredData = dataWithAttribution.filter(row => {
       if (!row.date_start) return true
       return row.date_start >= dateRange.start && row.date_start <= dateRange.end
     })
@@ -378,7 +407,7 @@ export default function InsightsPage() {
     // Track unique ads per adset for creative count - use ALL data, not just filtered
     // Only count ACTIVE ads (not paused/archived) for Andromeda score
     const adsetAdsMap = new Map<string, Set<string>>()
-    data.forEach(row => {
+    dataWithAttribution.forEach(row => {
       if (row.ad_id && row.adset_name && row.campaign_name) {
         // Only count active ads in active adsets in active campaigns
         // Note: ad status is in 'status' field, not 'ad_status'
@@ -457,7 +486,7 @@ export default function InsightsPage() {
     })
 
     return Array.from(campaignMap.values())
-  }, [data, datePreset, customStartDate, customEndDate])
+  }, [dataWithAttribution, datePreset, customStartDate, customEndDate])
 
   // Build action items from hierarchy
   const actionItems = useMemo(() => {
