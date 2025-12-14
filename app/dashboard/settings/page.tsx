@@ -112,8 +112,9 @@ export default function SettingsPage() {
         query = query.is('ad_account_id', null)
       }
 
-      const { data, error } = await query.single()
+      const { data: rulesRows, error } = await query.limit(1)
 
+      const data = rulesRows?.[0]
       if (data) {
         setRules({
           scale_roas: data.scale_roas?.toString() || DEFAULT_RULES.scale_roas,
@@ -145,12 +146,14 @@ export default function SettingsPage() {
 
     const loadPixelData = async () => {
       // Load pixel config by meta_account_id
-      let { data: pixel } = await supabase
+      let { data: pixels } = await supabase
         .from('pixels')
         .select('pixel_id, attribution_source, attribution_window')
         .eq('meta_account_id', currentAccountId)
         .eq('user_id', user.id)
-        .single()
+        .limit(1)
+
+      let pixel = pixels?.[0] || null
 
       // If no pixel exists, create one
       if (!pixel) {
@@ -176,13 +179,13 @@ export default function SettingsPage() {
         setPixelData(pixel)
 
         // Load pixel status
-        const { data: status } = await supabase
+        const { data: statusRows } = await supabase
           .from('pixel_status')
           .select('is_active, last_event_at, events_today, events_total')
           .eq('pixel_id', pixel.pixel_id)
-          .single()
+          .limit(1)
 
-        setPixelStatus(status || null)
+        setPixelStatus(statusRows?.[0] || null)
       }
     }
 

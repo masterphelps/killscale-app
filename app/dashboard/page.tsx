@@ -228,15 +228,21 @@ export default function DashboardPage() {
     }
 
     const loadPixelConfig = async () => {
-      const { data: pixel } = await supabase
+      const { data: pixels, error } = await supabase
         .from('pixels')
         .select('pixel_id, attribution_source')
         .eq('meta_account_id', currentAccountId)
         .eq('user_id', user.id)
-        .single()
+        .limit(1)
 
-      if (pixel) {
-        setPixelConfig(pixel as PixelConfig)
+      if (error) {
+        console.error('Failed to load pixel config:', error)
+        setPixelConfig(null)
+        return
+      }
+
+      if (pixels && pixels.length > 0) {
+        setPixelConfig(pixels[0] as PixelConfig)
       } else {
         setPixelConfig(null)
       }
@@ -282,6 +288,11 @@ export default function DashboardPage() {
         const data = await res.json()
 
         if (data.attribution) {
+          console.log('[KS Attribution] Loaded:', {
+            totalEvents: data.totalEvents,
+            uniqueAds: data.uniqueAds,
+            adIds: Object.keys(data.attribution)
+          })
           setAttributionData(data.attribution)
         }
       } catch (err) {
@@ -760,6 +771,17 @@ export default function DashboardPage() {
 
     // If KillScale attribution is enabled, override revenue/purchases with pixel data
     if (pixelConfig?.attribution_source === 'killscale' && Object.keys(attributionData).length > 0) {
+      // Debug: log Meta ad IDs for comparison with attribution data
+      const metaAdIds = [...new Set(filtered.map(r => r.ad_id).filter(Boolean))]
+      const attrAdIds = Object.keys(attributionData)
+      const matches = metaAdIds.filter(id => attributionData[id])
+      console.log('[KS Attribution] Matching:', {
+        metaAdIds: metaAdIds.slice(0, 10), // First 10
+        attrAdIds,
+        matches,
+        matchCount: matches.length
+      })
+
       return filtered.map(row => {
         const adAttribution = row.ad_id ? attributionData[row.ad_id] : null
         if (adAttribution) {
@@ -832,12 +854,10 @@ export default function DashboardPage() {
     : allCampaigns
   
   const filteredData = useMemo(() => {
-    return data.filter(row => {
-      // Account filter - only show data for the selected account
-      if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
-        return false
-      }
-
+    // Use accountFilteredData which already has:
+    // 1. Account filtering applied
+    // 2. KillScale attribution merged (if enabled)
+    return accountFilteredData.filter(row => {
       // Date range filter (client-side filtering for instant response)
       // With daily data (time_increment=1), each row has date_start === date_end for a single day
       if (row.date_start) {
@@ -860,7 +880,7 @@ export default function DashboardPage() {
 
       return true
     })
-  }, [data, visibleCampaigns, includePaused, getDateRange, selectedAccountId])
+  }, [accountFilteredData, visibleCampaigns, includePaused, getDateRange])
   
   const selectedData = useMemo(() =>
     filteredData.filter(row => {
