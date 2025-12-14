@@ -123,19 +123,40 @@ export default function SettingsPage() {
 
   // Load pixel data when account changes
   useEffect(() => {
-    if (!currentAccountId) {
+    if (!currentAccountId || !user) {
       setPixelData(null)
       setPixelStatus(null)
       return
     }
 
     const loadPixelData = async () => {
-      // Load pixel config
-      const { data: pixel } = await supabase
+      // Load pixel config by meta_account_id
+      let { data: pixel } = await supabase
         .from('pixels')
         .select('pixel_id, attribution_source, attribution_window')
-        .eq('ad_account_id', currentAccountId)
+        .eq('meta_account_id', currentAccountId)
+        .eq('user_id', user.id)
         .single()
+
+      // If no pixel exists, create one
+      if (!pixel) {
+        const { data: newPixel, error: createError } = await supabase
+          .from('pixels')
+          .insert({
+            user_id: user.id,
+            meta_account_id: currentAccountId,
+            pixel_id: `KS-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+            pixel_secret: Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2),
+            attribution_source: 'meta',
+            attribution_window: 7,
+          })
+          .select('pixel_id, attribution_source, attribution_window')
+          .single()
+
+        if (!createError && newPixel) {
+          pixel = newPixel
+        }
+      }
 
       if (pixel) {
         setPixelData(pixel)
@@ -152,7 +173,7 @@ export default function SettingsPage() {
     }
 
     loadPixelData()
-  }, [currentAccountId])
+  }, [currentAccountId, user])
 
   const handleChange = (field: keyof typeof rules, value: string) => {
     setRules(prev => ({ ...prev, [field]: value }))
@@ -279,13 +300,14 @@ ks('pageview');
   }
 
   const handlePixelSettingChange = async (field: string, value: string | number) => {
-    if (!pixelData || !currentAccountId) return
+    if (!pixelData || !currentAccountId || !user) return
     setSavingPixel(true)
 
     const { error } = await supabase
       .from('pixels')
       .update({ [field]: value })
-      .eq('ad_account_id', currentAccountId)
+      .eq('meta_account_id', currentAccountId)
+      .eq('user_id', user.id)
 
     if (!error) {
       setPixelData(prev => prev ? { ...prev, [field]: value } : null)
