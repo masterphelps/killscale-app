@@ -772,7 +772,7 @@ export default function DashboardPage() {
     // If KillScale attribution is enabled, override revenue/purchases with pixel data
     if (pixelConfig?.attribution_source === 'killscale' && Object.keys(attributionData).length > 0) {
       // Debug: log Meta ad IDs for comparison with attribution data
-      const metaAdIds = [...new Set(filtered.map(r => r.ad_id).filter(Boolean))]
+      const metaAdIds = Array.from(new Set(filtered.map(r => r.ad_id).filter((id): id is string => !!id)))
       const attrAdIds = Object.keys(attributionData)
       const matches = metaAdIds.filter(id => attributionData[id])
       console.log('[KS Attribution] Matching:', {
