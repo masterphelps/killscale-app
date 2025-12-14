@@ -149,7 +149,7 @@ export default function DashboardPage() {
   } | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
-  const { currentAccountId, accounts } = useAccount()
+  const { currentAccountId, accounts, workspaceAccountIds } = useAccount()
   const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
   const searchParams = useSearchParams()
 
@@ -503,10 +503,55 @@ export default function DashboardPage() {
     setIsSyncing(false)
   }
 
-  // Sync using the currently selected account
+  // Sync all accounts in workspace
+  const handleSyncWorkspace = async () => {
+    if (!user || !canSync || workspaceAccountIds.length === 0) return
+    if (isSyncing || syncingRef.current) return
+
+    syncingRef.current = true
+    setIsSyncing(true)
+
+    try {
+      // Sync each account in the workspace sequentially
+      for (const accountId of workspaceAccountIds) {
+        const response = await fetch('/api/meta/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: accountId,
+            datePreset: datePreset,
+            ...(datePreset === 'custom' && customStartDate && customEndDate ? {
+              customStartDate,
+              customEndDate,
+            } : {}),
+          }),
+        })
+
+        if (!response.ok) {
+          const result = await response.json()
+          console.error(`Sync failed for ${accountId}:`, result.error)
+        }
+      }
+
+      // Refresh data after all syncs complete
+      await loadData(false)
+      setLastSyncTime(new Date())
+    } catch (err) {
+      alert('Sync failed. Please try again.')
+    }
+
+    syncingRef.current = false
+    setIsSyncing(false)
+  }
+
+  // Sync using the currently selected account or workspace
   const handleSync = async () => {
-    if (!selectedAccountId) return
-    await handleSyncAccount(selectedAccountId)
+    if (workspaceAccountIds.length > 0) {
+      await handleSyncWorkspace()
+    } else if (selectedAccountId) {
+      await handleSyncAccount(selectedAccountId)
+    }
   }
 
   // Handle status change request (opens confirmation modal)
@@ -619,8 +664,8 @@ export default function DashboardPage() {
       setShowDatePicker(false)
       setShowCustomDateInputs(false)
       // Trigger sync for custom date range
-      if (canSync && selectedAccountId) {
-        handleSyncAccount(selectedAccountId)
+      if (canSync && (selectedAccountId || workspaceAccountIds.length > 0)) {
+        handleSync()
       }
     }
   }
@@ -695,9 +740,14 @@ export default function DashboardPage() {
     }
   }, [datePreset, customStartDate, customEndDate])
 
-  // Filter campaigns by selected account first, then apply KillScale attribution if enabled
+  // Filter campaigns by selected account OR workspace accounts, then apply KillScale attribution if enabled
   const accountFilteredData = useMemo(() => {
     const filtered = data.filter(row => {
+      // Workspace mode: include all accounts in workspace
+      if (workspaceAccountIds.length > 0) {
+        return workspaceAccountIds.includes(row.ad_account_id || '')
+      }
+      // Individual account mode
       if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
         return false
       }
@@ -741,7 +791,7 @@ export default function DashboardPage() {
     }
 
     return filtered
-  }, [data, selectedAccountId, isKillScaleActive, attributionData])
+  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, attributionData])
 
   const allCampaigns = useMemo(() =>
     Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
@@ -1125,7 +1175,7 @@ export default function DashboardPage() {
           {data.length > 0 && (
             <>
               {/* Live/Historical Indicator */}
-              {canSync && selectedAccountId && (
+              {canSync && (selectedAccountId || workspaceAccountIds.length > 0) && (
                 isLive ? (
                   <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
                     <span className="relative flex h-2 w-2">
@@ -1173,17 +1223,17 @@ export default function DashboardPage() {
           )}
           
           {/* Sync Button - now shows syncing state more prominently */}
-          <button 
+          <button
             onClick={handleSync}
-            disabled={!canSync || isSyncing || !selectedAccountId}
+            disabled={!canSync || isSyncing || (!selectedAccountId && workspaceAccountIds.length === 0)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
               isSyncing
                 ? 'bg-accent/20 border border-accent/50 text-accent'
-                : canSync && selectedAccountId
+                : canSync && (selectedAccountId || workspaceAccountIds.length > 0)
                   ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
                   : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
             }`}
-            title={!canSync ? 'Sync requires Pro plan' : !selectedAccountId ? 'Connect an account first' : 'Sync from Meta'}
+            title={!canSync ? 'Sync requires Pro plan' : (!selectedAccountId && workspaceAccountIds.length === 0) ? 'Connect an account first' : workspaceAccountIds.length > 0 ? `Sync ${workspaceAccountIds.length} accounts` : 'Sync from Meta'}
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
             {isSyncing ? <span className="hidden sm:inline">Syncing...</span> : <span className="hidden sm:inline">Sync</span>}
@@ -1225,14 +1275,14 @@ export default function DashboardPage() {
               <div className="text-6xl mb-4">📊</div>
               <h2 className="text-xl font-semibold mb-2">No data yet</h2>
               <p className="text-zinc-500 mb-6">
-                {canSync && selectedAccountId 
+                {canSync && (selectedAccountId || workspaceAccountIds.length > 0)
                   ? 'Click Sync to fetch data from Meta Ads, or upload a CSV'
                   : 'Upload a CSV export from Meta Ads to get started'
                 }
               </p>
               <div className="flex flex-wrap items-center gap-2 lg:gap-3">
-                {canSync && selectedAccountId && (
-                  <button 
+                {canSync && (selectedAccountId || workspaceAccountIds.length > 0) && (
+                  <button
                     onClick={handleSync}
                     className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
                   >
@@ -1240,10 +1290,10 @@ export default function DashboardPage() {
                     Sync from Meta
                   </button>
                 )}
-                <button 
+                <button
                   onClick={() => setShowUpload(true)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                    canSync && selectedAccountId
+                    canSync && (selectedAccountId || workspaceAccountIds.length > 0)
                       ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
                       : 'bg-accent hover:bg-accent-hover text-white'
                   }`}

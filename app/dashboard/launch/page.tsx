@@ -75,7 +75,7 @@ export default function LaunchPage() {
   const router = useRouter()
   const { user } = useAuth()
   const { plan } = useSubscription()
-  const { currentAccountId, loading: accountLoading } = useAccount()
+  const { currentAccountId, loading: accountLoading, currentWorkspaceId, workspaceAccountIds } = useAccount()
 
   const [campaigns, setCampaigns] = useState<CombinedCampaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -514,6 +514,21 @@ export default function LaunchPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-8 h-8 animate-spin text-accent" />
+      </div>
+    )
+  }
+
+  // Workspace selected - need individual account for launching
+  if (currentWorkspaceId && !currentAccountId && !loading) {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-16">
+        <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <Rocket className="w-8 h-8 text-zinc-500" />
+        </div>
+        <h1 className="text-2xl font-bold mb-4">Select an Individual Account</h1>
+        <p className="text-zinc-400 mb-6">
+          Workspaces show combined data. To create or manage campaigns, select an individual ad account from the sidebar dropdown.
+        </p>
       </div>
     )
   }

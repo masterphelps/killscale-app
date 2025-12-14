@@ -179,7 +179,7 @@ export default function InsightsPage() {
 
   const { plan } = useSubscription()
   const { user } = useAuth()
-  const { currentAccountId, currentAccount } = useAccount()
+  const { currentAccountId, currentAccount, workspaceAccountIds } = useAccount()
   const { isPrivacyMode, maskText } = usePrivacyMode()
   const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
 
@@ -397,6 +397,13 @@ export default function InsightsPage() {
 
     const dateRange = getDateRange()
     const filteredData = dataWithAttribution.filter(row => {
+      // Filter by workspace accounts or individual account
+      if (workspaceAccountIds.length > 0) {
+        if (!workspaceAccountIds.includes(row.ad_account_id || '')) return false
+      } else if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
+        return false
+      }
+      // Filter by date
       if (!row.date_start) return true
       return row.date_start >= dateRange.start && row.date_start <= dateRange.end
     })
@@ -486,7 +493,7 @@ export default function InsightsPage() {
     })
 
     return Array.from(campaignMap.values())
-  }, [dataWithAttribution, datePreset, customStartDate, customEndDate])
+  }, [dataWithAttribution, datePreset, customStartDate, customEndDate, workspaceAccountIds, selectedAccountId])
 
   // Build action items from hierarchy
   const actionItems = useMemo(() => {

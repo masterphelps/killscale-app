@@ -60,7 +60,16 @@ export function Sidebar() {
   const { user, signOut } = useAuth()
   const { plan } = useSubscription()
   const { isPrivacyMode, togglePrivacyMode, maskText } = usePrivacyMode()
-  const { currentAccountId, currentAccount, accounts, dataSource, switchAccount } = useAccount()
+  const {
+    currentAccountId,
+    currentAccount,
+    accounts,
+    dataSource,
+    switchAccount,
+    currentWorkspaceId,
+    currentWorkspace,
+    switchWorkspace
+  } = useAccount()
 
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [alertCount, setUnreadAlertCount] = useState(0)
@@ -72,7 +81,6 @@ export function Sidebar() {
     return false
   })
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
 
   // Check if user is Pro+ (can see workspaces)
   const isProPlus = plan === 'Pro' || plan === 'Agency'
@@ -165,8 +173,9 @@ export function Sidebar() {
   // Determine what to show in the account selector
   const getDisplayName = () => {
     // If workspace is selected (Pro+ only)
-    if (selectedWorkspaceId && isProPlus) {
-      const workspace = workspaces.find(w => w.id === selectedWorkspaceId)
+    if (currentWorkspaceId && isProPlus) {
+      if (currentWorkspace) return maskText(currentWorkspace.name, 'Demo Workspace')
+      const workspace = workspaces.find(w => w.id === currentWorkspaceId)
       if (workspace) return maskText(workspace.name, 'Demo Workspace')
     }
 
@@ -181,19 +190,17 @@ export function Sidebar() {
 
   // Get the label for the selector
   const getSelectorLabel = () => {
-    if (selectedWorkspaceId && isProPlus) return 'Workspace'
+    if (currentWorkspaceId && isProPlus) return 'Workspace'
     if (dataSource === 'csv') return 'Data Source'
     return 'Ad Account'
   }
 
-  const handleSelectWorkspace = (workspaceId: string) => {
-    setSelectedWorkspaceId(workspaceId)
+  const handleSelectWorkspace = async (workspaceId: string) => {
     setShowAccountDropdown(false)
-    // TODO: Update context/state to load workspace data
+    await switchWorkspace(workspaceId)
   }
 
   const handleSelectAccount = async (accountId: string) => {
-    setSelectedWorkspaceId(null) // Clear workspace selection
     setShowAccountDropdown(false)
     await switchAccount(accountId)
   }
@@ -247,7 +254,7 @@ export function Sidebar() {
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="truncate flex items-center gap-2">
               {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
-              {selectedWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
+              {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
               {getDisplayName()}
             </span>
             {canShowDropdown && (
@@ -287,7 +294,7 @@ export function Sidebar() {
                       onClick={() => handleSelectWorkspace(workspace.id)}
                       className={cn(
                         "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                        selectedWorkspaceId === workspace.id && !currentAccountId && "bg-purple-500/10"
+                        currentWorkspaceId === workspace.id && !currentAccountId && "bg-purple-500/10"
                       )}
                     >
                       <span className="truncate flex items-center gap-2">
@@ -297,7 +304,7 @@ export function Sidebar() {
                           <span className="text-xs text-zinc-500">({workspace.account_count})</span>
                         )}
                       </span>
-                      {selectedWorkspaceId === workspace.id && (
+                      {currentWorkspaceId === workspace.id && (
                         <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
                       )}
                     </button>
@@ -319,11 +326,11 @@ export function Sidebar() {
                       onClick={() => handleSelectAccount(account.id)}
                       className={cn(
                         "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                        account.id === currentAccountId && !selectedWorkspaceId && "bg-accent/10"
+                        account.id === currentAccountId && !currentWorkspaceId && "bg-accent/10"
                       )}
                     >
                       <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
-                      {account.id === currentAccountId && !selectedWorkspaceId && (
+                      {account.id === currentAccountId && !currentWorkspaceId && (
                         <Check className="w-4 h-4 text-accent flex-shrink-0" />
                       )}
                     </button>
