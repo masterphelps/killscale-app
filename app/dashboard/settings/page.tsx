@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, RotateCcw, Loader2, AlertCircle, Plus, X } from 'lucide-react'
+import { Save, RotateCcw, Loader2, AlertCircle, Plus, X, Copy, Check, ExternalLink } from 'lucide-react'
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -44,6 +44,19 @@ type AdAccount = {
   name: string
 }
 
+type PixelData = {
+  pixel_id: string
+  attribution_source: 'meta' | 'killscale'
+  attribution_window: number
+}
+
+type PixelStatus = {
+  is_active: boolean
+  last_event_at: string | null
+  events_today: number
+  events_total: number
+}
+
 export default function SettingsPage() {
   const { user } = useAuth()
   const { currentAccountId, currentAccount: contextAccount } = useAccount()
@@ -58,6 +71,12 @@ export default function SettingsPage() {
 
   // Track last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
+
+  // Pixel state
+  const [pixelData, setPixelData] = useState<PixelData | null>(null)
+  const [pixelStatus, setPixelStatus] = useState<PixelStatus | null>(null)
+  const [pixelCopied, setPixelCopied] = useState(false)
+  const [savingPixel, setSavingPixel] = useState(false)
 
   // Load rules when account changes
   useEffect(() => {
@@ -101,6 +120,39 @@ export default function SettingsPage() {
 
     loadRules()
   }, [user, currentAccountId, lastLoadedAccountId])
+
+  // Load pixel data when account changes
+  useEffect(() => {
+    if (!currentAccountId) {
+      setPixelData(null)
+      setPixelStatus(null)
+      return
+    }
+
+    const loadPixelData = async () => {
+      // Load pixel config
+      const { data: pixel } = await supabase
+        .from('pixels')
+        .select('pixel_id, attribution_source, attribution_window')
+        .eq('ad_account_id', currentAccountId)
+        .single()
+
+      if (pixel) {
+        setPixelData(pixel)
+
+        // Load pixel status
+        const { data: status } = await supabase
+          .from('pixel_status')
+          .select('is_active, last_event_at, events_today, events_total')
+          .eq('pixel_id', pixel.pixel_id)
+          .single()
+
+        setPixelStatus(status || null)
+      }
+    }
+
+    loadPixelData()
+  }, [currentAccountId])
 
   const handleChange = (field: keyof typeof rules, value: string) => {
     setRules(prev => ({ ...prev, [field]: value }))
@@ -205,6 +257,56 @@ export default function SettingsPage() {
     const event = STANDARD_EVENTS.find(e => e.key === key)
     return { key, label: event?.label || key, value }
   })
+
+  // Pixel helpers
+  const getPixelSnippet = (pixelId: string) => `<!-- KillScale Pixel -->
+<script>
+!function(k,s,p,i,x,e,l){if(k.ks)return;x=k.ks=function(){x.q.push(arguments)};
+x.q=[];e=s.createElement(p);l=s.getElementsByTagName(p)[0];
+e.async=1;e.src='https://pixel.killscale.com/ks.js';l.parentNode.insertBefore(e,l)
+}(window,document,'script');
+
+ks('init', '${pixelId}');
+ks('pageview');
+</script>
+<!-- End KillScale Pixel -->`
+
+  const copyPixelSnippet = async () => {
+    if (!pixelData) return
+    await navigator.clipboard.writeText(getPixelSnippet(pixelData.pixel_id))
+    setPixelCopied(true)
+    setTimeout(() => setPixelCopied(false), 2000)
+  }
+
+  const handlePixelSettingChange = async (field: string, value: string | number) => {
+    if (!pixelData || !currentAccountId) return
+    setSavingPixel(true)
+
+    const { error } = await supabase
+      .from('pixels')
+      .update({ [field]: value })
+      .eq('ad_account_id', currentAccountId)
+
+    if (!error) {
+      setPixelData(prev => prev ? { ...prev, [field]: value } : null)
+    }
+    setSavingPixel(false)
+  }
+
+  const formatTimeAgo = (dateString: string | null) => {
+    if (!dateString) return 'Never'
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins} min ago`
+    if (diffHours < 24) return `${diffHours} hours ago`
+    return `${diffDays} days ago`
+  }
 
   if (loading) {
     return (
@@ -493,6 +595,149 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* KillScale Pixel Configuration */}
+      {pixelData && (
+        <div className="bg-bg-card border border-border rounded-xl p-6 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold">KillScale Pixel</h2>
+              <p className="text-xs text-zinc-500 mt-1">First-party conversion tracking</p>
+            </div>
+            {/* Status indicator */}
+            {pixelStatus?.is_active ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-verdict-scale/10 border border-verdict-scale/30 rounded-lg">
+                <div className="w-2 h-2 rounded-full bg-verdict-scale animate-pulse" />
+                <span className="text-xs text-verdict-scale font-medium">Active</span>
+              </div>
+            ) : pixelStatus?.last_event_at ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                <span className="text-xs text-yellow-500 font-medium">Inactive</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-500/10 border border-zinc-500/30 rounded-lg">
+                <div className="w-2 h-2 rounded-full bg-zinc-500" />
+                <span className="text-xs text-zinc-400 font-medium">Not Installed</span>
+              </div>
+            )}
+          </div>
+
+          {/* Pixel Stats */}
+          {pixelStatus && (
+            <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-bg-dark rounded-lg">
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-wide">Last Event</div>
+                <div className="text-sm font-medium mt-1">{formatTimeAgo(pixelStatus.last_event_at)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-wide">Today</div>
+                <div className="text-sm font-medium font-mono mt-1">{pixelStatus.events_today.toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-xs text-zinc-500 uppercase tracking-wide">Total</div>
+                <div className="text-sm font-medium font-mono mt-1">{pixelStatus.events_total.toLocaleString()}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Attribution Source Toggle */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-3">Attribution Source</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handlePixelSettingChange('attribution_source', 'meta')}
+                disabled={savingPixel}
+                className={`p-4 rounded-lg border-2 text-left transition-all ${
+                  pixelData.attribution_source === 'meta'
+                    ? 'border-accent bg-accent/10'
+                    : 'border-border hover:border-zinc-600'
+                }`}
+              >
+                <div className="font-medium text-sm">Meta Pixel</div>
+                <div className="text-xs text-zinc-500 mt-1">Use Meta's reported conversions</div>
+              </button>
+              <button
+                onClick={() => handlePixelSettingChange('attribution_source', 'killscale')}
+                disabled={savingPixel || !pixelStatus?.is_active}
+                className={`p-4 rounded-lg border-2 text-left transition-all ${
+                  pixelData.attribution_source === 'killscale'
+                    ? 'border-accent bg-accent/10'
+                    : 'border-border hover:border-zinc-600'
+                } ${!pixelStatus?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <div className="font-medium text-sm">KillScale Pixel</div>
+                <div className="text-xs text-zinc-500 mt-1">
+                  {pixelStatus?.is_active ? 'Use first-party tracking' : 'Install pixel to enable'}
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Attribution Window */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2">Attribution Window</label>
+            <select
+              value={pixelData.attribution_window}
+              onChange={(e) => handlePixelSettingChange('attribution_window', parseInt(e.target.value))}
+              disabled={savingPixel}
+              className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+            >
+              <option value={1}>1 day</option>
+              <option value={7}>7 days (recommended)</option>
+              <option value={14}>14 days</option>
+              <option value={28}>28 days</option>
+            </select>
+            <p className="text-xs text-zinc-600 mt-2">
+              How long after clicking an ad can a conversion be attributed
+            </p>
+          </div>
+
+          {/* Pixel Code */}
+          <div className="border-t border-border pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium">Your Pixel Code</label>
+              <span className="text-xs font-mono text-zinc-500">{pixelData.pixel_id}</span>
+            </div>
+            <div className="relative">
+              <pre className="p-4 bg-bg-dark rounded-lg text-xs text-zinc-400 overflow-x-auto font-mono">
+                {getPixelSnippet(pixelData.pixel_id)}
+              </pre>
+              <button
+                onClick={copyPixelSnippet}
+                className="absolute top-3 right-3 p-2 bg-bg-hover hover:bg-zinc-700 rounded-lg transition-colors"
+              >
+                {pixelCopied ? (
+                  <Check className="w-4 h-4 text-verdict-scale" />
+                ) : (
+                  <Copy className="w-4 h-4 text-zinc-400" />
+                )}
+              </button>
+            </div>
+            <p className="text-xs text-zinc-600 mt-3">
+              Add this code to your website's <code className="text-zinc-400">&lt;head&gt;</code> tag.
+              For purchases, add: <code className="text-zinc-400">ks('purchase', {'{'} value: 99.99 {'}'})</code>
+            </p>
+          </div>
+
+          {/* UTM Setup Guide */}
+          <div className="mt-6 p-4 bg-accent/5 border border-accent/20 rounded-lg">
+            <div className="flex items-start gap-3">
+              <ExternalLink className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="text-sm font-medium text-accent">UTM Parameters Required</div>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Add these URL parameters to your ads for attribution:
+                </p>
+                <code className="block mt-2 text-xs text-zinc-400 break-all">
+                  ?utm_source=facebook&utm_medium=cpc&utm_campaign={'{'}{'{'}'campaign.id'{'}'}{'}'}
+                  &utm_content={'{'}{'{'}'ad.id'{'}'}{'}'}&utm_term={'{'}{'{'}'adset.id'{'}'}{'}'}
+                </code>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Verdict Preview */}
       <div className="bg-bg-card border border-border rounded-xl p-6 mt-6">
