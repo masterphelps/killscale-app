@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   BarChart3,
   TrendingUp,
@@ -10,6 +10,7 @@ import {
   Settings,
   Link as LinkIcon,
   ChevronDown,
+  ChevronRight,
   LogOut,
   Check,
   FileSpreadsheet,
@@ -17,13 +18,26 @@ import {
   EyeOff,
   Eye,
   HelpCircle,
-  Rocket
+  Rocket,
+  SlidersHorizontal,
+  Scale,
+  Radio,
+  Users,
+  Layers,
+  Building2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/lib/auth'
+import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAccount } from '@/lib/account'
+
+interface Workspace {
+  id: string
+  name: string
+  is_default: boolean
+  account_count?: number
+}
 
 const navItems = [
   { href: '/dashboard/launch', label: 'Launch', icon: Rocket },
@@ -31,7 +45,14 @@ const navItems = [
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
-  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+]
+
+const settingsItems = [
+  { href: '/dashboard/settings', label: 'General', icon: SlidersHorizontal },
+  { href: '/dashboard/settings/rules', label: 'Rules', icon: Scale },
+  { href: '/dashboard/settings/pixel', label: 'Pixel', icon: Radio, proOnly: true },
+  { href: '/dashboard/settings/accounts', label: 'Accounts', icon: Users },
+  { href: '/dashboard/settings/workspaces', label: 'Workspaces', icon: Layers, proOnly: true },
 ]
 
 export function Sidebar() {
@@ -43,9 +64,32 @@ export function Sidebar() {
 
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [alertCount, setUnreadAlertCount] = useState(0)
+  const [settingsExpanded, setSettingsExpanded] = useState(() => {
+    // Auto-expand if currently on a settings page
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.startsWith('/dashboard/settings')
+    }
+    return false
+  })
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+
+  // Check if user is Pro+ (can see workspaces)
+  const isProPlus = plan === 'Pro' || plan === 'Agency'
+  console.log('Sidebar plan:', plan, 'isProPlus:', isProPlus)
 
   const rawUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
   const userName = maskText(rawUserName, 'Demo User')
+
+  // Auto-expand settings when navigating to a settings page
+  useEffect(() => {
+    if (pathname.startsWith('/dashboard/settings')) {
+      setSettingsExpanded(true)
+    }
+  }, [pathname])
+
+  // Check if any settings page is active
+  const isSettingsActive = pathname.startsWith('/dashboard/settings')
 
   // Load alert count
   useEffect(() => {
@@ -76,10 +120,56 @@ export function Sidebar() {
     }
   }
 
-  const canShowDropdown = accounts.length > 0
+  // Load workspaces for Pro+ users
+  const loadWorkspaces = useCallback(async () => {
+    if (!user || !isProPlus) return
+
+    try {
+      // Get workspaces (non-default only)
+      const { data: workspacesData, error } = await supabase
+        .from('workspaces')
+        .select('id, name, is_default')
+        .eq('user_id', user.id)
+        .eq('is_default', false)
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.error('Failed to load workspaces:', error)
+        return
+      }
+
+      console.log('Loaded workspaces:', workspacesData)
+
+      const formatted = (workspacesData || []).map(w => ({
+        id: w.id,
+        name: w.name,
+        is_default: w.is_default,
+        account_count: 0
+      }))
+
+      setWorkspaces(formatted)
+    } catch (err) {
+      console.error('Failed to load workspaces:', err)
+    }
+  }, [user, isProPlus])
+
+  // Load workspaces on mount for Pro+ users
+  useEffect(() => {
+    if (isProPlus) {
+      loadWorkspaces()
+    }
+  }, [isProPlus, loadWorkspaces])
+
+  const canShowDropdown = accounts.length > 0 || workspaces.length > 0
 
   // Determine what to show in the account selector
   const getDisplayName = () => {
+    // If workspace is selected (Pro+ only)
+    if (selectedWorkspaceId && isProPlus) {
+      const workspace = workspaces.find(w => w.id === selectedWorkspaceId)
+      if (workspace) return maskText(workspace.name, 'Demo Workspace')
+    }
+
     if (dataSource === 'none') return 'No data'
     if (dataSource === 'csv') return 'CSV Data'
     if (dataSource === 'meta_api') {
@@ -89,7 +179,21 @@ export function Sidebar() {
     return 'No account selected'
   }
 
+  // Get the label for the selector
+  const getSelectorLabel = () => {
+    if (selectedWorkspaceId && isProPlus) return 'Workspace'
+    if (dataSource === 'csv') return 'Data Source'
+    return 'Ad Account'
+  }
+
+  const handleSelectWorkspace = (workspaceId: string) => {
+    setSelectedWorkspaceId(workspaceId)
+    setShowAccountDropdown(false)
+    // TODO: Update context/state to load workspace data
+  }
+
   const handleSelectAccount = async (accountId: string) => {
+    setSelectedWorkspaceId(null) // Clear workspace selection
     setShowAccountDropdown(false)
     await switchAccount(accountId)
   }
@@ -138,11 +242,12 @@ export function Sidebar() {
           )}
         >
           <div className="text-xs text-zinc-500 mb-1">
-            {dataSource === 'csv' ? 'Data Source' : 'Ad Account'}
+            {getSelectorLabel()}
           </div>
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="truncate flex items-center gap-2">
               {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
+              {selectedWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
               {getDisplayName()}
             </span>
             {canShowDropdown && (
@@ -161,7 +266,7 @@ export function Sidebar() {
               className="fixed inset-0 z-10"
               onClick={() => setShowAccountDropdown(false)}
             />
-            <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden">
+            <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden max-h-80 overflow-y-auto">
               {/* Show CSV option if currently viewing CSV */}
               {dataSource === 'csv' && (
                 <div className="px-3 py-2 text-sm text-zinc-400 bg-accent/10 flex items-center gap-2">
@@ -170,25 +275,64 @@ export function Sidebar() {
                 </div>
               )}
 
-              {/* Show Meta accounts */}
-              {accounts.map((account, index) => (
-                <button
-                  key={account.id}
-                  onClick={() => handleSelectAccount(account.id)}
-                  className={cn(
-                    "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                    account.id === currentAccountId && "bg-accent/10"
+              {/* WORKSPACES section - Pro+ only */}
+              {isProPlus && workspaces.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 text-xs text-zinc-500 uppercase tracking-wider bg-zinc-900/50">
+                    Workspaces
+                  </div>
+                  {workspaces.map((workspace) => (
+                    <button
+                      key={workspace.id}
+                      onClick={() => handleSelectWorkspace(workspace.id)}
+                      className={cn(
+                        "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
+                        selectedWorkspaceId === workspace.id && !currentAccountId && "bg-purple-500/10"
+                      )}
+                    >
+                      <span className="truncate flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-purple-400" />
+                        {maskText(workspace.name, 'Demo Workspace')}
+                        {workspace.account_count !== undefined && workspace.account_count > 0 && (
+                          <span className="text-xs text-zinc-500">({workspace.account_count})</span>
+                        )}
+                      </span>
+                      {selectedWorkspaceId === workspace.id && (
+                        <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {/* INDIVIDUAL ACCOUNTS section */}
+              {accounts.length > 0 && (
+                <>
+                  {isProPlus && workspaces.length > 0 && (
+                    <div className="px-3 py-1.5 text-xs text-zinc-500 uppercase tracking-wider bg-zinc-900/50 border-t border-border">
+                      Individual Accounts
+                    </div>
                   )}
-                >
-                  <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
-                  {account.id === currentAccountId && (
-                    <Check className="w-4 h-4 text-accent flex-shrink-0" />
-                  )}
-                </button>
-              ))}
+                  {accounts.map((account, index) => (
+                    <button
+                      key={account.id}
+                      onClick={() => handleSelectAccount(account.id)}
+                      className={cn(
+                        "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
+                        account.id === currentAccountId && !selectedWorkspaceId && "bg-accent/10"
+                      )}
+                    >
+                      <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
+                      {account.id === currentAccountId && !selectedWorkspaceId && (
+                        <Check className="w-4 h-4 text-accent flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
 
               <Link
-                href="/dashboard/connect"
+                href="/dashboard/settings/accounts"
                 className="w-full px-3 py-2 text-left text-sm text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors border-t border-border flex items-center gap-2"
               >
                 <LinkIcon className="w-3 h-3" />
@@ -201,7 +345,7 @@ export function Sidebar() {
         {/* No accounts tooltip */}
         {dataSource === 'none' && accounts.length === 0 && (
           <Link
-            href="/dashboard/connect"
+            href="/dashboard/settings/accounts"
             className="block mt-2 text-xs text-accent hover:text-accent-hover text-center"
           >
             Connect an account →
@@ -245,26 +389,56 @@ export function Sidebar() {
             </Link>
           )
         })}
-      </nav>
 
-      {/* Connect Account */}
-      <div className="space-y-1 mb-6">
-        <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
-          Accounts
-        </div>
-        <Link
-          href="/dashboard/connect"
-          className={cn(
-            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-            pathname === '/dashboard/connect'
-              ? 'bg-accent text-white'
-              : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+        {/* Settings - Expandable */}
+        <div>
+          <button
+            onClick={() => setSettingsExpanded(!settingsExpanded)}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              isSettingsActive
+                ? 'bg-accent/20 text-white'
+                : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+            )}
+          >
+            <Settings className="w-5 h-5" />
+            <span className="flex-1 text-left">Settings</span>
+            <ChevronRight className={cn(
+              "w-4 h-4 transition-transform",
+              settingsExpanded && "rotate-90"
+            )} />
+          </button>
+
+          {/* Settings Sub-items */}
+          {settingsExpanded && (
+            <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
+              {settingsItems.map((item) => {
+                // Skip Pro+ only items (Pixel, Workspaces) for Free and Starter tiers
+                if (item.proOnly && !isProPlus) return null
+
+                const Icon = item.icon
+                const isActive = pathname === item.href
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors',
+                      isActive
+                        ? 'bg-accent text-white'
+                        : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
           )}
-        >
-          <LinkIcon className="w-5 h-5" />
-          Connect Account
-        </Link>
-      </div>
+        </div>
+      </nav>
 
       {/* Spacer */}
       <div className="flex-1" />

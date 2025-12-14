@@ -1,0 +1,528 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock } from 'lucide-react'
+import { useAuth, supabase } from '@/lib/auth'
+import { useSubscription } from '@/lib/subscription'
+import { useAccount } from '@/lib/account'
+import Link from 'next/link'
+
+type Workspace = {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+type WorkspaceAccount = {
+  id: string
+  workspace_id: string
+  platform: 'meta' | 'google'
+  ad_account_id: string
+  ad_account_name: string
+  currency: string
+}
+
+// Workspace limits per tier
+// Free/Starter: Hidden default workspace only (no visible workspaces)
+// Pro: 2 workspaces, Agency: unlimited
+const WORKSPACE_LIMITS: Record<string, number> = {
+  'Free': 0,
+  'Starter': 0,  // Hidden default only
+  'Pro': 2,
+  'Agency': 100,
+}
+
+export default function WorkspacesPage() {
+  const { user } = useAuth()
+  const { plan } = useSubscription()
+  const { accounts } = useAccount()
+
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaceAccounts, setWorkspaceAccounts] = useState<Record<string, WorkspaceAccount[]>>({})
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [addingToWorkspace, setAddingToWorkspace] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  const workspaceLimit = WORKSPACE_LIMITS[plan] || 0
+  const canCreateWorkspace = workspaces.length < workspaceLimit
+
+  // Load workspaces
+  useEffect(() => {
+    if (!user) return
+
+    const loadWorkspaces = async () => {
+      // Only load non-default workspaces (hide the default workspace)
+      const { data: ws, error: wsError } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_default', false)
+        .order('created_at', { ascending: false })
+
+      if (wsError) {
+        // Table might not exist yet
+        console.error('Workspaces table error:', wsError)
+        setLoading(false)
+        return
+      }
+
+      if (ws) {
+        setWorkspaces(ws)
+
+        // Load accounts for each workspace
+        const accountsMap: Record<string, WorkspaceAccount[]> = {}
+        for (const w of ws) {
+          const { data: accts } = await supabase
+            .from('workspace_accounts')
+            .select('*')
+            .eq('workspace_id', w.id)
+
+          accountsMap[w.id] = accts || []
+        }
+        setWorkspaceAccounts(accountsMap)
+      }
+
+      setLoading(false)
+    }
+
+    loadWorkspaces()
+  }, [user])
+
+  const handleCreateWorkspace = async () => {
+    if (!user || !newWorkspaceName.trim()) return
+
+    if (!canCreateWorkspace) {
+      setError(`${plan} plan allows ${workspaceLimit} workspace${workspaceLimit !== 1 ? 's' : ''}. Upgrade to create more.`)
+      return
+    }
+
+    setCreating(true)
+    setError('')
+
+    const { data, error: createError } = await supabase
+      .from('workspaces')
+      .insert({
+        user_id: user.id,
+        name: newWorkspaceName.trim(),
+        is_default: false,  // Explicitly set - user-created workspaces are NOT default
+      })
+      .select()
+      .single()
+
+    setCreating(false)
+
+    if (createError) {
+      console.error('Create workspace error:', createError)
+      if (createError.code === '42P01') {
+        setError('Workspaces feature is not yet available. Database setup required.')
+      } else {
+        setError(`Failed to create workspace: ${createError.message}`)
+      }
+    } else if (data) {
+      setWorkspaces(prev => [data, ...prev])
+      setWorkspaceAccounts(prev => ({ ...prev, [data.id]: [] }))
+      setNewWorkspaceName('')
+      setShowCreateForm(false)
+    }
+  }
+
+  const handleDeleteWorkspace = async (workspaceId: string) => {
+    if (!confirm('Delete this workspace? This cannot be undone.')) return
+
+    const { error } = await supabase
+      .from('workspaces')
+      .delete()
+      .eq('id', workspaceId)
+
+    if (!error) {
+      setWorkspaces(prev => prev.filter(w => w.id !== workspaceId))
+      setWorkspaceAccounts(prev => {
+        const next = { ...prev }
+        delete next[workspaceId]
+        return next
+      })
+    }
+  }
+
+  const handleRenameWorkspace = async (workspaceId: string) => {
+    if (!editingName.trim()) return
+
+    const { error } = await supabase
+      .from('workspaces')
+      .update({ name: editingName.trim() })
+      .eq('id', workspaceId)
+
+    if (!error) {
+      setWorkspaces(prev => prev.map(w =>
+        w.id === workspaceId ? { ...w, name: editingName.trim() } : w
+      ))
+    }
+
+    setEditingId(null)
+    setEditingName('')
+  }
+
+  const handleAddAccount = async (workspaceId: string, account: { id: string; name: string }) => {
+    const { error } = await supabase
+      .from('workspace_accounts')
+      .insert({
+        workspace_id: workspaceId,
+        platform: 'meta',
+        ad_account_id: account.id,
+        ad_account_name: account.name,
+        currency: 'USD',
+      })
+
+    if (!error) {
+      setWorkspaceAccounts(prev => ({
+        ...prev,
+        [workspaceId]: [
+          ...prev[workspaceId],
+          {
+            id: crypto.randomUUID(),
+            workspace_id: workspaceId,
+            platform: 'meta',
+            ad_account_id: account.id,
+            ad_account_name: account.name,
+            currency: 'USD',
+          }
+        ]
+      }))
+    }
+
+    setAddingToWorkspace(null)
+  }
+
+  const handleRemoveAccount = async (workspaceId: string, accountId: string) => {
+    const { error } = await supabase
+      .from('workspace_accounts')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('ad_account_id', accountId)
+
+    if (!error) {
+      setWorkspaceAccounts(prev => ({
+        ...prev,
+        [workspaceId]: prev[workspaceId].filter(a => a.ad_account_id !== accountId)
+      }))
+    }
+  }
+
+  // Get available accounts (not already in this workspace)
+  const getAvailableAccounts = (workspaceId: string) => {
+    const existingIds = workspaceAccounts[workspaceId]?.map(a => a.ad_account_id) || []
+    return accounts.filter(a => !existingIds.includes(a.id))
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+      </div>
+    )
+  }
+
+  // Check if user is Pro+ (can access workspaces)
+  const isProPlus = plan === 'Pro' || plan === 'Agency'
+
+  // Show upgrade prompt for Free and Starter tiers
+  if (!isProPlus) {
+    return (
+      <div className="max-w-2xl">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold mb-1">Workspaces</h1>
+          <p className="text-zinc-500">Group ad accounts from multiple platforms into unified views</p>
+        </div>
+
+        <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-purple-500/20 to-accent/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-8 h-8 text-purple-400" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">Unlock Workspaces</h2>
+          <p className="text-zinc-500 mb-6 max-w-md mx-auto">
+            Combine metrics from multiple ad accounts (Meta + Google) into unified views.
+            Upgrade to Pro to create workspaces.
+          </p>
+          <div className="space-y-4">
+            <ul className="text-sm text-left max-w-xs mx-auto space-y-2 text-zinc-400">
+              <li className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-accent" />
+                Aggregate data across platforms
+              </li>
+              <li className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-accent" />
+                See blended ROAS metrics
+              </li>
+              <li className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-accent" />
+                One pixel per workspace
+              </li>
+            </ul>
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-accent to-purple-500 hover:from-accent-hover hover:to-purple-400 text-white rounded-lg font-medium transition-all"
+            >
+              Upgrade to Pro
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Workspaces</h1>
+          <p className="text-zinc-500">Group ad accounts from multiple platforms into unified views</p>
+        </div>
+        <div className="text-sm text-zinc-500">
+          {workspaces.length} / {workspaceLimit} workspaces
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3 text-red-400">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          {error}
+          <button onClick={() => setError('')} className="ml-auto">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Create Workspace */}
+      {showCreateForm ? (
+        <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+          <h2 className="font-semibold mb-4">Create Workspace</h2>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+              placeholder="Workspace name..."
+              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+              autoFocus
+            />
+            <button
+              onClick={handleCreateWorkspace}
+              disabled={creating || !newWorkspaceName.trim()}
+              className="flex items-center gap-2 px-4 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+            >
+              {creating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Check className="w-4 h-4" />
+              )}
+              Create
+            </button>
+            <button
+              onClick={() => {
+                setShowCreateForm(false)
+                setNewWorkspaceName('')
+              }}
+              className="p-3 text-zinc-500 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      ) : canCreateWorkspace ? (
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="w-full mb-6 p-4 border-2 border-dashed border-border hover:border-accent rounded-xl text-zinc-500 hover:text-white transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus className="w-5 h-5" />
+          Create Workspace
+        </button>
+      ) : (
+        <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-amber-500">
+            <Lock className="w-4 h-4" />
+            Workspace limit reached
+          </div>
+          <Link
+            href="/pricing"
+            className="text-sm text-amber-500 hover:text-amber-400 font-medium"
+          >
+            Upgrade for more
+          </Link>
+        </div>
+      )}
+
+      {/* Workspaces List */}
+      {workspaces.length === 0 ? (
+        <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
+          <Layers className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
+          <h3 className="text-lg font-medium mb-2">No Workspaces Yet</h3>
+          <p className="text-zinc-500 text-sm">
+            Create a workspace to combine metrics from multiple ad accounts.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {workspaces.map((workspace) => {
+            const wsAccounts = workspaceAccounts[workspace.id] || []
+            const availableAccounts = getAvailableAccounts(workspace.id)
+
+            return (
+              <div
+                key={workspace.id}
+                className="bg-bg-card border border-border rounded-xl overflow-hidden"
+              >
+                {/* Header */}
+                <div className="p-4 border-b border-border flex items-center justify-between">
+                  {editingId === workspace.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        className="flex-1 px-3 py-1.5 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleRenameWorkspace(workspace.id)}
+                        className="p-1.5 text-verdict-scale hover:bg-verdict-scale/10 rounded transition-colors"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingId(null)
+                          setEditingName('')
+                        }}
+                        className="p-1.5 text-zinc-500 hover:text-white transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Layers className="w-5 h-5 text-accent" />
+                        <span className="font-medium">{workspace.name}</span>
+                        <span className="text-xs text-zinc-500">
+                          {wsAccounts.length} account{wsAccounts.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingId(workspace.id)
+                            setEditingName(workspace.name)
+                          }}
+                          className="p-1.5 text-zinc-500 hover:text-white hover:bg-bg-hover rounded transition-colors"
+                          title="Rename"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteWorkspace(workspace.id)}
+                          className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Accounts */}
+                <div className="p-4">
+                  {wsAccounts.length === 0 ? (
+                    <p className="text-sm text-zinc-500 text-center py-2">
+                      No accounts added yet
+                    </p>
+                  ) : (
+                    <div className="space-y-2 mb-4">
+                      {wsAccounts.map((account) => (
+                        <div
+                          key={account.id}
+                          className="flex items-center justify-between p-3 bg-bg-dark rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`px-2 py-0.5 text-xs rounded font-medium ${
+                              account.platform === 'meta'
+                                ? 'bg-blue-500/20 text-blue-400'
+                                : 'bg-green-500/20 text-green-400'
+                            }`}>
+                              {account.platform === 'meta' ? 'Meta' : 'Google'}
+                            </span>
+                            <span className="text-sm">{account.ad_account_name}</span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveAccount(workspace.id, account.ad_account_id)}
+                            className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add Account */}
+                  {addingToWorkspace === workspace.id ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="flex-1 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white text-sm focus:outline-none focus:border-accent"
+                        defaultValue=""
+                        onChange={(e) => {
+                          const account = availableAccounts.find(a => a.id === e.target.value)
+                          if (account) {
+                            handleAddAccount(workspace.id, account)
+                          }
+                        }}
+                      >
+                        <option value="" disabled>Select an account...</option>
+                        {availableAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setAddingToWorkspace(null)}
+                        className="p-2 text-zinc-500 hover:text-white transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : availableAccounts.length > 0 ? (
+                    <button
+                      onClick={() => setAddingToWorkspace(workspace.id)}
+                      className="w-full py-2 border border-dashed border-border hover:border-accent rounded-lg text-sm text-zinc-500 hover:text-white transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Account
+                    </button>
+                  ) : (
+                    <p className="text-xs text-zinc-600 text-center">
+                      All connected accounts are in this workspace
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Help Text */}
+      <div className="mt-6 text-sm text-zinc-500 space-y-2">
+        <p><strong>Workspaces</strong> let you combine metrics from multiple ad accounts into a single view.</p>
+        <p>Select a workspace from the sidebar dropdown to see aggregated performance across all accounts in that workspace.</p>
+      </div>
+    </div>
+  )
+}

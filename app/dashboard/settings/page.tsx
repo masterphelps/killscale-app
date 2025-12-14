@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Save, RotateCcw, Loader2, AlertCircle, Plus, X, Copy, Check, ExternalLink, Activity, RefreshCw } from 'lucide-react'
-import { VerdictBadge } from '@/components/verdict-badge'
+import { useState, useEffect } from 'react'
+import { Save, Loader2, User, CreditCard, Bell, Globe, ExternalLink, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { useAccount } from '@/lib/account'
-import { useAttribution, AttributionSource } from '@/lib/attribution'
+import { useSubscription } from '@/lib/subscription'
+import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -13,367 +12,107 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const DEFAULT_RULES = {
-  scale_roas: '3.0',
-  min_roas: '1.5',
-  learning_spend: '100',
-  scale_percentage: '20',
-  // CPR thresholds for non-revenue campaigns (leads, registrations, etc.)
-  target_cpr: '',
-  max_cpr: '',
-}
-
-// All standard Meta conversion events (matches pixel-events API)
-const STANDARD_EVENTS = [
-  { key: 'purchase', label: 'Purchase' },
-  { key: 'lead', label: 'Lead' },
-  { key: 'complete_registration', label: 'Complete Registration' },
-  { key: 'add_to_cart', label: 'Add to Cart' },
-  { key: 'initiate_checkout', label: 'Initiate Checkout' },
-  { key: 'add_payment_info', label: 'Add Payment Info' },
-  { key: 'subscribe', label: 'Subscribe' },
-  { key: 'contact', label: 'Contact' },
-  { key: 'submit_application', label: 'Submit Application' },
-  { key: 'start_trial', label: 'Start Trial' },
-  { key: 'schedule', label: 'Schedule' },
+const TIMEZONES = [
+  { value: 'America/New_York', label: 'Eastern Time (ET)' },
+  { value: 'America/Chicago', label: 'Central Time (CT)' },
+  { value: 'America/Denver', label: 'Mountain Time (MT)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
+  { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii Time (HT)' },
+  { value: 'Europe/London', label: 'London (GMT)' },
+  { value: 'Europe/Paris', label: 'Paris (CET)' },
+  { value: 'Europe/Berlin', label: 'Berlin (CET)' },
+  { value: 'Asia/Tokyo', label: 'Tokyo (JST)' },
+  { value: 'Asia/Shanghai', label: 'Shanghai (CST)' },
+  { value: 'Australia/Sydney', label: 'Sydney (AEDT)' },
 ]
 
-type EventValues = Record<string, number>
+const CURRENCIES = [
+  { value: 'USD', label: 'USD ($)' },
+  { value: 'EUR', label: 'EUR (\u20AC)' },
+  { value: 'GBP', label: 'GBP (\u00A3)' },
+  { value: 'CAD', label: 'CAD (C$)' },
+  { value: 'AUD', label: 'AUD (A$)' },
+  { value: 'JPY', label: 'JPY (\u00A5)' },
+]
 
-type AdAccount = {
-  id: string
-  name: string
+type UserPreferences = {
+  timezone: string
+  currency: string
+  email_weekly_digest: boolean
+  email_alerts: boolean
+  email_product_updates: boolean
 }
 
-type PixelData = {
-  pixel_id: string
-  pixel_secret: string
-  attribution_source: 'meta' | 'killscale'
-  attribution_window: number
-}
-
-type PixelStatus = {
-  is_active: boolean
-  last_event_at: string | null
-  events_today: number
-  events_total: number
-}
-
-type PixelEvent = {
-  id: string
-  event_type: string
-  event_value: number | null
-  event_currency: string
-  utm_source: string | null
-  utm_content: string | null
-  page_url: string | null
-  event_time: string
-}
-
-export default function SettingsPage() {
+export default function GeneralSettingsPage() {
   const { user } = useAuth()
-  const { currentAccountId, currentAccount: contextAccount } = useAccount()
-  const { source: attributionSource, setSource: setAttributionSource, pixelConfig } = useAttribution()
+  const { plan, subscription } = useSubscription()
 
-  // Store as strings to allow proper editing (backspace, etc.)
-  const [rules, setRules] = useState(DEFAULT_RULES)
-  const [eventValues, setEventValues] = useState<EventValues>({})
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    timezone: 'America/New_York',
+    currency: 'USD',
+    email_weekly_digest: true,
+    email_alerts: true,
+    email_product_updates: false,
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [error, setError] = useState('')
 
-  // Track last loaded account to detect changes
-  const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
-
-  // Pixel state
-  const [pixelData, setPixelData] = useState<PixelData | null>(null)
-  const [pixelStatus, setPixelStatus] = useState<PixelStatus | null>(null)
-  const [pixelCopied, setPixelCopied] = useState(false)
-  const [savingPixel, setSavingPixel] = useState(false)
-  const [pixelEvents, setPixelEvents] = useState<PixelEvent[]>([])
-  const [loadingEvents, setLoadingEvents] = useState(false)
-  const [eventsExpanded, setEventsExpanded] = useState(false)
-
-  // Load rules when account changes
+  // Load user preferences
   useEffect(() => {
     if (!user) return
-    if (currentAccountId === lastLoadedAccountId) return
 
-    const loadRules = async () => {
-      setLastLoadedAccountId(currentAccountId)
-
-      // Load rules for this account (or user-level if no account)
-      let query = supabase
-        .from('rules')
+    const loadPreferences = async () => {
+      const { data } = await supabase
+        .from('user_preferences')
         .select('*')
         .eq('user_id', user.id)
+        .single()
 
-      if (currentAccountId) {
-        query = query.eq('ad_account_id', currentAccountId)
-      } else {
-        query = query.is('ad_account_id', null)
-      }
-
-      const { data: rulesRows, error } = await query.limit(1)
-
-      const data = rulesRows?.[0]
       if (data) {
-        setRules({
-          scale_roas: data.scale_roas?.toString() || DEFAULT_RULES.scale_roas,
-          min_roas: data.min_roas?.toString() || DEFAULT_RULES.min_roas,
-          learning_spend: data.learning_spend?.toString() || DEFAULT_RULES.learning_spend,
-          scale_percentage: data.scale_percentage?.toString() || DEFAULT_RULES.scale_percentage,
-          target_cpr: data.target_cpr?.toString() || '',
-          max_cpr: data.max_cpr?.toString() || '',
+        setPreferences({
+          timezone: data.timezone || 'America/New_York',
+          currency: data.currency || 'USD',
+          email_weekly_digest: data.email_weekly_digest ?? true,
+          email_alerts: data.email_alerts ?? true,
+          email_product_updates: data.email_product_updates ?? false,
         })
-        // Load event values
-        setEventValues(data.event_values || {})
-      } else {
-        // Reset to defaults when no rules found
-        setEventValues({})
       }
       setLoading(false)
     }
 
-    loadRules()
-  }, [user, currentAccountId, lastLoadedAccountId])
-
-  // Load pixel data when account changes
-  useEffect(() => {
-    if (!currentAccountId || !user) {
-      setPixelData(null)
-      setPixelStatus(null)
-      return
-    }
-
-    const loadPixelData = async () => {
-      // Load pixel config by meta_account_id
-      let { data: pixels } = await supabase
-        .from('pixels')
-        .select('pixel_id, pixel_secret, attribution_source, attribution_window')
-        .eq('meta_account_id', currentAccountId)
-        .eq('user_id', user.id)
-        .limit(1)
-
-      let pixel = pixels?.[0] || null
-
-      // If no pixel exists, create one
-      if (!pixel) {
-        const { data: newPixel, error: createError } = await supabase
-          .from('pixels')
-          .insert({
-            user_id: user.id,
-            meta_account_id: currentAccountId,
-            pixel_id: `KS-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-            pixel_secret: Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2),
-            attribution_source: 'meta',
-            attribution_window: 7,
-          })
-          .select('pixel_id, pixel_secret, attribution_source, attribution_window')
-          .single()
-
-        if (!createError && newPixel) {
-          pixel = newPixel
-        }
-      }
-
-      if (pixel) {
-        setPixelData(pixel)
-
-        // Load pixel status
-        const { data: statusRows } = await supabase
-          .from('pixel_status')
-          .select('is_active, last_event_at, events_today, events_total')
-          .eq('pixel_id', pixel.pixel_id)
-          .limit(1)
-
-        setPixelStatus(statusRows?.[0] || null)
-      }
-    }
-
-    loadPixelData()
-  }, [currentAccountId, user])
-
-  // Load pixel events
-  const loadPixelEvents = useCallback(async () => {
-    if (!pixelData?.pixel_id || !user?.id) return
-
-    setLoadingEvents(true)
-    try {
-      const res = await fetch(`/api/pixel/events?pixelId=${pixelData.pixel_id}&userId=${user.id}&limit=20`)
-      const data = await res.json()
-      if (data.events) {
-        setPixelEvents(data.events)
-      }
-    } catch (err) {
-      console.error('Failed to load pixel events:', err)
-    } finally {
-      setLoadingEvents(false)
-    }
-  }, [pixelData?.pixel_id, user?.id])
-
-  // Load events when section is expanded
-  useEffect(() => {
-    if (eventsExpanded && pixelData?.pixel_id && pixelEvents.length === 0) {
-      loadPixelEvents()
-    }
-  }, [eventsExpanded, pixelData?.pixel_id, pixelEvents.length, loadPixelEvents])
-
-  const handleChange = (field: keyof typeof rules, value: string) => {
-    setRules(prev => ({ ...prev, [field]: value }))
-    setSaved(false)
-  }
-
-  // Parse rules to numbers for saving and display
-  const parsedRules = {
-    scale_roas: parseFloat(rules.scale_roas) || 0,
-    min_roas: parseFloat(rules.min_roas) || 0,
-    learning_spend: parseFloat(rules.learning_spend) || 0,
-    scale_percentage: parseFloat(rules.scale_percentage) || 20,
-    target_cpr: rules.target_cpr ? parseFloat(rules.target_cpr) : null,
-    max_cpr: rules.max_cpr ? parseFloat(rules.max_cpr) : null,
-  }
+    loadPreferences()
+  }, [user])
 
   const handleSave = async () => {
-    if (!user) {
-      setError('Not logged in')
-      return
-    }
-
-    // Validate that we have valid numbers
-    if (parsedRules.scale_roas <= 0 || parsedRules.min_roas <= 0 || parsedRules.learning_spend <= 0) {
-      setError('All values must be greater than 0')
-      return
-    }
-    if (parsedRules.scale_percentage < 5 || parsedRules.scale_percentage > 50) {
-      setError('Scale percentage must be between 5% and 50%')
-      return
-    }
+    if (!user) return
 
     setSaving(true)
-    setError('')
-
-    const payload: Record<string, any> = {
-      user_id: user.id,
-      ad_account_id: currentAccountId || null,
-      scale_roas: parsedRules.scale_roas,
-      min_roas: parsedRules.min_roas,
-      learning_spend: parsedRules.learning_spend,
-      scale_percentage: parsedRules.scale_percentage,
-      target_cpr: parsedRules.target_cpr,
-      max_cpr: parsedRules.max_cpr,
-      event_values: eventValues,
-      updated_at: new Date().toISOString(),
-    }
-
-    // Use user_id + ad_account_id as the conflict key
-    const { data, error: upsertError } = await supabase
-      .from('rules')
-      .upsert(payload, {
-        onConflict: 'user_id,ad_account_id'
+    const { error } = await supabase
+      .from('user_preferences')
+      .upsert({
+        user_id: user.id,
+        ...preferences,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id'
       })
-      .select()
 
     setSaving(false)
-    
-    if (!upsertError) {
+    if (!error) {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-    } else {
-      console.error('Error saving rules:', upsertError)
-      setError(`Failed to save: ${upsertError.message}`)
     }
   }
 
-  const handleReset = async () => {
-    setRules(DEFAULT_RULES)
-    setEventValues({})
+  const handleChange = (field: keyof UserPreferences, value: string | boolean) => {
+    setPreferences(prev => ({ ...prev, [field]: value }))
     setSaved(false)
   }
 
-  // Event values handlers
-  const handleEventValueChange = (eventType: string, value: string) => {
-    setSaved(false)
-    const numValue = parseFloat(value)
-    if (!isNaN(numValue) && numValue >= 0) {
-      setEventValues(prev => ({ ...prev, [eventType]: numValue }))
-    }
-  }
-
-  const handleRemoveEventValue = (eventType: string) => {
-    setSaved(false)
-    setEventValues(prev => {
-      const next = { ...prev }
-      delete next[eventType]
-      return next
-    })
-  }
-
-  const handleAddEventValue = (eventType: string) => {
-    setSaved(false)
-    setEventValues(prev => ({ ...prev, [eventType]: 0 }))
-  }
-
-  // Get events that haven't been added yet
-  const availableEvents = STANDARD_EVENTS.filter(e => !(e.key in eventValues))
-
-  // Get configured events for display
-  const configuredEvents = Object.entries(eventValues).map(([key, value]) => {
-    const event = STANDARD_EVENTS.find(e => e.key === key)
-    return { key, label: event?.label || key, value }
-  })
-
-  // Pixel helpers
-  const getPixelSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Pixel -->
-<script>
-!function(k,s,p,i,x,e,l){if(k.ks)return;x=k.ks=function(){x.q.push(arguments)};
-x.q=[];e=s.createElement(p);l=s.getElementsByTagName(p)[0];
-e.async=1;e.src='https://pixel.killscale.com/ks.js';l.parentNode.insertBefore(e,l)
-}(window,document,'script');
-
-ks('init', '${pixelId}', { secret: '${pixelSecret}' });
-ks('pageview');
-</script>
-<!-- End KillScale Pixel -->`
-
-  const copyPixelSnippet = async () => {
-    if (!pixelData) return
-    await navigator.clipboard.writeText(getPixelSnippet(pixelData.pixel_id, pixelData.pixel_secret))
-    setPixelCopied(true)
-    setTimeout(() => setPixelCopied(false), 2000)
-  }
-
-  const handlePixelSettingChange = async (field: string, value: string | number) => {
-    if (!pixelData || !currentAccountId || !user) return
-    setSavingPixel(true)
-
-    const { error } = await supabase
-      .from('pixels')
-      .update({ [field]: value })
-      .eq('meta_account_id', currentAccountId)
-      .eq('user_id', user.id)
-
-    if (!error) {
-      setPixelData(prev => prev ? { ...prev, [field]: value } : null)
-    }
-    setSavingPixel(false)
-  }
-
-  const formatTimeAgo = (dateString: string | null) => {
-    if (!dateString) return 'Never'
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
-
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins} min ago`
-    if (diffHours < 24) return `${diffHours} hours ago`
-    return `${diffDays} days ago`
-  }
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
+  const userEmail = user?.email || ''
 
   if (loading) {
     return (
@@ -383,536 +122,215 @@ ks('pageview');
     )
   }
 
-  // Require an account to be selected
-  if (!currentAccountId) {
-    return (
-      <div className="max-w-2xl">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-1">Rules</h1>
-          <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
-        </div>
-        <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
-          <AlertCircle className="w-12 h-12 text-zinc-500 mx-auto mb-4" />
-          <h2 className="text-lg font-medium mb-2">No Account Selected</h2>
-          <p className="text-zinc-500 mb-4">
-            Select an ad account from the sidebar to configure rules.
-          </p>
-          <p className="text-xs text-zinc-600">
-            Rules are configured per ad account. Each account can have its own ROAS thresholds, learning spend, and CPR settings.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="max-w-2xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-1">Rules</h1>
-        <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
-        <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
-          <span className="text-xs text-zinc-400">Rules for:</span>
-          <span className="text-sm font-medium text-accent">{contextAccount?.name}</span>
+        <h1 className="text-2xl font-bold mb-1">General</h1>
+        <p className="text-zinc-500">Manage your account preferences and settings</p>
+      </div>
+
+      {/* Profile Section */}
+      <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <User className="w-5 h-5 text-zinc-400" />
+          <h2 className="font-semibold">Profile</h2>
+        </div>
+
+        <div className="flex items-center gap-4 p-4 bg-bg-dark rounded-lg">
+          <div className="w-12 h-12 bg-gradient-to-br from-accent to-purple-500 rounded-xl flex items-center justify-center text-lg font-bold">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1">
+            <div className="font-medium">{userName}</div>
+            <div className="text-sm text-zinc-500">{userEmail}</div>
+          </div>
+          <Link
+            href="/account"
+            className="text-sm text-accent hover:text-accent-hover transition-colors"
+          >
+            Edit Profile
+          </Link>
         </div>
       </div>
 
-      <div className="bg-bg-card border border-border rounded-xl p-6 space-y-6">
-        {/* Scale ROAS */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            <span className="text-verdict-scale">↑</span> Scale ROAS Threshold
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              value={rules.scale_roas}
-              onChange={(e) => handleChange('scale_roas', e.target.value)}
-              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent"
-            />
-            <span className="text-zinc-500 text-lg">x</span>
-          </div>
-          <p className="text-xs text-zinc-600 mt-2">
-            Ads with ROAS at or above this get the <span className="text-verdict-scale font-medium">SCALE</span> verdict
-          </p>
+      {/* Plan Section */}
+      <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <CreditCard className="w-5 h-5 text-zinc-400" />
+          <h2 className="font-semibold">Subscription</h2>
         </div>
 
-        {/* Min ROAS */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            <span className="text-verdict-watch">↔</span> Minimum ROAS Threshold
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              value={rules.min_roas}
-              onChange={(e) => handleChange('min_roas', e.target.value)}
-              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent"
-            />
-            <span className="text-zinc-500 text-lg">x</span>
-          </div>
-          <p className="text-xs text-zinc-600 mt-2">
-            Ads below this (after learning phase) get the <span className="text-verdict-kill font-medium">KILL</span> verdict
-          </p>
-        </div>
-
-        {/* Learning Spend */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            <span className="text-verdict-learn">○</span> Learning Phase Spend
-          </label>
-          <div className="flex items-center gap-3">
-            <span className="text-zinc-500 text-lg">$</span>
-            <input
-              type="number"
-              step="10"
-              min="0"
-              value={rules.learning_spend}
-              onChange={(e) => handleChange('learning_spend', e.target.value)}
-              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent"
-            />
-          </div>
-          <p className="text-xs text-zinc-600 mt-2">
-            Ads with spend below this get the <span className="text-verdict-learn font-medium">LEARNING</span> verdict (not enough data)
-          </p>
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-border pt-6">
-          <h3 className="text-sm font-medium text-zinc-400 mb-4">Budget Scaling</h3>
-        </div>
-
-        {/* Scale Percentage */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            <span className="text-accent">↑↓</span> Quick Scale Percentage
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              step="5"
-              min="5"
-              max="50"
-              value={rules.scale_percentage}
-              onChange={(e) => handleChange('scale_percentage', e.target.value)}
-              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent"
-            />
-            <span className="text-zinc-500 text-lg">%</span>
-          </div>
-          <p className="text-xs text-zinc-600 mt-2">
-            How much to increase or decrease budgets with the quick ↑/↓ buttons (5-50%)
-          </p>
-        </div>
-
-        {/* Divider - KillScale Pixel */}
-        {pixelData && (
-          <>
-            <div className="border-t border-border pt-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-zinc-400">KillScale Pixel</h3>
-                {/* Status indicator */}
-                {pixelStatus?.is_active ? (
-                  <div className="flex items-center gap-1.5 text-xs text-verdict-scale">
-                    <div className="w-1.5 h-1.5 rounded-full bg-verdict-scale animate-pulse" />
+        <div className="p-4 bg-bg-dark rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{plan} Plan</span>
+                {subscription?.status === 'active' && (
+                  <span className="px-2 py-0.5 bg-verdict-scale/20 text-verdict-scale text-xs rounded">
                     Active
-                  </div>
-                ) : pixelStatus?.last_event_at ? (
-                  <div className="flex items-center gap-1.5 text-xs text-yellow-500">
-                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-                    Inactive
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
-                    Not Installed
-                  </div>
+                  </span>
                 )}
               </div>
-              <p className="text-xs text-zinc-600 mb-4">
-                First-party conversion tracking. Choose which data source to use for verdicts.
-              </p>
-            </div>
-
-            {/* Attribution Source Toggle */}
-            <div className="mb-4">
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setAttributionSource('meta')}
-                  disabled={savingPixel}
-                  className={`p-3 rounded-lg border-2 text-left transition-all ${
-                    attributionSource === 'meta'
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border hover:border-zinc-600'
-                  }`}
-                >
-                  <div className="font-medium text-sm">Meta Pixel</div>
-                  <div className="text-xs text-zinc-500 mt-0.5">Use Meta's reported conversions</div>
-                </button>
-                <button
-                  onClick={() => setAttributionSource('killscale')}
-                  disabled={savingPixel || !pixelStatus?.is_active}
-                  className={`p-3 rounded-lg border-2 text-left transition-all relative ${
-                    attributionSource === 'killscale'
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border hover:border-zinc-600'
-                  } ${!pixelStatus?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span className="absolute top-2 right-2 px-1.5 py-0.5 text-[10px] font-semibold bg-blue-500 text-white rounded">Beta</span>
-                  <div className="font-medium text-sm">KillScale Pixel</div>
-                  <div className="text-xs text-zinc-500 mt-0.5">
-                    {pixelStatus?.is_active ? 'Use first-party tracking' : 'Install pixel first'}
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Pixel Code (collapsible-style) */}
-            <details className="mb-6 group">
-              <summary className="flex items-center justify-between cursor-pointer text-sm text-zinc-400 hover:text-white transition-colors">
-                <span className="flex items-center gap-2">
-                  <span className="font-mono text-xs">{pixelData.pixel_id}</span>
-                  <span className="text-xs">— View install code</span>
-                </span>
-                <span className="text-xs group-open:hidden">▸</span>
-                <span className="text-xs hidden group-open:inline">▾</span>
-              </summary>
-              <div className="mt-3 space-y-3">
-                <div className="relative">
-                  <pre className="p-3 bg-bg-dark rounded-lg text-xs text-zinc-400 overflow-x-auto font-mono">
-                    {getPixelSnippet(pixelData.pixel_id, pixelData.pixel_secret)}
-                  </pre>
-                  <button
-                    onClick={copyPixelSnippet}
-                    className="absolute top-2 right-2 p-1.5 bg-bg-hover hover:bg-zinc-700 rounded transition-colors"
-                  >
-                    {pixelCopied ? (
-                      <Check className="w-3.5 h-3.5 text-verdict-scale" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-xs text-zinc-600">
-                  Add to your site's <code className="text-zinc-400">&lt;head&gt;</code>.
-                  For purchases: <code className="text-zinc-400">ks('purchase', {'{'} value: 99 {'}'})</code>
-                </p>
-              </div>
-            </details>
-
-            {/* UTM Template */}
-            <div className="p-4 bg-bg-dark rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">UTM Parameters for Attribution</span>
-              </div>
-              <p className="text-xs text-zinc-500 mb-3">
-                Add these to your ad URLs to track conversions back to specific ads:
-              </p>
-              <div className="relative">
-                <code className="block p-3 bg-bg-hover rounded text-xs text-zinc-400 break-all font-mono">
-                  {'?utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content={{ad.id}}&utm_term={{adset.id}}'}
-                </code>
-                <button
-                  onClick={async () => {
-                    await navigator.clipboard.writeText('?utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content={{ad.id}}&utm_term={{adset.id}}')
-                    setPixelCopied(true)
-                    setTimeout(() => setPixelCopied(false), 2000)
-                  }}
-                  className="absolute top-2 right-2 p-1.5 bg-bg-dark hover:bg-zinc-700 rounded transition-colors"
-                >
-                  {pixelCopied ? (
-                    <Check className="w-3.5 h-3.5 text-verdict-scale" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-600 mt-2">
-                Campaigns created in KillScale auto-include these parameters.
-              </p>
-            </div>
-
-            {/* Recent Events */}
-            <div className="border-t border-border pt-4 mt-4">
-              <button
-                onClick={() => setEventsExpanded(!eventsExpanded)}
-                className="w-full flex items-center justify-between text-sm text-zinc-400 hover:text-white transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  <Activity className="w-4 h-4" />
-                  <span>Recent Events</span>
-                  {pixelStatus?.events_total ? (
-                    <span className="text-xs text-zinc-600">({pixelStatus.events_total} total)</span>
-                  ) : null}
-                </span>
-                <span className="text-xs">{eventsExpanded ? '▾' : '▸'}</span>
-              </button>
-
-              {eventsExpanded && (
-                <div className="mt-3 space-y-2">
-                  {/* Refresh button */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={loadPixelEvents}
-                      disabled={loadingEvents}
-                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${loadingEvents ? 'animate-spin' : ''}`} />
-                      Refresh
-                    </button>
-                  </div>
-
-                  {/* Events list */}
-                  {loadingEvents && pixelEvents.length === 0 ? (
-                    <div className="flex items-center justify-center py-6">
-                      <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
-                    </div>
-                  ) : pixelEvents.length === 0 ? (
-                    <div className="text-center py-6 text-sm text-zinc-500">
-                      No events received yet
-                    </div>
-                  ) : (
-                    <div className="max-h-64 overflow-y-auto space-y-1">
-                      {pixelEvents.map((event) => (
-                        <div
-                          key={event.id}
-                          className="flex items-center justify-between p-2 bg-bg-dark rounded-lg text-xs"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className={`px-2 py-0.5 rounded font-medium ${
-                              event.event_type === 'purchase' ? 'bg-verdict-scale/20 text-verdict-scale' :
-                              event.event_type === 'pageview' ? 'bg-zinc-700 text-zinc-400' :
-                              'bg-accent/20 text-accent'
-                            }`}>
-                              {event.event_type}
-                            </span>
-                            {event.event_value && (
-                              <span className="text-zinc-400">
-                                ${event.event_value.toFixed(2)}
-                              </span>
-                            )}
-                            {event.utm_content && (
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(event.utm_content!)
-                                }}
-                                className="text-zinc-500 hover:text-zinc-300 font-mono text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded cursor-pointer"
-                                title={`Click to copy: ${event.utm_content}`}
-                              >
-                                {event.utm_content}
-                              </button>
-                            )}
-                          </div>
-                          <span className="text-zinc-600 flex-shrink-0">
-                            {formatTimeAgo(event.event_time)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {pixelEvents.length > 0 && (
-                    <p className="text-xs text-zinc-600 text-center pt-2">
-                      Showing last {pixelEvents.length} events
-                    </p>
-                  )}
+              {subscription?.current_period_end && (
+                <div className="text-sm text-zinc-500 mt-1">
+                  Renews {new Date(subscription.current_period_end).toLocaleDateString()}
                 </div>
               )}
             </div>
-          </>
-        )}
-
-        {/* Divider - Event Values */}
-        <div className="border-t border-border pt-6">
-          <h3 className="text-sm font-medium text-zinc-400 mb-2">Event Values</h3>
-          <p className="text-xs text-zinc-600 mb-4">
-            Assign dollar values to conversion events. When your campaigns generate results (leads, registrations, etc.), ROAS will be calculated using these values.
-          </p>
-        </div>
-
-        {/* Configured Event Values */}
-        <div className="space-y-3">
-          {configuredEvents.map(({ key, label, value }) => (
-            <div key={key} className="flex items-center gap-3 bg-bg-hover rounded-lg p-3">
-              <div className="flex-1">
-                <span className="text-sm font-medium text-white">{label}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 text-sm">$</span>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={value}
-                  onChange={(e) => handleEventValueChange(key, e.target.value)}
-                  className="w-24 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white font-mono text-sm focus:outline-none focus:border-accent"
-                />
-              </div>
-              <button
-                onClick={() => handleRemoveEventValue(key)}
-                className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-
-          {configuredEvents.length === 0 && (
-            <div className="text-sm text-zinc-500 py-2">
-              No event values configured. Add events below to track their value.
-            </div>
-          )}
-        </div>
-
-        {/* Add Event Dropdown */}
-        {availableEvents.length > 0 && (
-          <div className="mt-4">
             <div className="flex items-center gap-2">
-              <select
-                id="add-event-select"
-                defaultValue=""
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAddEventValue(e.target.value)
-                    e.target.value = ''
-                  }
-                }}
-                className="flex-1 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white text-sm focus:outline-none focus:border-accent appearance-none cursor-pointer"
-              >
-                <option value="" disabled>Select an event to add...</option>
-                {availableEvents.map(({ key, label }) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-              <div className="p-2 text-accent">
-                <Plus className="w-5 h-5" />
-              </div>
+              {plan !== 'Agency' && (
+                <Link
+                  href="/pricing"
+                  className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg font-medium transition-colors"
+                >
+                  Upgrade
+                </Link>
+              )}
+              {subscription?.status === 'active' && (
+                <a
+                  href="https://billing.stripe.com/p/login/test_123"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-bg-hover text-zinc-400 hover:text-white text-sm rounded-lg transition-colors"
+                >
+                  Manage
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
             </div>
           </div>
-        )}
 
-        <p className="text-xs text-zinc-600 mt-4">
-          ROAS = (Results × Event Value) / Spend. For example: 10 leads × $29 value = $290 revenue.
-        </p>
-
-        {/* Divider - CPR Thresholds */}
-        <div className="border-t border-border pt-6">
-          <h3 className="text-sm font-medium text-zinc-400 mb-2">Cost Per Result Thresholds</h3>
-          <p className="text-xs text-zinc-600 mb-4">
-            Set CPR thresholds to judge lead-gen campaigns by cost instead of ROAS. Optional - leave blank to use event values above.
-          </p>
-        </div>
-
-        {/* Target CPR */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            <span className="text-verdict-scale">↑</span> Target Cost Per Result (Scale)
-          </label>
-          <div className="flex items-center gap-3">
-            <span className="text-zinc-500 text-lg">$</span>
-            <input
-              type="number"
-              step="1"
-              min="0"
-              placeholder="e.g., 25"
-              value={rules.target_cpr}
-              onChange={(e) => handleChange('target_cpr', e.target.value)}
-              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent placeholder:text-zinc-700"
-            />
+          {/* Plan Features */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                {plan === 'Free' ? '2 campaigns' : plan === 'Starter' ? '10 campaigns' : 'Unlimited campaigns'}
+              </div>
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                {plan === 'Free' || plan === 'Starter' ? '1 ad account' : plan === 'Pro' ? '2 ad accounts' : 'Unlimited accounts'}
+              </div>
+              {(plan === 'Pro' || plan === 'Agency') && (
+                <>
+                  <div className="flex items-center gap-2 text-zinc-400">
+                    <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                    Pause/resume controls
+                  </div>
+                  <div className="flex items-center gap-2 text-zinc-400">
+                    <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                    Budget editing
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-          <p className="text-xs text-zinc-600 mt-2">
-            Lead-gen ads with CPR at or below this get the <span className="text-verdict-scale font-medium">SCALE</span> verdict
-          </p>
-        </div>
-
-        {/* Max CPR */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            <span className="text-verdict-kill">↓</span> Maximum Cost Per Result (Kill)
-          </label>
-          <div className="flex items-center gap-3">
-            <span className="text-zinc-500 text-lg">$</span>
-            <input
-              type="number"
-              step="1"
-              min="0"
-              placeholder="e.g., 50"
-              value={rules.max_cpr}
-              onChange={(e) => handleChange('max_cpr', e.target.value)}
-              className="flex-1 px-4 py-3 bg-bg-dark border border-border rounded-lg text-white font-mono text-lg focus:outline-none focus:border-accent placeholder:text-zinc-700"
-            />
-          </div>
-          <p className="text-xs text-zinc-600 mt-2">
-            Lead-gen ads with CPR above this get the <span className="text-verdict-kill font-medium">KILL</span> verdict
-          </p>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-4 border-t border-border">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
-          >
-            {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Rules'}
-          </button>
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 px-4 py-2 bg-bg-dark border border-border hover:border-border-light text-zinc-400 hover:text-white rounded-lg transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Reset to Defaults
-          </button>
         </div>
       </div>
 
-      {/* Verdict Preview */}
-      <div className="bg-bg-card border border-border rounded-xl p-6 mt-6">
-        <h2 className="font-semibold mb-4">How Verdicts Work</h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between py-2 border-b border-border">
-            <div>
-              <span className="text-sm">ROAS ≥ {parsedRules.scale_roas}x</span>
-              <p className="text-xs text-zinc-600">Crushing it — increase budget</p>
-            </div>
-            <VerdictBadge verdict="scale" />
+      {/* Preferences Section */}
+      <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Globe className="w-5 h-5 text-zinc-400" />
+          <h2 className="font-semibold">Preferences</h2>
+        </div>
+
+        <div className="space-y-4">
+          {/* Timezone */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Timezone</label>
+            <select
+              value={preferences.timezone}
+              onChange={(e) => handleChange('timezone', e.target.value)}
+              className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent appearance-none cursor-pointer"
+            >
+              {TIMEZONES.map(tz => (
+                <option key={tz.value} value={tz.value}>{tz.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-zinc-600 mt-2">Used for displaying dates and scheduling reports</p>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-border">
-            <div>
-              <span className="text-sm">{parsedRules.min_roas}x ≤ ROAS &lt; {parsedRules.scale_roas}x</span>
-              <p className="text-xs text-zinc-600">Acceptable — monitor closely</p>
-            </div>
-            <VerdictBadge verdict="watch" />
-          </div>
-          <div className="flex items-center justify-between py-2 border-b border-border">
-            <div>
-              <span className="text-sm">ROAS &lt; {parsedRules.min_roas}x (after ${parsedRules.learning_spend} spend)</span>
-              <p className="text-xs text-zinc-600">Underperforming — turn it off</p>
-            </div>
-            <VerdictBadge verdict="kill" />
-          </div>
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <span className="text-sm">Spend &lt; ${parsedRules.learning_spend}</span>
-              <p className="text-xs text-zinc-600">Still gathering data — let it run</p>
-            </div>
-            <VerdictBadge verdict="learn" />
+
+          {/* Currency */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Display Currency</label>
+            <select
+              value={preferences.currency}
+              onChange={(e) => handleChange('currency', e.target.value)}
+              className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent appearance-none cursor-pointer"
+            >
+              {CURRENCIES.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-zinc-600 mt-2">Ad data is shown in your ad account's currency regardless of this setting</p>
           </div>
         </div>
+      </div>
+
+      {/* Email Notifications */}
+      <div className="bg-bg-card border border-border rounded-xl p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Bell className="w-5 h-5 text-zinc-400" />
+          <h2 className="font-semibold">Email Notifications</h2>
+        </div>
+
+        <div className="space-y-3">
+          <label className="flex items-center justify-between p-3 bg-bg-dark rounded-lg cursor-pointer hover:bg-bg-hover transition-colors">
+            <div>
+              <div className="font-medium text-sm">Weekly Digest</div>
+              <div className="text-xs text-zinc-500">Summary of your ad performance every Monday</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={preferences.email_weekly_digest}
+              onChange={(e) => handleChange('email_weekly_digest', e.target.checked)}
+              className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-3 bg-bg-dark rounded-lg cursor-pointer hover:bg-bg-hover transition-colors">
+            <div>
+              <div className="font-medium text-sm">Alert Notifications</div>
+              <div className="text-xs text-zinc-500">Get notified when ads need attention</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={preferences.email_alerts}
+              onChange={(e) => handleChange('email_alerts', e.target.checked)}
+              className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-3 bg-bg-dark rounded-lg cursor-pointer hover:bg-bg-hover transition-colors">
+            <div>
+              <div className="font-medium text-sm">Product Updates</div>
+              <div className="text-xs text-zinc-500">New features and improvements</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={preferences.email_product_updates}
+              onChange={(e) => handleChange('email_product_updates', e.target.checked)}
+              className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+        >
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
+          {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Changes'}
+        </button>
       </div>
     </div>
   )

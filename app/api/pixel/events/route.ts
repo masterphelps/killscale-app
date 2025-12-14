@@ -19,16 +19,36 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Verify pixel ownership
+    // Verify pixel ownership via workspace_pixels -> workspaces -> user_id
     const { data: pixel, error: pixelError } = await supabase
-      .from('pixels')
-      .select('pixel_id')
+      .from('workspace_pixels')
+      .select(`
+        pixel_id,
+        workspaces!inner (
+          user_id
+        )
+      `)
       .eq('pixel_id', pixelId)
-      .eq('user_id', userId)
       .single()
 
     if (pixelError || !pixel) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      // Fallback: check old pixels table for backwards compatibility
+      const { data: oldPixel } = await supabase
+        .from('pixels')
+        .select('pixel_id')
+        .eq('pixel_id', pixelId)
+        .eq('user_id', userId)
+        .single()
+
+      if (!oldPixel) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    } else {
+      // Verify user owns the workspace
+      const workspaceUserId = (pixel.workspaces as any)?.user_id
+      if (workspaceUserId !== userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     // Fetch recent events for this pixel
@@ -65,10 +85,14 @@ export async function GET(request: NextRequest) {
       eventCounts[e.event_type] = (eventCounts[e.event_type] || 0) + 1
     })
 
+    // Get last event time for "active" indicator
+    const lastEventTime = events && events.length > 0 ? events[0].event_time : null
+
     return NextResponse.json({
       events: events || [],
       total: stats?.length || 0,
-      byType: eventCounts
+      byType: eventCounts,
+      lastEventTime
     })
   } catch (err) {
     console.error('Pixel events error:', err)

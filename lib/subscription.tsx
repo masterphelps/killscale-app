@@ -34,8 +34,11 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Use user.id as dependency (not user object) to avoid re-fetching on token refresh
+  const userId = user?.id
+
   const fetchSubscription = async () => {
-    if (!user) {
+    if (!userId) {
       setSubscription(null)
       setLoading(false)
       return
@@ -44,7 +47,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('subscriptions')
       .select('plan, status, current_period_end')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
 
     if (data && !error) {
@@ -57,7 +60,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchSubscription()
-  }, [user])
+  }, [userId])
 
   const plan = subscription?.status === 'active' 
     ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)
