@@ -47,6 +47,7 @@ type AdAccount = {
 
 type PixelData = {
   pixel_id: string
+  pixel_secret: string
   attribution_source: 'meta' | 'killscale'
   attribution_window: number
 }
