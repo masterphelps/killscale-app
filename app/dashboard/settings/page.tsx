@@ -556,6 +556,38 @@ ks('pageview');
                 </p>
               </div>
             </details>
+
+            {/* UTM Template */}
+            <div className="p-4 bg-bg-dark rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">UTM Parameters for Attribution</span>
+              </div>
+              <p className="text-xs text-zinc-500 mb-3">
+                Add these to your ad URLs to track conversions back to specific ads:
+              </p>
+              <div className="relative">
+                <code className="block p-3 bg-bg-hover rounded text-xs text-zinc-400 break-all font-mono">
+                  {'?utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content={{ad.id}}&utm_term={{adset.id}}'}
+                </code>
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText('?utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content={{ad.id}}&utm_term={{adset.id}}')
+                    setPixelCopied(true)
+                    setTimeout(() => setPixelCopied(false), 2000)
+                  }}
+                  className="absolute top-2 right-2 p-1.5 bg-bg-dark hover:bg-zinc-700 rounded transition-colors"
+                >
+                  {pixelCopied ? (
+                    <Check className="w-3.5 h-3.5 text-verdict-scale" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-600 mt-2">
+                Campaigns created in KillScale auto-include these parameters.
+              </p>
+            </div>
           </>
         )}
 
