@@ -1,5 +1,5 @@
 'use client'
-// Force rebuild: 2025-12-13T22:10:00Z
+
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
