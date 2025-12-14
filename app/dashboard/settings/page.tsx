@@ -509,12 +509,13 @@ ks('pageview');
                 <button
                   onClick={() => handlePixelSettingChange('attribution_source', 'killscale')}
                   disabled={savingPixel || !pixelStatus?.is_active}
-                  className={`p-3 rounded-lg border-2 text-left transition-all ${
+                  className={`p-3 rounded-lg border-2 text-left transition-all relative ${
                     pixelData.attribution_source === 'killscale'
                       ? 'border-accent bg-accent/10'
                       : 'border-border hover:border-zinc-600'
                   } ${!pixelStatus?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
+                  <span className="absolute top-2 right-2 px-1.5 py-0.5 text-[10px] font-semibold bg-blue-500 text-white rounded">Beta</span>
                   <div className="font-medium text-sm">KillScale Pixel</div>
                   <div className="text-xs text-zinc-500 mt-0.5">
                     {pixelStatus?.is_active ? 'Use first-party tracking' : 'Install pixel first'}

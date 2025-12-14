@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 }
 
 const META_PIXEL_ID = '1552580212607017'
+const KILLSCALE_PIXEL_ID = 'KS-KX0NR94'
 
 export default function RootLayout({
   children,
@@ -51,6 +52,18 @@ export default function RootLayout({
             alt=""
           />
         </noscript>
+        {/* KillScale Pixel Code */}
+        <Script id="killscale-pixel" strategy="afterInteractive">
+          {`
+            !function(k,s,p,i,x,e,l){if(k.ks)return;x=k.ks=function(){x.q.push(arguments)};
+            x.q=[];e=s.createElement(p);l=s.getElementsByTagName(p)[0];
+            e.async=1;e.src='https://pixel.killscale.com/ks.js';l.parentNode.insertBefore(e,l)
+            }(window,document,'script');
+
+            ks('init', '${KILLSCALE_PIXEL_ID}');
+            ks('pageview');
+          `}
+        </Script>
       </head>
       <body className="antialiased">
         <AuthProvider>

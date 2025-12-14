@@ -48,6 +48,10 @@ export default function SignupPage() {
       if (typeof window !== 'undefined' && (window as any).fbq) {
         (window as any).fbq('track', 'CompleteRegistration')
       }
+      // Fire KillScale Pixel CompleteRegistration event
+      if (typeof window !== 'undefined' && (window as any).ks) {
+        (window as any).ks('completeRegistration')
+      }
       setSuccess(true)
     }
   }
@@ -59,6 +63,10 @@ export default function SignupPage() {
     // Fire Meta Pixel event before OAuth redirect
     if (typeof window !== 'undefined' && (window as any).fbq) {
       (window as any).fbq('track', 'CompleteRegistration')
+    }
+    // Fire KillScale Pixel event before OAuth redirect
+    if (typeof window !== 'undefined' && (window as any).ks) {
+      (window as any).ks('completeRegistration')
     }
 
     const { error } = await supabase.auth.signInWithOAuth({
