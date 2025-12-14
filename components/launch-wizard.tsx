@@ -31,6 +31,45 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Generate thumbnail from video file using canvas
+const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.src = videoUrl
+    video.muted = true
+    video.playsInline = true
+
+    video.onloadeddata = () => {
+      // Seek to 0.1 seconds to get a frame (not black)
+      video.currentTime = 0.1
+    }
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+          resolve(dataUrl)
+        } else {
+          resolve(null)
+        }
+      } catch {
+        resolve(null)
+      }
+    }
+
+    video.onerror = () => resolve(null)
+
+    // Timeout fallback
+    setTimeout(() => resolve(null), 5000)
+  })
+}
+
 type Step = 'account' | 'budget' | 'abo-options' | 'details' | 'targeting' | 'creatives' | 'copy' | 'review'
 
 interface Page {
@@ -441,7 +480,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   // File handling - direct to Meta, so no size limit enforced by our server
   const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1GB - Meta's limit for videos
 
-  const processFiles = (files: FileList | File[]) => {
+  const processFiles = async (files: FileList | File[]) => {
     const fileArray = Array.from(files)
     const newCreatives: Creative[] = []
     const skippedFiles: string[] = []
@@ -460,12 +499,24 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         continue
       }
 
-      newCreatives.push({
-        file,
-        preview: URL.createObjectURL(file),
-        type: isImage ? 'image' : 'video',
-        name: file.name
-      })
+      if (isImage) {
+        newCreatives.push({
+          file,
+          preview: URL.createObjectURL(file),
+          type: 'image',
+          name: file.name
+        })
+      } else {
+        // For videos, generate a thumbnail from the first frame
+        const videoUrl = URL.createObjectURL(file)
+        const thumbnail = await generateVideoThumbnail(videoUrl)
+        newCreatives.push({
+          file,
+          preview: thumbnail || videoUrl, // fallback to video URL if thumbnail fails
+          type: 'video',
+          name: file.name
+        })
+      }
     }
 
     if (skippedFiles.length > 0) {
@@ -1432,21 +1483,29 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                   )}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {state.creatives.map((creative, index) => (
+                  {state.creatives.map((creative, index) => {
+                    // Determine the preview source
+                    // - Images: use preview (blob URL or library URL)
+                    // - Videos: use thumbnailUrl if available, else preview (generated thumbnail or library thumbnail)
+                    const previewSrc = creative.type === 'image'
+                      ? creative.preview
+                      : (creative.thumbnailUrl || creative.preview)
+                    // All creatives should have valid previews now (images use blob, videos use generated thumbnails)
+                    const hasValidPreview = !!previewSrc
+
+                    return (
                     <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-bg-hover group">
-                      {creative.type === 'image' ? (
+                      {hasValidPreview ? (
                         <img
-                          src={creative.preview}
+                          src={previewSrc}
                           alt={creative.name || `Creative ${index + 1}`}
                           className="w-full h-full object-cover pointer-events-none"
                         />
                       ) : (
-                        <video
-                          src={creative.preview}
-                          className="w-full h-full object-cover pointer-events-none"
-                          muted
-                          playsInline
-                        />
+                        // Placeholder for local videos before upload completes
+                        <div className="w-full h-full flex items-center justify-center bg-zinc-800">
+                          <Video className="w-12 h-12 text-zinc-600" />
+                        </div>
                       )}
 
                       {/* Type badge */}
@@ -1501,7 +1560,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                         </div>
                       )}
                     </div>
-                  ))}
+                  )})}
+
                   {state.creatives.length < 6 && (
                     <button
                       onClick={() => document.getElementById('file-input')?.click()}

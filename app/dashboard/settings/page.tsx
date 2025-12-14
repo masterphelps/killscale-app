@@ -150,7 +150,7 @@ export default function SettingsPage() {
       // Load pixel config by meta_account_id
       let { data: pixels } = await supabase
         .from('pixels')
-        .select('pixel_id, attribution_source, attribution_window')
+        .select('pixel_id, pixel_secret, attribution_source, attribution_window')
         .eq('meta_account_id', currentAccountId)
         .eq('user_id', user.id)
         .limit(1)
@@ -169,7 +169,7 @@ export default function SettingsPage() {
             attribution_source: 'meta',
             attribution_window: 7,
           })
-          .select('pixel_id, attribution_source, attribution_window')
+          .select('pixel_id, pixel_secret, attribution_source, attribution_window')
           .single()
 
         if (!createError && newPixel) {
@@ -324,21 +324,21 @@ export default function SettingsPage() {
   })
 
   // Pixel helpers
-  const getPixelSnippet = (pixelId: string) => `<!-- KillScale Pixel -->
+  const getPixelSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Pixel -->
 <script>
 !function(k,s,p,i,x,e,l){if(k.ks)return;x=k.ks=function(){x.q.push(arguments)};
 x.q=[];e=s.createElement(p);l=s.getElementsByTagName(p)[0];
 e.async=1;e.src='https://pixel.killscale.com/ks.js';l.parentNode.insertBefore(e,l)
 }(window,document,'script');
 
-ks('init', '${pixelId}');
+ks('init', '${pixelId}', { secret: '${pixelSecret}' });
 ks('pageview');
 </script>
 <!-- End KillScale Pixel -->`
 
   const copyPixelSnippet = async () => {
     if (!pixelData) return
-    await navigator.clipboard.writeText(getPixelSnippet(pixelData.pixel_id))
+    await navigator.clipboard.writeText(getPixelSnippet(pixelData.pixel_id, pixelData.pixel_secret))
     setPixelCopied(true)
     setTimeout(() => setPixelCopied(false), 2000)
   }
@@ -581,7 +581,7 @@ ks('pageview');
               <div className="mt-3 space-y-3">
                 <div className="relative">
                   <pre className="p-3 bg-bg-dark rounded-lg text-xs text-zinc-400 overflow-x-auto font-mono">
-                    {getPixelSnippet(pixelData.pixel_id)}
+                    {getPixelSnippet(pixelData.pixel_id, pixelData.pixel_secret)}
                   </pre>
                   <button
                     onClick={copyPixelSnippet}
