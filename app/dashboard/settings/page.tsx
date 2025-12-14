@@ -440,6 +440,102 @@ ks('pageview');
           </p>
         </div>
 
+        {/* Divider - KillScale Pixel */}
+        {pixelData && (
+          <>
+            <div className="border-t border-border pt-6">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-zinc-400">KillScale Pixel</h3>
+                {/* Status indicator */}
+                {pixelStatus?.is_active ? (
+                  <div className="flex items-center gap-1.5 text-xs text-verdict-scale">
+                    <div className="w-1.5 h-1.5 rounded-full bg-verdict-scale animate-pulse" />
+                    Active
+                  </div>
+                ) : pixelStatus?.last_event_at ? (
+                  <div className="flex items-center gap-1.5 text-xs text-yellow-500">
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                    Inactive
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                    Not Installed
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-zinc-600 mb-4">
+                First-party conversion tracking. Choose which data source to use for verdicts.
+              </p>
+            </div>
+
+            {/* Attribution Source Toggle */}
+            <div className="mb-4">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => handlePixelSettingChange('attribution_source', 'meta')}
+                  disabled={savingPixel}
+                  className={`p-3 rounded-lg border-2 text-left transition-all ${
+                    pixelData.attribution_source === 'meta'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border hover:border-zinc-600'
+                  }`}
+                >
+                  <div className="font-medium text-sm">Meta Pixel</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">Use Meta's reported conversions</div>
+                </button>
+                <button
+                  onClick={() => handlePixelSettingChange('attribution_source', 'killscale')}
+                  disabled={savingPixel || !pixelStatus?.is_active}
+                  className={`p-3 rounded-lg border-2 text-left transition-all ${
+                    pixelData.attribution_source === 'killscale'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border hover:border-zinc-600'
+                  } ${!pixelStatus?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <div className="font-medium text-sm">KillScale Pixel</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">
+                    {pixelStatus?.is_active ? 'Use first-party tracking' : 'Install pixel first'}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Pixel Code (collapsible-style) */}
+            <details className="mb-6 group">
+              <summary className="flex items-center justify-between cursor-pointer text-sm text-zinc-400 hover:text-white transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="font-mono text-xs">{pixelData.pixel_id}</span>
+                  <span className="text-xs">— View install code</span>
+                </span>
+                <span className="text-xs group-open:hidden">▸</span>
+                <span className="text-xs hidden group-open:inline">▾</span>
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="relative">
+                  <pre className="p-3 bg-bg-dark rounded-lg text-xs text-zinc-400 overflow-x-auto font-mono">
+                    {getPixelSnippet(pixelData.pixel_id)}
+                  </pre>
+                  <button
+                    onClick={copyPixelSnippet}
+                    className="absolute top-2 right-2 p-1.5 bg-bg-hover hover:bg-zinc-700 rounded transition-colors"
+                  >
+                    {pixelCopied ? (
+                      <Check className="w-3.5 h-3.5 text-verdict-scale" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-600">
+                  Add to your site's <code className="text-zinc-400">&lt;head&gt;</code>.
+                  For purchases: <code className="text-zinc-400">ks('purchase', {'{'} value: 99 {'}'})</code>
+                </p>
+              </div>
+            </details>
+          </>
+        )}
+
         {/* Divider - Event Values */}
         <div className="border-t border-border pt-6">
           <h3 className="text-sm font-medium text-zinc-400 mb-2">Event Values</h3>
@@ -595,149 +691,6 @@ ks('pageview');
           </button>
         </div>
       </div>
-
-      {/* KillScale Pixel Configuration */}
-      {pixelData && (
-        <div className="bg-bg-card border border-border rounded-xl p-6 mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="font-semibold">KillScale Pixel</h2>
-              <p className="text-xs text-zinc-500 mt-1">First-party conversion tracking</p>
-            </div>
-            {/* Status indicator */}
-            {pixelStatus?.is_active ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-verdict-scale/10 border border-verdict-scale/30 rounded-lg">
-                <div className="w-2 h-2 rounded-full bg-verdict-scale animate-pulse" />
-                <span className="text-xs text-verdict-scale font-medium">Active</span>
-              </div>
-            ) : pixelStatus?.last_event_at ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                <span className="text-xs text-yellow-500 font-medium">Inactive</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-500/10 border border-zinc-500/30 rounded-lg">
-                <div className="w-2 h-2 rounded-full bg-zinc-500" />
-                <span className="text-xs text-zinc-400 font-medium">Not Installed</span>
-              </div>
-            )}
-          </div>
-
-          {/* Pixel Stats */}
-          {pixelStatus && (
-            <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-bg-dark rounded-lg">
-              <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-wide">Last Event</div>
-                <div className="text-sm font-medium mt-1">{formatTimeAgo(pixelStatus.last_event_at)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-wide">Today</div>
-                <div className="text-sm font-medium font-mono mt-1">{pixelStatus.events_today.toLocaleString()}</div>
-              </div>
-              <div>
-                <div className="text-xs text-zinc-500 uppercase tracking-wide">Total</div>
-                <div className="text-sm font-medium font-mono mt-1">{pixelStatus.events_total.toLocaleString()}</div>
-              </div>
-            </div>
-          )}
-
-          {/* Attribution Source Toggle */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-3">Attribution Source</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handlePixelSettingChange('attribution_source', 'meta')}
-                disabled={savingPixel}
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  pixelData.attribution_source === 'meta'
-                    ? 'border-accent bg-accent/10'
-                    : 'border-border hover:border-zinc-600'
-                }`}
-              >
-                <div className="font-medium text-sm">Meta Pixel</div>
-                <div className="text-xs text-zinc-500 mt-1">Use Meta's reported conversions</div>
-              </button>
-              <button
-                onClick={() => handlePixelSettingChange('attribution_source', 'killscale')}
-                disabled={savingPixel || !pixelStatus?.is_active}
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  pixelData.attribution_source === 'killscale'
-                    ? 'border-accent bg-accent/10'
-                    : 'border-border hover:border-zinc-600'
-                } ${!pixelStatus?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <div className="font-medium text-sm">KillScale Pixel</div>
-                <div className="text-xs text-zinc-500 mt-1">
-                  {pixelStatus?.is_active ? 'Use first-party tracking' : 'Install pixel to enable'}
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Attribution Window */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">Attribution Window</label>
-            <select
-              value={pixelData.attribution_window}
-              onChange={(e) => handlePixelSettingChange('attribution_window', parseInt(e.target.value))}
-              disabled={savingPixel}
-              className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
-            >
-              <option value={1}>1 day</option>
-              <option value={7}>7 days (recommended)</option>
-              <option value={14}>14 days</option>
-              <option value={28}>28 days</option>
-            </select>
-            <p className="text-xs text-zinc-600 mt-2">
-              How long after clicking an ad can a conversion be attributed
-            </p>
-          </div>
-
-          {/* Pixel Code */}
-          <div className="border-t border-border pt-6">
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-medium">Your Pixel Code</label>
-              <span className="text-xs font-mono text-zinc-500">{pixelData.pixel_id}</span>
-            </div>
-            <div className="relative">
-              <pre className="p-4 bg-bg-dark rounded-lg text-xs text-zinc-400 overflow-x-auto font-mono">
-                {getPixelSnippet(pixelData.pixel_id)}
-              </pre>
-              <button
-                onClick={copyPixelSnippet}
-                className="absolute top-3 right-3 p-2 bg-bg-hover hover:bg-zinc-700 rounded-lg transition-colors"
-              >
-                {pixelCopied ? (
-                  <Check className="w-4 h-4 text-verdict-scale" />
-                ) : (
-                  <Copy className="w-4 h-4 text-zinc-400" />
-                )}
-              </button>
-            </div>
-            <p className="text-xs text-zinc-600 mt-3">
-              Add this code to your website's <code className="text-zinc-400">&lt;head&gt;</code> tag.
-              For purchases, add: <code className="text-zinc-400">ks('purchase', {'{'} value: 99.99 {'}'})</code>
-            </p>
-          </div>
-
-          {/* UTM Setup Guide */}
-          <div className="mt-6 p-4 bg-accent/5 border border-accent/20 rounded-lg">
-            <div className="flex items-start gap-3">
-              <ExternalLink className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
-              <div>
-                <div className="text-sm font-medium text-accent">UTM Parameters Required</div>
-                <p className="text-xs text-zinc-500 mt-1">
-                  Add these URL parameters to your ads for attribution:
-                </p>
-                <code className="block mt-2 text-xs text-zinc-400 break-all">
-                  ?utm_source=facebook&utm_medium=cpc&utm_campaign={'{'}{'{'}'campaign.id'{'}'}{'}'}
-                  &utm_content={'{'}{'{'}'ad.id'{'}'}{'}'}&utm_term={'{'}{'{'}'adset.id'{'}'}{'}'}
-                </code>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Verdict Preview */}
       <div className="bg-bg-card border border-border rounded-xl p-6 mt-6">
