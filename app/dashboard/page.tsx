@@ -25,6 +25,16 @@ const supabase = createClient(
 const FREE_CAMPAIGN_LIMIT = 2
 const STARTER_CAMPAIGN_LIMIT = 10
 
+type PixelConfig = {
+  pixel_id: string
+  attribution_source: 'meta' | 'killscale'
+}
+
+type AttributionData = Record<string, {
+  conversions: number
+  revenue: number
+}>
+
 const DEFAULT_RULES: Rules = {
   id: '',
   user_id: '',
@@ -151,6 +161,10 @@ export default function DashboardPage() {
   const { currentAccountId, accounts } = useAccount()
   const searchParams = useSearchParams()
 
+  // KillScale Pixel attribution state
+  const [pixelConfig, setPixelConfig] = useState<PixelConfig | null>(null)
+  const [attributionData, setAttributionData] = useState<AttributionData>({})
+
   // Handle deep-linking from alerts page
   useEffect(() => {
     const entityType = searchParams.get('highlight') as 'campaign' | 'adset' | 'ad' | null
@@ -204,6 +218,79 @@ export default function DashboardPage() {
       loadRules(currentAccountId)
     }
   }, [user?.id, currentAccountId])
+
+  // Load pixel config when account changes
+  useEffect(() => {
+    if (!user || !currentAccountId) {
+      setPixelConfig(null)
+      setAttributionData({})
+      return
+    }
+
+    const loadPixelConfig = async () => {
+      const { data: pixel } = await supabase
+        .from('pixels')
+        .select('pixel_id, attribution_source')
+        .eq('meta_account_id', currentAccountId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (pixel) {
+        setPixelConfig(pixel as PixelConfig)
+      } else {
+        setPixelConfig(null)
+      }
+    }
+
+    loadPixelConfig()
+  }, [user?.id, currentAccountId])
+
+  // Load KillScale attribution data when enabled
+  useEffect(() => {
+    if (!pixelConfig || pixelConfig.attribution_source !== 'killscale') {
+      setAttributionData({})
+      return
+    }
+
+    const loadAttribution = async () => {
+      try {
+        // Calculate date range (same logic as activeDateRange but inline to avoid circular dep)
+        const today = new Date()
+        const formatDate = (d: Date) => {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        }
+        let since: string, until: string
+
+        if (datePreset === 'custom' && customStartDate && customEndDate) {
+          since = customStartDate
+          until = customEndDate
+        } else {
+          const daysMap: Record<string, number> = {
+            'today': 0, 'yesterday': 1, 'last_7d': 6, 'last_14d': 13,
+            'last_30d': 29, 'last_90d': 89, 'maximum': 365 * 10
+          }
+          const days = daysMap[datePreset] ?? 29
+          const start = new Date(today)
+          start.setDate(start.getDate() - days)
+          since = formatDate(start)
+          until = formatDate(today)
+        }
+
+        const res = await fetch(
+          `/api/pixel/attribution?pixelId=${pixelConfig.pixel_id}&dateStart=${since}&dateEnd=${until}`
+        )
+        const data = await res.json()
+
+        if (data.attribution) {
+          setAttributionData(data.attribution)
+        }
+      } catch (err) {
+        console.error('Failed to load KillScale attribution:', err)
+      }
+    }
+
+    loadAttribution()
+  }, [pixelConfig?.pixel_id, pixelConfig?.attribution_source, datePreset, customStartDate, customEndDate])
 
   // Track which sync param we've already processed (to prevent re-runs)
   const processedSyncRef = useRef<string | null>(null)
@@ -662,15 +749,41 @@ export default function DashboardPage() {
     }
   }, [datePreset, customStartDate, customEndDate])
 
-  // Filter campaigns by selected account first
+  // Filter campaigns by selected account first, then apply KillScale attribution if enabled
   const accountFilteredData = useMemo(() => {
-    return data.filter(row => {
+    const filtered = data.filter(row => {
       if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
         return false
       }
       return true
     })
-  }, [data, selectedAccountId])
+
+    // If KillScale attribution is enabled, override revenue/purchases with pixel data
+    if (pixelConfig?.attribution_source === 'killscale' && Object.keys(attributionData).length > 0) {
+      return filtered.map(row => {
+        const adAttribution = row.ad_id ? attributionData[row.ad_id] : null
+        if (adAttribution) {
+          const newRevenue = adAttribution.revenue
+          const newPurchases = adAttribution.conversions
+          const newRoas = row.spend > 0 ? newRevenue / row.spend : 0
+          return {
+            ...row,
+            purchases: newPurchases,
+            revenue: newRevenue,
+            // Also update results for results-based tracking
+            results: newPurchases,
+            result_value: newRevenue,
+            // Recalculate ROAS with KillScale data
+            _ksRoas: newRoas,
+            _ksAttribution: true  // Flag to indicate KillScale attribution was applied
+          }
+        }
+        return row
+      })
+    }
+
+    return filtered
+  }, [data, selectedAccountId, pixelConfig?.attribution_source, attributionData])
 
   const allCampaigns = useMemo(() =>
     Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
@@ -1224,7 +1337,18 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
-          
+
+          {/* KillScale Attribution Indicator */}
+          {pixelConfig?.attribution_source === 'killscale' && (
+            <div className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
+              <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+              <span className="text-xs text-accent font-medium">KillScale Attribution Active</span>
+              <span className="text-xs text-zinc-500">
+                ({Object.keys(attributionData).length} ads tracked)
+              </span>
+            </div>
+          )}
+
           {/* Primary Stats Row - responsive grid */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4">
             <StatCard

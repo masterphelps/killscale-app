@@ -103,6 +103,7 @@ interface WizardState {
   description: string
   websiteUrl: string
   ctaType: string
+  autoInjectUTMs: boolean
 }
 
 const OBJECTIVES = [
@@ -174,6 +175,17 @@ const CTA_OPTIONS = [
 
 const RADIUS_OPTIONS = [10, 15, 25, 50, 100]
 
+// UTM parameters for KillScale Pixel tracking
+// Uses Meta's dynamic URL parameters that get replaced at ad serve time
+const KILLSCALE_UTM_TAGS = 'utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.id}}'
+
+// Build preview URL with UTMs (for display only)
+function buildUrlWithUTMs(baseUrl: string): string {
+  if (!baseUrl) return ''
+  const separator = baseUrl.includes('?') ? '&' : '?'
+  return `${baseUrl}${separator}${KILLSCALE_UTM_TAGS}`
+}
+
 interface LaunchWizardProps {
   adAccountId: string  // Passed from context - the currently selected ad account
   onComplete: () => void
@@ -230,7 +242,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     headline: '',
     description: '',
     websiteUrl: '',
-    ctaType: 'GET_QUOTE'
+    ctaType: 'GET_QUOTE',
+    autoInjectUTMs: true
   })
 
   // Load initial data (pages for the selected ad account)
@@ -650,7 +663,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           primaryText: state.primaryText,
           headline: state.headline,
           description: state.description,
-          websiteUrl: state.websiteUrl,
+          websiteUrl: state.websiteUrl,  // Base URL only
+          urlTags: state.autoInjectUTMs ? KILLSCALE_UTM_TAGS : undefined,  // UTMs go in url_tags for Meta substitution
           ctaType: state.ctaType,
           creativeEnhancements: state.creativeEnhancements,
           targetingMode: state.targetingMode,
@@ -1598,6 +1612,49 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               />
             </div>
 
+            {/* UTM Auto-Injection Toggle */}
+            <div className="border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">🎯</span>
+                  <div>
+                    <span className="font-medium">KillScale Pixel Tracking</span>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Auto-add UTMs for per-ad attribution
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setState(s => ({ ...s, autoInjectUTMs: !s.autoInjectUTMs }))}
+                  className={cn(
+                    "relative w-11 h-6 rounded-full transition-colors",
+                    state.autoInjectUTMs ? "bg-accent" : "bg-zinc-700"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform",
+                      state.autoInjectUTMs && "translate-x-5"
+                    )}
+                  />
+                </button>
+              </div>
+
+              {/* Final URL Preview */}
+              {state.autoInjectUTMs && state.websiteUrl && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  <label className="block text-xs text-zinc-500 mb-1.5">Final URL with tracking:</label>
+                  <div className="bg-bg-dark rounded-lg px-3 py-2 text-xs font-mono text-zinc-400 break-all">
+                    {buildUrlWithUTMs(state.websiteUrl)}
+                  </div>
+                  <p className="text-xs text-zinc-600 mt-1.5">
+                    <code className="text-accent">{'{{ad.id}}'}</code> will be replaced with actual ad ID
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-2">Call to Action</label>
               <Select
@@ -1675,6 +1732,18 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />
                 <span>Status: PAUSED - Review before activating</span>
+              </div>
+              <div className={cn(
+                "flex items-center gap-2",
+                state.autoInjectUTMs ? "text-accent" : "text-zinc-500"
+              )}>
+                <Check className="w-4 h-4" />
+                <span>
+                  {state.autoInjectUTMs
+                    ? 'KillScale Pixel tracking enabled (UTMs auto-injected)'
+                    : 'KillScale Pixel tracking disabled'
+                  }
+                </span>
               </div>
             </div>
 

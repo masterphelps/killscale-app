@@ -47,6 +47,7 @@ interface CreateCampaignRequest {
   headline: string
   description?: string
   websiteUrl: string
+  urlTags?: string  // URL parameters for tracking (Meta substitutes {{ad.id}} etc.)
   ctaType: string
   creativeEnhancements: boolean
   targetingMode?: 'broad' | 'custom'
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
       headline,
       description,
       websiteUrl,
+      urlTags,
       ctaType,
       creativeEnhancements,
       targetingMode,
@@ -394,12 +396,17 @@ export async function POST(request: NextRequest) {
       }
 
       // Create ad using this creative
-      const adPayload = {
+      const adPayload: Record<string, unknown> = {
         name: `${campaignName} - Ad ${i + 1}`,
         adset_id: adsetId,
         creative: { creative_id: creativeResult.id },
         status: 'PAUSED',
         access_token: accessToken
+      }
+
+      // Add URL tags for tracking at ad level (Meta substitutes {{ad.id}} etc. at click time)
+      if (urlTags) {
+        adPayload.url_tags = urlTags
       }
 
       const adResponse = await fetch(

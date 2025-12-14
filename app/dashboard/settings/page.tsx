@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Save, RotateCcw, Loader2, AlertCircle, Plus, X, Copy, Check, ExternalLink } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Save, RotateCcw, Loader2, AlertCircle, Plus, X, Copy, Check, ExternalLink, Activity, RefreshCw } from 'lucide-react'
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -57,6 +57,17 @@ type PixelStatus = {
   events_total: number
 }
 
+type PixelEvent = {
+  id: string
+  event_type: string
+  event_value: number | null
+  event_currency: string
+  utm_source: string | null
+  utm_content: string | null
+  page_url: string | null
+  event_time: string
+}
+
 export default function SettingsPage() {
   const { user } = useAuth()
   const { currentAccountId, currentAccount: contextAccount } = useAccount()
@@ -77,6 +88,9 @@ export default function SettingsPage() {
   const [pixelStatus, setPixelStatus] = useState<PixelStatus | null>(null)
   const [pixelCopied, setPixelCopied] = useState(false)
   const [savingPixel, setSavingPixel] = useState(false)
+  const [pixelEvents, setPixelEvents] = useState<PixelEvent[]>([])
+  const [loadingEvents, setLoadingEvents] = useState(false)
+  const [eventsExpanded, setEventsExpanded] = useState(false)
 
   // Load rules when account changes
   useEffect(() => {
@@ -174,6 +188,31 @@ export default function SettingsPage() {
 
     loadPixelData()
   }, [currentAccountId, user])
+
+  // Load pixel events
+  const loadPixelEvents = useCallback(async () => {
+    if (!pixelData?.pixel_id) return
+
+    setLoadingEvents(true)
+    try {
+      const res = await fetch(`/api/pixel/events?pixelId=${pixelData.pixel_id}&limit=20`)
+      const data = await res.json()
+      if (data.events) {
+        setPixelEvents(data.events)
+      }
+    } catch (err) {
+      console.error('Failed to load pixel events:', err)
+    } finally {
+      setLoadingEvents(false)
+    }
+  }, [pixelData?.pixel_id])
+
+  // Load events when section is expanded
+  useEffect(() => {
+    if (eventsExpanded && pixelData?.pixel_id && pixelEvents.length === 0) {
+      loadPixelEvents()
+    }
+  }, [eventsExpanded, pixelData?.pixel_id, pixelEvents.length, loadPixelEvents])
 
   const handleChange = (field: keyof typeof rules, value: string) => {
     setRules(prev => ({ ...prev, [field]: value }))
@@ -587,6 +626,88 @@ ks('pageview');
               <p className="text-xs text-zinc-600 mt-2">
                 Campaigns created in KillScale auto-include these parameters.
               </p>
+            </div>
+
+            {/* Recent Events */}
+            <div className="border-t border-border pt-4 mt-4">
+              <button
+                onClick={() => setEventsExpanded(!eventsExpanded)}
+                className="w-full flex items-center justify-between text-sm text-zinc-400 hover:text-white transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  <span>Recent Events</span>
+                  {pixelStatus?.events_total ? (
+                    <span className="text-xs text-zinc-600">({pixelStatus.events_total} total)</span>
+                  ) : null}
+                </span>
+                <span className="text-xs">{eventsExpanded ? '▾' : '▸'}</span>
+              </button>
+
+              {eventsExpanded && (
+                <div className="mt-3 space-y-2">
+                  {/* Refresh button */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={loadPixelEvents}
+                      disabled={loadingEvents}
+                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${loadingEvents ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                  </div>
+
+                  {/* Events list */}
+                  {loadingEvents && pixelEvents.length === 0 ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+                    </div>
+                  ) : pixelEvents.length === 0 ? (
+                    <div className="text-center py-6 text-sm text-zinc-500">
+                      No events received yet
+                    </div>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto space-y-1">
+                      {pixelEvents.map((event) => (
+                        <div
+                          key={event.id}
+                          className="flex items-center justify-between p-2 bg-bg-dark rounded-lg text-xs"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className={`px-2 py-0.5 rounded font-medium ${
+                              event.event_type === 'purchase' ? 'bg-verdict-scale/20 text-verdict-scale' :
+                              event.event_type === 'pageview' ? 'bg-zinc-700 text-zinc-400' :
+                              'bg-accent/20 text-accent'
+                            }`}>
+                              {event.event_type}
+                            </span>
+                            {event.event_value && (
+                              <span className="text-zinc-400">
+                                ${event.event_value.toFixed(2)}
+                              </span>
+                            )}
+                            {event.utm_content && (
+                              <span className="text-zinc-600 truncate max-w-[100px]" title={`Ad ID: ${event.utm_content}`}>
+                                ad:{event.utm_content.slice(0, 8)}...
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-zinc-600 flex-shrink-0">
+                            {formatTimeAgo(event.event_time)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {pixelEvents.length > 0 && (
+                    <p className="text-xs text-zinc-600 text-center pt-2">
+                      Showing last {pixelEvents.length} events
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}
