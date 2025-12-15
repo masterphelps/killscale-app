@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
-import { Lock, Link2, Unlink, CheckCircle, AlertCircle, Zap, ChevronDown, Layers } from 'lucide-react'
+import { Lock, Link2, Unlink, CheckCircle, AlertCircle, ChevronDown, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 const supabase = createClient(
@@ -218,8 +218,8 @@ export default function AccountsPage() {
       setMessage({
         type: 'success',
         text: isCurrentlyIn
-          ? `${account.name} removed`
-          : `${account.name} added to workspace`
+          ? `${account.name} hidden from dropdown`
+          : `${account.name} visible in dropdown`
       })
 
       refetchAccounts()
@@ -242,7 +242,7 @@ export default function AccountsPage() {
           <p className="text-zinc-500">Connect and manage your ad platform accounts</p>
         </div>
         <div className="text-sm text-zinc-500">
-          {totalDashboardCount} / {accountLimit} in workspace
+          {totalDashboardCount} / {accountLimit} visible
         </div>
       </div>
 
@@ -316,20 +316,14 @@ export default function AccountsPage() {
                           key={account.id}
                           className={`p-3 rounded-lg border transition-colors ${
                             isInWorkspace
-                              ? 'bg-accent/5 border-accent/30'
-                              : 'bg-bg-dark border-border'
+                              ? 'bg-bg-dark border-border'
+                              : 'bg-bg-dark border-border opacity-60'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="font-medium flex items-center gap-2">
+                              <div className="font-medium">
                                 {account.name}
-                                {isInWorkspace && (
-                                  <span className="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded flex items-center gap-1">
-                                    <Layers className="w-3 h-3" />
-                                    In Workspace
-                                  </span>
-                                )}
                               </div>
                               <div className="text-sm text-zinc-500">
                                 {account.id.replace('act_', '')} • {account.currency}
@@ -339,16 +333,20 @@ export default function AccountsPage() {
                             <button
                               onClick={() => handleToggleWorkspace('meta', account.id)}
                               disabled={!canAdd && !isInWorkspace}
-                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              title={isInWorkspace ? 'Hide from dropdown' : 'Show in dropdown'}
+                              className={`p-2 rounded-lg transition-colors ${
                                 isInWorkspace
-                                  ? 'bg-accent text-white hover:bg-accent-hover'
+                                  ? 'text-accent hover:bg-accent/10'
                                   : canAdd
-                                    ? 'bg-bg-card border border-border text-zinc-400 hover:text-white hover:border-zinc-500'
-                                    : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+                                    ? 'text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover'
+                                    : 'text-zinc-600 cursor-not-allowed'
                               }`}
                             >
-                              <Layers className="w-4 h-4" />
-                              {isInWorkspace ? 'Remove' : 'Add to Workspace'}
+                              {isInWorkspace ? (
+                                <Eye className="w-5 h-5" />
+                              ) : (
+                                <EyeOff className="w-5 h-5" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -440,20 +438,14 @@ export default function AccountsPage() {
                           key={account.id}
                           className={`p-3 rounded-lg border transition-colors ${
                             isInWorkspace
-                              ? 'bg-accent/5 border-accent/30'
-                              : 'bg-bg-dark border-border'
+                              ? 'bg-bg-dark border-border'
+                              : 'bg-bg-dark border-border opacity-60'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="font-medium flex items-center gap-2">
+                              <div className="font-medium">
                                 {account.name}
-                                {isInWorkspace && (
-                                  <span className="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded flex items-center gap-1">
-                                    <Layers className="w-3 h-3" />
-                                    In Workspace
-                                  </span>
-                                )}
                               </div>
                               <div className="text-sm text-zinc-500">
                                 {account.id} • {account.currency}
@@ -463,16 +455,20 @@ export default function AccountsPage() {
                             <button
                               onClick={() => handleToggleWorkspace('google', account.id)}
                               disabled={!canAdd && !isInWorkspace}
-                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              title={isInWorkspace ? 'Hide from dropdown' : 'Show in dropdown'}
+                              className={`p-2 rounded-lg transition-colors ${
                                 isInWorkspace
-                                  ? 'bg-accent text-white hover:bg-accent-hover'
+                                  ? 'text-accent hover:bg-accent/10'
                                   : canAdd
-                                    ? 'bg-bg-card border border-border text-zinc-400 hover:text-white hover:border-zinc-500'
-                                    : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+                                    ? 'text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover'
+                                    : 'text-zinc-600 cursor-not-allowed'
                               }`}
                             >
-                              <Layers className="w-4 h-4" />
-                              {isInWorkspace ? 'Remove' : 'Add to Workspace'}
+                              {isInWorkspace ? (
+                                <Eye className="w-5 h-5" />
+                              ) : (
+                                <EyeOff className="w-5 h-5" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -527,8 +523,8 @@ export default function AccountsPage() {
 
       {/* Help text */}
       <div className="mt-6 text-sm text-zinc-500 space-y-2">
-        <p><strong>Add to Workspace:</strong> Include this account in your workspace. This counts against your plan's account limit.</p>
-        <p>Accounts in your workspace appear in the sidebar dropdown and their data is shown in the dashboard.</p>
+        <p>Click the <Eye className="w-4 h-4 inline" /> icon to show or hide accounts in the sidebar dropdown.</p>
+        <p>Visible accounts count against your plan's limit and their data is shown in the dashboard.</p>
       </div>
     </div>
   )
