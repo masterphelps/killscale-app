@@ -1150,7 +1150,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
             {/* Link to create form in Facebook */}
             <div className="pt-2">
               <a
-                href={`https://www.facebook.com/ads/lead_gen/create/?page_id=${state.pageId}`}
+                href="https://business.facebook.com/latest/instant_forms"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-sm text-accent hover:text-accent-hover transition-colors"
