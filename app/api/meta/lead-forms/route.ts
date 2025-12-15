@@ -96,16 +96,11 @@ export async function GET(request: NextRequest) {
     if (result.error) {
       console.error('Lead forms fetch error:', result.error)
 
-      // Check for permission errors
-      if (result.error.code === 200 || result.error.code === 190) {
-        return NextResponse.json({
-          error: 'Missing permissions. Please reconnect Meta with leads_retrieval permission.',
-          permissionError: true
-        }, { status: 403 })
-      }
-
+      // Return the actual error from Meta API
+      const errorMsg = `${result.error.message || 'Unknown error'} (code: ${result.error.code || 'none'})`
       return NextResponse.json({
-        error: result.error.message || 'Failed to fetch lead forms'
+        error: errorMsg,
+        metaError: result.error
       }, { status: 400 })
     }
 
