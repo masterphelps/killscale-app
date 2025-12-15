@@ -1102,64 +1102,28 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         return (
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium mb-2">Select Lead Form</label>
+              <label className="block text-sm font-medium mb-2">Lead Form ID</label>
               <p className="text-xs text-zinc-500 mb-3">
-                Choose an Instant Form from your Facebook Page to collect leads
+                Enter your Instant Form ID from Facebook
               </p>
 
-              {loadingLeadForms ? (
-                <div className="w-full bg-bg-dark border border-border rounded-lg px-4 py-8 text-zinc-500 flex flex-col items-center gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                  <span>Loading forms...</span>
-                </div>
-              ) : leadFormsError ? (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                  <p className="text-sm text-red-400 font-medium mb-1">Error loading forms</p>
-                  <p className="text-xs text-zinc-400">{leadFormsError}</p>
-                </div>
-              ) : leadForms.length > 0 ? (
-                <div className="space-y-2">
-                  {leadForms.map((form) => (
-                    <button
-                      key={form.id}
-                      onClick={() => setState(s => ({ ...s, selectedFormId: form.id }))}
-                      className={cn(
-                        "w-full p-4 rounded-xl border text-left transition-all",
-                        state.selectedFormId === form.id
-                          ? "border-accent bg-accent/10"
-                          : "border-border hover:border-zinc-600"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-4 h-4 rounded-full border-2 flex-shrink-0",
-                          state.selectedFormId === form.id ? "border-accent bg-accent" : "border-zinc-500"
-                        )}>
-                          {state.selectedFormId === form.id && (
-                            <div className="w-full h-full rounded-full bg-white scale-50" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-white truncate">{form.name}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5">
-                            {form.questions.slice(0, 3).join(', ')}
-                            {form.questions.length > 3 && ` +${form.questions.length - 3} more`}
-                            {' • '}
-                            {new Date(form.createdTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-                  <p className="text-sm text-yellow-500 font-medium mb-1">No forms found</p>
-                  <p className="text-xs text-zinc-400">
-                    Create a Lead Form in Facebook before creating a lead generation campaign.
-                  </p>
-                </div>
-              )}
+              <input
+                type="text"
+                value={state.selectedFormId || ''}
+                onChange={(e) => setState(s => ({ ...s, selectedFormId: e.target.value }))}
+                placeholder="e.g., 1234567890123456"
+                className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
+              <p className="text-sm font-medium text-white mb-2">How to find your Form ID:</p>
+              <ol className="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
+                <li>Go to <a href="https://business.facebook.com/latest/instant_forms" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Instant Forms</a> in Business Suite</li>
+                <li>Click on your form to open it</li>
+                <li>Copy the Form ID from the URL (the long number)</li>
+              </ol>
             </div>
 
             {/* Link to create form in Facebook */}
@@ -1170,23 +1134,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-sm text-accent hover:text-accent-hover transition-colors"
               >
-                <span>Create new form in Facebook</span>
+                <span>Create or manage forms in Facebook</span>
                 <span>→</span>
               </a>
-              <p className="text-xs text-zinc-600 mt-1">
-                After creating a form, click Continue to refresh the list
-              </p>
             </div>
-
-            {/* Refresh button */}
-            {!loadingLeadForms && (
-              <button
-                onClick={loadLeadForms}
-                className="text-sm text-zinc-400 hover:text-white transition-colors"
-              >
-                ↻ Refresh form list
-              </button>
-            )}
           </div>
         )
 
