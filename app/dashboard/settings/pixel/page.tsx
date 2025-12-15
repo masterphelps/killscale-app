@@ -329,7 +329,8 @@ export default function PixelPage() {
           setLogAttribution('top')
           setLogSelectedAd(topAd.adId)
         } else {
-          setLogAttribution('split')
+          // No ads - keep default, UI will show "no ads" message
+          setLogAttribution('top')
           setLogSelectedAd(null)
         }
       }
