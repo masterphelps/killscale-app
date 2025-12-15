@@ -49,15 +49,39 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const accessToken = connection.access_token
+    const userAccessToken = connection.access_token
 
-    // Fetch lead gen forms from the Page
-    // Note: This requires the page access token, but we can use the user token
-    // if they have manage_pages and leads_retrieval permissions
+    // First, get the Page access token from /me/accounts
+    const pagesResponse = await fetch(
+      `https://graph.facebook.com/v18.0/me/accounts?` +
+      `fields=id,access_token&` +
+      `access_token=${userAccessToken}`
+    )
+    const pagesResult = await pagesResponse.json()
+
+    if (pagesResult.error) {
+      console.error('Failed to fetch pages:', pagesResult.error)
+      return NextResponse.json({
+        error: 'Failed to get page access token'
+      }, { status: 400 })
+    }
+
+    // Find the page access token for the requested page
+    const page = pagesResult.data?.find((p: { id: string }) => p.id === pageId)
+    if (!page?.access_token) {
+      console.error('Page not found or no access token:', pageId)
+      return NextResponse.json({
+        error: 'Page not found or insufficient permissions'
+      }, { status: 403 })
+    }
+
+    const pageAccessToken = page.access_token
+
+    // Fetch lead gen forms from the Page using the Page access token
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?` +
       `fields=id,name,status,questions,created_time,locale&` +
-      `access_token=${accessToken}`
+      `access_token=${pageAccessToken}`
     )
 
     const result = await response.json()
