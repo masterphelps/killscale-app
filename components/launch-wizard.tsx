@@ -70,7 +70,16 @@ const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {
   })
 }
 
-type Step = 'account' | 'budget' | 'abo-options' | 'details' | 'targeting' | 'creatives' | 'copy' | 'review'
+type Step = 'account' | 'budget' | 'abo-options' | 'details' | 'leadform' | 'targeting' | 'creatives' | 'copy' | 'review'
+
+interface LeadForm {
+  id: string
+  name: string
+  status: string
+  questions: string[]
+  createdTime: string
+  locale: string
+}
 
 interface Page {
   id: string
@@ -126,6 +135,7 @@ interface WizardState {
   campaignName: string
   objective: 'leads' | 'conversions' | 'traffic'
   conversionEvent: string  // The specific pixel event (PURCHASE, COMPLETE_REGISTRATION, etc.)
+  selectedFormId: string   // Lead form ID for lead generation campaigns
   dailyBudget: number
   specialAdCategory: 'HOUSING' | 'CREDIT' | 'EMPLOYMENT' | null
   locationType: 'city' | 'country'
@@ -253,6 +263,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [searchingBehaviors, setSearchingBehaviors] = useState(false)
   const [conversionEvents, setConversionEvents] = useState<{ value: string; label: string }[]>(FALLBACK_CONVERSION_EVENTS)
   const [loadingPixelEvents, setLoadingPixelEvents] = useState(false)
+  const [leadForms, setLeadForms] = useState<LeadForm[]>([])
+  const [loadingLeadForms, setLoadingLeadForms] = useState(false)
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(null)
 
@@ -266,6 +278,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     campaignName: '',
     objective: 'conversions',
     conversionEvent: 'PURCHASE',
+    selectedFormId: '',
     dailyBudget: 50,
     specialAdCategory: null,
     locationType: 'country',
@@ -362,6 +375,37 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       loadPixelEvents()
     }
   }, [user, adAccountId, loadPixelEvents])
+
+  // Load lead forms when page is selected and objective is leads
+  const loadLeadForms = useCallback(async () => {
+    if (!user || !state.pageId) return
+
+    setLoadingLeadForms(true)
+    try {
+      const res = await fetch(`/api/meta/lead-forms?userId=${user.id}&pageId=${state.pageId}`)
+      const data = await res.json()
+
+      if (data.forms) {
+        setLeadForms(data.forms)
+        // Auto-select first form if available
+        if (data.forms.length > 0 && !state.selectedFormId) {
+          setState(s => ({ ...s, selectedFormId: data.forms[0].id }))
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load lead forms:', err)
+      setLeadForms([])
+    } finally {
+      setLoadingLeadForms(false)
+    }
+  }, [user, state.pageId, state.selectedFormId])
+
+  // Fetch lead forms when navigating to lead form step
+  useEffect(() => {
+    if (step === 'leadform' && state.pageId) {
+      loadLeadForms()
+    }
+  }, [step, state.pageId, loadLeadForms])
 
   // Location search
   const searchLocations = useCallback(async (query: string) => {
@@ -697,6 +741,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           campaignName: state.campaignName,
           objective: state.objective,
           conversionEvent: state.objective === 'conversions' ? state.conversionEvent : undefined,
+          formId: state.objective === 'leads' ? state.selectedFormId : undefined,
           dailyBudget: state.dailyBudget,
           specialAdCategory: state.specialAdCategory,
           locationTarget: state.locationType === 'city'
@@ -746,7 +791,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'account': return 'budget'
       case 'budget': return state.budgetType === 'abo' ? 'abo-options' : 'details'
       case 'abo-options': return 'details'
-      case 'details': return 'targeting'
+      case 'details': return state.objective === 'leads' ? 'leadform' : 'targeting'
+      case 'leadform': return 'targeting'
       case 'targeting': return 'creatives'
       case 'creatives': return 'copy'
       case 'copy': return 'review'
@@ -760,7 +806,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'budget': return 'account'
       case 'abo-options': return 'budget'
       case 'details': return state.budgetType === 'abo' ? 'abo-options' : 'budget'
-      case 'targeting': return 'details'
+      case 'leadform': return 'details'
+      case 'targeting': return state.objective === 'leads' ? 'leadform' : 'details'
       case 'creatives': return 'targeting'
       case 'copy': return 'creatives'
       case 'review': return 'copy'
@@ -778,6 +825,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         return state.aboOption === 'new' || !!state.existingCampaignId
       case 'details':
         return !!state.campaignName && state.dailyBudget > 0
+      case 'leadform':
+        return !!state.selectedFormId
       case 'targeting':
         const hasLocation = state.locationType === 'country' || !!state.locationKey
         if (state.targetingMode === 'broad') {
@@ -1036,6 +1085,93 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 Start with $20-50/day. Scale winners.
               </p>
             </div>
+          </div>
+        )
+
+      case 'leadform':
+        return (
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium mb-2">Select Lead Form</label>
+              <p className="text-xs text-zinc-500 mb-3">
+                Choose an Instant Form from your Facebook Page to collect leads
+              </p>
+
+              {loadingLeadForms ? (
+                <div className="w-full bg-bg-dark border border-border rounded-lg px-4 py-8 text-zinc-500 flex flex-col items-center gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <span>Loading forms...</span>
+                </div>
+              ) : leadForms.length > 0 ? (
+                <div className="space-y-2">
+                  {leadForms.map((form) => (
+                    <button
+                      key={form.id}
+                      onClick={() => setState(s => ({ ...s, selectedFormId: form.id }))}
+                      className={cn(
+                        "w-full p-4 rounded-xl border text-left transition-all",
+                        state.selectedFormId === form.id
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-zinc-600"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-4 h-4 rounded-full border-2 flex-shrink-0",
+                          state.selectedFormId === form.id ? "border-accent bg-accent" : "border-zinc-500"
+                        )}>
+                          {state.selectedFormId === form.id && (
+                            <div className="w-full h-full rounded-full bg-white scale-50" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-white truncate">{form.name}</p>
+                          <p className="text-xs text-zinc-500 mt-0.5">
+                            {form.questions.slice(0, 3).join(', ')}
+                            {form.questions.length > 3 && ` +${form.questions.length - 3} more`}
+                            {' • '}
+                            {new Date(form.createdTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                  <p className="text-sm text-yellow-500 font-medium mb-1">No forms found</p>
+                  <p className="text-xs text-zinc-400">
+                    Create a Lead Form in Facebook before creating a lead generation campaign.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Link to create form in Facebook */}
+            <div className="pt-2">
+              <a
+                href={`https://www.facebook.com/ads/lead_gen/create/?page_id=${state.pageId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-accent hover:text-accent-hover transition-colors"
+              >
+                <span>Create new form in Facebook</span>
+                <span>→</span>
+              </a>
+              <p className="text-xs text-zinc-600 mt-1">
+                After creating a form, click Continue to refresh the list
+              </p>
+            </div>
+
+            {/* Refresh button */}
+            {!loadingLeadForms && (
+              <button
+                onClick={loadLeadForms}
+                className="text-sm text-zinc-400 hover:text-white transition-colors"
+              >
+                ↻ Refresh form list
+              </button>
+            )}
           </div>
         )
 
@@ -1869,6 +2005,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     budget: 'Budget Structure',
     'abo-options': 'ABO Options',
     details: 'Campaign Details',
+    leadform: 'Lead Form',
     targeting: 'Targeting',
     creatives: 'Creatives',
     copy: 'Ad Copy',

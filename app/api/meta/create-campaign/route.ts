@@ -39,6 +39,7 @@ interface CreateCampaignRequest {
   adsetName?: string
   objective: 'leads' | 'conversions' | 'traffic'
   conversionEvent?: string // The specific pixel event (PURCHASE, COMPLETE_REGISTRATION, LEAD, etc.)
+  formId?: string // Lead form ID for lead generation campaigns
   dailyBudget: number
   specialAdCategory?: 'HOUSING' | 'CREDIT' | 'EMPLOYMENT' | null
   locationTarget: LocationTarget
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
       adsetName,
       objective,
       conversionEvent,
+      formId,
       dailyBudget,
       specialAdCategory,
       locationTarget,
@@ -279,6 +281,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Add promoted_object for lead generation campaigns (requires page + form)
+    if (objective === 'leads' && formId) {
+      adsetPayload.promoted_object = {
+        page_id: pageId,
+        lead_gen_form_id: formId
+      }
+    }
+
     // Add budget at ad set level for ABO
     if (budgetType === 'abo') {
       adsetPayload.daily_budget = budgetCents
@@ -317,10 +327,28 @@ export async function POST(request: NextRequest) {
           video_id: creative.videoId,
           message: primaryText,
           title: headline,
-          link_description: description || undefined,
-          call_to_action: {
+          link_description: description || undefined
+        }
+
+        // Build CTA - different for lead forms vs website
+        if (objective === 'leads' && formId) {
+          videoData.call_to_action = {
+            type: ctaType,
+            value: { lead_gen_form_id: formId }
+          }
+        } else {
+          videoData.call_to_action = {
             type: ctaType,
             value: { link: websiteUrl }
+          }
+          // For non-lead video ads, url_tags is not supported in video_data
+          // Instead, append UTM params directly to the CTA link
+          if (urlTags) {
+            const separator = websiteUrl.includes('?') ? '&' : '?'
+            videoData.call_to_action = {
+              type: ctaType,
+              value: { link: `${websiteUrl}${separator}${urlTags}` }
+            }
           }
         }
 
@@ -332,16 +360,6 @@ export async function POST(request: NextRequest) {
           videoData.image_url = creative.thumbnailUrl
         }
 
-        // For video ads, url_tags is not supported in video_data
-        // Instead, append UTM params directly to the CTA link
-        if (urlTags) {
-          const separator = websiteUrl.includes('?') ? '&' : '?'
-          videoData.call_to_action = {
-            type: ctaType,
-            value: { link: `${websiteUrl}${separator}${urlTags}` }
-          }
-        }
-
         objectStorySpec = {
           page_id: pageId,
           video_data: videoData
@@ -351,8 +369,17 @@ export async function POST(request: NextRequest) {
         const linkData: Record<string, unknown> = {
           link: websiteUrl,
           message: primaryText,
-          name: headline,
-          call_to_action: {
+          name: headline
+        }
+
+        // Build CTA - different for lead forms vs website
+        if (objective === 'leads' && formId) {
+          linkData.call_to_action = {
+            type: ctaType,
+            value: { lead_gen_form_id: formId }
+          }
+        } else {
+          linkData.call_to_action = {
             type: ctaType,
             value: { link: websiteUrl }
           }
@@ -367,7 +394,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Add URL tags for tracking (Meta substitutes {{ad.id}} etc. at click time)
-        if (urlTags) {
+        // Only for non-lead campaigns
+        if (urlTags && objective !== 'leads') {
           linkData.url_tags = urlTags
         }
 

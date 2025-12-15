@@ -252,16 +252,6 @@ export default function PortalPage() {
     }
   }
 
-  const verdictColor = (verdict: string) => {
-    switch (verdict) {
-      case 'SCALE': return 'text-emerald-400 bg-emerald-400/10'
-      case 'WATCH': return 'text-yellow-400 bg-yellow-400/10'
-      case 'KILL': return 'text-red-400 bg-red-400/10'
-      case 'LEARN': return 'text-zinc-400 bg-zinc-400/10'
-      default: return 'text-zinc-400 bg-zinc-400/10'
-    }
-  }
-
   // PIN entry screen
   if (!sessionToken) {
     return (
@@ -389,15 +379,11 @@ export default function PortalPage() {
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
             <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
               <BarChart3 className="w-4 h-4" />
-              Verdicts
+              Purchases
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-emerald-400">{portalData.summary.verdictCounts.scale} Scale</span>
-              <span className="text-zinc-600">•</span>
-              <span className="text-yellow-400">{portalData.summary.verdictCounts.watch} Watch</span>
-              <span className="text-zinc-600">•</span>
-              <span className="text-red-400">{portalData.summary.verdictCounts.kill} Kill</span>
-            </div>
+            <p className="text-2xl font-bold text-white">
+              {portalData.summary.purchases.toLocaleString()}
+            </p>
           </div>
         </div>
 
@@ -439,7 +425,6 @@ export default function PortalPage() {
                   <th className="text-right text-zinc-400 font-medium px-4 py-3">Spend</th>
                   <th className="text-right text-zinc-400 font-medium px-4 py-3">Revenue</th>
                   <th className="text-right text-zinc-400 font-medium px-4 py-3">ROAS</th>
-                  <th className="text-center text-zinc-400 font-medium px-4 py-3">Verdict</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
@@ -464,14 +449,6 @@ export default function PortalPage() {
                         item.roas >= portalData.rules.minRoas ? "text-yellow-400" : "text-red-400"
                       )}>
                         {item.roas.toFixed(2)}x
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={cn(
-                        "px-2 py-1 rounded text-xs font-medium",
-                        verdictColor(item.verdict)
-                      )}>
-                        {item.verdict}
                       </span>
                     </td>
                   </tr>
