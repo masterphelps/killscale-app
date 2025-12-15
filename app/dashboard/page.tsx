@@ -97,6 +97,49 @@ const formatCPC = (spend: number, clicks: number) => {
   return formatCurrency(spend / clicks)
 }
 
+// Cache for synced data - persists across workspace/account switches
+// Key: accountId or 'workspace:workspaceId', Value: { data, datePreset, fetchedAt }
+type CacheEntry = {
+  data: CSVRow[]
+  datePreset: string
+  customStartDate?: string
+  customEndDate?: string
+  fetchedAt: number
+}
+const dataCache = new Map<string, CacheEntry>()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+// Helper to get cache key
+const getCacheKey = (accountId: string | null, workspaceAccountIds: string[]): string => {
+  if (workspaceAccountIds.length > 0) {
+    return `workspace:${workspaceAccountIds.sort().join(',')}`
+  }
+  return accountId || 'none'
+}
+
+// Helper to check if cached data covers the requested date range
+const isCacheValid = (cache: CacheEntry, datePreset: string, customStart?: string, customEnd?: string): boolean => {
+  // Check TTL
+  if (Date.now() - cache.fetchedAt > CACHE_TTL) return false
+
+  // Same preset = valid
+  if (cache.datePreset === datePreset) {
+    if (datePreset === 'custom') {
+      return cache.customStartDate === customStart && cache.customEndDate === customEnd
+    }
+    return true
+  }
+
+  // Cached range is longer than requested = valid (can filter down)
+  const presetDays: Record<string, number> = {
+    'today': 1, 'yesterday': 1, 'last_7d': 7, 'last_14d': 14, 'last_30d': 30, 'this_month': 31, 'last_month': 31
+  }
+  const cachedDays = presetDays[cache.datePreset] || 0
+  const requestedDays = presetDays[datePreset] || 0
+
+  return cachedDays >= requestedDays && requestedDays > 0
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
@@ -200,6 +243,26 @@ export default function DashboardPage() {
     }
   }, [user?.id]) // Use user.id to avoid re-fetching when Supabase refreshes the session token on tab focus
 
+  // Check cache when switching accounts/workspaces
+  useEffect(() => {
+    if (!user) return
+    // Skip cache check if no account/workspace selected
+    if (!currentAccountId && workspaceAccountIds.length === 0) return
+
+    const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
+    const cached = dataCache.get(cacheKey)
+
+    if (cached && isCacheValid(cached, datePreset, customStartDate, customEndDate)) {
+      // Use cached data
+      setData(cached.data)
+      console.log('[Cache] Using cached data for', cacheKey)
+    } else {
+      // No valid cache - reload from Supabase (silent, no loading spinner)
+      console.log('[Cache] Miss for', cacheKey, '- loading from Supabase')
+      loadData(false)
+    }
+  }, [currentAccountId, workspaceAccountIds, user?.id])
+
   // Load rules when account changes (from context)
   useEffect(() => {
     if (user) {
@@ -257,19 +320,35 @@ export default function DashboardPage() {
   // Use currentAccountId from AccountContext as the single source of truth
   const selectedAccountId = currentAccountId
 
-  // Track previous account to detect actual switches (not initial load)
+  // Track previous account/workspace to detect actual switches (not initial load)
   const prevAccountIdRef = useRef<string | undefined>(undefined)
+  const prevWorkspaceKeyRef = useRef<string | undefined>(undefined)
 
-  // Reset campaign selection when switching accounts (not on initial load)
+  // Reset campaign selection when switching accounts or workspaces (not on initial load)
   useEffect(() => {
+    const currentWorkspaceKey = workspaceAccountIds.length > 0
+      ? workspaceAccountIds.sort().join(',')
+      : undefined
+
+    // Check for workspace switch
+    if (currentWorkspaceKey) {
+      if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== currentWorkspaceKey) {
+        setSelectedCampaigns(new Set())
+      }
+      prevWorkspaceKeyRef.current = currentWorkspaceKey
+      prevAccountIdRef.current = undefined // Clear account tracking when in workspace mode
+      return
+    }
+
+    // Check for individual account switch
     if (selectedAccountId) {
-      // Only reset if this is an actual switch (not initial load)
       if (prevAccountIdRef.current && prevAccountIdRef.current !== selectedAccountId) {
         setSelectedCampaigns(new Set())
       }
       prevAccountIdRef.current = selectedAccountId
+      prevWorkspaceKeyRef.current = undefined // Clear workspace tracking when in account mode
     }
-  }, [selectedAccountId])
+  }, [selectedAccountId, workspaceAccountIds])
 
   // Track if this is the initial mount (to prevent auto-sync on page load)
   const isInitialMount = useRef(true)
@@ -361,6 +440,71 @@ export default function DashboardPage() {
     }
     setHasLoadedOnce(true)
     setIsLoading(false)
+  }
+
+  // Load data and cache for specific account or workspace
+  const loadDataAndCache = async (accountId: string | null, wsAccountIds: string[] = []) => {
+    if (!user) return
+
+    const { data: adData, error } = await supabase
+      .from('ad_data')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date_start', { ascending: false })
+
+    if (adData && !error) {
+      const rows = adData.map(row => ({
+        ad_account_id: row.ad_account_id,
+        date_start: row.date_start,
+        date_end: row.date_end,
+        campaign_name: row.campaign_name,
+        campaign_id: row.campaign_id,
+        adset_name: row.adset_name,
+        adset_id: row.adset_id,
+        ad_name: row.ad_name,
+        ad_id: row.ad_id,
+        impressions: row.impressions,
+        clicks: row.clicks,
+        spend: parseFloat(row.spend),
+        purchases: row.purchases,
+        revenue: parseFloat(row.result_value) || parseFloat(row.revenue) || 0,
+        results: row.results || 0,
+        result_value: row.result_value ?? null,
+        result_type: row.result_type ?? null,
+        status: row.status,
+        adset_status: row.adset_status,
+        campaign_status: row.campaign_status,
+        campaign_daily_budget: row.campaign_daily_budget,
+        campaign_lifetime_budget: row.campaign_lifetime_budget,
+        adset_daily_budget: row.adset_daily_budget,
+        adset_lifetime_budget: row.adset_lifetime_budget,
+      }))
+
+      setData(rows)
+
+      // Cache the relevant subset
+      const cacheKey = getCacheKey(accountId, wsAccountIds)
+      let cacheData: CSVRow[]
+
+      if (wsAccountIds.length > 0) {
+        cacheData = rows.filter(row => wsAccountIds.includes(row.ad_account_id || ''))
+      } else if (accountId) {
+        cacheData = rows.filter(row => row.ad_account_id === accountId)
+      } else {
+        cacheData = rows
+      }
+
+      dataCache.set(cacheKey, {
+        data: cacheData,
+        datePreset,
+        customStartDate,
+        customEndDate,
+        fetchedAt: Date.now()
+      })
+      console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
+
+      return rows
+    }
   }
 
   const loadRules = async (accountId?: string | null) => {
@@ -490,7 +634,7 @@ export default function DashboardPage() {
       
       if (response.ok) {
         // Silent refresh - don't show loading spinner, preserves table state
-        await loadData(false)
+        const newData = await loadDataAndCache(accountId)
         setLastSyncTime(new Date())
       } else {
         alert(result.error || 'Sync failed')
@@ -534,8 +678,8 @@ export default function DashboardPage() {
         }
       }
 
-      // Refresh data after all syncs complete
-      await loadData(false)
+      // Refresh data after all syncs complete and cache for workspace
+      await loadDataAndCache(null, workspaceAccountIds)
       setLastSyncTime(new Date())
     } catch (err) {
       alert('Sync failed. Please try again.')
