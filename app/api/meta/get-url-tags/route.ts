@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
 
     const accessToken = connection.access_token
 
-    // Fetch ad with creative details including url_tags
-    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,creative{id,name,url_tags,object_story_spec}&access_token=${accessToken}`
+    // Fetch ad with url_tags at ad level (where we write them) and creative details
+    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,url_tags,creative{id,name,url_tags,object_story_spec}&access_token=${accessToken}`
 
     const response = await fetch(adUrl)
     const result = await response.json()
@@ -46,8 +46,9 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Extract url_tags from creative
-    const urlTags = result.creative?.url_tags || ''
+    // url_tags can be set at ad level (our updates) or creative level
+    // Ad-level url_tags take precedence
+    const urlTags = result.url_tags || result.creative?.url_tags || ''
     const creativeId = result.creative?.id || null
 
     return NextResponse.json({
