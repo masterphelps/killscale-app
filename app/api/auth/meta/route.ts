@@ -11,7 +11,7 @@ const SCOPES = [
   'public_profile',
   'pages_show_list',       // Required to list user's Facebook Pages
   'pages_read_engagement', // Required to use Pages for ad creation
-  'leads_retrieval',       // Required to access lead forms and leads
+  // NOTE: leads_retrieval requires Meta App Review before production use
 ].join(',')
 
 export async function GET(request: NextRequest) {
