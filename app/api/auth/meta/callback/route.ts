@@ -123,6 +123,7 @@ export async function GET(request: NextRequest) {
     
   } catch (err) {
     console.error('OAuth callback error:', err)
-    return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=unknown`)
+    const errorMessage = err instanceof Error ? err.message : 'unknown'
+    return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=unknown&details=${encodeURIComponent(errorMessage)}`)
   }
 }
