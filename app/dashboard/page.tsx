@@ -148,6 +148,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
+  const isFirstSessionLoad = useRef(typeof window !== 'undefined' && !sessionStorage.getItem('ks_session_synced')) // Fresh login detection
   const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -251,30 +252,26 @@ export default function DashboardPage() {
       // First load data from Supabase
       await loadData()
 
-      // Check if we should trigger initial sync (only once per session)
+      // Check if we should trigger initial sync (only once per page load)
       if (hasTriggeredInitialSync.current) return
 
-      // After loading, check if data is empty and accounts exist
-      // We need to query Supabase directly since state may not be updated yet
-      const { data: existingData } = await supabase
-        .from('ad_data')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1)
+      const accountToSync = currentAccountId || accounts[0]?.id
+      if (!accountToSync || accounts.length === 0) return
 
-      const hasExistingData = existingData && existingData.length > 0
+      // Check cache validity for current account/workspace
+      const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
+      const cached = dataCache.get(cacheKey)
+      const hasFreshCache = cached && isCacheValid(cached, 'last_30d')
 
-      if (!hasExistingData && accounts.length > 0) {
-        // No data but accounts exist - queue 30-day sync for first account
+      // Sync if: fresh login (new session) OR no valid cache
+      if (isFirstSessionLoad.current || !hasFreshCache) {
         hasTriggeredInitialSync.current = true
-        console.log('[Dashboard] First load with no data - queueing 30-day sync')
-
-        const accountToSync = currentAccountId || accounts[0]?.id
-        if (accountToSync) {
-          // Set date preset to 30 days and queue the sync
-          setDatePreset('last_30d')
-          setPendingInitialSync(accountToSync)
-        }
+        sessionStorage.setItem('ks_session_synced', 'true')
+        console.log('[Dashboard] Syncing - fresh login:', isFirstSessionLoad.current, 'no cache:', !hasFreshCache)
+        setDatePreset('last_30d')
+        setPendingInitialSync(accountToSync)
+      } else {
+        console.log('[Dashboard] Using cached data, no sync needed')
       }
     }
 
@@ -425,16 +422,8 @@ export default function DashboardPage() {
     }
   }, [datePreset])
 
-  // Auto-refresh every 5 minutes when viewing live data
-  useEffect(() => {
-    if (!isLive || !canSync || !selectedAccountId) return
-    
-    const interval = setInterval(() => {
-      handleSyncAccount(selectedAccountId)
-    }, 5 * 60 * 1000) // 5 minutes
-    
-    return () => clearInterval(interval)
-  }, [isLive, canSync, selectedAccountId])
+  // Auto-refresh removed - was disruptive to user experience
+  // Users can manually sync when they want fresh data
 
   const loadData = async (showLoading = true) => {
     if (!user) return
