@@ -18,7 +18,8 @@ export const metadata: Metadata = {
 }
 
 const META_PIXEL_ID = '1552580212607017'
-const KILLSCALE_PIXEL_ID = 'KS-KX0NR94'
+const KILLSCALE_PIXEL_ID = 'KS-KIL-SACY'
+const KILLSCALE_PIXEL_SECRET = '598881274081441ba8cb8656cbeb603e'
 
 export default function RootLayout({
   children,
@@ -60,7 +61,7 @@ export default function RootLayout({
             e.async=1;e.src='https://pixel.killscale.com/ks.js';l.parentNode.insertBefore(e,l)
             }(window,document,'script');
 
-            ks('init', '${KILLSCALE_PIXEL_ID}');
+            ks('init', 'KS-KIL-SACY', { secret: '598881274081441ba8cb8656cbeb603e' });
             ks('pageview');
           `}
         </Script>
