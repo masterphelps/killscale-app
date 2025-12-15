@@ -6,6 +6,17 @@ import { Loader2, DollarSign, TrendingUp, ShoppingCart, ChevronDown, Plus, Clock
 import { useAuth, supabase } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
+const EVENT_TYPES = [
+  { value: 'purchase', label: 'Purchase' },
+  { value: 'lead', label: 'Lead' },
+  { value: 'signup', label: 'Sign Up' },
+  { value: 'contact', label: 'Contact' },
+  { value: 'appointment', label: 'Appointment' },
+  { value: 'quote', label: 'Quote Request' },
+  { value: 'call', label: 'Phone Call' },
+  { value: 'walkin', label: 'Walk-In' },
+]
+
 interface Workspace {
   id: string
   name: string
@@ -52,11 +63,13 @@ export default function ClientPortalPage() {
   const [showLogModal, setShowLogModal] = useState(false)
 
   // Log walk-in state
+  const [logEventType, setLogEventType] = useState('purchase')
   const [logValue, setLogValue] = useState('100')
   const [logNotes, setLogNotes] = useState('')
   const [logLoading, setLogLoading] = useState(false)
   const [logSuccess, setLogSuccess] = useState(false)
   const [logError, setLogError] = useState<string | null>(null)
+  const [showEventDropdown, setShowEventDropdown] = useState(false)
 
   // Load workspaces on mount
   useEffect(() => {
@@ -116,10 +129,14 @@ export default function ClientPortalPage() {
   const handleLogWalkin = async () => {
     if (!user?.id || !selectedWorkspace) return
 
-    const value = parseFloat(logValue)
-    if (isNaN(value) || value <= 0) {
-      setLogError('Please enter a valid amount')
-      return
+    // Only validate value for purchase events
+    let numValue: number | undefined = undefined
+    if (logEventType === 'purchase') {
+      numValue = parseFloat(logValue)
+      if (isNaN(numValue) || numValue <= 0) {
+        setLogError('Please enter a valid amount')
+        return
+      }
     }
 
     setLogLoading(true)
@@ -131,8 +148,8 @@ export default function ClientPortalPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId: selectedWorkspace,
-          eventType: 'purchase',
-          eventValue: value,
+          eventType: logEventType,
+          eventValue: numValue,
           notes: logNotes || undefined
         })
       })
@@ -147,8 +164,10 @@ export default function ClientPortalPage() {
       setTimeout(() => {
         setShowLogModal(false)
         setLogSuccess(false)
+        setLogEventType('purchase')
         setLogValue('100')
         setLogNotes('')
+        setShowEventDropdown(false)
         loadClientData(selectedWorkspace)
       }, 1500)
 
@@ -428,21 +447,62 @@ export default function ClientPortalPage() {
 
               {!logSuccess && (
                 <>
+                  {/* Event Type */}
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-zinc-400 mb-2">Sale Amount</label>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">Event Type</label>
                     <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xl">$</span>
-                      <input
-                        type="number"
-                        value={logValue}
-                        onChange={(e) => setLogValue(e.target.value)}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                        className="w-full pl-10 pr-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-2xl font-bold focus:outline-none focus:border-accent"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEventDropdown(!showEventDropdown)}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-accent"
+                      >
+                        <span>{EVENT_TYPES.find(e => e.value === logEventType)?.label || 'Select type'}</span>
+                        <ChevronDown className={cn("w-4 h-4 transition-transform", showEventDropdown && "rotate-180")} />
+                      </button>
+                      {showEventDropdown && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setShowEventDropdown(false)} />
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
+                            {EVENT_TYPES.map((type) => (
+                              <button
+                                key={type.value}
+                                type="button"
+                                onClick={() => {
+                                  setLogEventType(type.value)
+                                  setShowEventDropdown(false)
+                                }}
+                                className={cn(
+                                  "w-full px-4 py-2 text-left text-sm hover:bg-zinc-700 transition-colors",
+                                  logEventType === type.value && "bg-zinc-700 text-accent"
+                                )}
+                              >
+                                {type.label}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
+
+                  {/* Sale Amount - only for purchase */}
+                  {logEventType === 'purchase' && (
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">Sale Amount</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xl">$</span>
+                        <input
+                          type="number"
+                          value={logValue}
+                          onChange={(e) => setLogValue(e.target.value)}
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                          className="w-full pl-10 pr-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-2xl font-bold focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-zinc-400 mb-2">Notes (optional)</label>
@@ -464,7 +524,7 @@ export default function ClientPortalPage() {
                     disabled={logLoading}
                     className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-colors"
                   >
-                    {logLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Log Sale'}
+                    {logLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : `Log ${EVENT_TYPES.find(e => e.value === logEventType)?.label || 'Event'}`}
                   </button>
                 </>
               )}

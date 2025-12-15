@@ -1,8 +1,19 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2, DollarSign, MessageSquare } from 'lucide-react'
+import { X, Loader2, DollarSign, MessageSquare, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const EVENT_TYPES = [
+  { value: 'purchase', label: 'Purchase' },
+  { value: 'lead', label: 'Lead' },
+  { value: 'signup', label: 'Sign Up' },
+  { value: 'contact', label: 'Contact' },
+  { value: 'appointment', label: 'Appointment' },
+  { value: 'quote', label: 'Quote Request' },
+  { value: 'call', label: 'Phone Call' },
+  { value: 'walkin', label: 'Walk-In' },
+]
 
 interface ActiveAd {
   adId: string
@@ -29,6 +40,7 @@ export function LogWalkinModal({
   defaultValue = 100,
   onSuccess
 }: LogWalkinModalProps) {
+  const [eventType, setEventType] = useState('purchase')
   const [value, setValue] = useState(defaultValue.toString())
   const [selectedAdId, setSelectedAdId] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
@@ -37,6 +49,7 @@ export function LogWalkinModal({
   const [loadingAds, setLoadingAds] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [showEventDropdown, setShowEventDropdown] = useState(false)
 
   // Load active ads when modal opens
   useEffect(() => {
@@ -48,11 +61,13 @@ export function LogWalkinModal({
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
+      setEventType('purchase')
       setValue(defaultValue.toString())
       setSelectedAdId(null)
       setNotes('')
       setError(null)
       setSuccess(false)
+      setShowEventDropdown(false)
     }
   }, [isOpen, defaultValue])
 
@@ -72,10 +87,14 @@ export function LogWalkinModal({
   }
 
   const handleSubmit = async () => {
-    const numValue = parseFloat(value)
-    if (isNaN(numValue) || numValue <= 0) {
-      setError('Please enter a valid amount')
-      return
+    // Only validate value for purchase events
+    let numValue: number | undefined = undefined
+    if (eventType === 'purchase') {
+      numValue = parseFloat(value)
+      if (isNaN(numValue) || numValue <= 0) {
+        setError('Please enter a valid amount')
+        return
+      }
     }
 
     setLoading(true)
@@ -87,7 +106,7 @@ export function LogWalkinModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId,
-          eventType: 'purchase',
+          eventType,
           eventValue: numValue,
           adId: selectedAdId || undefined,
           notes: notes || undefined
@@ -144,25 +163,65 @@ export function LogWalkinModal({
 
       {!success && (
         <>
-          {/* Sale Amount */}
+          {/* Event Type */}
           <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">
-              <DollarSign className="w-4 h-4 inline mr-1" />
-              Sale Amount
-            </label>
+            <label className="block text-sm font-medium mb-2">Event Type</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
-              <input
-                type="number"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder="0.00"
-                step="0.01"
-                min="0"
-                className="w-full pl-8 pr-4 py-3 bg-bg-dark border border-border rounded-lg text-white text-lg font-medium focus:outline-none focus:border-accent"
-              />
+              <button
+                type="button"
+                onClick={() => setShowEventDropdown(!showEventDropdown)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+              >
+                <span>{EVENT_TYPES.find(e => e.value === eventType)?.label || 'Select type'}</span>
+                <ChevronDown className={cn("w-4 h-4 transition-transform", showEventDropdown && "rotate-180")} />
+              </button>
+              {showEventDropdown && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowEventDropdown(false)} />
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
+                    {EVENT_TYPES.map((type) => (
+                      <button
+                        key={type.value}
+                        type="button"
+                        onClick={() => {
+                          setEventType(type.value)
+                          setShowEventDropdown(false)
+                        }}
+                        className={cn(
+                          "w-full px-4 py-2 text-left text-sm hover:bg-zinc-700 transition-colors",
+                          eventType === type.value && "bg-zinc-700 text-accent"
+                        )}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
+
+          {/* Sale Amount - only for purchase */}
+          {eventType === 'purchase' && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">
+                <DollarSign className="w-4 h-4 inline mr-1" />
+                Sale Amount
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
+                <input
+                  type="number"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  className="w-full pl-8 pr-4 py-3 bg-bg-dark border border-border rounded-lg text-white text-lg font-medium focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Ad Selection */}
           <div className="mb-6">
@@ -277,7 +336,7 @@ export function LogWalkinModal({
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin mx-auto" />
             ) : (
-              'Log Walk-In Sale'
+              `Log ${EVENT_TYPES.find(e => e.value === eventType)?.label || 'Event'}`
             )}
           </button>
         </>
