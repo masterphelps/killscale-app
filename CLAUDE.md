@@ -30,6 +30,37 @@ npm run lint    # Run Next.js linter
 - Rules and alerts are scoped per ad account (not global per user)
 - Mobile-first responsive design using Tailwind's `lg:` breakpoint
 
+### Supabase Migrations
+
+**All migrations must be idempotent** (safe to run multiple times):
+
+```sql
+-- Tables: use IF NOT EXISTS
+CREATE TABLE IF NOT EXISTS my_table (...);
+
+-- Indexes: use IF NOT EXISTS
+CREATE INDEX IF NOT EXISTS idx_name ON table(column);
+
+-- Policies: drop first, then create
+DROP POLICY IF EXISTS "policy name" ON table;
+CREATE POLICY "policy name" ON table ...;
+
+-- Functions: CREATE OR REPLACE handles this
+CREATE OR REPLACE FUNCTION my_func() ...;
+
+-- Triggers: drop first, then create
+DROP TRIGGER IF EXISTS trigger_name ON table;
+CREATE TRIGGER trigger_name ...;
+```
+
+**Trigger functions that insert data must use `SECURITY DEFINER`** to bypass RLS during auth flows (signup has no authenticated user yet).
+
+**Critical trigger chain for signup:**
+```
+auth.users → handle_new_user() → profiles → create_default_workspace() → workspaces
+```
+If any function in this chain fails or is missing, signup breaks entirely.
+
 ## Architecture
 
 ### Monorepo Structure
@@ -43,21 +74,42 @@ npm run lint    # Run Next.js linter
 - `app/dashboard/page.tsx` - Main dashboard with stats, filters, date picker
 - `components/performance-table.tsx` - Campaign/adset/ad hierarchy table with CBO/ABO detection
 
-**API Routes:**
+**API Routes - Meta:**
 - `app/api/meta/sync/route.ts` - Syncs data from Meta Marketing API (two-step: discovery + date-filtered)
 - `app/api/meta/update-status/route.ts` - Pause/resume campaigns, adsets, ads
 - `app/api/meta/update-budget/route.ts` - Edit budgets via Meta API
+- `app/api/meta/create-campaign/route.ts` - Create campaigns via Meta API
 - `app/api/alerts/` - Alert generation and settings
+
+**API Routes - Workspaces:**
+- `app/api/workspace/route.ts` - Workspace CRUD
+- `app/api/workspace/members/route.ts` - Member management
+- `app/api/workspace/invite/route.ts` - Send invites
+- `app/api/workspace/invite/accept/route.ts` - Accept invites
+- `app/api/workspace/active-hierarchy/route.ts` - Campaign > Ad Set > Ad tree (ACTIVE only)
+
+**API Routes - Pixel & Events:**
+- `app/api/pixel/events/route.ts` - Receive pixel events
+- `app/api/pixel/events/manual/route.ts` - Log manual/offline events
+- `app/api/kiosk/settings/route.ts` - Kiosk configuration
+- `app/api/kiosk/data/route.ts` - Kiosk active ads data
 
 **Settings & Config:**
 - `app/dashboard/settings/page.tsx` - Rules configuration per account
+- `app/dashboard/settings/workspaces/page.tsx` - Workspace management
+- `app/dashboard/settings/pixel/page.tsx` - Pixel setup & manual event logging
 - `app/dashboard/alerts/page.tsx` - Alert management per account
 - `app/dashboard/trends/page.tsx` - Performance trends and charts
+
+**Public Pages:**
+- `app/kiosk/[slug]/page.tsx` - Sales kiosk for walk-in attribution
+- `app/invite/[token]/page.tsx` - Workspace invite acceptance
 
 **Core Logic:**
 - `lib/supabase.ts` - DB clients + TypeScript types + verdict calculation
 - `lib/auth.tsx` - AuthContext & useAuth hook
 - `lib/subscription.tsx` - SubscriptionContext & useSubscription hook
+- `components/launch-wizard.tsx` - Campaign creation wizard
 
 ## Verdict Logic
 
@@ -81,12 +133,28 @@ Verdict badges only show where the budget lives:
 ## Database
 
 Supabase PostgreSQL. Key tables:
+
+**Core:**
+- `profiles` - User profiles, linked to auth.users
+- `subscriptions` - User subscription status (plan, Stripe IDs)
+- `meta_connections` - OAuth tokens and ad account list
+
+**Workspaces (multi-tenant):**
+- `workspaces` - Virtual containers for businesses (each user gets default "My Business")
+- `workspace_accounts` - Links ad accounts to workspaces
+- `workspace_rules` - ROAS/CPR thresholds per workspace
+- `workspace_pixels` - One tracking pixel per workspace (KS-XXXXXXX format)
+- `workspace_members` - Team members with roles (owner/admin/member/viewer)
+- `workspace_invites` - Pending invitations with tokens
+
+**Performance:**
 - `ad_data` - Raw ad performance data with status and budget fields
+- `pixel_events` - Events tracked by KillScale pixel (purchases, leads, manual events)
+
+**Legacy (being migrated to workspace-scoped):**
 - `rules` - ROAS thresholds, scoped by `ad_account_id`
 - `alerts` - Generated alerts, scoped by `ad_account_id`
 - `alert_settings` - Alert preferences per account
-- `meta_connections` - OAuth tokens and ad account list
-- `subscriptions` - User subscription status (plan, Stripe IDs)
 
 ## Environment Variables
 
@@ -118,25 +186,199 @@ Defined in `tailwind.config.ts`:
 
 ---
 
+## Implemented Features
+
+### Workspaces System
+
+Multi-tenant workspace architecture allowing users to organize ad accounts by business/client.
+
+**Key concepts:**
+- Every user gets a default "My Business" workspace on signup (via trigger)
+- Pro+ users can create additional workspaces
+- Ad accounts are linked to workspaces, not directly to users
+- Rules, pixels, and settings are workspace-scoped
+
+**Files:**
+- `app/dashboard/settings/workspaces/page.tsx` - Workspace management UI
+- `app/api/workspace/` - Workspace CRUD APIs
+- `supabase/migrations/015_workspaces.sql` - Schema
+
+### Workspace Members & Invites
+
+Team collaboration with role-based access.
+
+**Roles:**
+- `owner` - Full access, can delete workspace
+- `admin` - Can manage members and settings
+- `member` - Can view and take actions on ads
+- `viewer` - Read-only access
+
+**Invite flow:**
+1. Owner/admin sends invite via email
+2. Invite stored in `workspace_invites` with unique token
+3. Recipient clicks link → `/invite/[token]` page
+4. If new user: signup flow, then auto-added to workspace
+5. If existing user: directly added to workspace
+
+**Files:**
+- `app/invite/[token]/page.tsx` - Invite acceptance page
+- `app/api/workspace/invite/route.ts` - Send invites
+- `app/api/workspace/invite/accept/route.ts` - Accept invites
+- `app/api/workspace/members/route.ts` - Manage members
+
+### KillScale Pixel & Attribution
+
+First-party tracking pixel for attribution independent of Meta's pixel.
+
+**Pixel format:** `KS-XXXXXXX` (7 random chars)
+
+**Attribution logic:**
+- Pixel fires on page load with UTM params
+- `utm_content` contains ad_id for attribution
+- Events (purchases, leads) attributed to the ad that drove the visit
+- Attribution window configurable (default 7 days)
+
+**Files:**
+- `app/dashboard/settings/pixel/page.tsx` - Pixel settings & code snippet
+- `app/api/pixel/events/route.ts` - Receive pixel events
+- `app/api/pixel/attribution/route.ts` - Query attributed conversions
+
+### Manual Events System
+
+Log offline conversions (walk-ins, phone sales, manual leads) and attribute to ads.
+
+**Key concepts:**
+- Events are discrete results - you can't split a "result" across multiple ads
+- Each event is attributed to ONE ad (or unattributed if source unknown)
+- Event types: purchase, lead, signup, or custom
+- Uses hierarchical ad picker: Campaign → Ad Set → Ad
+
+**Hierarchical Ad Picker:**
+- Only shows ACTIVE items (ad, adset, AND campaign must all be ACTIVE)
+- Collapsible tree: expand campaign → see adsets → expand adset → see ads
+- Sorted by spend (highest first)
+- Used in both Pixel Settings modal and Kiosk
+
+**Files:**
+- `app/api/pixel/events/manual/route.ts` - Log manual events
+- `app/api/workspace/active-hierarchy/route.ts` - Fetch Campaign > Ad Set > Ad tree
+
+### Sales Kiosk
+
+Public-facing page for in-store staff to log walk-in sales with ad attribution.
+
+**URL:** `/kiosk/[workspace-slug]`
+
+**Features:**
+- No login required (public page)
+- Shows workspace name and business context
+- Same hierarchical ad picker as dashboard
+- Quick-log common event types
+- Mobile-optimized for tablet/phone use
+
+**Files:**
+- `app/kiosk/[slug]/page.tsx` - Kiosk UI
+- `app/api/kiosk/settings/route.ts` - Fetch kiosk config by slug
+- `app/api/kiosk/data/route.ts` - Fetch active ads for kiosk
+
+### Campaign Launcher
+
+Create Meta campaigns directly from KillScale without touching Ads Manager.
+
+**Implemented:**
+- Multi-step wizard: Account → Budget Type → Details → Targeting → Creative → Copy → Review
+- CBO "Andromeda Recommended" vs ABO "Legacy" selection
+- ABO option to add to existing campaign
+- Facebook Page selection
+- Special Ad Categories (Housing/Credit/Employment)
+- Location targeting (city + radius for local businesses)
+- Creative enhancements toggle (KillScale Recommended = off, Meta Advantage+ = on)
+- Image/video upload to Meta
+- Campaign created as PAUSED for review
+
+**In Progress:** Lead Generation objective (need lead form selection)
+
+**Files:**
+- `app/dashboard/launch/page.tsx` - Launch hub page
+- `components/launch-wizard.tsx` - Multi-step wizard
+- `app/api/meta/create-campaign/route.ts` - Create campaign via Meta API
+- `app/api/meta/upload-creative/route.ts` - Upload images/videos
+- `app/api/meta/pages/route.ts` - Fetch Facebook Pages
+- `app/api/meta/campaigns/route.ts` - Fetch existing campaigns (for ABO)
+- `app/api/meta/locations/route.ts` - Search cities for targeting
+
+### Landing Page
+
+Static landing page with outcome-focused messaging.
+
+**Implemented:**
+- Outcome headline: "Stop Wasting Ad Spend. Start Scaling What Works."
+- Video walkthrough (Supabase Storage) replacing static screenshot
+- Results section with 3 outcome cards
+- Features with outcome-focused headlines
+- Email confirmation success page at `/auth/confirm`
+
+**Files:**
+- `killscale-landing/index.html` - Main landing page
+
+---
+
+## Current Work / In Progress
+
+### Lead Generation for Campaign Launcher
+
+**Problem:** Lead generation objective is broken - campaigns created without forms attached.
+
+**Solution:**
+1. Add `/api/meta/lead-forms/route.ts` - Fetch Instant Forms from Page
+2. Add lead form selection step to wizard
+3. Update `create-campaign/route.ts` with `promoted_object` for leads
+4. Click-to-Call CTA support
+
+**Plan file:** `~/.claude/plans/snug-roaming-seal.md`
+
+---
+
+## Security Notes / Past Issues
+
+### Pixel RLS (Fixed)
+- `pixel_status` table had dangerous "anyone can upsert" policy
+- Fixed with proper user-scoped policies + service role access
+
+### Signup Trigger Chain (Fixed Dec 2024)
+Critical trigger chain: `auth.users → handle_new_user() → profiles → create_default_workspace() → workspaces`
+- Both functions MUST have `SECURITY DEFINER` to bypass RLS
+- If either function is missing or lacks proper permissions, ALL signups break
+- Symptom: "Database error saving new user"
+
+### Pixel Security Punch List
+Some items from `~/.claude/plans/iterative-wandering-finch.md` may still need attention:
+- Add authentication to `/api/pixel/events` and `/api/pixel/attribution` (require userId)
+- Add pixel_secret validation to event ingestion
+- Add rate limiting and deduplication to event ingestion
+
+---
+
 ## Future Enhancements
+
+### Live Ad Preview in Launch Wizard (Priority: High)
+
+**Goal:** Show real-time ad preview while building ads in the Launch Wizard.
+
+**Two-part system:**
+1. **Live Mock Preview** - Custom component renders realistic FB/IG ad mockup as user types (zero latency)
+2. **Real Meta Previews** - "Preview on Meta" button fetches actual iframe previews
+
+**Plan file:** `~/.claude/plans/bubbly-greeting-wombat.md`
 
 ### Ad Creative Preview (Priority: Medium)
 
 **Goal:** Click an ad in the performance table to see its creative (image/video thumbnail) in a modal.
 
-**Implementation Plan:**
-1. New API endpoint `/api/meta/creative/route.ts` to fetch creative data
-2. Modal component `components/creative-preview-modal.tsx`
-3. Make ad rows clickable in performance table
-
-**API Fields:** `thumbnail_url`, `image_url`, `object_story_spec`, `effective_object_story_id`
-
 **Considerations:**
 - Start with thumbnails (video playback requires HLS streaming)
 - Cache creatives in Supabase to reduce API calls
 - Handle dynamic creatives and carousels
-
----
 
 ### CBO Scaling (Priority: High)
 

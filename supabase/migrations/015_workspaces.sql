@@ -2,7 +2,7 @@
 -- Each user gets a hidden "default" workspace (Free/Starter tiers)
 -- Pro+ can create additional named workspaces
 
-CREATE TABLE workspaces (
+CREATE TABLE IF NOT EXISTS workspaces (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE workspaces (
 );
 
 -- Workspace accounts: Links ad accounts (from any platform) to workspaces
-CREATE TABLE workspace_accounts (
+CREATE TABLE IF NOT EXISTS workspace_accounts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
   platform TEXT NOT NULL CHECK (platform IN ('meta', 'google')),
@@ -26,7 +26,7 @@ CREATE TABLE workspace_accounts (
 );
 
 -- Workspace rules: ROAS/CPR thresholds per workspace
-CREATE TABLE workspace_rules (
+CREATE TABLE IF NOT EXISTS workspace_rules (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL UNIQUE,
   scale_roas NUMERIC(5,2) DEFAULT 3.0,
@@ -42,7 +42,7 @@ CREATE TABLE workspace_rules (
 
 -- Workspace pixels: One pixel per workspace (each workspace = different business/website)
 -- This replaces the old per-account pixel approach
-CREATE TABLE workspace_pixels (
+CREATE TABLE IF NOT EXISTS workspace_pixels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL UNIQUE,
   pixel_id VARCHAR(20) UNIQUE NOT NULL,  -- KS-XXXXXXX format
@@ -57,11 +57,11 @@ CREATE TABLE workspace_pixels (
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS selected_workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL;
 
 -- Indexes for performance
-CREATE INDEX idx_workspaces_user_id ON workspaces(user_id);
-CREATE INDEX idx_workspaces_is_default ON workspaces(user_id, is_default);
-CREATE INDEX idx_workspace_accounts_workspace ON workspace_accounts(workspace_id);
-CREATE INDEX idx_workspace_accounts_platform ON workspace_accounts(platform, ad_account_id);
-CREATE INDEX idx_workspace_pixels_pixel_id ON workspace_pixels(pixel_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_user_id ON workspaces(user_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_is_default ON workspaces(user_id, is_default);
+CREATE INDEX IF NOT EXISTS idx_workspace_accounts_workspace ON workspace_accounts(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_accounts_platform ON workspace_accounts(platform, ad_account_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_pixels_pixel_id ON workspace_pixels(pixel_id);
 
 -- RLS policies
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
@@ -70,65 +70,80 @@ ALTER TABLE workspace_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_pixels ENABLE ROW LEVEL SECURITY;
 
 -- Workspaces: users can CRUD their own
+DROP POLICY IF EXISTS "Users can view own workspaces" ON workspaces;
 CREATE POLICY "Users can view own workspaces"
   ON workspaces FOR SELECT
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can create own workspaces" ON workspaces;
 CREATE POLICY "Users can create own workspaces"
   ON workspaces FOR INSERT
   WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update own workspaces" ON workspaces;
 CREATE POLICY "Users can update own workspaces"
   ON workspaces FOR UPDATE
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can delete own workspaces" ON workspaces;
 CREATE POLICY "Users can delete own workspaces"
   ON workspaces FOR DELETE
   USING (user_id = auth.uid());
 
 -- Workspace accounts: users can CRUD for their workspaces
+DROP POLICY IF EXISTS "Users can view own workspace accounts" ON workspace_accounts;
 CREATE POLICY "Users can view own workspace accounts"
   ON workspace_accounts FOR SELECT
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can insert own workspace accounts" ON workspace_accounts;
 CREATE POLICY "Users can insert own workspace accounts"
   ON workspace_accounts FOR INSERT
   WITH CHECK (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update own workspace accounts" ON workspace_accounts;
 CREATE POLICY "Users can update own workspace accounts"
   ON workspace_accounts FOR UPDATE
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can delete own workspace accounts" ON workspace_accounts;
 CREATE POLICY "Users can delete own workspace accounts"
   ON workspace_accounts FOR DELETE
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
 -- Workspace rules: users can CRUD for their workspaces
+DROP POLICY IF EXISTS "Users can view own workspace rules" ON workspace_rules;
 CREATE POLICY "Users can view own workspace rules"
   ON workspace_rules FOR SELECT
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can insert own workspace rules" ON workspace_rules;
 CREATE POLICY "Users can insert own workspace rules"
   ON workspace_rules FOR INSERT
   WITH CHECK (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update own workspace rules" ON workspace_rules;
 CREATE POLICY "Users can update own workspace rules"
   ON workspace_rules FOR UPDATE
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can delete own workspace rules" ON workspace_rules;
 CREATE POLICY "Users can delete own workspace rules"
   ON workspace_rules FOR DELETE
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
 -- Workspace pixels: users can view/update for their workspaces
+DROP POLICY IF EXISTS "Users can view own workspace pixels" ON workspace_pixels;
 CREATE POLICY "Users can view own workspace pixels"
   ON workspace_pixels FOR SELECT
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can insert own workspace pixels" ON workspace_pixels;
 CREATE POLICY "Users can insert own workspace pixels"
   ON workspace_pixels FOR INSERT
   WITH CHECK (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update own workspace pixels" ON workspace_pixels;
 CREATE POLICY "Users can update own workspace pixels"
   ON workspace_pixels FOR UPDATE
   USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));

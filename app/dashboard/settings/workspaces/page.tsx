@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -78,6 +78,13 @@ export default function WorkspacesPage() {
   const [inviteCanLogWalkins, setInviteCanLogWalkins] = useState(true)
   const [sendingInvite, setSendingInvite] = useState(false)
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
+
+  // Client Portal state
+  const [expandedPortal, setExpandedPortal] = useState<string | null>(null)
+  const [portalSettings, setPortalSettings] = useState<Record<string, { enabled: boolean; url: string | null; hasPin: boolean }>>({})
+  const [portalPin, setPortalPin] = useState('')
+  const [savingPortal, setSavingPortal] = useState(false)
+  const [copiedPortalUrl, setCopiedPortalUrl] = useState<string | null>(null)
 
   const workspaceLimit = WORKSPACE_LIMITS[plan] || 0
   const canCreateWorkspace = workspaces.length < workspaceLimit
@@ -376,6 +383,111 @@ export default function WorkspacesPage() {
     setTimeout(() => setCopiedInvite(null), 2000)
   }
 
+  // Client Portal functions
+  const loadPortalSettings = async (workspaceId: string) => {
+    if (!user?.id) return
+
+    try {
+      const res = await fetch(`/api/portal/settings?workspaceId=${workspaceId}&userId=${user.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPortalSettings(prev => ({
+          ...prev,
+          [workspaceId]: {
+            enabled: data.portalEnabled,
+            url: data.portalUrl,
+            hasPin: data.hasPin
+          }
+        }))
+      }
+    } catch (err) {
+      console.error('Failed to load portal settings:', err)
+    }
+  }
+
+  const handleSetupPortal = async (workspaceId: string) => {
+    if (!user?.id || !portalPin || portalPin.length < 4) {
+      setError('PIN must be at least 4 digits')
+      return
+    }
+
+    setSavingPortal(true)
+    try {
+      const res = await fetch('/api/portal/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          userId: user.id,
+          pin: portalPin,
+          enabled: true
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Failed to setup portal')
+        return
+      }
+
+      setPortalSettings(prev => ({
+        ...prev,
+        [workspaceId]: {
+          enabled: data.portalEnabled,
+          url: data.portalUrl,
+          hasPin: true
+        }
+      }))
+      setPortalPin('')
+    } catch (err) {
+      setError('Failed to setup portal')
+    } finally {
+      setSavingPortal(false)
+    }
+  }
+
+  const handleTogglePortal = async (workspaceId: string, enabled: boolean) => {
+    if (!user?.id) return
+
+    try {
+      const res = await fetch('/api/portal/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          userId: user.id,
+          enabled
+        })
+      })
+
+      if (res.ok) {
+        setPortalSettings(prev => ({
+          ...prev,
+          [workspaceId]: {
+            ...prev[workspaceId],
+            enabled
+          }
+        }))
+      }
+    } catch (err) {
+      console.error('Failed to toggle portal:', err)
+    }
+  }
+
+  const copyPortalUrl = async (url: string, workspaceId: string) => {
+    await navigator.clipboard.writeText(url)
+    setCopiedPortalUrl(workspaceId)
+    setTimeout(() => setCopiedPortalUrl(null), 2000)
+  }
+
+  // Load portal settings when expanding
+  useEffect(() => {
+    if (expandedPortal && !portalSettings[expandedPortal]) {
+      loadPortalSettings(expandedPortal)
+    }
+  }, [expandedPortal])
+
   const isAgency = plan === 'Agency'
 
   if (loading) {
@@ -668,6 +780,109 @@ export default function WorkspacesPage() {
                     <p className="text-xs text-zinc-600 text-center">
                       All connected accounts are in this workspace
                     </p>
+                  )}
+                </div>
+
+                {/* Client Portal */}
+                <div className="border-t border-border">
+                  <button
+                    onClick={() => setExpandedPortal(expandedPortal === workspace.id ? null : workspace.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-bg-hover/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-medium">Client Portal</span>
+                      {portalSettings[workspace.id]?.enabled && (
+                        <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/20 text-cyan-400">Active</span>
+                      )}
+                    </div>
+                    {expandedPortal === workspace.id ? (
+                      <ChevronUp className="w-4 h-4 text-zinc-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </button>
+
+                  {expandedPortal === workspace.id && (
+                    <div className="p-4 pt-0 space-y-3">
+                      {portalSettings[workspace.id]?.hasPin ? (
+                        <>
+                          {/* Portal URL and toggle */}
+                          <div className="p-3 bg-bg-dark rounded-lg space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-zinc-400">Portal Status</span>
+                              <button
+                                onClick={() => handleTogglePortal(workspace.id, !portalSettings[workspace.id]?.enabled)}
+                                className={cn(
+                                  "relative w-11 h-6 rounded-full transition-colors",
+                                  portalSettings[workspace.id]?.enabled ? "bg-cyan-600" : "bg-zinc-700"
+                                )}
+                              >
+                                <span className={cn(
+                                  "absolute top-1 w-4 h-4 rounded-full bg-white transition-transform",
+                                  portalSettings[workspace.id]?.enabled ? "left-6" : "left-1"
+                                )} />
+                              </button>
+                            </div>
+                            {portalSettings[workspace.id]?.url && (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={portalSettings[workspace.id].url || ''}
+                                  readOnly
+                                  className="flex-1 px-3 py-2 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 truncate"
+                                />
+                                <button
+                                  onClick={() => copyPortalUrl(portalSettings[workspace.id].url!, workspace.id)}
+                                  className="p-2 text-zinc-500 hover:text-white transition-colors"
+                                  title="Copy URL"
+                                >
+                                  {copiedPortalUrl === workspace.id ? <Check className="w-4 h-4 text-cyan-400" /> : <Copy className="w-4 h-4" />}
+                                </button>
+                                <a
+                                  href={portalSettings[workspace.id].url || '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-2 text-zinc-500 hover:text-white transition-colors"
+                                  title="Open Portal"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-500">
+                            Share this URL with your client. They&apos;ll enter the PIN you set to access their dashboard.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          {/* Setup form */}
+                          <p className="text-sm text-zinc-400 mb-3">
+                            Create a PIN-protected dashboard for your client to view their ad performance.
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="password"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={portalPin}
+                              onChange={(e) => setPortalPin(e.target.value.replace(/\D/g, ''))}
+                              placeholder="Enter 4-6 digit PIN"
+                              maxLength={6}
+                              className="flex-1 px-3 py-2 bg-bg-dark border border-border rounded-lg text-sm text-white focus:outline-none focus:border-accent"
+                            />
+                            <button
+                              onClick={() => handleSetupPortal(workspace.id)}
+                              disabled={savingPortal || portalPin.length < 4}
+                              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium transition-colors flex items-center gap-2"
+                            >
+                              {savingPortal ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Setup Portal'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
 
