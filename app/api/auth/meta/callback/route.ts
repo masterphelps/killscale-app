@@ -66,8 +66,14 @@ export async function GET(request: NextRequest) {
     const longLivedData = await longLivedResponse.json()
     
     const finalToken = longLivedData.access_token || access_token
-    const finalExpiry = longLivedData.expires_in || expires_in
-    
+    // Default to 60 days if expires_in is not provided
+    const finalExpiry = longLivedData.expires_in || expires_in || (60 * 24 * 60 * 60)
+
+    console.log('Token info:', {
+      hasLongLivedToken: !!longLivedData.access_token,
+      expiresIn: finalExpiry
+    })
+
     // Get user's ad accounts
     const adAccountsResponse = await fetch(
       `https://graph.facebook.com/v18.0/me/adaccounts?fields=id,name,account_status,currency&access_token=${finalToken}`
