@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Upload, Lock, Trash2, RefreshCw } from 'lucide-react'
+import { Upload, Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
 import { StatCard } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
 import { StatusChangeModal } from '@/components/confirm-modal'
+import { LogWalkinModal } from '@/components/log-walkin-modal'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CSVRow } from '@/lib/csv-parser'
 import { Rules } from '@/lib/supabase'
@@ -146,6 +147,8 @@ export default function DashboardPage() {
   const [showUpload, setShowUpload] = useState(false)
   const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
+  const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
+  const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
@@ -190,9 +193,10 @@ export default function DashboardPage() {
     campaignName?: string
     adsetName?: string
   } | null>(null)
+  const [showWalkinModal, setShowWalkinModal] = useState(false)
   const { plan } = useSubscription()
   const { user } = useAuth()
-  const { currentAccountId, accounts, workspaceAccountIds } = useAccount()
+  const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
   const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
   const searchParams = useSearchParams()
 
@@ -236,12 +240,55 @@ export default function DashboardPage() {
   }, [datePreset, customStartDate, customEndDate])
   
   const canSync = true // All plans can sync via Meta API
+  const planLower = plan?.toLowerCase() || ''
+  const isProPlus = planLower === 'pro' || planLower === 'agency'
   
+  // Initial data load - triggers 30-day sync if no data exists
   useEffect(() => {
-    if (user) {
-      loadData()
+    if (!user) return
+
+    const initialLoad = async () => {
+      // First load data from Supabase
+      await loadData()
+
+      // Check if we should trigger initial sync (only once per session)
+      if (hasTriggeredInitialSync.current) return
+
+      // After loading, check if data is empty and accounts exist
+      // We need to query Supabase directly since state may not be updated yet
+      const { data: existingData } = await supabase
+        .from('ad_data')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+
+      const hasExistingData = existingData && existingData.length > 0
+
+      if (!hasExistingData && accounts.length > 0) {
+        // No data but accounts exist - queue 30-day sync for first account
+        hasTriggeredInitialSync.current = true
+        console.log('[Dashboard] First load with no data - queueing 30-day sync')
+
+        const accountToSync = currentAccountId || accounts[0]?.id
+        if (accountToSync) {
+          // Set date preset to 30 days and queue the sync
+          setDatePreset('last_30d')
+          setPendingInitialSync(accountToSync)
+        }
+      }
     }
-  }, [user?.id]) // Use user.id to avoid re-fetching when Supabase refreshes the session token on tab focus
+
+    initialLoad()
+  }, [user?.id, accounts.length]) // Include accounts.length to re-run when accounts load
+
+  // Execute pending initial sync (separate effect to ensure datePreset is updated)
+  useEffect(() => {
+    if (pendingInitialSync && datePreset === 'last_30d' && !isSyncing) {
+      console.log('[Dashboard] Executing initial 30-day sync for', pendingInitialSync)
+      setPendingInitialSync(null) // Clear before executing to prevent loops
+      handleSyncAccount(pendingInitialSync)
+    }
+  }, [pendingInitialSync, datePreset, isSyncing])
 
   // Check cache when switching accounts/workspaces
   useEffect(() => {
@@ -1386,7 +1433,19 @@ export default function DashboardPage() {
             )}
           </button>
           
-          <button 
+          {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
+          {isProPlus && isKillScaleActive && currentWorkspaceId && (
+            <button
+              onClick={() => setShowWalkinModal(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
+              title="Log a walk-in or offline conversion"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span className="hidden sm:inline">Log Walk-In</span>
+            </button>
+          )}
+
+          <button
             onClick={() => setShowUpload(true)}
             className="hidden sm:flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
           >
@@ -1746,6 +1805,20 @@ export default function DashboardPage() {
           entityType={statusChangeModal.entityType}
           action={statusChangeModal.action}
           isLoading={isUpdatingStatus}
+        />
+      )}
+
+      {/* Log Walk-In Modal */}
+      {currentWorkspaceId && user && (
+        <LogWalkinModal
+          isOpen={showWalkinModal}
+          onClose={() => setShowWalkinModal(false)}
+          workspaceId={currentWorkspaceId}
+          userId={user.id}
+          defaultValue={100}
+          onSuccess={() => {
+            // Attribution data will refresh on next sync/load
+          }}
         />
       )}
     </>

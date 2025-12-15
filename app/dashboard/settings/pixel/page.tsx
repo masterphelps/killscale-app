@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Loader2, Copy, Check, Activity, RefreshCw, Download, ExternalLink, Lock, Sparkles, ChevronDown, Layers, Plus } from 'lucide-react'
+import { Loader2, Copy, Check, Activity, RefreshCw, Download, ExternalLink, Lock, Sparkles, ChevronDown, ChevronRight, Layers, Plus, Smartphone, Eye, EyeOff } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,12 @@ import { cn } from '@/lib/utils'
 type Workspace = {
   id: string
   name: string
+}
+
+type KioskSettings = {
+  enabled: boolean
+  slug: string | null
+  hasPin: boolean
 }
 
 type WorkspacePixel = {
@@ -48,6 +54,37 @@ export default function PixelPage() {
   const [copiedUtm, setCopiedUtm] = useState(false)
   const [updatingAttribution, setUpdatingAttribution] = useState<string | null>(null)
   const [lastEventTimes, setLastEventTimes] = useState<Record<string, string | null>>({})
+
+  // Kiosk settings state
+  const [kioskSettings, setKioskSettings] = useState<Record<string, KioskSettings>>({})
+  const [kioskSlugInput, setKioskSlugInput] = useState<Record<string, string>>({})
+  const [kioskPinInput, setKioskPinInput] = useState<Record<string, string>>({})
+  const [showKioskPin, setShowKioskPin] = useState<Record<string, boolean>>({})
+  const [updatingKiosk, setUpdatingKiosk] = useState<string | null>(null)
+  const [copiedKioskUrl, setCopiedKioskUrl] = useState<string | null>(null)
+  const [kioskError, setKioskError] = useState<Record<string, string | null>>({})
+
+  // Manual Event state
+  const [showLogModal, setShowLogModal] = useState<string | null>(null)  // workspace_id or null
+  const [logValue, setLogValue] = useState('100')
+  const [logNotes, setLogNotes] = useState('')
+  const [logLoading, setLogLoading] = useState(false)
+  const [logSuccess, setLogSuccess] = useState(false)
+  const [logError, setLogError] = useState<string | null>(null)
+  const [logHierarchy, setLogHierarchy] = useState<Array<{
+    campaignId: string
+    campaignName: string
+    adsets: Array<{
+      adsetId: string
+      adsetName: string
+      ads: Array<{ adId: string; adName: string; spend: number; spendPercentage: number }>
+    }>
+  }>>([])
+  const [logAdsLoading, setLogAdsLoading] = useState(false)
+  const [logAttribution, setLogAttribution] = useState<'top' | 'select'>('top')  // top=top spender, select=specific ad
+  const [logSelectedAd, setLogSelectedAd] = useState<string | null>(null)
+  const [logExpandedCampaigns, setLogExpandedCampaigns] = useState<Set<string>>(new Set())
+  const [logExpandedAdsets, setLogExpandedAdsets] = useState<Set<string>>(new Set())
 
   // Load workspaces and their pixels
   useEffect(() => {
@@ -199,8 +236,188 @@ export default function PixelPage() {
       if (pixel && !pixelEvents[expandedWorkspace]) {
         loadPixelEvents(pixel.pixel_id, expandedWorkspace)
       }
+      // Load kiosk settings for expanded workspace
+      if (!kioskSettings[expandedWorkspace]) {
+        loadKioskSettings(expandedWorkspace)
+      }
     }
   }, [expandedWorkspace, workspacePixels, pixelEvents, loadPixelEvents])
+
+  // Load kiosk settings for a workspace
+  const loadKioskSettings = async (workspaceId: string) => {
+    if (!user?.id) return
+    try {
+      const res = await fetch(`/api/kiosk/settings?workspaceId=${workspaceId}&userId=${user.id}`)
+      const data = await res.json()
+      if (res.ok) {
+        setKioskSettings(prev => ({
+          ...prev,
+          [workspaceId]: {
+            enabled: data.kioskEnabled,
+            slug: data.kioskSlug,
+            hasPin: data.hasPin
+          }
+        }))
+        setKioskSlugInput(prev => ({ ...prev, [workspaceId]: data.kioskSlug || '' }))
+      }
+    } catch (err) {
+      console.error('Failed to load kiosk settings:', err)
+    }
+  }
+
+  // Update kiosk settings
+  const updateKioskSettings = async (workspaceId: string, updates: { enabled?: boolean; slug?: string; pin?: string }) => {
+    if (!user?.id) return
+    setUpdatingKiosk(workspaceId)
+    setKioskError(prev => ({ ...prev, [workspaceId]: null }))
+
+    try {
+      const res = await fetch('/api/kiosk/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          userId: user.id,
+          ...updates
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setKioskError(prev => ({ ...prev, [workspaceId]: data.error }))
+        return
+      }
+
+      // Reload settings
+      await loadKioskSettings(workspaceId)
+
+      // Clear PIN input after successful save
+      if (updates.pin) {
+        setKioskPinInput(prev => ({ ...prev, [workspaceId]: '' }))
+      }
+    } catch (err) {
+      setKioskError(prev => ({ ...prev, [workspaceId]: 'Failed to update settings' }))
+    } finally {
+      setUpdatingKiosk(null)
+    }
+  }
+
+  const copyKioskUrl = async (slug: string, workspaceId: string) => {
+    const url = `https://kiosk.killscale.com/${slug}`
+    await navigator.clipboard.writeText(url)
+    setCopiedKioskUrl(workspaceId)
+    setTimeout(() => setCopiedKioskUrl(null), 2000)
+  }
+
+  // Load active ads hierarchy for attribution selection
+  const loadActiveAds = async (workspaceId: string) => {
+    if (!user?.id) return
+    setLogAdsLoading(true)
+    try {
+      const res = await fetch(`/api/workspace/active-hierarchy?workspaceId=${workspaceId}&userId=${user.id}`)
+      const data = await res.json()
+      if (res.ok && data.campaigns) {
+        setLogHierarchy(data.campaigns)
+        // Find top spender ad
+        const allAds = data.campaigns.flatMap((c: any) =>
+          c.adsets.flatMap((as: any) => as.ads)
+        )
+        if (allAds.length > 0) {
+          // Sort by spend to find top spender
+          const topAd = allAds.sort((a: any, b: any) => b.spend - a.spend)[0]
+          setLogAttribution('top')
+          setLogSelectedAd(topAd.adId)
+        } else {
+          setLogAttribution('split')
+          setLogSelectedAd(null)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load active hierarchy:', err)
+    } finally {
+      setLogAdsLoading(false)
+    }
+  }
+
+  // Helper to get all ads from hierarchy
+  const getAllAdsFromHierarchy = () => {
+    return logHierarchy.flatMap(c =>
+      c.adsets.flatMap(as => as.ads)
+    ).sort((a, b) => b.spend - a.spend)
+  }
+
+  // Helper to get top spender ad
+  const getTopSpenderAd = () => {
+    const allAds = getAllAdsFromHierarchy()
+    return allAds.length > 0 ? allAds[0] : null
+  }
+
+  // Helper to get total ad count
+  const getTotalAdCount = () => {
+    return logHierarchy.reduce((sum, c) =>
+      sum + c.adsets.reduce((s, as) => s + as.ads.length, 0), 0
+    )
+  }
+
+  const handleLogEvent = async (workspaceId: string) => {
+    const value = parseFloat(logValue)
+    if (isNaN(value) || value <= 0) {
+      setLogError('Please enter a valid amount')
+      return
+    }
+
+    // Determine the adId based on attribution mode
+    let adIdToUse: string | undefined = undefined
+    const topAd = getTopSpenderAd()
+    if (logAttribution === 'top' && topAd) {
+      adIdToUse = topAd.adId  // Top spender
+    } else if (logAttribution === 'select' && logSelectedAd) {
+      adIdToUse = logSelectedAd
+    }
+
+    setLogLoading(true)
+    setLogError(null)
+
+    try {
+      const res = await fetch('/api/pixel/events/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          eventType: 'purchase',
+          eventValue: value,
+          adId: adIdToUse,
+          notes: logNotes || undefined
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to log walk-in')
+      }
+
+      setLogSuccess(true)
+      // Refresh events
+      const wp = workspacePixels.find(p => p.workspace_id === workspaceId)
+      if (wp) {
+        loadPixelEvents(wp.pixel_id, workspaceId)
+      }
+
+      setTimeout(() => {
+        setShowLogModal(null)
+        setLogSuccess(false)
+        setLogValue('100')
+        setLogNotes('')
+      }, 1500)
+
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : 'Failed to log walk-in')
+    } finally {
+      setLogLoading(false)
+    }
+  }
 
   const getPixelSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Pixel -->
 <script>
@@ -552,6 +769,160 @@ ks('pageview');
                     )}
                   </div>
 
+                  {/* Sales Kiosk */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Smartphone className="w-4 h-4 text-zinc-400" />
+                      <h3 className="font-medium text-sm">Sales Kiosk</h3>
+                    </div>
+                    <p className="text-xs text-zinc-500 mb-4">
+                      A simplified view for staff to log walk-in sales without full dashboard access.
+                    </p>
+
+                    {kioskError[wp.workspace_id] && (
+                      <div className="mb-3 p-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                        {kioskError[wp.workspace_id]}
+                      </div>
+                    )}
+
+                    {/* Enable toggle */}
+                    <div className="flex items-center justify-between p-3 bg-bg-dark rounded-lg mb-3">
+                      <span className="text-sm">Enable Sales Kiosk</span>
+                      <button
+                        onClick={() => updateKioskSettings(wp.workspace_id, { enabled: !kioskSettings[wp.workspace_id]?.enabled })}
+                        disabled={updatingKiosk === wp.workspace_id}
+                        className={cn(
+                          "w-10 h-6 rounded-full transition-colors relative",
+                          kioskSettings[wp.workspace_id]?.enabled ? "bg-accent" : "bg-zinc-700"
+                        )}
+                      >
+                        <div className={cn(
+                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                          kioskSettings[wp.workspace_id]?.enabled ? "left-5" : "left-1"
+                        )} />
+                      </button>
+                    </div>
+
+                    {kioskSettings[wp.workspace_id]?.enabled && (
+                      <>
+                        {/* Kiosk URL */}
+                        <div className="mb-3">
+                          <label className="block text-xs text-zinc-500 mb-1">Kiosk URL</label>
+                          <div className="flex gap-2">
+                            <div className="flex-1 flex items-center bg-bg-dark border border-border rounded-lg overflow-hidden">
+                              <span className="px-2 text-xs text-zinc-600 border-r border-border">kiosk.killscale.com/</span>
+                              <input
+                                type="text"
+                                value={kioskSlugInput[wp.workspace_id] || ''}
+                                onChange={(e) => setKioskSlugInput(prev => ({ ...prev, [wp.workspace_id]: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                                placeholder="your-business"
+                                className="flex-1 px-2 py-2 bg-transparent text-sm text-white focus:outline-none"
+                              />
+                            </div>
+                            <button
+                              onClick={() => updateKioskSettings(wp.workspace_id, { slug: kioskSlugInput[wp.workspace_id] })}
+                              disabled={updatingKiosk === wp.workspace_id || kioskSlugInput[wp.workspace_id] === kioskSettings[wp.workspace_id]?.slug}
+                              className="px-3 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs rounded-lg transition-colors"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Copy URL button */}
+                        {kioskSettings[wp.workspace_id]?.slug && (
+                          <button
+                            onClick={() => copyKioskUrl(kioskSettings[wp.workspace_id].slug!, wp.workspace_id)}
+                            className="w-full mb-3 flex items-center justify-center gap-2 p-2 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+                          >
+                            {copiedKioskUrl === wp.workspace_id ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-verdict-scale" />
+                                Copied!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                Copy Kiosk URL
+                              </>
+                            )}
+                          </button>
+                        )}
+
+                        {/* PIN Code */}
+                        <div>
+                          <label className="block text-xs text-zinc-500 mb-1">
+                            PIN Code {kioskSettings[wp.workspace_id]?.hasPin && <span className="text-verdict-scale">(set)</span>}
+                          </label>
+                          <div className="flex gap-2">
+                            <div className="flex-1 relative">
+                              <input
+                                type={showKioskPin[wp.workspace_id] ? 'text' : 'password'}
+                                value={kioskPinInput[wp.workspace_id] || ''}
+                                onChange={(e) => setKioskPinInput(prev => ({ ...prev, [wp.workspace_id]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                                placeholder={kioskSettings[wp.workspace_id]?.hasPin ? '••••' : 'Enter 4-6 digits'}
+                                maxLength={6}
+                                className="w-full px-3 py-2 bg-bg-dark border border-border rounded-lg text-sm text-white focus:outline-none focus:border-accent"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowKioskPin(prev => ({ ...prev, [wp.workspace_id]: !prev[wp.workspace_id] }))}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                              >
+                                {showKioskPin[wp.workspace_id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => updateKioskSettings(wp.workspace_id, { pin: kioskPinInput[wp.workspace_id] })}
+                              disabled={updatingKiosk === wp.workspace_id || !kioskPinInput[wp.workspace_id] || kioskPinInput[wp.workspace_id].length < 4}
+                              className="px-3 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs rounded-lg transition-colors"
+                            >
+                              {kioskSettings[wp.workspace_id]?.hasPin ? 'Change' : 'Set'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-zinc-600 mt-1">Staff will enter this PIN to access the kiosk.</p>
+                        </div>
+                      </>
+                    )}
+
+                    {updatingKiosk === wp.workspace_id && (
+                      <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Updating...
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manual Event Logging */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Plus className="w-4 h-4 text-zinc-400" />
+                      <h3 className="font-medium text-sm">Manual Event Logging</h3>
+                    </div>
+                    <p className="text-xs text-zinc-500 mb-4">
+                      Manually log walk-ins, phone orders, signups, or other offline conversions.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowLogModal(wp.workspace_id)
+                        setLogValue('100')
+                        setLogNotes('')
+                        setLogError(null)
+                        setLogSuccess(false)
+                        setLogHierarchy([])
+                        setLogExpandedCampaigns(new Set())
+                        setLogExpandedAdsets(new Set())
+                        setLogAttribution('top')
+                        setLogSelectedAd(null)
+                        loadActiveAds(wp.workspace_id)
+                      }}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Log Manual Event
+                    </button>
+                  </div>
+
                   {/* Event Viewer */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -657,6 +1028,273 @@ ks('pageview');
           Add to your ad destination URLs. Campaigns created in KillScale include these automatically.
         </p>
       </div>
+
+      {/* Manual Event Modal */}
+      {showLogModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white">Log Manual Event</h2>
+                <button
+                  onClick={() => setShowLogModal(null)}
+                  className="p-2 hover:bg-bg-hover rounded-lg"
+                >
+                  <span className="text-zinc-400 text-xl">&times;</span>
+                </button>
+              </div>
+
+              {logSuccess && (
+                <div className="mb-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-center">
+                  Event logged successfully!
+                </div>
+              )}
+
+              {logError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                  {logError}
+                </div>
+              )}
+
+              {!logSuccess && (
+                <>
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">Event Value</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xl">$</span>
+                      <input
+                        type="number"
+                        value={logValue}
+                        onChange={(e) => setLogValue(e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                        className="w-full pl-10 pr-4 py-4 bg-bg-dark border border-border rounded-xl text-white text-2xl font-bold focus:outline-none focus:border-accent"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Attribution Selection */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">Attribute to</label>
+                    {logAdsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+                      </div>
+                    ) : getTotalAdCount() === 0 ? (
+                      <div className="p-3 bg-zinc-800/50 rounded-lg text-sm text-zinc-500 text-center">
+                        No active ads found. Event will be logged without ad attribution.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Top Spender Option */}
+                        {(() => {
+                          const topAd = getTopSpenderAd()
+                          return topAd ? (
+                            <label
+                              className={cn(
+                                "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors",
+                                logAttribution === 'top'
+                                  ? "border-accent bg-accent/10"
+                                  : "border-border hover:border-zinc-600"
+                              )}
+                            >
+                              <input
+                                type="radio"
+                                name="attribution"
+                                checked={logAttribution === 'top'}
+                                onChange={() => {
+                                  setLogAttribution('top')
+                                  setLogSelectedAd(topAd.adId)
+                                }}
+                                className="sr-only"
+                              />
+                              <div className={cn(
+                                "w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5",
+                                logAttribution === 'top' ? "border-accent bg-accent" : "border-zinc-500"
+                              )}>
+                                {logAttribution === 'top' && (
+                                  <div className="w-full h-full rounded-full bg-white scale-50" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-white font-medium">Top Spender (last 7 days)</span>
+                                <p className="text-xs text-zinc-500 mt-0.5 truncate">
+                                  {topAd.adName} • ${topAd.spend.toLocaleString()} ({topAd.spendPercentage}%)
+                                </p>
+                              </div>
+                            </label>
+                          ) : null
+                        })()}
+
+                        {/* Select Specific Ad Option */}
+                        <label
+                          className={cn(
+                            "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors",
+                            logAttribution === 'select'
+                              ? "border-accent bg-accent/10"
+                              : "border-border hover:border-zinc-600"
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="attribution"
+                            checked={logAttribution === 'select'}
+                            onChange={() => setLogAttribution('select')}
+                            className="sr-only"
+                          />
+                          <div className={cn(
+                            "w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5",
+                            logAttribution === 'select' ? "border-accent bg-accent" : "border-zinc-500"
+                          )}>
+                            {logAttribution === 'select' && (
+                              <div className="w-full h-full rounded-full bg-white scale-50" />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <span className="text-white font-medium">Select Specific Ad</span>
+                            <p className="text-xs text-zinc-500 mt-0.5">Choose which ad brought them in</p>
+                          </div>
+                        </label>
+
+                        {/* Hierarchical Ad Picker (shown when 'select' is chosen) */}
+                        {logAttribution === 'select' && (
+                          <div className="ml-4 max-h-64 overflow-y-auto bg-bg-dark rounded-lg border border-border">
+                            {logHierarchy.map((campaign) => {
+                              const isCampaignExpanded = logExpandedCampaigns.has(campaign.campaignId)
+                              return (
+                                <div key={campaign.campaignId}>
+                                  {/* Campaign Row */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newExpanded = new Set(logExpandedCampaigns)
+                                      if (isCampaignExpanded) {
+                                        newExpanded.delete(campaign.campaignId)
+                                      } else {
+                                        newExpanded.add(campaign.campaignId)
+                                      }
+                                      setLogExpandedCampaigns(newExpanded)
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/50 text-left"
+                                  >
+                                    {isCampaignExpanded ? (
+                                      <ChevronDown className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                                    )}
+                                    <span className="text-xs font-medium text-hierarchy-campaign truncate">{campaign.campaignName}</span>
+                                    <span className="text-xs text-zinc-600 ml-auto flex-shrink-0">
+                                      {campaign.adsets.reduce((sum, as) => sum + as.ads.length, 0)} ads
+                                    </span>
+                                  </button>
+
+                                  {/* Ad Sets (shown when campaign is expanded) */}
+                                  {isCampaignExpanded && (
+                                    <div className="border-l border-zinc-700 ml-5">
+                                      {campaign.adsets.map((adset) => {
+                                        const isAdsetExpanded = logExpandedAdsets.has(adset.adsetId)
+                                        return (
+                                          <div key={adset.adsetId}>
+                                            {/* Ad Set Row */}
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const newExpanded = new Set(logExpandedAdsets)
+                                                if (isAdsetExpanded) {
+                                                  newExpanded.delete(adset.adsetId)
+                                                } else {
+                                                  newExpanded.add(adset.adsetId)
+                                                }
+                                                setLogExpandedAdsets(newExpanded)
+                                              }}
+                                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/50 text-left"
+                                            >
+                                              {isAdsetExpanded ? (
+                                                <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                                              ) : (
+                                                <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                                              )}
+                                              <span className="text-xs font-medium text-hierarchy-adset truncate">{adset.adsetName}</span>
+                                              <span className="text-xs text-zinc-600 ml-auto flex-shrink-0">
+                                                {adset.ads.length} ads
+                                              </span>
+                                            </button>
+
+                                            {/* Ads (shown when adset is expanded) */}
+                                            {isAdsetExpanded && (
+                                              <div className="border-l border-zinc-700 ml-5">
+                                                {adset.ads.map((ad) => (
+                                                  <label
+                                                    key={ad.adId}
+                                                    className={cn(
+                                                      "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors",
+                                                      logSelectedAd === ad.adId
+                                                        ? "bg-accent/20"
+                                                        : "hover:bg-zinc-800/50"
+                                                    )}
+                                                  >
+                                                    <input
+                                                      type="radio"
+                                                      name="selectedAd"
+                                                      checked={logSelectedAd === ad.adId}
+                                                      onChange={() => setLogSelectedAd(ad.adId)}
+                                                      className="sr-only"
+                                                    />
+                                                    <div className={cn(
+                                                      "w-3 h-3 rounded-full border-2 flex-shrink-0",
+                                                      logSelectedAd === ad.adId ? "border-accent bg-accent" : "border-zinc-600"
+                                                    )}>
+                                                      {logSelectedAd === ad.adId && (
+                                                        <div className="w-full h-full rounded-full bg-white scale-50" />
+                                                      )}
+                                                    </div>
+                                                    <span className="flex-1 text-xs text-white truncate">{ad.adName}</span>
+                                                    <span className="text-xs text-zinc-500 flex-shrink-0">${ad.spend.toLocaleString()}</span>
+                                                    <span className="text-xs text-zinc-600 flex-shrink-0">{ad.spendPercentage}%</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">Notes (optional)</label>
+                    <input
+                      type="text"
+                      value={logNotes}
+                      onChange={(e) => setLogNotes(e.target.value)}
+                      placeholder="e.g., Walk-in customer, phone order"
+                      className="w-full px-4 py-3 bg-bg-dark border border-border rounded-xl text-white focus:outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => handleLogEvent(showLogModal)}
+                    disabled={logLoading || (logAttribution === 'select' && !logSelectedAd)}
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-colors"
+                  >
+                    {logLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Log Event'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

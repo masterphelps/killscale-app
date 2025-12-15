@@ -18,6 +18,16 @@ export default function LoginPage() {
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const router = useRouter()
 
+  // Determine redirect based on current subdomain
+  const getRedirectPath = () => {
+    if (typeof window === 'undefined') return '/dashboard'
+    const subdomain = window.location.hostname.split('.')[0]
+    // On client subdomain, redirect to client portal
+    if (subdomain === 'client') return '/client'
+    // Default to dashboard for main app
+    return '/dashboard'
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -32,7 +42,7 @@ export default function LoginPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push('/dashboard')
+      router.push(getRedirectPath())
     }
   }
 
@@ -43,7 +53,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}${getRedirectPath()}`,
       },
     })
 

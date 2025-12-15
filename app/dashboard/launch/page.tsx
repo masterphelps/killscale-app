@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X } from 'lucide-react'
+import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { LaunchWizard } from '@/components/launch-wizard'
 import { DeleteEntityModal } from '@/components/confirm-modal'
 import { CreativePreviewTooltip } from '@/components/creative-preview-tooltip'
+import { EditEntityModal } from '@/components/edit-entity-modal'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -100,6 +101,16 @@ export default function LaunchPage() {
     previewUrl: string
     mediaType: 'image' | 'video' | 'unknown'
     name: string
+  } | null>(null)
+
+  // Edit modal state
+  const [editModal, setEditModal] = useState<{
+    isOpen: boolean
+    entityType: 'campaign' | 'adset' | 'ad'
+    entityId: string
+    entityName: string
+    campaignName?: string
+    adsetId?: string
   } | null>(null)
 
   // Explorer state
@@ -694,6 +705,18 @@ export default function LaunchPage() {
                         )}
                       </button>
                       <button
+                        onClick={() => setEditModal({
+                          isOpen: true,
+                          entityType: 'campaign',
+                          entityId: campaign.id,
+                          entityName: campaign.name
+                        })}
+                        className="p-2 text-zinc-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
+                        title="Edit campaign"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => {
                           const adSetCount = adSetsData[campaign.id]?.length || 0
                           const adCount = Object.values(adsData)
@@ -804,6 +827,19 @@ export default function LaunchPage() {
                                     ) : (
                                       <Pause className="w-4 h-4" />
                                     )}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditModal({
+                                      isOpen: true,
+                                      entityType: 'adset',
+                                      entityId: adSet.id,
+                                      entityName: adSet.name,
+                                      campaignName: campaign.name
+                                    })}
+                                    className="p-1.5 text-zinc-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
+                                    title="Edit ad set"
+                                  >
+                                    <Pencil className="w-4 h-4" />
                                   </button>
                                   <button
                                     onClick={() => {
@@ -925,6 +961,20 @@ export default function LaunchPage() {
                                                 )}
                                               </button>
                                               <button
+                                                onClick={() => setEditModal({
+                                                  isOpen: true,
+                                                  entityType: 'ad',
+                                                  entityId: ad.id,
+                                                  entityName: ad.name,
+                                                  campaignName: campaign.name,
+                                                  adsetId: adSet.id
+                                                })}
+                                                className="p-1.5 text-zinc-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
+                                                title="Edit ad"
+                                              >
+                                                <Pencil className="w-4 h-4" />
+                                              </button>
+                                              <button
                                                 onClick={() => setDeleteModal({
                                                   isOpen: true,
                                                   entityId: ad.id,
@@ -967,6 +1017,19 @@ export default function LaunchPage() {
         entityType={deleteModal?.entityType || 'campaign'}
         childCount={deleteModal?.childCount}
         isLoading={deleting}
+      />
+
+      {/* Edit Modal */}
+      <EditEntityModal
+        isOpen={editModal?.isOpen || false}
+        onClose={() => setEditModal(null)}
+        entityType={editModal?.entityType || 'campaign'}
+        entityId={editModal?.entityId || ''}
+        entityName={editModal?.entityName || ''}
+        campaignName={editModal?.campaignName}
+        adsetId={editModal?.adsetId}
+        userId={user?.id || ''}
+        onUpdate={loadCampaigns}
       />
 
       {/* Creative Full Preview Modal */}

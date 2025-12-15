@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock } from 'lucide-react'
+import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
 
 type Workspace = {
   id: string
@@ -21,6 +22,24 @@ type WorkspaceAccount = {
   ad_account_id: string
   ad_account_name: string
   currency: string
+}
+
+type WorkspaceMember = {
+  id: string
+  userId: string
+  email: string
+  role: string
+  canLogWalkins: boolean
+  joinedAt: string
+}
+
+type WorkspaceInvite = {
+  id: string
+  email: string
+  role: string
+  canLogWalkins: boolean
+  inviteUrl: string
+  expiresAt: string
 }
 
 // Workspace limits per tier
@@ -48,6 +67,17 @@ export default function WorkspacesPage() {
   const [editingName, setEditingName] = useState('')
   const [addingToWorkspace, setAddingToWorkspace] = useState<string | null>(null)
   const [error, setError] = useState('')
+
+  // Member management state (Agency only)
+  const [workspaceMembers, setWorkspaceMembers] = useState<Record<string, WorkspaceMember[]>>({})
+  const [workspaceInvites, setWorkspaceInvites] = useState<Record<string, WorkspaceInvite[]>>({})
+  const [expandedTeam, setExpandedTeam] = useState<string | null>(null)
+  const [invitingToWorkspace, setInvitingToWorkspace] = useState<string | null>(null)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('viewer')
+  const [inviteCanLogWalkins, setInviteCanLogWalkins] = useState(true)
+  const [sendingInvite, setSendingInvite] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
 
   const workspaceLimit = WORKSPACE_LIMITS[plan] || 0
   const canCreateWorkspace = workspaces.length < workspaceLimit
@@ -219,6 +249,134 @@ export default function WorkspacesPage() {
     const existingIds = workspaceAccounts[workspaceId]?.map(a => a.ad_account_id) || []
     return accounts.filter(a => !existingIds.includes(a.id))
   }
+
+  // Agency-only: Load members and invites for a workspace
+  const loadTeamData = async (workspaceId: string) => {
+    if (!user?.id || plan !== 'Agency') return
+
+    try {
+      // Load members
+      const membersRes = await fetch(`/api/workspace/members?workspaceId=${workspaceId}&userId=${user.id}`)
+      const membersData = await membersRes.json()
+      if (membersData.members) {
+        setWorkspaceMembers(prev => ({ ...prev, [workspaceId]: membersData.members }))
+      }
+
+      // Load invites
+      const invitesRes = await fetch(`/api/workspace/invite?workspaceId=${workspaceId}&userId=${user.id}`)
+      const invitesData = await invitesRes.json()
+      if (invitesData.invites) {
+        setWorkspaceInvites(prev => ({ ...prev, [workspaceId]: invitesData.invites }))
+      }
+    } catch (err) {
+      console.error('Failed to load team data:', err)
+    }
+  }
+
+  // Load team data when expanding
+  useEffect(() => {
+    if (expandedTeam) {
+      loadTeamData(expandedTeam)
+    }
+  }, [expandedTeam])
+
+  const handleSendInvite = async (workspaceId: string) => {
+    if (!user?.id || !inviteEmail.trim()) return
+
+    setSendingInvite(true)
+    try {
+      const res = await fetch('/api/workspace/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          userId: user.id,
+          email: inviteEmail.trim(),
+          role: inviteRole,
+          canLogWalkins: inviteCanLogWalkins
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Failed to send invite')
+        return
+      }
+
+      // Add to invites list
+      setWorkspaceInvites(prev => ({
+        ...prev,
+        [workspaceId]: [
+          ...(prev[workspaceId] || []),
+          {
+            id: data.invite.id,
+            email: data.invite.email,
+            role: data.invite.role,
+            canLogWalkins: inviteCanLogWalkins,
+            inviteUrl: data.invite.inviteUrl,
+            expiresAt: data.invite.expiresAt
+          }
+        ]
+      }))
+
+      // Reset form
+      setInviteEmail('')
+      setInviteRole('viewer')
+      setInviteCanLogWalkins(true)
+      setInvitingToWorkspace(null)
+    } catch (err) {
+      setError('Failed to send invite')
+    } finally {
+      setSendingInvite(false)
+    }
+  }
+
+  const handleCancelInvite = async (workspaceId: string, inviteId: string) => {
+    if (!user?.id) return
+
+    try {
+      const res = await fetch(`/api/workspace/invite?inviteId=${inviteId}&userId=${user.id}`, {
+        method: 'DELETE'
+      })
+
+      if (res.ok) {
+        setWorkspaceInvites(prev => ({
+          ...prev,
+          [workspaceId]: prev[workspaceId]?.filter(inv => inv.id !== inviteId) || []
+        }))
+      }
+    } catch (err) {
+      console.error('Failed to cancel invite:', err)
+    }
+  }
+
+  const handleRemoveMember = async (workspaceId: string, memberId: string) => {
+    if (!user?.id || !confirm('Remove this member?')) return
+
+    try {
+      const res = await fetch(`/api/workspace/members?memberId=${memberId}&userId=${user.id}`, {
+        method: 'DELETE'
+      })
+
+      if (res.ok) {
+        setWorkspaceMembers(prev => ({
+          ...prev,
+          [workspaceId]: prev[workspaceId]?.filter(m => m.id !== memberId) || []
+        }))
+      }
+    } catch (err) {
+      console.error('Failed to remove member:', err)
+    }
+  }
+
+  const copyInviteLink = async (inviteUrl: string, inviteId: string) => {
+    await navigator.clipboard.writeText(inviteUrl)
+    setCopiedInvite(inviteId)
+    setTimeout(() => setCopiedInvite(null), 2000)
+  }
+
+  const isAgency = plan === 'Agency'
 
   if (loading) {
     return (
@@ -512,6 +670,153 @@ export default function WorkspacesPage() {
                     </p>
                   )}
                 </div>
+
+                {/* Team Management (Agency only) */}
+                {isAgency && (
+                  <div className="border-t border-border">
+                    <button
+                      onClick={() => setExpandedTeam(expandedTeam === workspace.id ? null : workspace.id)}
+                      className="w-full p-4 flex items-center justify-between hover:bg-bg-hover/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-purple-400" />
+                        <span className="text-sm font-medium">Team Members</span>
+                        {((workspaceMembers[workspace.id]?.length || 0) + (workspaceInvites[workspace.id]?.length || 0)) > 0 && (
+                          <span className="text-xs text-zinc-500">
+                            ({workspaceMembers[workspace.id]?.length || 0} members{workspaceInvites[workspace.id]?.length ? `, ${workspaceInvites[workspace.id].length} pending` : ''})
+                          </span>
+                        )}
+                      </div>
+                      {expandedTeam === workspace.id ? (
+                        <ChevronUp className="w-4 h-4 text-zinc-500" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-zinc-500" />
+                      )}
+                    </button>
+
+                    {expandedTeam === workspace.id && (
+                      <div className="p-4 pt-0 space-y-3">
+                        {/* Owner */}
+                        <div className="p-3 bg-bg-dark rounded-lg flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">{user?.email}</span>
+                            <span className="px-2 py-0.5 text-xs rounded bg-accent/20 text-accent">Owner</span>
+                          </div>
+                        </div>
+
+                        {/* Members */}
+                        {workspaceMembers[workspace.id]?.map((member) => (
+                          <div key={member.id} className="p-3 bg-bg-dark rounded-lg flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">{member.email}</span>
+                              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-400 capitalize">{member.role}</span>
+                              {member.canLogWalkins && (
+                                <span className="px-2 py-0.5 text-xs rounded bg-emerald-500/20 text-emerald-400">Walk-ins</span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => handleRemoveMember(workspace.id, member.id)}
+                              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Pending Invites */}
+                        {workspaceInvites[workspace.id]?.map((invite) => (
+                          <div key={invite.id} className="p-3 bg-bg-dark rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-zinc-400">{invite.email}</span>
+                                <span className="px-2 py-0.5 text-xs rounded bg-yellow-500/20 text-yellow-400">Pending</span>
+                              </div>
+                              <button
+                                onClick={() => handleCancelInvite(workspace.id, invite.id)}
+                                className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => copyInviteLink(invite.inviteUrl, invite.id)}
+                              className="text-xs text-accent hover:text-accent-hover flex items-center gap-1"
+                            >
+                              {copiedInvite === invite.id ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  Copy invite link
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Invite Form */}
+                        {invitingToWorkspace === workspace.id ? (
+                          <div className="space-y-3 p-3 bg-purple-500/5 border border-purple-500/20 rounded-lg">
+                            <input
+                              type="email"
+                              value={inviteEmail}
+                              onChange={(e) => setInviteEmail(e.target.value)}
+                              placeholder="Email address"
+                              className="w-full px-3 py-2 bg-bg-dark border border-border rounded-lg text-sm text-white focus:outline-none focus:border-accent"
+                            />
+                            <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={inviteCanLogWalkins}
+                                  onChange={(e) => setInviteCanLogWalkins(e.target.checked)}
+                                  className="rounded border-zinc-600"
+                                />
+                                <span className="text-zinc-400">Can log walk-ins</span>
+                              </label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleSendInvite(workspace.id)}
+                                disabled={sendingInvite || !inviteEmail.trim()}
+                                className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                              >
+                                {sendingInvite ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <UserPlus className="w-4 h-4" />
+                                    Send Invite
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setInvitingToWorkspace(null)
+                                  setInviteEmail('')
+                                }}
+                                className="p-2 text-zinc-500 hover:text-white transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setInvitingToWorkspace(workspace.id)}
+                            className="w-full py-2 border border-dashed border-purple-500/30 hover:border-purple-500 rounded-lg text-sm text-purple-400 hover:text-purple-300 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            Invite Client
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
