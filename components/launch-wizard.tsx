@@ -1138,6 +1138,47 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 <span>→</span>
               </a>
             </div>
+
+            {/* Test API button */}
+            <div className="pt-4 border-t border-zinc-800">
+              <button
+                onClick={loadLeadForms}
+                disabled={loadingLeadForms}
+                className="text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-2"
+              >
+                {loadingLeadForms ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Testing API...</span>
+                  </>
+                ) : (
+                  <span>Try loading forms automatically</span>
+                )}
+              </button>
+              {leadFormsError && (
+                <p className="text-xs text-red-400 mt-2">{leadFormsError}</p>
+              )}
+              {leadForms.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-green-400">Found {leadForms.length} form(s):</p>
+                  {leadForms.map((form) => (
+                    <button
+                      key={form.id}
+                      onClick={() => setState(s => ({ ...s, selectedFormId: form.id }))}
+                      className={cn(
+                        "w-full p-3 rounded-lg border text-left transition-all text-sm",
+                        state.selectedFormId === form.id
+                          ? "border-accent bg-accent/10"
+                          : "border-zinc-700 hover:border-zinc-600"
+                      )}
+                    >
+                      <p className="font-medium text-white">{form.name}</p>
+                      <p className="text-xs text-zinc-500">ID: {form.id}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )
 
