@@ -265,6 +265,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [loadingPixelEvents, setLoadingPixelEvents] = useState(false)
   const [leadForms, setLeadForms] = useState<LeadForm[]>([])
   const [loadingLeadForms, setLoadingLeadForms] = useState(false)
+  const [leadFormsError, setLeadFormsError] = useState<string | null>(null)
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(null)
 
@@ -381,9 +382,17 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     if (!user || !state.pageId) return
 
     setLoadingLeadForms(true)
+    setLeadFormsError(null)
     try {
       const res = await fetch(`/api/meta/lead-forms?userId=${user.id}&pageId=${state.pageId}`)
       const data = await res.json()
+
+      if (data.error) {
+        console.error('Lead forms API error:', data.error)
+        setLeadFormsError(data.error)
+        setLeadForms([])
+        return
+      }
 
       if (data.forms) {
         setLeadForms(data.forms)
@@ -394,6 +403,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       }
     } catch (err) {
       console.error('Failed to load lead forms:', err)
+      setLeadFormsError('Failed to load forms')
       setLeadForms([])
     } finally {
       setLoadingLeadForms(false)
@@ -1101,6 +1111,11 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 <div className="w-full bg-bg-dark border border-border rounded-lg px-4 py-8 text-zinc-500 flex flex-col items-center gap-2">
                   <Loader2 className="w-6 h-6 animate-spin" />
                   <span>Loading forms...</span>
+                </div>
+              ) : leadFormsError ? (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                  <p className="text-sm text-red-400 font-medium mb-1">Error loading forms</p>
+                  <p className="text-xs text-zinc-400">{leadFormsError}</p>
                 </div>
               ) : leadForms.length > 0 ? (
                 <div className="space-y-2">

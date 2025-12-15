@@ -52,32 +52,38 @@ export async function GET(request: NextRequest) {
     const userAccessToken = connection.access_token
 
     // First, get the Page access token from /me/accounts
+    console.log('Fetching page access token for page:', pageId)
     const pagesResponse = await fetch(
       `https://graph.facebook.com/v18.0/me/accounts?` +
-      `fields=id,access_token&` +
+      `fields=id,name,access_token&` +
       `access_token=${userAccessToken}`
     )
     const pagesResult = await pagesResponse.json()
 
+    console.log('Pages response:', JSON.stringify(pagesResult, null, 2))
+
     if (pagesResult.error) {
       console.error('Failed to fetch pages:', pagesResult.error)
       return NextResponse.json({
-        error: 'Failed to get page access token'
+        error: `Failed to get pages: ${pagesResult.error.message}`
       }, { status: 400 })
     }
 
     // Find the page access token for the requested page
     const page = pagesResult.data?.find((p: { id: string }) => p.id === pageId)
+    console.log('Looking for page:', pageId, 'Found:', page?.id, page?.name)
+
     if (!page?.access_token) {
-      console.error('Page not found or no access token:', pageId)
+      console.error('Page not found or no access token. Available pages:', pagesResult.data?.map((p: { id: string; name: string }) => `${p.id} (${p.name})`))
       return NextResponse.json({
-        error: 'Page not found or insufficient permissions'
+        error: `Page ${pageId} not found in your accounts. You may need to reconnect with page permissions.`
       }, { status: 403 })
     }
 
     const pageAccessToken = page.access_token
 
     // Fetch lead gen forms from the Page using the Page access token
+    console.log('Fetching lead forms for page:', pageId)
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?` +
       `fields=id,name,status,questions,created_time,locale&` +
@@ -85,6 +91,7 @@ export async function GET(request: NextRequest) {
     )
 
     const result = await response.json()
+    console.log('Lead forms response:', JSON.stringify(result, null, 2))
 
     if (result.error) {
       console.error('Lead forms fetch error:', result.error)
