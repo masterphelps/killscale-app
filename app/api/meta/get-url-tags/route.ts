@@ -51,13 +51,33 @@ export async function GET(request: NextRequest) {
     }
 
     // url_tags location varies by creative type:
-    // - link_data: directly in link_data.url_tags
-    // - video_data: inside call_to_action.value.url_tags
+    // - link_data: stored as url_tags field
+    // - video_data: NOT a separate field - embedded in the CTA link URL as query params
     const objectStorySpec = result.creative?.object_story_spec
     const linkData = objectStorySpec?.link_data
     const videoData = objectStorySpec?.video_data
-    const urlTags = linkData?.url_tags || videoData?.call_to_action?.value?.url_tags || ''
     const creativeId = result.creative?.id || null
+
+    let urlTags = ''
+    if (linkData?.url_tags) {
+      // For image/link ads, url_tags is a direct field
+      urlTags = linkData.url_tags
+    } else if (videoData?.call_to_action?.value?.link) {
+      // For video ads, extract UTM params from the CTA link URL
+      try {
+        const ctaUrl = new URL(videoData.call_to_action.value.link)
+        // Extract only UTM params from the query string
+        const utmParams: string[] = []
+        ctaUrl.searchParams.forEach((value, key) => {
+          if (key.startsWith('utm_')) {
+            utmParams.push(`${key}=${value}`)
+          }
+        })
+        urlTags = utmParams.join('&')
+      } catch {
+        // Invalid URL, leave urlTags empty
+      }
+    }
 
     console.log('[get-url-tags] Extracted url_tags:', urlTags)
 

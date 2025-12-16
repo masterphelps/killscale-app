@@ -59,27 +59,39 @@ export async function POST(request: NextRequest) {
     const objectStorySpec = { ...existingCreative.object_story_spec }
 
     // Update url_tags in the appropriate location
-    // - For link_data: url_tags goes directly in link_data
-    // - For video_data: url_tags goes inside call_to_action.value
+    // - For link_data: url_tags goes directly in link_data as a separate field
+    // - For video_data: url_tags is NOT supported - must append to the CTA link directly
     if (objectStorySpec.link_data) {
       objectStorySpec.link_data = {
         ...objectStorySpec.link_data,
         url_tags: urlTags
       }
     } else if (objectStorySpec.video_data) {
-      // For video ads, url_tags must be in call_to_action.value
-      if (!objectStorySpec.video_data.call_to_action?.value) {
+      // For video ads, url_tags is NOT supported as a field
+      // Instead, we must append UTM params directly to the CTA link URL
+      if (!objectStorySpec.video_data.call_to_action?.value?.link) {
         return NextResponse.json({
           error: 'Video ad does not have a call-to-action link to add URL tags to'
         }, { status: 400 })
       }
+
+      // Get the base URL (strip any existing query params to replace them)
+      let baseUrl = objectStorySpec.video_data.call_to_action.value.link
+      const urlObj = new URL(baseUrl)
+      // Keep the base URL without query string - we'll add fresh UTM params
+      baseUrl = `${urlObj.origin}${urlObj.pathname}`
+
+      // Append the new URL tags
+      const separator = '?'
+      const newLink = urlTags ? `${baseUrl}${separator}${urlTags}` : baseUrl
+
       objectStorySpec.video_data = {
         ...objectStorySpec.video_data,
         call_to_action: {
           ...objectStorySpec.video_data.call_to_action,
           value: {
             ...objectStorySpec.video_data.call_to_action.value,
-            url_tags: urlTags
+            link: newLink
           }
         }
       }
