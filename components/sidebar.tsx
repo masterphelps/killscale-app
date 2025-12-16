@@ -40,7 +40,7 @@ interface Workspace {
 }
 
 const navItems = [
-  { href: '/dashboard/launch', label: 'Launch', icon: Rocket },
+  { href: '/dashboard/launch', label: 'Campaigns', icon: Rocket },
   { href: '/dashboard/performance', label: 'Performance', icon: BarChart3 },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
