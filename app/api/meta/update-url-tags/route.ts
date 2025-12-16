@@ -35,11 +35,10 @@ export async function POST(request: NextRequest) {
     }
 
     const accessToken = connection.access_token
-    const cleanAdAccountId = adAccountId.replace('act_', '')
 
-    // Step 1: Fetch the ad to get the creative ID and its full spec
-    console.log('[update-url-tags] Step 1: Fetching ad and creative...')
-    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,creative{id,name,object_story_spec}&access_token=${accessToken}`
+    // Step 1: Fetch the ad to get the creative ID
+    console.log('[update-url-tags] Step 1: Fetching ad to get creative ID...')
+    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,creative{id}&access_token=${accessToken}`
     const adResponse = await fetch(adUrl)
     const adResult = await adResponse.json()
 
@@ -48,124 +47,179 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: adResult.error.message }, { status: 400 })
     }
 
-    const existingCreative = adResult.creative
-    if (!existingCreative?.object_story_spec) {
+    const creativeId = adResult.creative?.id
+    if (!creativeId) {
       return NextResponse.json({ error: 'Could not find creative for this ad' }, { status: 400 })
     }
 
-    console.log('[update-url-tags] Existing creative:', JSON.stringify(existingCreative, null, 2))
+    console.log('[update-url-tags] Found creative ID:', creativeId)
 
-    // Step 2: Build new object_story_spec with updated url_tags
-    const objectStorySpec = { ...existingCreative.object_story_spec }
-
-    // Update url_tags in the appropriate location
-    // - For link_data: url_tags goes directly in link_data as a separate field
-    // - For video_data: url_tags is NOT supported - must append to the CTA link directly
-    if (objectStorySpec.link_data) {
-      objectStorySpec.link_data = {
-        ...objectStorySpec.link_data,
-        url_tags: urlTags
-      }
-    } else if (objectStorySpec.video_data) {
-      // For video ads, url_tags is NOT supported as a field
-      // Instead, we must append UTM params directly to the CTA link URL
-      if (!objectStorySpec.video_data.call_to_action?.value?.link) {
-        return NextResponse.json({
-          error: 'Video ad does not have a call-to-action link to add URL tags to'
-        }, { status: 400 })
-      }
-
-      // Get the base URL (strip any existing query params to replace them)
-      let baseUrl = objectStorySpec.video_data.call_to_action.value.link
-      const urlObj = new URL(baseUrl)
-      // Keep the base URL without query string - we'll add fresh UTM params
-      baseUrl = `${urlObj.origin}${urlObj.pathname}`
-
-      // Append the new URL tags
-      const separator = '?'
-      const newLink = urlTags ? `${baseUrl}${separator}${urlTags}` : baseUrl
-
-      objectStorySpec.video_data = {
-        ...objectStorySpec.video_data,
-        call_to_action: {
-          ...objectStorySpec.video_data.call_to_action,
-          value: {
-            ...objectStorySpec.video_data.call_to_action.value,
-            link: newLink
-          }
-        }
-      }
-
-      // Meta API error: "Only one of image_url and image_hash should be specified"
-      // When both exist, keep image_hash and remove image_url
-      if (objectStorySpec.video_data.image_url && objectStorySpec.video_data.image_hash) {
-        delete objectStorySpec.video_data.image_url
-      }
-    } else {
-      return NextResponse.json({ error: 'Unsupported creative type for URL tags' }, { status: 400 })
-    }
-
-    console.log('[update-url-tags] Step 2: New object_story_spec:', JSON.stringify(objectStorySpec, null, 2))
-
-    // Step 3: Create a new creative with the updated url_tags
-    console.log('[update-url-tags] Step 3: Creating new creative...')
-    const createCreativeUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`
-    const creativePayload = {
-      name: `${existingCreative.name || 'Creative'} - Updated UTMs`,
-      object_story_spec: objectStorySpec,
-      access_token: accessToken
-    }
-
-    const createCreativeResponse = await fetch(createCreativeUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(creativePayload)
-    })
-
-    const createCreativeResult = await createCreativeResponse.json()
-
-    if (createCreativeResult.error) {
-      console.error('[update-url-tags] Error creating creative:', createCreativeResult.error)
-      return NextResponse.json({
-        error: createCreativeResult.error.message || 'Failed to create new creative'
-      }, { status: 400 })
-    }
-
-    const newCreativeId = createCreativeResult.id
-    console.log('[update-url-tags] New creative created:', newCreativeId)
-
-    // Step 4: Update the ad to use the new creative
-    console.log('[update-url-tags] Step 4: Updating ad to use new creative...')
-    const updateAdUrl = `https://graph.facebook.com/v18.0/${adId}`
-    const updateAdResponse = await fetch(updateAdUrl, {
+    // Step 2: Try to update url_tags directly on the existing creative
+    // url_tags is a write-only field on creatives - we can POST to update it
+    console.log('[update-url-tags] Step 2: Updating url_tags on creative...')
+    const updateCreativeUrl = `https://graph.facebook.com/v18.0/${creativeId}`
+    const updateCreativeResponse = await fetch(updateCreativeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        creative: { creative_id: newCreativeId },
+        url_tags: urlTags,
         access_token: accessToken
       })
     })
 
-    const updateAdResult = await updateAdResponse.json()
+    const updateCreativeResult = await updateCreativeResponse.json()
+    console.log('[update-url-tags] Update creative result:', JSON.stringify(updateCreativeResult, null, 2))
 
-    if (updateAdResult.error) {
-      console.error('[update-url-tags] Error updating ad:', updateAdResult.error)
-      return NextResponse.json({
-        error: updateAdResult.error.message || 'Failed to update ad with new creative'
-      }, { status: 400 })
+    if (updateCreativeResult.error) {
+      console.error('[update-url-tags] Error updating creative url_tags:', updateCreativeResult.error)
+
+      // If direct update fails, fall back to the old method of creating a new creative
+      console.log('[update-url-tags] Falling back to creating new creative...')
+      return await createNewCreativeWithUrlTags(
+        adId,
+        adAccountId,
+        urlTags,
+        accessToken,
+        adResult.creative
+      )
     }
 
-    console.log('[update-url-tags] Ad updated successfully')
+    console.log('[update-url-tags] Creative url_tags updated successfully')
 
     return NextResponse.json({
       success: true,
       message: 'URL tags updated successfully',
       urlTags,
-      newCreativeId
+      creativeId
     })
 
   } catch (err) {
     console.error('Update URL tags error:', err)
     return NextResponse.json({ error: 'Failed to update URL tags' }, { status: 500 })
   }
+}
+
+// Fallback method: Create a new creative with url_tags and update the ad
+async function createNewCreativeWithUrlTags(
+  adId: string,
+  adAccountId: string,
+  urlTags: string,
+  accessToken: string,
+  existingCreativeRef: { id: string }
+) {
+  const cleanAdAccountId = adAccountId.replace('act_', '')
+
+  // Fetch full creative spec
+  console.log('[update-url-tags] Fallback: Fetching full creative spec...')
+  const creativeUrl = `https://graph.facebook.com/v18.0/${existingCreativeRef.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
+  const creativeResponse = await fetch(creativeUrl)
+  const existingCreative = await creativeResponse.json()
+
+  if (existingCreative.error || !existingCreative.object_story_spec) {
+    return NextResponse.json({
+      error: existingCreative.error?.message || 'Could not fetch creative details'
+    }, { status: 400 })
+  }
+
+  console.log('[update-url-tags] Fallback: Existing creative:', JSON.stringify(existingCreative, null, 2))
+
+  // Build new object_story_spec
+  const objectStorySpec = { ...existingCreative.object_story_spec }
+
+  if (objectStorySpec.link_data) {
+    objectStorySpec.link_data = {
+      ...objectStorySpec.link_data,
+      url_tags: urlTags
+    }
+  } else if (objectStorySpec.video_data) {
+    // For video ads, append UTM params to the CTA link
+    if (!objectStorySpec.video_data.call_to_action?.value?.link) {
+      return NextResponse.json({
+        error: 'Video ad does not have a call-to-action link'
+      }, { status: 400 })
+    }
+
+    let baseUrl = objectStorySpec.video_data.call_to_action.value.link
+    try {
+      const urlObj = new URL(baseUrl)
+      baseUrl = `${urlObj.origin}${urlObj.pathname}`
+    } catch {
+      // Keep original if URL parsing fails
+    }
+
+    const newLink = urlTags ? `${baseUrl}?${urlTags}` : baseUrl
+
+    objectStorySpec.video_data = {
+      ...objectStorySpec.video_data,
+      call_to_action: {
+        ...objectStorySpec.video_data.call_to_action,
+        value: {
+          ...objectStorySpec.video_data.call_to_action.value,
+          link: newLink
+        }
+      }
+    }
+
+    // Remove duplicate image fields
+    if (objectStorySpec.video_data.image_url && objectStorySpec.video_data.image_hash) {
+      delete objectStorySpec.video_data.image_url
+    }
+  } else {
+    return NextResponse.json({ error: 'Unsupported creative type' }, { status: 400 })
+  }
+
+  console.log('[update-url-tags] Fallback: New object_story_spec:', JSON.stringify(objectStorySpec, null, 2))
+
+  // Create new creative
+  const createCreativeUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`
+  const createCreativeResponse = await fetch(createCreativeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: `${existingCreative.name || 'Creative'} - Updated UTMs`,
+      object_story_spec: objectStorySpec,
+      access_token: accessToken
+    })
+  })
+
+  const createCreativeResult = await createCreativeResponse.json()
+
+  if (createCreativeResult.error) {
+    console.error('[update-url-tags] Fallback: Error creating creative:', createCreativeResult.error)
+    return NextResponse.json({
+      error: createCreativeResult.error.message || 'Failed to create new creative'
+    }, { status: 400 })
+  }
+
+  const newCreativeId = createCreativeResult.id
+  console.log('[update-url-tags] Fallback: New creative created:', newCreativeId)
+
+  // Update ad to use new creative
+  const updateAdUrl = `https://graph.facebook.com/v18.0/${adId}`
+  const updateAdResponse = await fetch(updateAdUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      creative: { creative_id: newCreativeId },
+      access_token: accessToken
+    })
+  })
+
+  const updateAdResult = await updateAdResponse.json()
+
+  if (updateAdResult.error) {
+    console.error('[update-url-tags] Fallback: Error updating ad:', updateAdResult.error)
+    return NextResponse.json({
+      error: updateAdResult.error.message || 'Failed to update ad'
+    }, { status: 400 })
+  }
+
+  console.log('[update-url-tags] Fallback: Ad updated successfully')
+
+  return NextResponse.json({
+    success: true,
+    message: 'URL tags updated successfully (via new creative)',
+    urlTags,
+    newCreativeId
+  })
 }
