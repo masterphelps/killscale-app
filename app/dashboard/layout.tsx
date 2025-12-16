@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuth } from '@/lib/auth'
+import { useSubscription } from '@/lib/subscription'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { Sidebar } from '@/components/sidebar'
@@ -15,6 +16,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const { user, loading } = useAuth()
+  const { plan, loading: subLoading } = useSubscription()
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Track if we've completed initial auth check - prevents flash on tab switch
@@ -36,6 +38,13 @@ export default function DashboardLayout({
     }
   }, [user, loading, router])
 
+  // Subscription gate: redirect to account page if no active subscription
+  useEffect(() => {
+    if (!loading && !subLoading && user && plan === 'None') {
+      router.push('/account')
+    }
+  }, [user, loading, plan, subLoading, router])
+
   useEffect(() => {
     setSidebarOpen(false)
   }, [children])
@@ -52,7 +61,7 @@ export default function DashboardLayout({
   }, [sidebarOpen])
 
   // Only show loading screen on initial auth check, not on tab switches
-  if (loading && !hasAuthChecked.current) {
+  if ((loading || subLoading) && !hasAuthChecked.current) {
     return (
       <div className="min-h-screen bg-bg-dark flex items-center justify-center">
         <div className="text-zinc-500">Loading...</div>

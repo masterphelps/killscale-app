@@ -225,7 +225,9 @@ export default function PricingPage() {
                   >
                     {loading === plan.name
                       ? 'Loading...'
-                      : `Get ${plan.name}`}
+                      : plan.name === 'Launch'
+                        ? 'Start 7-Day Trial'
+                        : 'Sign Up'}
                   </button>
                 ) : (
                   <Link

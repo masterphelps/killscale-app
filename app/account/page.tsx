@@ -357,10 +357,14 @@ export default function AccountPage() {
       {/* Navigation */}
       <nav className="border-b border-border">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-2 text-zinc-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </Link>
+          {['Launch', 'Scale', 'Pro'].includes(plan) ? (
+            <Link href="/dashboard" className="flex items-center gap-2 text-zinc-400 hover:text-white">
+              <ArrowLeft className="w-4 h-4" />
+              Back to Dashboard
+            </Link>
+          ) : (
+            <div /> // Empty div for flex spacing
+          )}
           <div className="flex items-center gap-2">
             <svg width="160" height="36" viewBox="0 0 280 50">
               <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a" />
@@ -444,228 +448,252 @@ export default function AccountPage() {
             </div>
 
             {/* Subscription & Billing Section */}
-            <div className="bg-bg-card border border-border rounded-xl p-6">
+            <div className={`bg-bg-card border rounded-xl p-6 ${
+              plan === 'None' ? 'border-accent' : 'border-border'
+            }`}>
               <div className="flex items-center gap-3 mb-4">
                 <CreditCard className="w-5 h-5 text-accent" />
                 <h2 className="text-lg font-semibold">Subscription & Billing</h2>
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg">
-                  <div>
-                    <div className="text-white font-medium">{plan} Plan</div>
-                    <div className="text-sm text-zinc-500">
-                      {planFeatures[plan] || 'Basic features'}
-                    </div>
+                {plan === 'None' ? (
+                  // Non-subscriber: Prominent CTA
+                  <div className="text-center py-4">
+                    <p className="text-zinc-400 mb-4">
+                      Start your 7-day free trial to access KillScale
+                    </p>
+                    <Link
+                      href="/pricing"
+                      className="inline-block w-full px-6 py-4 text-lg font-semibold bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
+                    >
+                      Try/Subscribe
+                    </Link>
                   </div>
-                  <Link
-                    href="/pricing"
-                    className="px-4 py-2 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
-                  >
-                    {['Launch', 'Scale', 'Pro'].includes(plan) ? 'Change Plan' : 'Subscribe'}
-                  </Link>
-                </div>
+                ) : (
+                  // Subscriber: Normal display
+                  <>
+                    <div className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg">
+                      <div>
+                        <div className="text-white font-medium">{plan} Plan</div>
+                        <div className="text-sm text-zinc-500">
+                          {planFeatures[plan] || 'Basic features'}
+                        </div>
+                      </div>
+                      <Link
+                        href="/pricing"
+                        className="px-4 py-2 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
+                      >
+                        Change Plan
+                      </Link>
+                    </div>
 
-                {['Launch', 'Scale', 'Pro'].includes(plan) && (
-                  <button
-                    onClick={handleOpenBillingPortal}
-                    disabled={billingLoading}
-                    className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors flex items-center justify-center gap-2"
-                  >
-                    {billingLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ExternalLink className="w-4 h-4" />
-                    )}
-                    Manage Billing & Invoices
-                  </button>
+                    <button
+                      onClick={handleOpenBillingPortal}
+                      disabled={billingLoading}
+                      className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {billingLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ExternalLink className="w-4 h-4" />
+                      )}
+                      Manage Billing & Invoices
+                    </button>
+                  </>
                 )}
               </div>
             </div>
 
-            {/* Usage & Limits Section */}
-            <div className="bg-bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <BarChart3 className="w-5 h-5 text-accent" />
-                <h2 className="text-lg font-semibold">Usage & Limits</h2>
-              </div>
-
-              <div className="space-y-4">
-                {/* Campaigns usage */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-zinc-400">Campaigns</span>
-                    <span className="text-sm text-white">
-                      {usage.campaignCount} / {limits.campaigns ?? '∞'}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-bg-dark rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-accent rounded-full transition-all"
-                      style={{
-                        width: limits.campaigns
-                          ? `${Math.min((usage.campaignCount / limits.campaigns) * 100, 100)}%`
-                          : '10%'
-                      }}
-                    />
-                  </div>
+            {/* Usage & Limits Section - Only for subscribers */}
+            {['Launch', 'Scale', 'Pro'].includes(plan) && (
+              <div className="bg-bg-card border border-border rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <BarChart3 className="w-5 h-5 text-accent" />
+                  <h2 className="text-lg font-semibold">Usage & Limits</h2>
                 </div>
 
-                {/* Ad Accounts usage */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-zinc-400">Ad Accounts</span>
-                    <span className="text-sm text-white">
-                      {usage.adAccountCount} / {limits.adAccounts ?? '∞'}
-                    </span>
+                <div className="space-y-4">
+                  {/* Campaigns usage */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-zinc-400">Campaigns</span>
+                      <span className="text-sm text-white">
+                        {usage.campaignCount} / {limits.campaigns ?? '∞'}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-bg-dark rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-accent rounded-full transition-all"
+                        style={{
+                          width: limits.campaigns
+                            ? `${Math.min((usage.campaignCount / limits.campaigns) * 100, 100)}%`
+                            : '10%'
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 bg-bg-dark rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-accent rounded-full transition-all"
-                      style={{
-                        width: limits.adAccounts
-                          ? `${Math.min((usage.adAccountCount / limits.adAccounts) * 100, 100)}%`
-                          : '10%'
-                      }}
-                    />
+
+                  {/* Ad Accounts usage */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-zinc-400">Ad Accounts</span>
+                      <span className="text-sm text-white">
+                        {usage.adAccountCount} / {limits.adAccounts ?? '∞'}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-bg-dark rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-accent rounded-full transition-all"
+                        style={{
+                          width: limits.adAccounts
+                            ? `${Math.min((usage.adAccountCount / limits.adAccounts) * 100, 100)}%`
+                            : '10%'
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {(limits.campaigns && usage.campaignCount >= limits.campaigns) ||
-                  (limits.adAccounts && usage.adAccountCount >= limits.adAccounts) ? (
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm">
-                    You're at your plan limit.{' '}
-                    <Link href="/pricing" className="underline hover:no-underline">
-                      Upgrade for more
-                    </Link>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Preferences Section */}
-            <div className="bg-bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <Settings className="w-5 h-5 text-accent" />
-                <h2 className="text-lg font-semibold">Preferences</h2>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-zinc-500 mb-1">Default Date Range</label>
-                  <select
-                    value={preferences.date_range_default}
-                    onChange={(e) => setPreferences({ ...preferences, date_range_default: parseInt(e.target.value) })}
-                    className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
-                  >
-                    {DATE_RANGES.map((range) => (
-                      <option key={range.value} value={range.value}>{range.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-zinc-500 mb-1">Currency Display</label>
-                  <select
-                    value={preferences.currency}
-                    onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
-                    className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
-                  >
-                    {CURRENCIES.map((curr) => (
-                      <option key={curr.value} value={curr.value}>{curr.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-zinc-500 mb-1">Default Landing Page</label>
-                  <select
-                    value={preferences.default_landing_page}
-                    onChange={(e) => setPreferences({ ...preferences, default_landing_page: e.target.value })}
-                    className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
-                  >
-                    {LANDING_PAGES.map((page) => (
-                      <option key={page.value} value={page.value}>{page.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  onClick={handleSavePreferences}
-                  disabled={preferencesLoading}
-                  className="px-6 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  {preferencesLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : preferencesSaved ? (
-                    <Check className="w-4 h-4" />
+                  {(limits.campaigns && usage.campaignCount >= limits.campaigns) ||
+                    (limits.adAccounts && usage.adAccountCount >= limits.adAccounts) ? (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm">
+                      You're at your plan limit.{' '}
+                      <Link href="/pricing" className="underline hover:no-underline">
+                        Upgrade for more
+                      </Link>
+                    </div>
                   ) : null}
-                  {preferencesSaved ? 'Saved' : 'Save Preferences'}
-                </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Email & Notification Preferences Section */}
-            <div className="bg-bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <Bell className="w-5 h-5 text-accent" />
-                <h2 className="text-lg font-semibold">Email & Notifications</h2>
+            {/* Preferences Section - Only for subscribers */}
+            {['Launch', 'Scale', 'Pro'].includes(plan) && (
+              <div className="bg-bg-card border border-border rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Settings className="w-5 h-5 text-accent" />
+                  <h2 className="text-lg font-semibold">Preferences</h2>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-zinc-500 mb-1">Default Date Range</label>
+                    <select
+                      value={preferences.date_range_default}
+                      onChange={(e) => setPreferences({ ...preferences, date_range_default: parseInt(e.target.value) })}
+                      className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                    >
+                      {DATE_RANGES.map((range) => (
+                        <option key={range.value} value={range.value}>{range.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-zinc-500 mb-1">Currency Display</label>
+                    <select
+                      value={preferences.currency}
+                      onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
+                      className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                    >
+                      {CURRENCIES.map((curr) => (
+                        <option key={curr.value} value={curr.value}>{curr.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-zinc-500 mb-1">Default Landing Page</label>
+                    <select
+                      value={preferences.default_landing_page}
+                      onChange={(e) => setPreferences({ ...preferences, default_landing_page: e.target.value })}
+                      className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                    >
+                      {LANDING_PAGES.map((page) => (
+                        <option key={page.value} value={page.value}>{page.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={handleSavePreferences}
+                    disabled={preferencesLoading}
+                    className="px-6 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {preferencesLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : preferencesSaved ? (
+                      <Check className="w-4 h-4" />
+                    ) : null}
+                    {preferencesSaved ? 'Saved' : 'Save Preferences'}
+                  </button>
+                </div>
               </div>
+            )}
 
-              <div className="space-y-4">
-                <label className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg cursor-pointer hover:border-zinc-500 transition-colors">
-                  <div>
-                    <div className="text-white">Email Digest</div>
-                    <div className="text-sm text-zinc-500">Receive daily summary of your ad performance</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={preferences.email_digest_enabled}
-                    onChange={(e) => setPreferences({ ...preferences, email_digest_enabled: e.target.checked })}
-                    className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
-                  />
-                </label>
+            {/* Email & Notification Preferences Section - Only for subscribers */}
+            {['Launch', 'Scale', 'Pro'].includes(plan) && (
+              <div className="bg-bg-card border border-border rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Bell className="w-5 h-5 text-accent" />
+                  <h2 className="text-lg font-semibold">Email & Notifications</h2>
+                </div>
 
-                <label className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg cursor-pointer hover:border-zinc-500 transition-colors">
-                  <div>
-                    <div className="text-white">Alert Notifications</div>
-                    <div className="text-sm text-zinc-500">Get notified when alerts are triggered</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={preferences.alert_emails_enabled}
-                    onChange={(e) => setPreferences({ ...preferences, alert_emails_enabled: e.target.checked })}
-                    className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
-                  />
-                </label>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg cursor-pointer hover:border-zinc-500 transition-colors">
+                    <div>
+                      <div className="text-white">Email Digest</div>
+                      <div className="text-sm text-zinc-500">Receive daily summary of your ad performance</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={preferences.email_digest_enabled}
+                      onChange={(e) => setPreferences({ ...preferences, email_digest_enabled: e.target.checked })}
+                      className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
+                    />
+                  </label>
 
-                <label className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg cursor-pointer hover:border-zinc-500 transition-colors">
-                  <div>
-                    <div className="text-white">Marketing Emails</div>
-                    <div className="text-sm text-zinc-500">Receive tips, updates, and promotions</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={preferences.marketing_emails_enabled}
-                    onChange={(e) => setPreferences({ ...preferences, marketing_emails_enabled: e.target.checked })}
-                    className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
-                  />
-                </label>
+                  <label className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg cursor-pointer hover:border-zinc-500 transition-colors">
+                    <div>
+                      <div className="text-white">Alert Notifications</div>
+                      <div className="text-sm text-zinc-500">Get notified when alerts are triggered</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={preferences.alert_emails_enabled}
+                      onChange={(e) => setPreferences({ ...preferences, alert_emails_enabled: e.target.checked })}
+                      className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
+                    />
+                  </label>
 
-                <button
-                  onClick={handleSavePreferences}
-                  disabled={preferencesLoading}
-                  className="px-6 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  {preferencesLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : preferencesSaved ? (
-                    <Check className="w-4 h-4" />
-                  ) : null}
-                  {preferencesSaved ? 'Saved' : 'Save Notification Settings'}
-                </button>
+                  <label className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg cursor-pointer hover:border-zinc-500 transition-colors">
+                    <div>
+                      <div className="text-white">Marketing Emails</div>
+                      <div className="text-sm text-zinc-500">Receive tips, updates, and promotions</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={preferences.marketing_emails_enabled}
+                      onChange={(e) => setPreferences({ ...preferences, marketing_emails_enabled: e.target.checked })}
+                      className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
+                    />
+                  </label>
+
+                  <button
+                    onClick={handleSavePreferences}
+                    disabled={preferencesLoading}
+                    className="px-6 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {preferencesLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : preferencesSaved ? (
+                      <Check className="w-4 h-4" />
+                    ) : null}
+                    {preferencesSaved ? 'Saved' : 'Save Notification Settings'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Security Section */}
             <div className="bg-bg-card border border-border rounded-xl p-6">
