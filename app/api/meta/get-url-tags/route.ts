@@ -50,12 +50,13 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // url_tags is inside creative.object_story_spec.link_data.url_tags
-    // or creative.object_story_spec.video_data.url_tags for video ads
+    // url_tags location varies by creative type:
+    // - link_data: directly in link_data.url_tags
+    // - video_data: inside call_to_action.value.url_tags
     const objectStorySpec = result.creative?.object_story_spec
     const linkData = objectStorySpec?.link_data
     const videoData = objectStorySpec?.video_data
-    const urlTags = linkData?.url_tags || videoData?.url_tags || ''
+    const urlTags = linkData?.url_tags || videoData?.call_to_action?.value?.url_tags || ''
     const creativeId = result.creative?.id || null
 
     console.log('[get-url-tags] Extracted url_tags:', urlTags)

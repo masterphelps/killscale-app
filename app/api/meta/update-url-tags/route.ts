@@ -58,16 +58,30 @@ export async function POST(request: NextRequest) {
     // Step 2: Build new object_story_spec with updated url_tags
     const objectStorySpec = { ...existingCreative.object_story_spec }
 
-    // Update url_tags in the appropriate location (link_data or video_data)
+    // Update url_tags in the appropriate location
+    // - For link_data: url_tags goes directly in link_data
+    // - For video_data: url_tags goes inside call_to_action.value
     if (objectStorySpec.link_data) {
       objectStorySpec.link_data = {
         ...objectStorySpec.link_data,
         url_tags: urlTags
       }
     } else if (objectStorySpec.video_data) {
+      // For video ads, url_tags must be in call_to_action.value
+      if (!objectStorySpec.video_data.call_to_action?.value) {
+        return NextResponse.json({
+          error: 'Video ad does not have a call-to-action link to add URL tags to'
+        }, { status: 400 })
+      }
       objectStorySpec.video_data = {
         ...objectStorySpec.video_data,
-        url_tags: urlTags
+        call_to_action: {
+          ...objectStorySpec.video_data.call_to_action,
+          value: {
+            ...objectStorySpec.video_data.call_to_action.value,
+            url_tags: urlTags
+          }
+        }
       }
     } else {
       return NextResponse.json({ error: 'Unsupported creative type for URL tags' }, { status: 400 })
