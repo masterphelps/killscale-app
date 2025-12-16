@@ -44,6 +44,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    setLoading(true)
+
     const { data, error } = await supabase
       .from('subscriptions')
       .select('plan, status, current_period_end')
