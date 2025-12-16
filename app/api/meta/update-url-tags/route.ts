@@ -38,6 +38,14 @@ export async function POST(request: NextRequest) {
     // Update url_tags directly on the ad
     // Meta allows setting url_tags at the ad level which overrides creative-level tags
     const updateUrl = `https://graph.facebook.com/v18.0/${adId}`
+
+    console.log('[update-url-tags] Sending to Meta:', {
+      url: updateUrl,
+      adId,
+      urlTags,
+      urlTagsLength: urlTags?.length
+    })
+
     const updateResponse = await fetch(updateUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -49,6 +57,8 @@ export async function POST(request: NextRequest) {
 
     const updateResult = await updateResponse.json()
 
+    console.log('[update-url-tags] Meta response:', JSON.stringify(updateResult, null, 2))
+
     if (updateResult.error) {
       console.error('Meta API error updating ad url_tags:', updateResult.error)
       return NextResponse.json({
@@ -56,10 +66,18 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Verify the update by fetching the ad back
+    const verifyUrl = `https://graph.facebook.com/v18.0/${adId}?fields=url_tags&access_token=${accessToken}`
+    const verifyResponse = await fetch(verifyUrl)
+    const verifyResult = await verifyResponse.json()
+    console.log('[update-url-tags] Verification fetch:', JSON.stringify(verifyResult, null, 2))
+
     return NextResponse.json({
       success: true,
       message: 'URL tags updated successfully',
-      urlTags
+      urlTags,
+      verified: verifyResult.url_tags,
+      match: verifyResult.url_tags === urlTags
     })
 
   } catch (err) {
