@@ -6,6 +6,7 @@ import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRigh
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
+import { usePrivacyMode } from '@/lib/privacy-mode'
 import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 import { LaunchWizard } from '@/components/launch-wizard'
@@ -78,6 +79,14 @@ export default function LaunchPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
   const { currentAccountId, loading: accountLoading, currentWorkspaceId, workspaceAccountIds } = useAccount()
+  const { isPrivacyMode, maskText } = usePrivacyMode()
+
+  // Helper to mask names in privacy mode
+  const maskName = (name: string, type: 'campaign' | 'adset' | 'ad', index: number = 0) => {
+    if (!isPrivacyMode) return name
+    const prefixes = { campaign: 'Campaign', adset: 'Ad Set', ad: 'Ad' }
+    return `${prefixes[type]} ${index + 1}`
+  }
 
   const [campaigns, setCampaigns] = useState<CombinedCampaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -772,7 +781,7 @@ export default function LaunchPage() {
                         <span className="hidden sm:inline px-1.5 py-0.5 bg-hierarchy-campaign/20 text-hierarchy-campaign text-xs font-medium rounded">
                           Campaign
                         </span>
-                        <h3 className="font-semibold truncate max-w-[200px] sm:max-w-none">{campaign.name}</h3>
+                        <h3 className="font-semibold truncate max-w-[200px] sm:max-w-none">{maskName(campaign.name, 'campaign', campaigns.indexOf(campaign))}</h3>
                         <span className={cn(
                           "px-2 py-0.5 rounded text-xs font-medium uppercase",
                           campaign.status === 'ACTIVE'
@@ -897,7 +906,7 @@ export default function LaunchPage() {
                         No ad sets found
                       </div>
                     ) : (
-                      campaignAdSets.map((adSet) => {
+                      campaignAdSets.map((adSet, adSetIdx) => {
                         const isAdSetExpanded = expandedAdSets.has(adSet.id)
                         const adSetAds = adsData[adSet.id] || []
                         const isLoadingAdSetAds = loadingAds.has(adSet.id)
@@ -922,7 +931,7 @@ export default function LaunchPage() {
                                     <span className="hidden sm:inline px-1.5 py-0.5 bg-hierarchy-adset/20 text-hierarchy-adset text-xs font-medium rounded">
                                       Ad Set
                                     </span>
-                                    <span className="font-medium truncate max-w-[150px] sm:max-w-none">{adSet.name}</span>
+                                    <span className="font-medium truncate max-w-[150px] sm:max-w-none">{maskName(adSet.name, 'adset', adSetIdx)}</span>
                                     <span className={cn(
                                       "px-2 py-0.5 rounded text-xs font-medium uppercase",
                                       adSet.status === 'ACTIVE'
@@ -1021,10 +1030,11 @@ export default function LaunchPage() {
                                     No ads found
                                   </div>
                                 ) : (
-                                  adSetAds.map((ad) => {
+                                  adSetAds.map((ad, adIdx) => {
                                     const creative = ad.creative?.id ? creativesData[ad.creative.id] : null
                                     const isLoadingCreative = ad.creative?.id ? loadingCreatives.has(ad.creative.id) : false
                                     const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl || ad.creative?.thumbnailUrl || ad.creative?.imageUrl
+                                    const maskedAdName = maskName(ad.name, 'ad', adIdx)
 
                                     return (
                                       <div key={ad.id} className="pl-6 sm:pl-20 pr-3 sm:pr-4 py-3 border-t border-border/30 hover:bg-bg-hover/20 transition-colors">
@@ -1033,7 +1043,7 @@ export default function LaunchPage() {
                                           <CreativePreviewTooltip
                                             previewUrl={previewUrl}
                                             mediaType={creative?.mediaType}
-                                            alt={ad.name}
+                                            alt={maskedAdName}
                                             onFullPreview={() => {
                                               const playbackUrl = creative?.mediaType === 'video' && creative?.videoSource
                                                 ? creative.videoSource
@@ -1043,7 +1053,7 @@ export default function LaunchPage() {
                                                   isOpen: true,
                                                   previewUrl: playbackUrl,
                                                   mediaType: creative?.mediaType || 'unknown',
-                                                  name: ad.name
+                                                  name: maskedAdName
                                                 })
                                               }
                                             }}
@@ -1056,7 +1066,7 @@ export default function LaunchPage() {
                                               ) : previewUrl ? (
                                                 <img
                                                   src={previewUrl}
-                                                  alt={ad.name}
+                                                  alt={maskedAdName}
                                                   className="w-full h-full object-cover"
                                                 />
                                               ) : (
@@ -1075,7 +1085,7 @@ export default function LaunchPage() {
                                               <span className="hidden sm:inline px-1.5 py-0.5 bg-zinc-700 text-zinc-300 text-xs font-medium rounded">
                                                 Ad
                                               </span>
-                                              <span className="font-medium truncate max-w-[120px] sm:max-w-none">{ad.name}</span>
+                                              <span className="font-medium truncate max-w-[120px] sm:max-w-none">{maskedAdName}</span>
                                               <span className={cn(
                                                 "px-2 py-0.5 rounded text-xs font-medium uppercase",
                                                 ad.status === 'ACTIVE'

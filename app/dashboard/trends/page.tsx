@@ -600,6 +600,23 @@ export default function TrendsPage() {
     }
     return null
   }, [hierarchy, selection])
+
+  // Selected data with masked names for privacy mode display
+  const selectedMaskedData = useMemo(() => {
+    if (selection.ad) {
+      const campaign = maskedHierarchy.find(c => c.name === selection.campaign)
+      const adset = campaign?.children?.find(a => a.name === selection.adset)
+      return adset?.children?.find(ad => ad.name === selection.ad)
+    }
+    if (selection.adset) {
+      const campaign = maskedHierarchy.find(c => c.name === selection.campaign)
+      return campaign?.children?.find(a => a.name === selection.adset)
+    }
+    if (selection.campaign) {
+      return maskedHierarchy.find(c => c.name === selection.campaign)
+    }
+    return null
+  }, [maskedHierarchy, selection])
   
   // Account totals
   const accountTotals = useMemo(() => {
@@ -651,15 +668,31 @@ export default function TrendsPage() {
       .sort((a, b) => a.date.localeCompare(b.date))
   }, [filteredData, selection])
   
-  // Treemap data for account view
+  // Hierarchy with masked names for privacy mode
+  const maskedHierarchy = useMemo(() => {
+    return hierarchy.map((campaign, idx) => ({
+      ...campaign,
+      displayName: maskName(campaign.name, 'campaign', idx),
+      children: campaign.children?.map((adset, adsetIdx) => ({
+        ...adset,
+        displayName: maskName(adset.name, 'adset', adsetIdx),
+        children: adset.children?.map((ad, adIdx) => ({
+          ...ad,
+          displayName: maskName(ad.name, 'ad', adIdx)
+        }))
+      }))
+    }))
+  }, [hierarchy, isPrivacyMode])
+
+  // Treemap data for account view - use masked names in privacy mode
   const treemapData = useMemo(() => {
-    return hierarchy.map(campaign => ({
-      name: campaign.name,
+    return maskedHierarchy.map(campaign => ({
+      name: campaign.displayName,
       size: campaign.spend,
       spend: campaign.spend,
       roas: campaign.roas
     }))
-  }, [hierarchy])
+  }, [maskedHierarchy])
   
   // Generate insights - use masked names in privacy mode
   const insights = useMemo(() => {
@@ -1335,7 +1368,7 @@ export default function TrendsPage() {
               <div className="h-[500px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart
-                    data={[...hierarchy].sort((a, b) => b.spend - a.spend).slice(0, 12)}
+                    data={[...maskedHierarchy].sort((a, b) => b.spend - a.spend).slice(0, 12)}
                     layout="vertical"
                     margin={{ left: 10, right: 40, top: 10, bottom: 10 }}
                   >
@@ -1349,7 +1382,7 @@ export default function TrendsPage() {
                     />
                     <YAxis
                       type="category"
-                      dataKey="name"
+                      dataKey="displayName"
                       stroke="#3f3f46"
                       tick={{ fill: '#a1a1aa', fontSize: 10 }}
                       width={150}
@@ -1366,7 +1399,7 @@ export default function TrendsPage() {
                         const data = payload[0]?.payload
                         return (
                           <div className="bg-[#18181b] border border-[#3f3f46] rounded-lg p-3 text-sm">
-                            <div className="font-medium text-white mb-2">{data?.name}</div>
+                            <div className="font-medium text-white mb-2">{data?.displayName}</div>
                             <div className="space-y-1 text-xs">
                               <div className="flex justify-between gap-4">
                                 <span className="text-zinc-400">Spend</span>
@@ -1399,7 +1432,7 @@ export default function TrendsPage() {
                       onClick={(data) => setSelection({ campaign: data.name })}
                       style={{ cursor: 'pointer' }}
                     >
-                      {[...hierarchy].sort((a, b) => b.spend - a.spend).slice(0, 12).map((entry, index) => (
+                      {[...maskedHierarchy].sort((a, b) => b.spend - a.spend).slice(0, 12).map((entry, index) => (
                         <Cell
                           key={index}
                           fill={getROASColor(entry.roas)}
@@ -1443,7 +1476,7 @@ export default function TrendsPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <RechartsPie>
                         <Pie
-                          data={hierarchy.slice(0, 8).map(c => ({ name: c.name, value: c.spend, roas: c.roas }))}
+                          data={maskedHierarchy.slice(0, 8).map(c => ({ name: c.name, displayName: c.displayName, value: c.spend, roas: c.roas }))}
                           cx="50%"
                           cy="50%"
                           innerRadius={50}
@@ -1453,35 +1486,36 @@ export default function TrendsPage() {
                           onClick={(data) => setSelection({ campaign: data.name })}
                           style={{ cursor: 'pointer' }}
                           label={(props) => {
-                            const { name, percent, cx, cy, midAngle, outerRadius } = props as any
-                            if (!name || !midAngle || !cx || !cy || !outerRadius) return null
+                            const { percent, cx, cy, midAngle, outerRadius, payload } = props as any
+                            const displayName = payload?.displayName
+                            if (!displayName || !midAngle || !cx || !cy || !outerRadius) return null
                             const RADIAN = Math.PI / 180
                             const radius = outerRadius + 25
                             const x = cx + radius * Math.cos(-midAngle * RADIAN)
                             const y = cy + radius * Math.sin(-midAngle * RADIAN)
                             if (percent < 0.05) return null // Hide labels for tiny slices
                             return (
-                              <text 
-                                x={x} 
-                                y={y} 
+                              <text
+                                x={x}
+                                y={y}
                                 fill="#a1a1aa"
                                 textAnchor={x > cx ? 'start' : 'end'}
                                 dominantBaseline="central"
                                 fontSize={11}
                               >
-                                {name.length > 15 ? name.substring(0, 15) + '...' : name}
+                                {displayName.length > 15 ? displayName.substring(0, 15) + '...' : displayName}
                               </text>
                             )
                           }}
                           labelLine={{ stroke: '#52525b', strokeWidth: 1 }}
                         >
-                          {hierarchy.slice(0, 8).map((entry, index) => (
+                          {maskedHierarchy.slice(0, 8).map((entry, index) => (
                             <Cell key={index} fill={getROASColor(entry.roas)} />
                           ))}
                         </Pie>
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#18181b', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#18181b',
                             border: '1px solid #3f3f46',
                             borderRadius: 8
                           }}
@@ -1489,7 +1523,7 @@ export default function TrendsPage() {
                           labelStyle={{ color: '#a1a1aa' }}
                           formatter={(value: number, name: string, props: any) => [
                             `${formatCurrency(value)} (${props.payload.roas.toFixed(2)}x ROAS)`,
-                            props.payload.name
+                            props.payload.displayName
                           ]}
                         />
                       </RechartsPie>
@@ -1504,7 +1538,7 @@ export default function TrendsPage() {
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart 
-                        data={[...hierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8)}
+                        data={[...maskedHierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8)}
                         layout="vertical"
                         margin={{ left: 10, right: 20 }}
                       >
@@ -1516,9 +1550,9 @@ export default function TrendsPage() {
                           tickLine={{ stroke: '#3f3f46' }}
                           tickFormatter={(v) => `${v.toFixed(1)}x`}
                         />
-                        <YAxis 
-                          type="category" 
-                          dataKey="name" 
+                        <YAxis
+                          type="category"
+                          dataKey="displayName"
                           stroke="#3f3f46"
                           tick={{ fill: '#a1a1aa', fontSize: 10, stroke: 'none' }}
                           tickLine={{ stroke: '#3f3f46' }}
@@ -1542,7 +1576,7 @@ export default function TrendsPage() {
                           onClick={(data) => setSelection({ campaign: data.name })}
                           style={{ cursor: 'pointer' }}
                         >
-                          {[...hierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8).map((entry, index) => (
+                          {[...maskedHierarchy].sort((a, b) => b.roas - a.roas).slice(0, 8).map((entry, index) => (
                             <Cell key={index} fill={getROASColor(entry.roas)} stroke="none" />
                           ))}
                         </Bar>
@@ -1620,29 +1654,29 @@ export default function TrendsPage() {
           </div>
           
           {/* Children breakdown for campaign/adset level */}
-          {(currentLevel === 'campaign' || currentLevel === 'adset') && selectedData?.children && (
+          {(currentLevel === 'campaign' || currentLevel === 'adset') && selectedMaskedData?.children && (
             <div className="bg-bg-card border border-border rounded-xl p-6">
               <h3 className="font-semibold mb-4">
                 {currentLevel === 'campaign' ? 'Ad Sets' : 'Ads'} Performance
               </h3>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart 
-                    data={[...selectedData.children].sort((a, b) => b.roas - a.roas)}
+                  <BarChart
+                    data={[...selectedMaskedData.children].sort((a, b) => b.roas - a.roas)}
                     layout="vertical"
                     margin={{ left: 20, right: 20 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                    <XAxis 
-                      type="number" 
+                    <XAxis
+                      type="number"
                       stroke="#3f3f46"
                       tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
                       tickFormatter={(v) => `${v.toFixed(1)}x`}
                     />
-                    <YAxis 
-                      type="category" 
-                      dataKey="name" 
+                    <YAxis
+                      type="category"
+                      dataKey="displayName"
                       stroke="#3f3f46"
                       tick={{ fill: '#a1a1aa', fontSize: 11, stroke: 'none' }}
                       tickLine={{ stroke: '#3f3f46' }}
@@ -1661,7 +1695,7 @@ export default function TrendsPage() {
                       cursor={{ fill: 'transparent' }}
                     />
                     <Bar dataKey="roas" radius={[0, 4, 4, 0]}>
-                      {[...selectedData.children].sort((a, b) => b.roas - a.roas).map((entry, index) => (
+                      {[...selectedMaskedData.children].sort((a, b) => b.roas - a.roas).map((entry, index) => (
                         <Cell key={index} fill={getROASColor(entry.roas)} stroke="none" />
                       ))}
                     </Bar>
