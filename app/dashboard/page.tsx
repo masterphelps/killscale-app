@@ -146,6 +146,7 @@ export default function DashboardPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
   const isFirstSessionLoad = useRef(typeof window !== 'undefined' && !sessionStorage.getItem('ks_session_synced')) // Fresh login detection
+  const userManuallyDeselected = useRef(false) // Track if user manually deselected all
   const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -375,6 +376,7 @@ export default function DashboardPage() {
     if (currentWorkspaceKey) {
       if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== currentWorkspaceKey) {
         setSelectedCampaigns(new Set())
+        userManuallyDeselected.current = false // Reset so new workspace auto-selects
       }
       prevWorkspaceKeyRef.current = currentWorkspaceKey
       prevAccountIdRef.current = undefined // Clear account tracking when in workspace mode
@@ -385,6 +387,7 @@ export default function DashboardPage() {
     if (selectedAccountId) {
       if (prevAccountIdRef.current && prevAccountIdRef.current !== selectedAccountId) {
         setSelectedCampaigns(new Set())
+        userManuallyDeselected.current = false // Reset so new account auto-selects
       }
       prevAccountIdRef.current = selectedAccountId
       prevWorkspaceKeyRef.current = undefined // Clear workspace tracking when in account mode
@@ -977,8 +980,9 @@ export default function DashboardPage() {
 
   // Auto-select all campaigns and ABO adsets when selection is empty but we have data
   // This runs on initial load and after account switches (when we reset selection)
+  // Skip if user manually deselected all
   useEffect(() => {
-    if (selectedCampaigns.size === 0 && accountFilteredData.length > 0) {
+    if (selectedCampaigns.size === 0 && accountFilteredData.length > 0 && !userManuallyDeselected.current) {
       const selection = new Set<string>()
       const seenAdsets = new Set<string>()
 
@@ -1197,8 +1201,10 @@ export default function DashboardPage() {
     const allCampaignsSelected = visibleCampaigns.every(c => selectedCampaigns.has(c))
 
     if (allCampaignsSelected) {
+      userManuallyDeselected.current = true
       setSelectedCampaigns(new Set())
     } else {
+      userManuallyDeselected.current = false
       // Select all campaigns and their ABO adsets
       const newSelected = new Set<string>(visibleCampaigns)
       visibleCampaigns.forEach(campaignName => {

@@ -30,17 +30,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
 
   useEffect(() => {
+    // Track if initial session check is done
+    let initialCheckDone = false
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)
+      initialCheckDone = true
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session)
         setUser(session?.user ?? null)
-        setLoading(false)
+
+        // Only set loading false if initial check is done
+        // This prevents race condition on refresh
+        if (initialCheckDone) {
+          setLoading(false)
+        }
 
         if (event === 'SIGNED_OUT') {
           router.push('/login')
