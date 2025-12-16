@@ -13,6 +13,7 @@ type EditEntityModalProps = {
   entityName: string
   campaignName?: string  // For ads/adsets, to build UTM template
   adsetId?: string       // For ads, to build UTM template
+  adAccountId?: string   // For updating creatives
   userId: string
   onUpdate: () => void   // Callback to refresh data after update
 }
@@ -25,6 +26,7 @@ export function EditEntityModal({
   entityName,
   campaignName,
   adsetId,
+  adAccountId,
   userId,
   onUpdate,
 }: EditEntityModalProps) {
@@ -113,7 +115,7 @@ export function EditEntityModal({
       const res = await fetch('/api/meta/update-url-tags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, adId: entityId, urlTags })
+        body: JSON.stringify({ userId, adId: entityId, adAccountId, urlTags })
       })
 
       const data = await res.json()

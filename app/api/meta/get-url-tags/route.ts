@@ -33,11 +33,15 @@ export async function GET(request: NextRequest) {
 
     const accessToken = connection.access_token
 
-    // Fetch ad with url_tags at ad level (where we write them) and creative details
-    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,url_tags,creative{id,name,url_tags,object_story_spec}&access_token=${accessToken}`
+    // Fetch ad with creative details - url_tags lives inside creative.object_story_spec.link_data
+    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,creative{id,name,object_story_spec}&access_token=${accessToken}`
+
+    console.log('[get-url-tags] Fetching:', adUrl.replace(accessToken, '[REDACTED]'))
 
     const response = await fetch(adUrl)
     const result = await response.json()
+
+    console.log('[get-url-tags] Response:', JSON.stringify(result, null, 2))
 
     if (result.error) {
       console.error('Meta API error:', result.error)
@@ -46,10 +50,15 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // url_tags can be set at ad level (our updates) or creative level
-    // Ad-level url_tags take precedence
-    const urlTags = result.url_tags || result.creative?.url_tags || ''
+    // url_tags is inside creative.object_story_spec.link_data.url_tags
+    // or creative.object_story_spec.video_data.url_tags for video ads
+    const objectStorySpec = result.creative?.object_story_spec
+    const linkData = objectStorySpec?.link_data
+    const videoData = objectStorySpec?.video_data
+    const urlTags = linkData?.url_tags || videoData?.url_tags || ''
     const creativeId = result.creative?.id || null
+
+    console.log('[get-url-tags] Extracted url_tags:', urlTags)
 
     return NextResponse.json({
       success: true,

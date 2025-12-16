@@ -111,6 +111,7 @@ export default function LaunchPage() {
     entityName: string
     campaignName?: string
     adsetId?: string
+    adAccountId?: string
   } | null>(null)
 
   // Explorer state
@@ -967,7 +968,8 @@ export default function LaunchPage() {
                                                   entityId: ad.id,
                                                   entityName: ad.name,
                                                   campaignName: campaign.name,
-                                                  adsetId: adSet.id
+                                                  adsetId: adSet.id,
+                                                  adAccountId: currentAccountId || undefined
                                                 })}
                                                 className="p-1.5 text-zinc-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
                                                 title="Edit ad"
@@ -1028,6 +1030,7 @@ export default function LaunchPage() {
         entityName={editModal?.entityName || ''}
         campaignName={editModal?.campaignName}
         adsetId={editModal?.adsetId}
+        adAccountId={editModal?.adAccountId}
         userId={user?.id || ''}
         onUpdate={loadCampaigns}
       />
