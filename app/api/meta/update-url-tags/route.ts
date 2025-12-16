@@ -95,6 +95,12 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+
+      // Meta API error: "Only one of image_url and image_hash should be specified"
+      // When both exist, keep image_hash and remove image_url
+      if (objectStorySpec.video_data.image_url && objectStorySpec.video_data.image_hash) {
+        delete objectStorySpec.video_data.image_url
+      }
     } else {
       return NextResponse.json({ error: 'Unsupported creative type for URL tags' }, { status: 400 })
     }
