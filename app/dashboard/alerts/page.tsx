@@ -172,7 +172,7 @@ export default function AlertsPage() {
   const { currentAccountId, currentAccount } = useAccount()
   const router = useRouter()
 
-  const canManageAds = plan === 'Pro' || plan === 'Agency'
+  const canManageAds = plan === 'Scale' || plan === 'Pro'
 
   const handleViewInDashboard = (alert: Alert) => {
     if (!alert.entity_type || !alert.entity_name) return

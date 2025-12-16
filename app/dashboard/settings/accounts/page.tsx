@@ -44,10 +44,9 @@ type GoogleConnection = {
 }
 
 const ACCOUNT_LIMITS: Record<string, number> = {
-  'Free': 1,
-  'Starter': 1,
-  'Pro': 2,
-  'Agency': 100,
+  'Launch': 1,
+  'Scale': 2,
+  'Pro': 100,
 }
 
 export default function AccountsPage() {

@@ -178,7 +178,7 @@ export default function GeneralSettingsPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {plan !== 'Agency' && (
+              {plan !== 'Pro' && (
                 <Link
                   href="/pricing"
                   className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg font-medium transition-colors"
@@ -205,21 +205,21 @@ export default function GeneralSettingsPage() {
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="flex items-center gap-2 text-zinc-400">
                 <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                {plan === 'Free' ? '2 campaigns' : plan === 'Starter' ? '10 campaigns' : 'Unlimited campaigns'}
+                Unlimited campaigns
               </div>
               <div className="flex items-center gap-2 text-zinc-400">
                 <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                {plan === 'Free' || plan === 'Starter' ? '1 ad account' : plan === 'Pro' ? '2 ad accounts' : 'Unlimited accounts'}
+                {plan === 'Launch' ? '1 ad account' : plan === 'Scale' ? '2 ad accounts' : 'Unlimited accounts'}
               </div>
-              {(plan === 'Pro' || plan === 'Agency') && (
+              {(plan === 'Scale' || plan === 'Pro') && (
                 <>
                   <div className="flex items-center gap-2 text-zinc-400">
                     <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                    Pause/resume controls
+                    First Party Pixel
                   </div>
                   <div className="flex items-center gap-2 text-zinc-400">
                     <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                    Budget editing
+                    Workspaces
                   </div>
                 </>
               )}

@@ -1100,8 +1100,8 @@ export default function InsightsPage() {
               </div>
             </div>
 
-            {/* AI Recommendations (Pro/Agency) or Upgrade Prompt */}
-            {(plan === 'Pro' || plan === 'Agency') ? (
+            {/* AI Recommendations (Scale/Pro) or Upgrade Prompt */}
+            {(plan === 'Scale' || plan === 'Pro') ? (
               <AIHealthRecommendations
                 userId={user?.id || ''}
                 healthScore={healthScore}

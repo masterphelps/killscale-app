@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
       metadata: {
         userId: userId,
       },
+      subscription_data: {
+        trial_period_days: 7,
+      },
     })
 
     return NextResponse.json({ url: session.url })

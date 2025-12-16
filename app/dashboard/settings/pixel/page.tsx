@@ -52,8 +52,8 @@ export default function PixelPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
 
-  // Check if user is Pro+ (can access Pixel)
-  const isProPlus = plan === 'Pro' || plan === 'Agency'
+  // Check if user is Scale+ (can access Pixel)
+  const isProPlus = plan === 'Scale' || plan === 'Pro'
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspacePixels, setWorkspacePixels] = useState<WorkspacePixel[]>([])

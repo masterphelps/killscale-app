@@ -10,9 +10,15 @@ const supabase = createClient(
 )
 
 const PRICE_TO_PLAN: Record<string, string> = {
-  'price_1SYQDFLvvY2iVbuY0njXKK4c': 'starter',
-  'price_1SYOWOLvvY2iVbuYa0ovAR0G': 'pro',
-  'price_1SYOWlLvvY2iVbuYgxcY88pk': 'agency',
+  // Launch ($29/mo)
+  'price_1Sf2JjLEX79epwdhXY0l5qJf': 'launch',   // monthly
+  'price_1SbocjLEX79epwdhFZhRCOKb': 'launch',   // yearly
+  // Scale ($49/mo)
+  'price_1SYcIELEX79epwdhuRMs2lge': 'scale',    // monthly
+  'price_1SbodCLEX79epwdhgYsuS0pz': 'scale',    // yearly
+  // Pro ($99/mo)
+  'price_1SYcIZLEX79epwdhlJu1JS0z': 'pro',      // monthly
+  'price_1SbodULEX79epwdh3yvUhyC6': 'pro',      // yearly
 }
 
 export async function POST(request: NextRequest) {
@@ -43,7 +49,7 @@ export async function POST(request: NextRequest) {
       try {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId) as any
         const priceId = subscription.items.data[0].price.id
-        const plan = PRICE_TO_PLAN[priceId] || 'starter'
+        const plan = PRICE_TO_PLAN[priceId] || 'launch'
 
         const periodEnd = subscription.current_period_end 
           ? new Date(subscription.current_period_end * 1000).toISOString()
@@ -56,7 +62,7 @@ export async function POST(request: NextRequest) {
             stripe_customer_id: customerId,
             stripe_subscription_id: subscriptionId,
             plan: plan,
-            status: 'active',
+            status: subscription.status, // 'trialing' or 'active'
             current_period_end: periodEnd,
             updated_at: new Date().toISOString(),
           }, {
@@ -75,7 +81,7 @@ export async function POST(request: NextRequest) {
   if (event.type === 'customer.subscription.updated') {
     const subscription = event.data.object as any
     const priceId = subscription.items.data[0].price.id
-    const plan = PRICE_TO_PLAN[priceId] || 'starter'
+    const plan = PRICE_TO_PLAN[priceId] || 'launch'
 
     const periodEnd = subscription.current_period_end 
       ? new Date(subscription.current_period_end * 1000).toISOString()
@@ -102,7 +108,7 @@ export async function POST(request: NextRequest) {
     const { error } = await supabase
       .from('subscriptions')
       .update({
-        plan: 'free',
+        plan: 'expired',
         status: 'canceled',
         updated_at: new Date().toISOString(),
       })

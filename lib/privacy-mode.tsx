@@ -18,8 +18,8 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
   const { plan } = useSubscription()
   const [storedPrivacyMode, setStoredPrivacyMode] = useState(false)
 
-  // Privacy mode is only available for Agency plan
-  const isAgency = plan === 'Agency'
+  // Privacy mode is only available for Pro plan
+  const isAgency = plan === 'Pro'
 
   // Effective privacy mode: only true if Agency plan AND user has it enabled
   const isPrivacyMode = isAgency && storedPrivacyMode

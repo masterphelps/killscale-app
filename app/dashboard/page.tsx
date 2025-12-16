@@ -24,9 +24,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const FREE_CAMPAIGN_LIMIT = 2
-const STARTER_CAMPAIGN_LIMIT = 10
-
 const DEFAULT_RULES: Rules = {
   id: '',
   user_id: '',
@@ -1005,11 +1002,8 @@ export default function DashboardPage() {
   }, [accountFilteredData, selectedCampaigns.size])
 
   const totalCampaigns = allCampaigns.length
-  const getCampaignLimit = () => {
-    if (userPlan === 'Free') return FREE_CAMPAIGN_LIMIT
-    if (userPlan === 'Starter') return STARTER_CAMPAIGN_LIMIT
-    return Infinity
-  }
+  // All plans now have unlimited campaigns
+  const getCampaignLimit = () => Infinity
   
   const campaignLimit = getCampaignLimit()
   const isLimited = totalCampaigns > campaignLimit

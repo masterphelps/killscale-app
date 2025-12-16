@@ -172,10 +172,9 @@ NEXT_PUBLIC_META_APP_ID=...
 
 ## Pricing Tiers
 
-- **Free:** Meta API sync, 2 campaigns (auto-selected), 1 ad account
-- **Starter ($9/mo):** Meta API sync, 10 campaigns, 1 ad account, custom rules
-- **Pro ($29/mo):** Meta API sync, unlimited campaigns, 2 ad accounts, pause/resume, budget editing, alerts
-- **Agency ($99/mo):** Unlimited campaigns, unlimited ad accounts, priority support
+- **Launch ($29/mo):** Meta API sync, unlimited campaigns, 1 ad account, Campaign Launcher, Insights, Trends, Alerts
+- **Scale ($49/mo):** Everything in Launch + First Party Pixel, Dynamic Attribution, 2 ad accounts, Workspaces, Manual Events
+- **Pro ($99/mo):** Everything in Scale + unlimited ad accounts, Workspace reporting portal, priority support
 
 ## Custom Tailwind Colors
 

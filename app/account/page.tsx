@@ -83,10 +83,9 @@ type Usage = {
 }
 
 const PLAN_LIMITS: Record<string, { campaigns: number | null; adAccounts: number | null }> = {
-  Free: { campaigns: 2, adAccounts: 1 },
-  Starter: { campaigns: 10, adAccounts: 1 },
-  Pro: { campaigns: null, adAccounts: 2 },
-  Agency: { campaigns: null, adAccounts: null },
+  Launch: { campaigns: null, adAccounts: 1 },
+  Scale: { campaigns: null, adAccounts: 2 },
+  Pro: { campaigns: null, adAccounts: null },
 }
 
 export default function AccountPage() {
@@ -338,13 +337,12 @@ export default function AccountPage() {
   }
 
   const planFeatures: Record<string, string> = {
-    Free: 'CSV upload, 2 campaigns max',
-    Starter: 'CSV upload, 20 campaigns, custom rules',
-    Pro: '5 ad accounts, Meta API, pause/resume, alerts',
-    Agency: 'Unlimited accounts, priority support',
+    Launch: 'Meta API, 1 ad account, Campaign Launcher, Alerts',
+    Scale: 'First Party Pixel, Dynamic Attribution, 2 ad accounts, Workspaces',
+    Pro: 'Unlimited ad accounts, Workspace reporting, Priority support',
   }
 
-  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.Free
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.Launch
 
   if (!user) {
     return (
@@ -464,11 +462,11 @@ export default function AccountPage() {
                     href="/pricing"
                     className="px-4 py-2 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
                   >
-                    {plan === 'Free' ? 'Upgrade' : 'Change Plan'}
+                    {['Launch', 'Scale', 'Pro'].includes(plan) ? 'Change Plan' : 'Subscribe'}
                   </Link>
                 </div>
 
-                {plan !== 'Free' && (
+                {['Launch', 'Scale', 'Pro'].includes(plan) && (
                   <button
                     onClick={handleOpenBillingPortal}
                     disabled={billingLoading}

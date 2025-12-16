@@ -43,13 +43,12 @@ type WorkspaceInvite = {
 }
 
 // Workspace limits per tier
-// Free/Starter: Hidden default workspace only (no visible workspaces)
-// Pro: 2 workspaces, Agency: unlimited
+// Launch: Hidden default workspace only (no visible workspaces)
+// Scale: 2 workspaces, Pro: unlimited
 const WORKSPACE_LIMITS: Record<string, number> = {
-  'Free': 0,
-  'Starter': 0,  // Hidden default only
-  'Pro': 2,
-  'Agency': 100,
+  'Launch': 0,
+  'Scale': 2,
+  'Pro': 100,
 }
 
 export default function WorkspacesPage() {
@@ -257,9 +256,9 @@ export default function WorkspacesPage() {
     return accounts.filter(a => !existingIds.includes(a.id))
   }
 
-  // Agency-only: Load members and invites for a workspace
+  // Pro-only: Load members and invites for a workspace
   const loadTeamData = async (workspaceId: string) => {
-    if (!user?.id || plan !== 'Agency') return
+    if (!user?.id || plan !== 'Pro') return
 
     try {
       // Load members
@@ -488,7 +487,7 @@ export default function WorkspacesPage() {
     }
   }, [expandedPortal])
 
-  const isAgency = plan === 'Agency'
+  const isAgency = plan === 'Pro'
 
   if (loading) {
     return (
@@ -498,10 +497,10 @@ export default function WorkspacesPage() {
     )
   }
 
-  // Check if user is Pro+ (can access workspaces)
-  const isProPlus = plan === 'Pro' || plan === 'Agency'
+  // Check if user is Scale+ (can access workspaces)
+  const isProPlus = plan === 'Scale' || plan === 'Pro'
 
-  // Show upgrade prompt for Free and Starter tiers
+  // Show upgrade prompt for Launch tier
   if (!isProPlus) {
     return (
       <div className="max-w-2xl">

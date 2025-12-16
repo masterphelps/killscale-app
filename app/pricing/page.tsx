@@ -8,70 +8,55 @@ import { useSubscription } from '@/lib/subscription'
 
 const plans = [
   {
-    name: 'Free',
-    monthlyPrice: '$0',
-    yearlyPrice: '$0',
-    yearlyTotal: null,
-    period: '/mo',
-    description: 'Try it out',
-    monthlyPriceId: null,
-    yearlyPriceId: null,
-    features: [
-      'Meta API sync',
-      '2 campaigns (auto-selected)',
-      '1 ad account',
-      'Full hierarchy view',
-      'Verdict system',
-    ],
-  },
-  {
-    name: 'Starter',
-    monthlyPrice: '$9',
-    yearlyPrice: '$7.50',
-    yearlyTotal: '$90',
-    period: '/mo',
-    description: 'For growing advertisers',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_STARTER_PRICE_ID,
-    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_STARTER_YEARLY_PRICE_ID,
-    features: [
-      'Meta API sync',
-      '10 campaigns',
-      '1 ad account',
-      'Custom rules & thresholds',
-      'Full hierarchy view',
-    ],
-  },
-  {
-    name: 'Pro',
-    featured: true,
+    name: 'Launch',
     monthlyPrice: '$29',
     yearlyPrice: '$24',
     yearlyTotal: '$290',
     period: '/mo',
-    description: 'For serious advertisers',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
-    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_YEARLY_PRICE_ID,
+    description: '7-day free trial',
+    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_LAUNCH_PRICE_ID,
+    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_LAUNCH_YEARLY_PRICE_ID,
     features: [
       'Meta API sync',
       'Unlimited campaigns',
-      '2 ad accounts',
-      'Pause/resume ads',
-      'Budget editing',
+      '1 ad account',
+      'Campaign Launcher',
+      'Insights & Trends',
       'Alerts',
     ],
   },
   {
-    name: 'Agency',
+    name: 'Scale',
+    featured: true,
+    monthlyPrice: '$49',
+    yearlyPrice: '$41',
+    yearlyTotal: '$490',
+    period: '/mo',
+    description: 'Most popular',
+    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_SCALE_PRICE_ID,
+    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_SCALE_YEARLY_PRICE_ID,
+    features: [
+      'Everything in Launch',
+      'First Party Pixel',
+      'Dynamic Attribution',
+      '2 ad accounts',
+      'Workspaces',
+      'Manual Events',
+    ],
+  },
+  {
+    name: 'Pro',
     monthlyPrice: '$99',
     yearlyPrice: '$82',
     yearlyTotal: '$990',
     period: '/mo',
-    description: 'For teams & agencies',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_AGENCY_PRICE_ID,
-    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_AGENCY_YEARLY_PRICE_ID,
+    description: 'For agencies & teams',
+    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
+    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_YEARLY_PRICE_ID,
     features: [
-      'Everything in Pro',
+      'Everything in Scale',
       'Unlimited ad accounts',
+      'Workspace reporting portal',
       'Priority support',
     ],
   },
@@ -148,7 +133,7 @@ export default function PricingPage() {
       <div className="max-w-6xl mx-auto px-4 py-16">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-4">Simple, honest pricing</h1>
-          <p className="text-zinc-500 text-lg">Start free. Upgrade when you need more.</p>
+          <p className="text-zinc-500 text-lg">Try free for 7 days. Cancel anytime.</p>
         </div>
 
         {/* Billing Toggle */}
@@ -172,7 +157,7 @@ export default function PricingPage() {
           </span>
         </div>
 
-        <div className="grid md:grid-cols-4 gap-6 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
           {plans.map((plan) => {
             const isCurrentPlan = user && currentPlan === plan.name
             const displayPrice = billingPeriod === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice
@@ -247,7 +232,7 @@ export default function PricingPage() {
                     href={user ? '/dashboard' : '/signup'}
                     className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
                   >
-                    {user ? 'Get Free' : 'Get Started'}
+                    Start Free Trial
                   </Link>
                 )}
               </div>

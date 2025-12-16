@@ -24,7 +24,7 @@ type SubscriptionContextType = {
 
 const SubscriptionContext = createContext<SubscriptionContextType>({
   subscription: null,
-  plan: 'Free',
+  plan: 'None',
   loading: true,
   refetch: async () => {},
 })
@@ -62,9 +62,11 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     fetchSubscription()
   }, [userId])
 
-  const plan = subscription?.status === 'active' 
+  // Treat both 'active' and 'trialing' as having access
+  const hasAccess = subscription?.status === 'active' || subscription?.status === 'trialing'
+  const plan = hasAccess
     ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)
-    : 'Free'
+    : 'None'
 
   return (
     <SubscriptionContext.Provider value={{ subscription, plan, loading, refetch: fetchSubscription }}>

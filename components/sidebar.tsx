@@ -82,8 +82,8 @@ export function Sidebar() {
   })
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
 
-  // Check if user is Pro+ (can see workspaces)
-  const isProPlus = plan === 'Pro' || plan === 'Agency'
+  // Check if user is Scale+ (can see workspaces)
+  const isProPlus = plan === 'Scale' || plan === 'Pro'
   console.log('Sidebar plan:', plan, 'isProPlus:', isProPlus)
 
   const rawUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
@@ -205,11 +205,9 @@ export function Sidebar() {
     await switchAccount(accountId)
   }
 
-  const upgradeText = plan === 'Free'
-    ? { title: 'Upgrade to Starter', subtitle: 'More campaigns' }
-    : plan === 'Starter'
-      ? { title: 'Upgrade to Pro', subtitle: 'Unlimited campaigns' }
-      : null
+  const upgradeText = plan === 'Launch'
+    ? { title: 'Upgrade to Scale', subtitle: 'More ad accounts' }
+    : null
 
   return (
     <aside className="w-60 bg-bg-sidebar border-r border-border fixed h-screen overflow-y-auto flex flex-col p-4">
@@ -223,7 +221,7 @@ export function Sidebar() {
             <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
           </svg>
         </Link>
-        {plan === 'Agency' && (
+        {plan === 'Pro' && (
           <button
             onClick={togglePrivacyMode}
             className={cn(
