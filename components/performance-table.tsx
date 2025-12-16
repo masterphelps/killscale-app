@@ -93,7 +93,7 @@ type PerformanceTableProps = {
     campaignName?: string
     adsetName?: string
   } | null
-  // For budget modal enhancements
+  // For budget modal
   userId?: string
   // For cascading selection (ABO adsets)
   campaignAboAdsets?: Map<string, Set<string>>
@@ -469,7 +469,10 @@ export function PerformanceTable({
   const startX = useRef(0)
   const startWidth = useRef(0)
 
-  const hierarchy = useMemo(() => buildHierarchy(data, rules), [data, rules])
+  // Build hierarchy
+  const hierarchy = useMemo(() => {
+    return buildHierarchy(data, rules)
+  }, [data, rules])
 
   // Handle deep-linking highlight from alerts
   useEffect(() => {

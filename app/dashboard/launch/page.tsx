@@ -12,6 +12,7 @@ import { LaunchWizard } from '@/components/launch-wizard'
 import { DeleteEntityModal } from '@/components/confirm-modal'
 import { CreativePreviewTooltip } from '@/components/creative-preview-tooltip'
 import { EditEntityModal } from '@/components/edit-entity-modal'
+import { UtmIndicator } from '@/components/utm-indicator'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -124,6 +125,10 @@ export default function LaunchPage() {
   const [loadingAds, setLoadingAds] = useState<Set<string>>(new Set())
   const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
 
+  // UTM tracking status
+  const [utmStatus, setUtmStatus] = useState<Record<string, boolean>>({})
+  const [utmLoading, setUtmLoading] = useState(false)
+
   // Track the last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
 
@@ -187,10 +192,74 @@ export default function LaunchPage() {
       })
 
       setCampaigns(combined)
+
+      // Fetch all ads for UTM status in background
+      loadAllAdsForUtmStatus(combined.map(c => c.id))
     } catch (err) {
       console.error('Failed to load campaigns:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Load all ads for all campaigns to get UTM status upfront
+  const loadAllAdsForUtmStatus = async (campaignIds: string[]) => {
+    if (!user || !currentAccountId || campaignIds.length === 0) return
+
+    setUtmLoading(true)
+    try {
+      // Fetch all adsets for all campaigns in parallel
+      const adsetPromises = campaignIds.map(async (campaignId) => {
+        const res = await fetch(`/api/meta/adsets?userId=${user.id}&campaignId=${campaignId}`)
+        const data = await res.json()
+        return { campaignId, adsets: data.adsets || [] }
+      })
+
+      const adsetResults = await Promise.all(adsetPromises)
+
+      // Store adsets data
+      const newAdSetsData: Record<string, AdSet[]> = {}
+      const allAdSetIds: string[] = []
+      for (const result of adsetResults) {
+        newAdSetsData[result.campaignId] = result.adsets
+        allAdSetIds.push(...result.adsets.map((as: AdSet) => as.id))
+      }
+      setAdSetsData(prev => ({ ...prev, ...newAdSetsData }))
+
+      // Fetch all ads for all adsets in parallel
+      const adPromises = allAdSetIds.map(async (adSetId) => {
+        const res = await fetch(`/api/meta/ads?userId=${user.id}&adsetId=${adSetId}`)
+        const data = await res.json()
+        return { adSetId, ads: data.ads || [] }
+      })
+
+      const adResults = await Promise.all(adPromises)
+
+      // Store ads data and collect all ad IDs
+      const newAdsData: Record<string, Ad[]> = {}
+      const allAdIds: string[] = []
+      for (const result of adResults) {
+        newAdsData[result.adSetId] = result.ads
+        allAdIds.push(...result.ads.map((ad: Ad) => ad.id))
+      }
+      setAdsData(prev => ({ ...prev, ...newAdsData }))
+
+      // Now fetch UTM status for all ads
+      if (allAdIds.length > 0) {
+        const res = await fetch('/api/meta/sync-utm-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, adIds: allAdIds })
+        })
+        const result = await res.json()
+        if (result.success) {
+          setUtmStatus(result.utmStatus)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load ads for UTM status:', err)
+    } finally {
+      setUtmLoading(false)
     }
   }
 
@@ -447,6 +516,9 @@ export default function LaunchPage() {
             loadCreative(ad.creative.id)
           }
         }
+        // Fetch UTM status for the loaded ads
+        const adIds = data.ads.map((ad: Ad) => ad.id)
+        fetchUtmStatus(adIds)
       }
     } catch (err) {
       console.error('Failed to load ads:', err)
@@ -479,6 +551,58 @@ export default function LaunchPage() {
         return next
       })
     }
+  }
+
+  // Fetch UTM status for ads
+  const fetchUtmStatus = async (adIds: string[]) => {
+    if (!user || !currentAccountId || adIds.length === 0) return
+
+    // Filter out ads we already have status for
+    const newAdIds = adIds.filter(id => !(id in utmStatus))
+    if (newAdIds.length === 0) return
+
+    setUtmLoading(true)
+    try {
+      const res = await fetch('/api/meta/sync-utm-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, adIds: newAdIds })
+      })
+      const result = await res.json()
+      if (result.success) {
+        setUtmStatus(prev => ({ ...prev, ...result.utmStatus }))
+      }
+    } catch (err) {
+      console.error('Failed to fetch UTM status:', err)
+    } finally {
+      setUtmLoading(false)
+    }
+  }
+
+  // Calculate UTM counts for a campaign
+  const getCampaignUtmCounts = (campaignId: string): { tracked: number; total: number } => {
+    const adSets = adSetsData[campaignId] || []
+    let tracked = 0
+    let total = 0
+    for (const adSet of adSets) {
+      const ads = adsData[adSet.id] || []
+      for (const ad of ads) {
+        total++
+        if (utmStatus[ad.id]) tracked++
+      }
+    }
+    return { tracked, total }
+  }
+
+  // Calculate UTM counts for an adset
+  const getAdSetUtmCounts = (adSetId: string): { tracked: number; total: number } => {
+    const ads = adsData[adSetId] || []
+    let tracked = 0
+    let total = ads.length
+    for (const ad of ads) {
+      if (utmStatus[ad.id]) tracked++
+    }
+    return { tracked, total }
   }
 
   // Upgrade prompt for non-Pro users
@@ -663,6 +787,17 @@ export default function LaunchPage() {
                             KillScale
                           </span>
                         )}
+                        {/* UTM Tracking Status */}
+                        {(() => {
+                          const counts = getCampaignUtmCounts(campaign.id)
+                          return counts.total > 0 ? (
+                            <UtmIndicator
+                              tracked={counts.tracked}
+                              total={counts.total}
+                              loading={utmLoading}
+                            />
+                          ) : null
+                        })()}
                       </div>
                       {/* Meta info row */}
                       <div className="flex items-center gap-2 sm:gap-3 text-sm text-zinc-500 mt-1 sm:ml-[74px]">
@@ -796,6 +931,17 @@ export default function LaunchPage() {
                                     )}>
                                       {adSet.status}
                                     </span>
+                                    {/* UTM Tracking Status */}
+                                    {(() => {
+                                      const counts = getAdSetUtmCounts(adSet.id)
+                                      return counts.total > 0 ? (
+                                        <UtmIndicator
+                                          tracked={counts.tracked}
+                                          total={counts.total}
+                                          loading={utmLoading}
+                                        />
+                                      ) : null
+                                    })()}
                                   </div>
                                   {(adSet.dailyBudget || adSet.lifetimeBudget) && (
                                     <div className="flex items-center gap-2 text-sm text-zinc-500 mt-0.5">
@@ -938,6 +1084,12 @@ export default function LaunchPage() {
                                               )}>
                                                 {ad.status}
                                               </span>
+                                              {/* UTM Tracking Status */}
+                                              <UtmIndicator
+                                                tracked={utmStatus[ad.id] ? 1 : 0}
+                                                total={1}
+                                                loading={utmLoading}
+                                              />
                                             </div>
                                           </div>
                                           {/* Ad Actions */}
