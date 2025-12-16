@@ -601,6 +601,22 @@ export default function TrendsPage() {
     return null
   }, [hierarchy, selection])
 
+  // Hierarchy with masked names for privacy mode
+  const maskedHierarchy = useMemo(() => {
+    return hierarchy.map((campaign, idx) => ({
+      ...campaign,
+      displayName: maskName(campaign.name, 'campaign', idx),
+      children: campaign.children?.map((adset, adsetIdx) => ({
+        ...adset,
+        displayName: maskName(adset.name, 'adset', adsetIdx),
+        children: adset.children?.map((ad, adIdx) => ({
+          ...ad,
+          displayName: maskName(ad.name, 'ad', adIdx)
+        }))
+      }))
+    }))
+  }, [hierarchy, isPrivacyMode])
+
   // Selected data with masked names for privacy mode display
   const selectedMaskedData = useMemo(() => {
     if (selection.ad) {
@@ -667,22 +683,6 @@ export default function TrendsPage() {
       .map(d => ({ ...d, roas: d.spend > 0 ? d.revenue / d.spend : 0 }))
       .sort((a, b) => a.date.localeCompare(b.date))
   }, [filteredData, selection])
-  
-  // Hierarchy with masked names for privacy mode
-  const maskedHierarchy = useMemo(() => {
-    return hierarchy.map((campaign, idx) => ({
-      ...campaign,
-      displayName: maskName(campaign.name, 'campaign', idx),
-      children: campaign.children?.map((adset, adsetIdx) => ({
-        ...adset,
-        displayName: maskName(adset.name, 'adset', adsetIdx),
-        children: adset.children?.map((ad, adIdx) => ({
-          ...ad,
-          displayName: maskName(ad.name, 'ad', adIdx)
-        }))
-      }))
-    }))
-  }, [hierarchy, isPrivacyMode])
 
   // Treemap data for account view - use masked names in privacy mode
   const treemapData = useMemo(() => {
