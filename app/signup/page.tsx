@@ -13,6 +13,7 @@ const supabase = createClient(
 export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,10 +21,30 @@ export default function SignupPage() {
   const [success, setSuccess] = useState(false)
   const router = useRouter()
 
+  // Password complexity checks
+  const hasMinLength = password.length >= 8
+  const hasUppercase = /[A-Z]/.test(password)
+  const hasLowercase = /[a-z]/.test(password)
+  const hasNumber = /[0-9]/.test(password)
+  const passwordsMatch = password === confirmPassword && confirmPassword.length > 0
+  const isPasswordValid = hasMinLength && hasUppercase && hasLowercase && hasNumber
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+
+    if (!isPasswordValid) {
+      setError('Password does not meet requirements')
+      setLoading(false)
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      setLoading(false)
+      return
+    }
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -152,9 +173,41 @@ export default function SignupPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
                 placeholder="••••••••"
-                minLength={6}
                 required
               />
+              {password.length > 0 && (
+                <div className="mt-2 space-y-1 text-xs">
+                  <div className={hasMinLength ? 'text-green-500' : 'text-zinc-500'}>
+                    {hasMinLength ? '✓' : '○'} At least 8 characters
+                  </div>
+                  <div className={hasUppercase ? 'text-green-500' : 'text-zinc-500'}>
+                    {hasUppercase ? '✓' : '○'} One uppercase letter
+                  </div>
+                  <div className={hasLowercase ? 'text-green-500' : 'text-zinc-500'}>
+                    {hasLowercase ? '✓' : '○'} One lowercase letter
+                  </div>
+                  <div className={hasNumber ? 'text-green-500' : 'text-zinc-500'}>
+                    {hasNumber ? '✓' : '○'} One number
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Confirm Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={`w-full px-4 py-3 bg-bg-dark border rounded-lg text-white focus:outline-none focus:border-accent ${
+                  confirmPassword.length > 0 && !passwordsMatch ? 'border-red-500' : 'border-border'
+                }`}
+                placeholder="••••••••"
+                required
+              />
+              {confirmPassword.length > 0 && !passwordsMatch && (
+                <div className="mt-1 text-xs text-red-400">Passwords do not match</div>
+              )}
             </div>
 
             {error && (

@@ -198,7 +198,7 @@ export default function RulesPage() {
 
   if (!currentAccountId) {
     return (
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-1">Rules</h1>
           <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>
@@ -218,7 +218,7 @@ export default function RulesPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Rules</h1>
         <p className="text-zinc-500">Configure how verdicts are calculated for your ads</p>

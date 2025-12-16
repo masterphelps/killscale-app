@@ -133,7 +133,7 @@ export default function LaunchPage() {
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
 
   const planLower = plan?.toLowerCase() || ''
-  const canLaunch = planLower === 'pro' || planLower === 'agency'
+  const canLaunch = planLower === 'launch' || planLower === 'scale' || planLower === 'pro'
 
   // Load campaigns when account changes
   useEffect(() => {

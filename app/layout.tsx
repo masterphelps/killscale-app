@@ -15,6 +15,9 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'KillScale - Meta Ads Dashboard',
   description: 'See your Meta Ads at a glance. Know what to scale, watch, and cut in 30 seconds.',
+  icons: {
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'><path d='M14 8 L14 42 L4 28 M14 42 L24 28' stroke='%23ef4444' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 42 L36 8 L26 22 M36 8 L46 22' stroke='%2322c55e' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>",
+  },
 }
 
 const META_PIXEL_ID = '1552580212607017'

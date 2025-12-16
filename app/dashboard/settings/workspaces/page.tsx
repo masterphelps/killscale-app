@@ -503,7 +503,7 @@ export default function WorkspacesPage() {
   // Show upgrade prompt for Launch tier
   if (!isProPlus) {
     return (
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-1">Workspaces</h1>
           <p className="text-zinc-500">Group ad accounts from multiple platforms into unified views</p>
@@ -546,7 +546,7 @@ export default function WorkspacesPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-3xl mx-auto">
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold mb-1">Workspaces</h1>

@@ -513,7 +513,7 @@ ks('pageview');
   // Pro+ only - show upgrade prompt for Free/Starter
   if (!isProPlus) {
     return (
-      <div className="max-w-3xl">
+      <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-1">Pixel</h1>
           <p className="text-zinc-500">First-party conversion tracking for accurate attribution</p>
@@ -558,7 +558,7 @@ ks('pageview');
   // No workspaces - prompt to create one
   if (workspaces.length === 0) {
     return (
-      <div className="max-w-3xl">
+      <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-1">Pixel</h1>
           <p className="text-zinc-500">First-party conversion tracking for accurate attribution</p>
@@ -616,7 +616,7 @@ ks('pageview');
 
   // Has workspaces - show each as a collapsible
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Pixel</h1>
         <p className="text-zinc-500">First-party conversion tracking for accurate attribution</p>

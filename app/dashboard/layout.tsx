@@ -23,6 +23,8 @@ export default function DashboardLayout({
   const hasAuthChecked = useRef(false)
   // Track if we ever had a valid user - prevents blank screen on tab switch
   const hadValidUser = useRef(false)
+  // Track if we ever had a valid subscription - prevents redirect on tab switch/refresh
+  const hadValidSubscription = useRef(false)
 
   useEffect(() => {
     if (!loading && !user && !hadValidUser.current) {
@@ -39,9 +41,15 @@ export default function DashboardLayout({
   }, [user, loading, router])
 
   // Subscription gate: redirect to account page if no active subscription
+  // Only redirect if we've never had a valid subscription (prevents false redirect on refresh)
   useEffect(() => {
-    if (!loading && !subLoading && user && plan === 'None') {
-      router.push('/account')
+    if (!loading && !subLoading && user) {
+      if (plan !== 'None') {
+        hadValidSubscription.current = true
+      } else if (!hadValidSubscription.current) {
+        // Only redirect if we've never had a valid subscription
+        router.push('/account')
+      }
     }
   }, [user, loading, plan, subLoading, router])
 

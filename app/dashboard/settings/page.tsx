@@ -123,7 +123,7 @@ export default function GeneralSettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">General</h1>
         <p className="text-zinc-500">Manage your account preferences and settings</p>
