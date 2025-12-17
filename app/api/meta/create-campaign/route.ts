@@ -393,22 +393,23 @@ export async function POST(request: NextRequest) {
           linkData.image_hash = creative.imageHash
         }
 
-        // Add URL tags for tracking (Meta substitutes {{ad.id}} etc. at click time)
-        // Only for non-lead campaigns
-        if (urlTags && objective !== 'leads') {
-          linkData.url_tags = urlTags
-        }
-
         objectStorySpec = {
           page_id: pageId,
           link_data: linkData
         }
       }
 
+      // Build creative payload - url_tags must be at creative level, NOT inside link_data
       const creativePayload: Record<string, unknown> = {
         name: `${campaignName} - Creative ${i + 1}`,
         object_story_spec: objectStorySpec,
         access_token: accessToken
+      }
+
+      // Add URL tags for tracking (Meta substitutes {{ad.id}} etc. at click time)
+      // Only for non-lead campaigns
+      if (urlTags && objective !== 'leads') {
+        creativePayload.url_tags = urlTags
       }
 
       // Log creative details for debugging
