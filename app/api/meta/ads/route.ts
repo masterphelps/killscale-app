@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const adsetId = searchParams.get('adsetId')
+    const adAccountId = searchParams.get('adAccountId')
 
     if (!userId || !adsetId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -43,6 +44,44 @@ export async function GET(request: NextRequest) {
 
     if (result.error) {
       console.error('Meta API error:', result.error)
+      // Fall back to database - get ads from ad_data
+      let query = supabase
+        .from('ad_data')
+        .select('ad_id, ad_name, status')
+        .eq('user_id', userId)
+        .eq('adset_id', adsetId)
+
+      if (adAccountId) {
+        query = query.eq('ad_account_id', adAccountId)
+      }
+
+      const { data: dbAds } = await query
+
+      if (dbAds && dbAds.length > 0) {
+        // Get unique ads
+        const uniqueAds = new Map<string, { id: string; name: string; status: string }>()
+        for (const row of dbAds) {
+          if (row.ad_id && !uniqueAds.has(row.ad_id)) {
+            uniqueAds.set(row.ad_id, {
+              id: row.ad_id,
+              name: row.ad_name || 'Unknown',
+              status: row.status || 'UNKNOWN'
+            })
+          }
+        }
+        return NextResponse.json({
+          success: true,
+          fromCache: true,
+          ads: Array.from(uniqueAds.values()).map(ad => ({
+            id: ad.id,
+            name: ad.name,
+            status: ad.status,
+            effectiveStatus: ad.status,
+            creative: null
+          }))
+        })
+      }
+
       return NextResponse.json({
         error: result.error.message || 'Failed to fetch ads'
       }, { status: 400 })

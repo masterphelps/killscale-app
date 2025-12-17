@@ -194,7 +194,7 @@ export default function AlertsPage() {
       params.set('adset', adsetName)
     }
 
-    router.push(`/dashboard?${params.toString()}`)
+    router.push(`/dashboard/performance?${params.toString()}`)
   }
 
   const loadAlerts = async () => {

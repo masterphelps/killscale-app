@@ -214,7 +214,7 @@ export default function DashboardPage() {
         adsetName: adsetName || undefined,
       })
       // Clear URL params after setting highlight
-      window.history.replaceState({}, '', '/dashboard')
+      window.history.replaceState({}, '', '/dashboard/performance')
     }
   }, [searchParams])
 
@@ -353,7 +353,7 @@ export default function DashboardPage() {
       // Mark as processed to prevent re-runs
       processedSyncRef.current = syncAccountId
       // Clear the URL param
-      window.history.replaceState({}, '', '/dashboard')
+      window.history.replaceState({}, '', '/dashboard/performance')
       // Trigger sync for the selected account
       handleSyncAccount(syncAccountId)
     }

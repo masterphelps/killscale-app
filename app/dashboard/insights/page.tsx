@@ -1141,7 +1141,7 @@ export default function InsightsPage() {
 
             {/* Link to Full Table */}
             <Link
-              href="/dashboard"
+              href="/dashboard/performance"
               className="flex items-center justify-center gap-2 py-4 text-sm text-zinc-400 hover:text-white transition-colors"
             >
               View Full Performance Table

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -137,6 +137,7 @@ export default function LaunchPage() {
   // UTM tracking status
   const [utmStatus, setUtmStatus] = useState<Record<string, boolean>>({})
   const [utmLoading, setUtmLoading] = useState(false)
+  const utmFetchedForAccount = useRef<string | null>(null) // Track which account we've fetched UTM for
 
   // Track the last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
@@ -159,6 +160,8 @@ export default function LaunchPage() {
       setAdsData({})
       setCreativesData({})
       setCampaigns([])
+      setUtmStatus({})
+      utmFetchedForAccount.current = null // Reset UTM fetch tracking for new account
       setLastLoadedAccountId(currentAccountId)
       loadCampaigns()
     } else if (!accountLoading && !currentAccountId) {
@@ -202,8 +205,12 @@ export default function LaunchPage() {
 
       setCampaigns(combined)
 
-      // Fetch all ads for UTM status in background
-      loadAllAdsForUtmStatus(combined.map(c => c.id))
+      // UTM status loading disabled - causes too many API calls and rate limits
+      // TODO: Implement batched/throttled UTM fetching
+      // if (utmFetchedForAccount.current !== currentAccountId) {
+      //   utmFetchedForAccount.current = currentAccountId
+      //   loadAllAdsForUtmStatus(combined.map(c => c.id))
+      // }
     } catch (err) {
       console.error('Failed to load campaigns:', err)
     } finally {
@@ -489,11 +496,11 @@ export default function LaunchPage() {
 
   // Load ad sets for a campaign
   const loadAdSets = async (campaignId: string) => {
-    if (!user) return
+    if (!user || !currentAccountId) return
 
     setLoadingAdSets(prev => new Set(prev).add(campaignId))
     try {
-      const res = await fetch(`/api/meta/adsets?userId=${user.id}&campaignId=${campaignId}`)
+      const res = await fetch(`/api/meta/adsets?userId=${user.id}&campaignId=${campaignId}&adAccountId=${currentAccountId}`)
       const data = await res.json()
       if (data.adsets) {
         setAdSetsData(prev => ({ ...prev, [campaignId]: data.adsets }))
@@ -511,11 +518,11 @@ export default function LaunchPage() {
 
   // Load ads for an ad set
   const loadAds = async (adSetId: string) => {
-    if (!user) return
+    if (!user || !currentAccountId) return
 
     setLoadingAds(prev => new Set(prev).add(adSetId))
     try {
-      const res = await fetch(`/api/meta/ads?userId=${user.id}&adsetId=${adSetId}`)
+      const res = await fetch(`/api/meta/ads?userId=${user.id}&adsetId=${adSetId}&adAccountId=${currentAccountId}`)
       const data = await res.json()
       if (data.ads) {
         setAdsData(prev => ({ ...prev, [adSetId]: data.ads }))

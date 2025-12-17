@@ -40,8 +40,8 @@ interface Workspace {
 }
 
 const navItems = [
-  { href: '/dashboard/launch', label: 'Campaigns', icon: Rocket },
-  { href: '/dashboard/performance', label: 'Performance', icon: BarChart3 },
+  { href: '/dashboard', label: 'Performance', icon: BarChart3 },
+  { href: '/dashboard/campaigns', label: 'Campaigns', icon: Rocket },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
@@ -213,7 +213,7 @@ export function Sidebar() {
     <aside className="w-60 bg-bg-sidebar border-r border-border fixed h-screen overflow-y-auto flex flex-col p-4">
       {/* Logo + Privacy Toggle (Agency only) */}
       <div className="flex items-center justify-between mb-6">
-        <Link href="/dashboard/launch" className="flex items-center gap-2 px-2">
+        <Link href="/dashboard" className="flex items-center gap-2 px-2">
           <svg width="150" height="30" viewBox="0 0 280 50">
             <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
             <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
