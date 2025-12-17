@@ -337,10 +337,16 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
 
       // Set budget info on adset
       const adsetBudget = adsetBudgets[adset.name]
-      if (adsetBudget && (adsetBudget.daily || adsetBudget.lifetime)) {
+      const campaignBudget = campaignBudgets[campaign.name]
+
+      // ABO if adset has budget OR if campaign has no budget (budget must be at adset level)
+      const isABO = (adsetBudget && (adsetBudget.daily || adsetBudget.lifetime)) ||
+                    (campaignBudget && !campaignBudget.daily && !campaignBudget.lifetime)
+
+      if (isABO) {
         adset.budgetType = 'ABO'
-        adset.dailyBudget = adsetBudget.daily
-        adset.lifetimeBudget = adsetBudget.lifetime
+        adset.dailyBudget = adsetBudget?.daily ?? null
+        adset.lifetimeBudget = adsetBudget?.lifetime ?? null
       }
 
       campaign.impressions += adset.impressions

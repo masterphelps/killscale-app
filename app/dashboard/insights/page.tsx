@@ -638,8 +638,9 @@ export default function InsightsPage() {
         body: JSON.stringify({
           userId: user.id,
           adAccountId: selectedAccountId,
-          startDate: dateRange.start,
-          endDate: dateRange.end
+          datePreset: 'custom',
+          customStartDate: dateRange.start,
+          customEndDate: dateRange.end
         })
       })
 
@@ -1141,7 +1142,7 @@ export default function InsightsPage() {
 
             {/* Link to Full Table */}
             <Link
-              href="/dashboard/performance"
+              href="/dashboard"
               className="flex items-center justify-center gap-2 py-4 text-sm text-zinc-400 hover:text-white transition-colors"
             >
               View Full Performance Table

@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/dashboard/performance?upgraded=true`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/dashboard?upgraded=true`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/pricing`,
       customer_email: userEmail,
       metadata: {

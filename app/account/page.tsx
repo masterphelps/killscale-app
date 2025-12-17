@@ -358,7 +358,7 @@ export default function AccountPage() {
       <nav className="border-b border-border">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
           {['Launch', 'Scale', 'Pro'].includes(plan) ? (
-            <Link href="/dashboard/performance" className="flex items-center gap-2 text-zinc-400 hover:text-white">
+            <Link href="/dashboard" className="flex items-center gap-2 text-zinc-400 hover:text-white">
               <ArrowLeft className="w-4 h-4" />
               Back to Dashboard
             </Link>

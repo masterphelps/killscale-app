@@ -110,7 +110,7 @@ export default function PricingPage() {
     <div className="min-h-screen bg-bg-dark">
       <nav className="border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/dashboard/performance" className="flex items-center gap-2">
+          <Link href="/dashboard" className="flex items-center gap-2">
             <svg width="180" height="36" viewBox="0 0 280 50">
               <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
               <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
@@ -119,7 +119,7 @@ export default function PricingPage() {
             </svg>
           </Link>
           {user ? (
-            <Link href="/dashboard/performance" className="text-sm text-zinc-400 hover:text-white">
+            <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-white">
               ← Back to Dashboard
             </Link>
           ) : (
@@ -231,7 +231,7 @@ export default function PricingPage() {
                   </button>
                 ) : (
                   <Link
-                    href={user ? '/dashboard/performance' : '/signup'}
+                    href={user ? '/dashboard' : '/signup'}
                     className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
                   >
                     Start Free Trial
