@@ -32,11 +32,18 @@ type AttributionContextType = {
   source: AttributionSource
   pixelId: string | null
   pixelConfig: PixelConfig | null
+  attributionModel: AttributionModel
+  // Legacy - for backwards compatibility (same as multiTouchAttribution)
   attributionData: AttributionData
+  // Hybrid attribution: different data for different hierarchy levels
+  lastTouchAttribution: AttributionData  // Whole numbers - for campaigns/adsets
+  multiTouchAttribution: AttributionData // Fractional - for ads
   loading: boolean
 
   // Computed - TRUE means entire app uses KillScale pixel data (no Meta fallback)
   isKillScaleActive: boolean
+  // TRUE when using a multi-touch model (linear, time_decay, position_based)
+  isMultiTouchModel: boolean
 
   // Actions
   setSource: (source: AttributionSource) => Promise<void>
@@ -47,9 +54,13 @@ const AttributionContext = createContext<AttributionContextType>({
   source: 'meta',
   pixelId: null,
   pixelConfig: null,
+  attributionModel: 'last_touch',
   attributionData: {},
+  lastTouchAttribution: {},
+  multiTouchAttribution: {},
   loading: true,
   isKillScaleActive: false,
+  isMultiTouchModel: false,
   setSource: async () => {},
   refreshAttribution: async () => {},
 })
@@ -60,6 +71,9 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
 
   const [pixelConfig, setPixelConfig] = useState<PixelConfig | null>(null)
   const [attributionData, setAttributionData] = useState<AttributionData>({})
+  const [lastTouchAttribution, setLastTouchAttribution] = useState<AttributionData>({})
+  const [multiTouchAttribution, setMultiTouchAttribution] = useState<AttributionData>({})
+  const [attributionModel, setAttributionModel] = useState<AttributionModel>('last_touch')
   const [loading, setLoading] = useState(true)
 
   const userId = user?.id
@@ -69,6 +83,9 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     if (!userId || !currentAccountId) {
       setPixelConfig(null)
       setAttributionData({})
+      setLastTouchAttribution({})
+      setMultiTouchAttribution({})
+      setAttributionModel('last_touch')
       setLoading(false)
       return
     }
@@ -115,6 +132,8 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     if (!pixelConfig?.pixel_id || !userId) {
       console.log('[Attribution] Skipping - no pixelId or userId')
       setAttributionData({})
+      setLastTouchAttribution({})
+      setMultiTouchAttribution({})
       return
     }
 
@@ -122,6 +141,8 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     if (pixelConfig.attribution_source !== 'killscale') {
       console.log('[Attribution] Skipping - source is not killscale:', pixelConfig.attribution_source)
       setAttributionData({})
+      setLastTouchAttribution({})
+      setMultiTouchAttribution({})
       return
     }
 
@@ -136,17 +157,28 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
         console.log('[Attribution] Loaded KillScale data:', {
           totalEvents: data.totalEvents,
           uniqueAds: data.uniqueAds,
+          model: data.model,
           adIds: Object.keys(data.attribution),
           sampleData: Object.entries(data.attribution).slice(0, 3)
         })
+        // Legacy field for backwards compatibility
         setAttributionData(data.attribution)
+        // Hybrid attribution fields
+        setLastTouchAttribution(data.lastTouchAttribution || data.attribution)
+        setMultiTouchAttribution(data.multiTouchAttribution || data.attribution)
+        setAttributionModel(data.model || 'last_touch')
       } else {
         console.log('[Attribution] No attribution data in response')
         setAttributionData({})
+        setLastTouchAttribution({})
+        setMultiTouchAttribution({})
+        setAttributionModel('last_touch')
       }
     } catch (err) {
       console.error('Failed to load KillScale attribution:', err)
       setAttributionData({})
+      setLastTouchAttribution({})
+      setMultiTouchAttribution({})
     }
   }, [pixelConfig?.pixel_id, pixelConfig?.attribution_source, userId])
 
@@ -172,6 +204,9 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
       // Clear attribution data when switching away from KillScale
       if (source !== 'killscale') {
         setAttributionData({})
+        setLastTouchAttribution({})
+        setMultiTouchAttribution({})
+        setAttributionModel('last_touch')
       }
     } catch (err) {
       console.error('Error setting attribution source:', err)
@@ -180,6 +215,7 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
 
   // Computed values
   const isKillScaleActive = pixelConfig?.attribution_source === 'killscale'
+  const isMultiTouchModel = attributionModel !== 'last_touch'
   const source = pixelConfig?.attribution_source || 'meta'
   const pixelId = pixelConfig?.pixel_id || null
 
@@ -187,12 +223,16 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     source,
     pixelId,
     pixelConfig,
+    attributionModel,
     attributionData,
+    lastTouchAttribution,
+    multiTouchAttribution,
     loading,
     isKillScaleActive,
+    isMultiTouchModel,
     setSource,
     refreshAttribution,
-  }), [source, pixelId, pixelConfig, attributionData, loading, isKillScaleActive, setSource, refreshAttribution])
+  }), [source, pixelId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, setSource, refreshAttribution])
 
   return (
     <AttributionContext.Provider value={contextValue}>

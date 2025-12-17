@@ -195,7 +195,7 @@ export default function DashboardPage() {
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
-  const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
+  const { isKillScaleActive, attributionData, lastTouchAttribution, multiTouchAttribution, isMultiTouchModel, refreshAttribution } = useAttribution()
   const searchParams = useSearchParams()
 
   // Handle deep-linking from alerts page
@@ -938,22 +938,24 @@ export default function DashboardPage() {
 
     // If KillScale attribution is active, REPLACE all attribution data with KillScale pixel data
     // NO META FALLBACK - if no KillScale data for an ad, show 0 conversions
+    // Use multiTouchAttribution for ad-level data (fractional for multi-touch models)
     if (isKillScaleActive) {
       // Debug: log Meta ad IDs for comparison with attribution data
       const metaAdIds = Array.from(new Set(filtered.map(r => r.ad_id).filter((id): id is string => !!id)))
-      const attrAdIds = Object.keys(attributionData)
-      const matches = metaAdIds.filter(id => attributionData[id])
+      const attrAdIds = Object.keys(multiTouchAttribution)
+      const matches = metaAdIds.filter(id => multiTouchAttribution[id])
       console.log('[KS Attribution] Active - replacing all data:', {
         metaAdIds: metaAdIds.slice(0, 10), // First 10
         attrAdIds,
         matches,
         matchCount: matches.length,
-        totalAds: metaAdIds.length
+        totalAds: metaAdIds.length,
+        isMultiTouchModel
       })
 
       return filtered.map(row => {
-        // Get KillScale attribution for this ad, or default to 0
-        const adAttribution = row.ad_id ? attributionData[row.ad_id] : null
+        // Get KillScale attribution for this ad (fractional for multi-touch)
+        const adAttribution = row.ad_id ? multiTouchAttribution[row.ad_id] : null
         const newRevenue = adAttribution?.revenue ?? 0
         const newPurchases = adAttribution?.conversions ?? 0
         const newRoas = row.spend > 0 ? newRevenue / row.spend : 0
@@ -973,7 +975,7 @@ export default function DashboardPage() {
     }
 
     return filtered
-  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, attributionData])
+  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, multiTouchAttribution, isMultiTouchModel])
 
   const allCampaigns = useMemo(() =>
     Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
@@ -1737,6 +1739,8 @@ export default function DashboardPage() {
             highlightEntity={highlightEntity}
             userId={user?.id}
             campaignAboAdsets={campaignAboAdsets}
+            lastTouchAttribution={isKillScaleActive ? lastTouchAttribution : undefined}
+            isMultiTouchModel={isMultiTouchModel}
           />
         </>
       )}

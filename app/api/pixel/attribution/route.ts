@@ -148,8 +148,11 @@ export async function GET(request: NextRequest) {
         attribution[adId].byType[event.event_type].value += eventValue
       })
 
+      // For last_touch, both attribution types are identical
       return NextResponse.json({
         attribution,
+        lastTouchAttribution: attribution,
+        multiTouchAttribution: attribution,
         totalEvents: events?.length || 0,
         uniqueAds: Object.keys(attribution).length,
         model: attributionModel
@@ -183,6 +186,8 @@ export async function GET(request: NextRequest) {
     if (!conversions || conversions.length === 0) {
       return NextResponse.json({
         attribution: {},
+        lastTouchAttribution: {},
+        multiTouchAttribution: {},
         totalEvents: 0,
         uniqueAds: 0,
         model: attributionModel
@@ -199,8 +204,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 2: For each client with conversions, get their touchpoint journey
+    // Track BOTH last-touch (for campaigns/adsets) and multi-touch (for ads)
     const allAttributions: AttributedConversion[] = []
     const byTypeAccum: Record<string, Record<string, { count: number; value: number }>> = {}
+
+    // Last-touch tracking: whole conversions go to the closing ad
+    const lastTouchData: Record<string, { conversions: number; revenue: number }> = {}
+
     let totalConversions = 0
 
     for (const [clientId, clientConversions] of Array.from(conversionsByClient.entries())) {
@@ -234,7 +244,15 @@ export async function GET(request: NextRequest) {
 
         if (relevantTouchpoints.length === 0) continue
 
-        // Apply attribution model
+        // LAST-TOUCH: The last touchpoint gets the whole conversion (for campaign/adset level)
+        const lastTouchpoint = relevantTouchpoints[relevantTouchpoints.length - 1]
+        if (!lastTouchData[lastTouchpoint.ad_id]) {
+          lastTouchData[lastTouchpoint.ad_id] = { conversions: 0, revenue: 0 }
+        }
+        lastTouchData[lastTouchpoint.ad_id].conversions += 1
+        lastTouchData[lastTouchpoint.ad_id].revenue += conversionValue
+
+        // MULTI-TOUCH: Apply fractional attribution model (for ad level)
         const attributed = applyAttributionModel(
           relevantTouchpoints,
           conversionValue,
@@ -245,7 +263,7 @@ export async function GET(request: NextRequest) {
         allAttributions.push(...attributed)
         totalConversions++
 
-        // Track by event type
+        // Track by event type (for multi-touch)
         for (const attr of attributed) {
           if (!byTypeAccum[attr.ad_id]) {
             byTypeAccum[attr.ad_id] = {}
@@ -259,28 +277,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Aggregate all attributions
+    // Aggregate multi-touch attributions
     const aggregated = aggregateAttributions(allAttributions)
 
-    // Build final attribution object
-    const attribution: Record<string, {
+    // Build multi-touch attribution object (fractional - for ad level)
+    const multiTouchAttribution: Record<string, {
       conversions: number
       revenue: number
       byType: Record<string, { count: number; value: number }>
     }> = {}
 
     for (const [adId, data] of Array.from(aggregated.entries())) {
-      attribution[adId] = {
+      multiTouchAttribution[adId] = {
         conversions: data.conversions,
         revenue: data.value,
         byType: byTypeAccum[adId] || {}
       }
     }
 
+    // Build last-touch attribution object (whole numbers - for campaign/adset level)
+    const lastTouchAttribution: Record<string, {
+      conversions: number
+      revenue: number
+    }> = lastTouchData
+
     return NextResponse.json({
-      attribution,
+      // Legacy field for backwards compatibility
+      attribution: multiTouchAttribution,
+      // New hybrid fields
+      lastTouchAttribution,
+      multiTouchAttribution,
       totalEvents: totalConversions,
-      uniqueAds: Object.keys(attribution).length,
+      uniqueAds: Object.keys(multiTouchAttribution).length,
       model: attributionModel
     })
   } catch (err) {

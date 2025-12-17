@@ -71,6 +71,12 @@ type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
 type SortField = 'name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'results' | 'cpr' | 'cpc' | 'ctr' | 'cpa' | 'convRate' | 'clicks' | 'impressions' | 'verdict'
 type SortDirection = 'asc' | 'desc'
 
+// Attribution data type (keyed by ad_id)
+type AttributionData = Record<string, {
+  conversions: number
+  revenue: number
+}>
+
 type PerformanceTableProps = {
   data: AdRow[]
   rules: Rules
@@ -97,6 +103,10 @@ type PerformanceTableProps = {
   userId?: string
   // For cascading selection (ABO adsets)
   campaignAboAdsets?: Map<string, Set<string>>
+  // Hybrid attribution: last-touch for campaigns/adsets (whole numbers)
+  lastTouchAttribution?: AttributionData
+  // TRUE when using multi-touch model (linear, time_decay, position_based)
+  isMultiTouchModel?: boolean
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -442,7 +452,9 @@ export function PerformanceTable({
   onBudgetChange,
   highlightEntity,
   userId,
-  campaignAboAdsets
+  campaignAboAdsets,
+  lastTouchAttribution,
+  isMultiTouchModel = false
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -477,8 +489,67 @@ export function PerformanceTable({
 
   // Build hierarchy
   const hierarchy = useMemo(() => {
-    return buildHierarchy(data, rules)
-  }, [data, rules])
+    const baseHierarchy = buildHierarchy(data, rules)
+
+    // If we have lastTouchAttribution (hybrid multi-touch mode), recalculate
+    // campaign/adset metrics using whole-number last-touch data instead of
+    // fractional multi-touch data
+    if (lastTouchAttribution && Object.keys(lastTouchAttribution).length > 0) {
+      return baseHierarchy.map(campaign => {
+        // Sum last-touch attribution for all ads in this campaign
+        let campaignPurchases = 0
+        let campaignRevenue = 0
+
+        const updatedAdsets = campaign.children?.map(adset => {
+          // Sum last-touch attribution for all ads in this adset
+          let adsetPurchases = 0
+          let adsetRevenue = 0
+
+          adset.children?.forEach(ad => {
+            const adId = ad.id
+            if (adId && lastTouchAttribution[adId]) {
+              adsetPurchases += lastTouchAttribution[adId].conversions
+              adsetRevenue += lastTouchAttribution[adId].revenue
+            }
+          })
+
+          campaignPurchases += adsetPurchases
+          campaignRevenue += adsetRevenue
+
+          // Update adset with last-touch totals (whole numbers)
+          const adsetRoas = adset.spend > 0 ? adsetRevenue / adset.spend : 0
+          return {
+            ...adset,
+            purchases: adsetPurchases,
+            revenue: adsetRevenue,
+            results: adsetPurchases,
+            roas: adsetRoas,
+            cpr: adsetPurchases > 0 ? adset.spend / adsetPurchases : 0,
+            cpa: adsetPurchases > 0 ? adset.spend / adsetPurchases : 0,
+            convRate: adset.clicks > 0 ? (adsetPurchases / adset.clicks) * 100 : 0,
+            verdict: calculateVerdict(adset.spend, adsetRoas, rules)
+          }
+        })
+
+        // Update campaign with last-touch totals (whole numbers)
+        const campaignRoas = campaign.spend > 0 ? campaignRevenue / campaign.spend : 0
+        return {
+          ...campaign,
+          purchases: campaignPurchases,
+          revenue: campaignRevenue,
+          results: campaignPurchases,
+          roas: campaignRoas,
+          cpr: campaignPurchases > 0 ? campaign.spend / campaignPurchases : 0,
+          cpa: campaignPurchases > 0 ? campaign.spend / campaignPurchases : 0,
+          convRate: campaign.clicks > 0 ? (campaignPurchases / campaign.clicks) * 100 : 0,
+          verdict: calculateVerdict(campaign.spend, campaignRoas, rules),
+          children: updatedAdsets
+        }
+      })
+    }
+
+    return baseHierarchy
+  }, [data, rules, lastTouchAttribution])
 
   // Handle deep-linking highlight from alerts
   useEffect(() => {
