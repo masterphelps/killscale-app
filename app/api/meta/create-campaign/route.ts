@@ -419,7 +419,10 @@ export async function POST(request: NextRequest) {
         videoId: creative.videoId,
         thumbnailHash: creative.thumbnailHash || 'none',
         thumbnailUrl: creative.thumbnailUrl ? 'present' : 'missing',
-        fileName: creative.fileName
+        fileName: creative.fileName,
+        urlTags: urlTags || 'NOT SET',
+        hasUrlTags: !!creativePayload.url_tags,
+        objective: objective
       })
 
       const creativeResponse = await fetch(
