@@ -116,11 +116,10 @@ const getCacheKey = (accountId: string | null, workspaceAccountIds: string[]): s
 }
 
 // Helper to check if cached data covers the requested date range
+// NO TTL - historical data is COMPLETE and never changes
+// last_30d synced at 10am is identical at 5pm
 const isCacheValid = (cache: CacheEntry, datePreset: string, customStart?: string, customEnd?: string): boolean => {
-  // Check TTL
-  if (Date.now() - cache.fetchedAt > CACHE_TTL) return false
-
-  // Same preset = valid
+  // Same preset = always valid (historical data never changes)
   if (cache.datePreset === datePreset) {
     if (datePreset === 'custom') {
       return cache.customStartDate === customStart && cache.customEndDate === customEnd
@@ -128,9 +127,9 @@ const isCacheValid = (cache: CacheEntry, datePreset: string, customStart?: strin
     return true
   }
 
-  // Cached range is longer than requested = valid (can filter down)
+  // Cached range is longer than requested = valid (can filter down client-side)
   const presetDays: Record<string, number> = {
-    'today': 1, 'yesterday': 1, 'last_7d': 7, 'last_14d': 14, 'last_30d': 30, 'this_month': 31, 'last_month': 31
+    'today': 1, 'yesterday': 1, 'last_7d': 7, 'last_14d': 14, 'last_30d': 30, 'last_90d': 90, 'this_month': 31, 'last_month': 31
   }
   const cachedDays = presetDays[cache.datePreset] || 0
   const requestedDays = presetDays[datePreset] || 0
@@ -397,33 +396,36 @@ export default function DashboardPage() {
   // Track if this is the initial mount (to prevent auto-sync on page load)
   const isInitialMount = useRef(true)
 
-  // Compute if we're viewing "live" data (date range includes today)
-  const isLive = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0]
-    
-    // Presets that include today
-    const livePresets = ['today', 'last_7d', 'last_14d', 'last_30d', 'this_month', 'maximum']
-    
-    if (datePreset === 'custom') {
-      // Custom range is live if end date is today or later
-      return customEndDate >= today
-    }
-    
-    return livePresets.includes(datePreset)
-  }, [datePreset, customEndDate])
+  // NOTE: Meta's presets (last_30d, last_7d, etc) are COMPLETE days - they don't include today
+  // Only "today" preset has truly live data. Removed misleading "Live" indicator.
 
   // NOTE: Sync uses the selected date range from the date picker
-  // When user changes date preset, they need to click Sync to fetch new data
-  // Client-side filtering allows instant switching within the synced range
+  // Smart sync when date preset changes - only sync if cache can't serve the request
   useEffect(() => {
-    // Just track mount state for other effects
+    // Skip initial mount
     if (isInitialMount.current) {
       isInitialMount.current = false
+      return
     }
-  }, [datePreset])
 
-  // Auto-refresh removed - was disruptive to user experience
-  // Users can manually sync when they want fresh data
+    if (!selectedAccountId || !user) return
+    if (datePreset === 'custom') return // Custom dates handled by handleCustomDateApply
+
+    // Check if current cache can serve this request
+    const cachedEntry = dataCache.get(selectedAccountId)
+    if (cachedEntry && isCacheValid(cachedEntry, datePreset)) {
+      // Cache covers this range - no sync needed, client-side filtering handles it
+      return
+    }
+
+    // Need larger range than cached - sync new data
+    // Debounce to avoid rapid syncs when clicking through presets
+    const timeout = setTimeout(() => {
+      handleSyncAccount(selectedAccountId)
+    }, 500)
+
+    return () => clearTimeout(timeout)
+  }, [datePreset, selectedAccountId, user])
 
   const loadData = async (showLoading = true) => {
     if (!user) return
@@ -1354,25 +1356,6 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           {data.length > 0 && (
             <>
-              {/* Live/Historical Indicator */}
-              {canSync && (selectedAccountId || workspaceAccountIds.length > 0) && (
-                isLive ? (
-                  <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                    </span>
-                    <span className="text-sm text-green-400">Live</span>
-                  </div>
-                ) : (
-                  <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-zinc-500/10 border border-zinc-500/30 rounded-lg">
-                    <span className="relative flex h-2 w-2">
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
-                    </span>
-                    <span className="text-sm text-zinc-400">Historical</span>
-                  </div>
-                )
-              )}
 
               {/* Date Picker Dropdown */}
               <div className="relative">

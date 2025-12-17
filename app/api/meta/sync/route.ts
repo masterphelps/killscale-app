@@ -523,24 +523,29 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Delete ALL existing data for this user (CSV and API)
+    // Delete existing data for this specific account only (not all user data!)
     const { error: deleteError } = await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', userId)
+      .eq('ad_account_id', adAccountId)
 
     if (deleteError) {
       console.error('Delete error:', deleteError)
     }
 
-    // Insert new data
-    const { error: insertError } = await supabase
-      .from('ad_data')
-      .insert(allAdData)
+    // Insert new data in chunks to avoid payload size limits
+    const BATCH_SIZE = 1000
+    for (let i = 0; i < allAdData.length; i += BATCH_SIZE) {
+      const batch = allAdData.slice(i, i + BATCH_SIZE)
+      const { error: insertError } = await supabase
+        .from('ad_data')
+        .insert(batch)
 
-    if (insertError) {
-      console.error('Insert error:', insertError)
-      return NextResponse.json({ error: 'Failed to save ad data' }, { status: 500 })
+      if (insertError) {
+        console.error('Insert error at batch', i / BATCH_SIZE, ':', insertError)
+        return NextResponse.json({ error: 'Failed to save ad data' }, { status: 500 })
+      }
     }
     
     // Update last sync time on connection
