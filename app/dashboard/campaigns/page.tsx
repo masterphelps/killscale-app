@@ -19,6 +19,7 @@ import { BulkOperationProgress } from '@/components/bulk-operation-progress'
 import { BulkBudgetModal } from '@/components/bulk-budget-modal'
 import { DuplicateModal } from '@/components/duplicate-modal'
 import { CopyAdsModal } from '@/components/copy-ads-modal'
+import { InlineDuplicateModal } from '@/components/inline-duplicate-modal'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -160,6 +161,14 @@ export default function LaunchPage() {
   const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false)
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
   const [copyAdsModalOpen, setCopyAdsModalOpen] = useState(false)
+  const [inlineDuplicateModal, setInlineDuplicateModal] = useState<{
+    isOpen: boolean
+    itemType: 'campaign' | 'adset' | 'ad'
+    itemId: string
+    itemName: string
+    parentCampaignId?: string
+    parentAdsetId?: string
+  } | null>(null)
 
   // Track the last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
@@ -1197,89 +1206,22 @@ export default function LaunchPage() {
     clearSelection()
   }
 
-  // Inline duplicate handler for single items
-  const handleInlineDuplicate = async (
+  // Open inline duplicate modal
+  const openInlineDuplicateModal = (
     type: 'campaign' | 'adset' | 'ad',
     id: string,
     name: string,
     parentCampaignId?: string,
     parentAdsetId?: string
   ) => {
-    if (!user || !currentAccountId) return
-
-    const newName = `${name} - Copy`
-    setUpdatingStatus(id)
-
-    try {
-      let response: Response
-      let endpoint: string
-
-      switch (type) {
-        case 'campaign':
-          endpoint = '/api/meta/duplicate-campaign'
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user.id,
-              adAccountId: currentAccountId,
-              sourceCampaignId: id,
-              newName,
-              copyStatus: 'PAUSED'
-            })
-          })
-          break
-
-        case 'adset':
-          endpoint = '/api/meta/duplicate-adset'
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user.id,
-              adAccountId: currentAccountId,
-              sourceAdsetId: id,
-              targetCampaignId: parentCampaignId,
-              newName,
-              copyStatus: 'PAUSED'
-            })
-          })
-          break
-
-        case 'ad':
-          endpoint = '/api/meta/duplicate-ad'
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user.id,
-              adAccountId: currentAccountId,
-              sourceAdId: id,
-              targetAdsetId: parentAdsetId,
-              newName,
-              copyStatus: 'PAUSED'
-            })
-          })
-          break
-
-        default:
-          throw new Error(`Unknown type: ${type}`)
-      }
-
-      const result = await response.json()
-
-      if (result.error) {
-        alert(`Failed to duplicate: ${result.error}`)
-      } else {
-        // Reload to show new item
-        await loadCampaigns()
-      }
-    } catch (err) {
-      console.error('Inline duplicate error:', err)
-      alert('Failed to duplicate. Please try again.')
-    } finally {
-      setUpdatingStatus(null)
-    }
+    setInlineDuplicateModal({
+      isOpen: true,
+      itemType: type,
+      itemId: id,
+      itemName: name,
+      parentCampaignId,
+      parentAdsetId
+    })
   }
 
   // Show wizard
@@ -1524,7 +1466,7 @@ export default function LaunchPage() {
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleInlineDuplicate('campaign', campaign.id, campaign.name)}
+                        onClick={() => openInlineDuplicateModal('campaign', campaign.id, campaign.name)}
                         className="p-2 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
                         title="Duplicate campaign"
                       >
@@ -1690,16 +1632,11 @@ export default function LaunchPage() {
                                     <Pencil className="w-4 h-4" />
                                   </button>
                                   <button
-                                    onClick={() => handleInlineDuplicate('adset', adSet.id, adSet.name, campaign.id)}
-                                    disabled={updatingStatus === adSet.id}
+                                    onClick={() => openInlineDuplicateModal('adset', adSet.id, adSet.name, campaign.id)}
                                     className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
                                     title="Duplicate ad set"
                                   >
-                                    {updatingStatus === adSet.id ? (
-                                      <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                      <Copy className="w-4 h-4" />
-                                    )}
+                                    <Copy className="w-4 h-4" />
                                   </button>
                                   <button
                                     onClick={() => {
@@ -1864,16 +1801,11 @@ export default function LaunchPage() {
                                                 <Pencil className="w-4 h-4" />
                                               </button>
                                               <button
-                                                onClick={() => handleInlineDuplicate('ad', ad.id, ad.name, campaign.id, adSet.id)}
-                                                disabled={updatingStatus === ad.id}
+                                                onClick={() => openInlineDuplicateModal('ad', ad.id, ad.name, campaign.id, adSet.id)}
                                                 className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
                                                 title="Duplicate ad"
                                               >
-                                                {updatingStatus === ad.id ? (
-                                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                                ) : (
-                                                  <Copy className="w-4 h-4" />
-                                                )}
+                                                <Copy className="w-4 h-4" />
                                               </button>
                                               <button
                                                 onClick={() => setDeleteModal({
@@ -2062,6 +1994,22 @@ export default function LaunchPage() {
           userId={user.id}
           adAccountId={currentAccountId}
           onComplete={handleCopyAdsComplete}
+        />
+      )}
+
+      {/* Inline Duplicate Modal */}
+      {currentAccountId && user && inlineDuplicateModal && (
+        <InlineDuplicateModal
+          isOpen={inlineDuplicateModal.isOpen}
+          onClose={() => setInlineDuplicateModal(null)}
+          itemType={inlineDuplicateModal.itemType}
+          itemId={inlineDuplicateModal.itemId}
+          itemName={inlineDuplicateModal.itemName}
+          parentCampaignId={inlineDuplicateModal.parentCampaignId}
+          parentAdsetId={inlineDuplicateModal.parentAdsetId}
+          userId={user.id}
+          adAccountId={currentAccountId}
+          onComplete={loadCampaigns}
         />
       )}
     </div>
