@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare } from 'lucide-react'
+import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare, Copy } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -82,7 +82,7 @@ interface Creative {
 export default function LaunchPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { plan } = useSubscription()
+  useSubscription() // Keep hook for future use
   const { currentAccountId, loading: accountLoading, currentWorkspaceId, workspaceAccountIds } = useAccount()
   const { isPrivacyMode, maskText } = usePrivacyMode()
 
@@ -164,16 +164,8 @@ export default function LaunchPage() {
   // Track the last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
 
-  const planLower = plan?.toLowerCase() || ''
-  const canLaunch = planLower === 'launch' || planLower === 'scale' || planLower === 'pro'
-
   // Load campaigns when account changes
   useEffect(() => {
-    if (!canLaunch) {
-      setLoading(false)
-      return
-    }
-
     if (currentAccountId && user && currentAccountId !== lastLoadedAccountId) {
       // Clear cached data from previous account
       setExpandedCampaigns(new Set())
@@ -190,7 +182,7 @@ export default function LaunchPage() {
     } else if (!accountLoading && !currentAccountId) {
       setLoading(false)
     }
-  }, [currentAccountId, user, canLaunch, accountLoading, lastLoadedAccountId])
+  }, [currentAccountId, user, accountLoading, lastLoadedAccountId])
 
   const loadCampaigns = async () => {
     if (!user || !currentAccountId) return
@@ -1205,33 +1197,89 @@ export default function LaunchPage() {
     clearSelection()
   }
 
-  // Upgrade prompt for non-Pro users
-  if (!canLaunch) {
-    return (
-      <div>
-          <div className="max-w-2xl mx-auto text-center py-16">
-            <div className="w-16 h-16 bg-accent/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Rocket className="w-8 h-8 text-accent" />
-            </div>
-            <h1 className="text-3xl font-bold mb-4">Launch Campaigns</h1>
-            <p className="text-zinc-400 mb-8">
-              Create Andromeda-compliant campaigns in 60 seconds.
-              We handle the structure, you bring the creative.
-            </p>
-            <div className="bg-bg-card border border-border rounded-xl p-6 mb-8">
-              <p className="text-sm text-zinc-500 mb-4">
-                Campaign creation is available on Pro and Agency plans.
-              </p>
-              <button
-                onClick={() => router.push('/pricing')}
-                className="bg-accent hover:bg-accent-hover text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Upgrade to Pro
-              </button>
-            </div>
-          </div>
-      </div>
-    )
+  // Inline duplicate handler for single items
+  const handleInlineDuplicate = async (
+    type: 'campaign' | 'adset' | 'ad',
+    id: string,
+    name: string,
+    parentCampaignId?: string,
+    parentAdsetId?: string
+  ) => {
+    if (!user || !currentAccountId) return
+
+    const newName = `${name} - Copy`
+    setUpdatingStatus(id)
+
+    try {
+      let response: Response
+      let endpoint: string
+
+      switch (type) {
+        case 'campaign':
+          endpoint = '/api/meta/duplicate-campaign'
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              adAccountId: currentAccountId,
+              sourceCampaignId: id,
+              newName,
+              copyStatus: 'PAUSED'
+            })
+          })
+          break
+
+        case 'adset':
+          endpoint = '/api/meta/duplicate-adset'
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              adAccountId: currentAccountId,
+              sourceAdsetId: id,
+              targetCampaignId: parentCampaignId,
+              newName,
+              copyStatus: 'PAUSED'
+            })
+          })
+          break
+
+        case 'ad':
+          endpoint = '/api/meta/duplicate-ad'
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              adAccountId: currentAccountId,
+              sourceAdId: id,
+              targetAdsetId: parentAdsetId,
+              newName,
+              copyStatus: 'PAUSED'
+            })
+          })
+          break
+
+        default:
+          throw new Error(`Unknown type: ${type}`)
+      }
+
+      const result = await response.json()
+
+      if (result.error) {
+        alert(`Failed to duplicate: ${result.error}`)
+      } else {
+        // Reload to show new item
+        await loadCampaigns()
+      }
+    } catch (err) {
+      console.error('Inline duplicate error:', err)
+      alert('Failed to duplicate. Please try again.')
+    } finally {
+      setUpdatingStatus(null)
+    }
   }
 
   // Show wizard
@@ -1476,6 +1524,13 @@ export default function LaunchPage() {
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
+                        onClick={() => handleInlineDuplicate('campaign', campaign.id, campaign.name)}
+                        className="p-2 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                        title="Duplicate campaign"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => {
                           const adSetCount = adSetsData[campaign.id]?.length || 0
                           const adCount = Object.values(adsData)
@@ -1633,6 +1688,18 @@ export default function LaunchPage() {
                                     title="Edit ad set"
                                   >
                                     <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleInlineDuplicate('adset', adSet.id, adSet.name, campaign.id)}
+                                    disabled={updatingStatus === adSet.id}
+                                    className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                    title="Duplicate ad set"
+                                  >
+                                    {updatingStatus === adSet.id ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Copy className="w-4 h-4" />
+                                    )}
                                   </button>
                                   <button
                                     onClick={() => {
@@ -1795,6 +1862,18 @@ export default function LaunchPage() {
                                                 title="Edit ad"
                                               >
                                                 <Pencil className="w-4 h-4" />
+                                              </button>
+                                              <button
+                                                onClick={() => handleInlineDuplicate('ad', ad.id, ad.name, campaign.id, adSet.id)}
+                                                disabled={updatingStatus === ad.id}
+                                                className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                                title="Duplicate ad"
+                                              >
+                                                {updatingStatus === ad.id ? (
+                                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                  <Copy className="w-4 h-4" />
+                                                )}
                                               </button>
                                               <button
                                                 onClick={() => setDeleteModal({

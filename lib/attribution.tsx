@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback,
 import { createClient } from '@supabase/supabase-js'
 import { useAuth } from './auth'
 import { useAccount } from './account'
+import { AttributionModel } from './attribution-models'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,6 +17,8 @@ type PixelConfig = {
   pixel_id: string
   attribution_source: AttributionSource
   attribution_window: number
+  attribution_model?: AttributionModel
+  time_decay_half_life?: number
 }
 
 // Attribution data keyed by ad_id (utm_content from pixel events)

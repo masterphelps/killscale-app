@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Loader2, Copy, Check, Activity, RefreshCw, Download, ExternalLink, Lock, Sparkles, ChevronDown, ChevronRight, Layers, Plus, Smartphone, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Copy, Check, Activity, RefreshCw, Download, ExternalLink, Lock, Sparkles, ChevronDown, ChevronRight, Layers, Plus, Smartphone, Eye, EyeOff, Info } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { cn } from '@/lib/utils'
+import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'
 
 const EVENT_TYPES = [
   { value: 'purchase', label: 'Purchase' },
@@ -35,6 +36,8 @@ type WorkspacePixel = {
   pixel_id: string
   pixel_secret: string
   attribution_source: 'native' | 'pixel'
+  attribution_model: AttributionModel
+  time_decay_half_life: number
 }
 
 type PixelEvent = {
@@ -64,6 +67,7 @@ export default function PixelPage() {
   const [copiedPixelId, setCopiedPixelId] = useState<string | null>(null)
   const [copiedUtm, setCopiedUtm] = useState(false)
   const [updatingAttribution, setUpdatingAttribution] = useState<string | null>(null)
+  const [updatingModel, setUpdatingModel] = useState<string | null>(null)
   const [lastEventTimes, setLastEventTimes] = useState<Record<string, string | null>>({})
 
   // Kiosk settings state
@@ -135,7 +139,7 @@ export default function PixelPage() {
         // Check if pixel exists
         let { data: existingPixel } = await supabase
           .from('workspace_pixels')
-          .select('pixel_id, pixel_secret, attribution_source')
+          .select('pixel_id, pixel_secret, attribution_source, attribution_model, time_decay_half_life')
           .eq('workspace_id', workspace.id)
           .single()
 
@@ -152,8 +156,10 @@ export default function PixelPage() {
               pixel_id: newPixelId,
               pixel_secret: crypto.randomUUID().replace(/-/g, ''),
               attribution_source: 'native',
+              attribution_model: 'last_touch',
+              time_decay_half_life: 7,
             })
-            .select('pixel_id, pixel_secret, attribution_source')
+            .select('pixel_id, pixel_secret, attribution_source, attribution_model, time_decay_half_life')
             .single()
 
           if (!createError && newPixel) {
@@ -168,6 +174,8 @@ export default function PixelPage() {
             pixel_id: existingPixel.pixel_id,
             pixel_secret: existingPixel.pixel_secret,
             attribution_source: existingPixel.attribution_source,
+            attribution_model: existingPixel.attribution_model || 'last_touch',
+            time_decay_half_life: existingPixel.time_decay_half_life || 7,
           })
         }
       }
@@ -239,6 +247,38 @@ export default function PixelPage() {
       console.error('Failed to update attribution source:', err)
     } finally {
       setUpdatingAttribution(null)
+    }
+  }
+
+  // Update attribution model for a workspace
+  const updateAttributionModel = async (workspaceId: string, newModel: AttributionModel, halfLife?: number) => {
+    setUpdatingModel(workspaceId)
+    try {
+      const updates: { attribution_model: AttributionModel; time_decay_half_life?: number } = {
+        attribution_model: newModel
+      }
+      if (halfLife !== undefined) {
+        updates.time_decay_half_life = halfLife
+      }
+
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update(updates)
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixels(prev => prev.map(wp =>
+          wp.workspace_id === workspaceId
+            ? { ...wp, attribution_model: newModel, ...(halfLife !== undefined && { time_decay_half_life: halfLife }) }
+            : wp
+        ))
+      } else {
+        console.error('Failed to update attribution model:', error)
+      }
+    } catch (err) {
+      console.error('Failed to update attribution model:', err)
+    } finally {
+      setUpdatingModel(null)
     }
   }
 
@@ -788,6 +828,85 @@ ks('pageview');
                       </div>
                     )}
                   </div>
+
+                  {/* Attribution Model - Only show when KillScale Pixel is selected */}
+                  {wp.attribution_source === 'pixel' && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <h3 className="font-medium text-sm">Attribution Model</h3>
+                        <div className="group relative">
+                          <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+                            Choose how credit is distributed when a customer interacts with multiple ads before converting.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {(Object.keys(ATTRIBUTION_MODEL_INFO) as AttributionModel[]).map((model) => (
+                          <button
+                            key={model}
+                            onClick={() => updateAttributionModel(wp.workspace_id, model)}
+                            disabled={updatingModel === wp.workspace_id}
+                            className={cn(
+                              "w-full p-3 rounded-lg border-2 transition-all text-left",
+                              wp.attribution_model === model
+                                ? "border-purple-500 bg-purple-500/10"
+                                : "border-border hover:border-zinc-600"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className={cn(
+                                "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                wp.attribution_model === model
+                                  ? "border-purple-500"
+                                  : "border-zinc-600"
+                              )}>
+                                {wp.attribution_model === model && (
+                                  <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                )}
+                              </div>
+                              <span className="font-medium text-sm">{ATTRIBUTION_MODEL_INFO[model].label}</span>
+                            </div>
+                            <p className="text-xs text-zinc-500 ml-6">
+                              {ATTRIBUTION_MODEL_INFO[model].description}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Time Decay Half-Life Slider */}
+                      {wp.attribution_model === 'time_decay' && (
+                        <div className="mt-4 p-3 bg-bg-dark rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-sm text-zinc-400">Half-Life</label>
+                            <span className="text-sm font-medium text-white">{wp.time_decay_half_life} days</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="28"
+                            value={wp.time_decay_half_life}
+                            onChange={(e) => updateAttributionModel(wp.workspace_id, 'time_decay', parseInt(e.target.value))}
+                            className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                          />
+                          <div className="flex justify-between text-xs text-zinc-600 mt-1">
+                            <span>1 day</span>
+                            <span>28 days</span>
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-2">
+                            Touchpoints lose 50% of their credit every {wp.time_decay_half_life} days before conversion.
+                          </p>
+                        </div>
+                      )}
+
+                      {updatingModel === wp.workspace_id && (
+                        <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Updating...
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Sales Kiosk */}
                   <div>
