@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil } from 'lucide-react'
+import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -14,6 +14,11 @@ import { DeleteEntityModal } from '@/components/confirm-modal'
 import { CreativePreviewTooltip } from '@/components/creative-preview-tooltip'
 import { EditEntityModal } from '@/components/edit-entity-modal'
 import { UtmIndicator } from '@/components/utm-indicator'
+import { BulkActionToolbar, SelectedItem } from '@/components/bulk-action-toolbar'
+import { BulkOperationProgress } from '@/components/bulk-operation-progress'
+import { BulkBudgetModal } from '@/components/bulk-budget-modal'
+import { DuplicateModal } from '@/components/duplicate-modal'
+import { CopyAdsModal } from '@/components/copy-ads-modal'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -139,6 +144,23 @@ export default function LaunchPage() {
   const [utmLoading, setUtmLoading] = useState(false)
   const utmFetchedForAccount = useRef<string | null>(null) // Track which account we've fetched UTM for
 
+  // Bulk selection state
+  const [selectedItems, setSelectedItems] = useState<Map<string, SelectedItem>>(new Map())
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkLoadingAction, setBulkLoadingAction] = useState<'pause' | 'resume' | 'delete' | 'duplicate' | 'scale' | 'copy' | null>(null)
+  const [bulkProgress, setBulkProgress] = useState<{
+    isOpen: boolean
+    title: string
+    total: number
+    completed: number
+    failed: number
+    currentItem?: string
+    results: Array<{ id: string; name: string; success: boolean; error?: string }>
+  } | null>(null)
+  const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false)
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
+  const [copyAdsModalOpen, setCopyAdsModalOpen] = useState(false)
+
   // Track the last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
 
@@ -161,6 +183,7 @@ export default function LaunchPage() {
       setCreativesData({})
       setCampaigns([])
       setUtmStatus({})
+      setSelectedItems(new Map()) // Clear selection on account change
       utmFetchedForAccount.current = null // Reset UTM fetch tracking for new account
       setLastLoadedAccountId(currentAccountId)
       loadCampaigns()
@@ -620,6 +643,568 @@ export default function LaunchPage() {
     return { tracked, total }
   }
 
+  // Selection handlers
+  const toggleSelection = (item: SelectedItem) => {
+    setSelectedItems(prev => {
+      const next = new Map(prev)
+      if (next.has(item.id)) {
+        next.delete(item.id)
+      } else {
+        next.set(item.id, item)
+      }
+      return next
+    })
+  }
+
+  const clearSelection = () => {
+    setSelectedItems(new Map())
+  }
+
+  // Bulk operation handlers
+  const handleBulkPause = async () => {
+    if (!user || selectedItems.size === 0) return
+
+    const items = Array.from(selectedItems.values())
+    setBulkLoading(true)
+    setBulkLoadingAction('pause')
+    setBulkProgress({
+      isOpen: true,
+      title: 'Pausing items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entities: items.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name
+          })),
+          status: 'PAUSED'
+        })
+      })
+
+      const result = await response.json()
+
+      setBulkProgress({
+        isOpen: true,
+        title: 'Pause Complete',
+        total: result.total,
+        completed: result.total,
+        failed: result.failed,
+        results: result.results.map((r: any) => ({
+          id: r.entityId,
+          name: r.name || r.entityId,
+          success: r.success,
+          error: r.error
+        }))
+      })
+
+      // Update local state for succeeded items
+      if (result.succeeded > 0) {
+        const succeededIds = new Set(result.results.filter((r: any) => r.success).map((r: any) => r.entityId))
+
+        // Update campaigns
+        setCampaigns(prev => prev.map(c =>
+          succeededIds.has(c.id) ? { ...c, status: 'PAUSED' } : c
+        ))
+
+        // Update adsets
+        setAdSetsData(prev => {
+          const next = { ...prev }
+          for (const campaignId of Object.keys(next)) {
+            next[campaignId] = next[campaignId].map(as =>
+              succeededIds.has(as.id) ? { ...as, status: 'PAUSED' } : as
+            )
+          }
+          return next
+        })
+
+        // Update ads
+        setAdsData(prev => {
+          const next = { ...prev }
+          for (const adsetId of Object.keys(next)) {
+            next[adsetId] = next[adsetId].map(ad =>
+              succeededIds.has(ad.id) ? { ...ad, status: 'PAUSED' } : ad
+            )
+          }
+          return next
+        })
+
+        clearSelection()
+      }
+    } catch (err) {
+      console.error('Bulk pause error:', err)
+      setBulkProgress(prev => prev ? {
+        ...prev,
+        title: 'Pause Failed',
+        completed: prev.total,
+        failed: prev.total
+      } : null)
+    } finally {
+      setBulkLoading(false)
+      setBulkLoadingAction(null)
+    }
+  }
+
+  const handleBulkResume = async () => {
+    if (!user || selectedItems.size === 0) return
+
+    const items = Array.from(selectedItems.values())
+    setBulkLoading(true)
+    setBulkLoadingAction('resume')
+    setBulkProgress({
+      isOpen: true,
+      title: 'Activating items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entities: items.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name
+          })),
+          status: 'ACTIVE'
+        })
+      })
+
+      const result = await response.json()
+
+      setBulkProgress({
+        isOpen: true,
+        title: 'Activation Complete',
+        total: result.total,
+        completed: result.total,
+        failed: result.failed,
+        results: result.results.map((r: any) => ({
+          id: r.entityId,
+          name: r.name || r.entityId,
+          success: r.success,
+          error: r.error
+        }))
+      })
+
+      // Update local state for succeeded items
+      if (result.succeeded > 0) {
+        const succeededIds = new Set(result.results.filter((r: any) => r.success).map((r: any) => r.entityId))
+
+        // Update campaigns
+        setCampaigns(prev => prev.map(c =>
+          succeededIds.has(c.id) ? { ...c, status: 'ACTIVE' } : c
+        ))
+
+        // Update adsets
+        setAdSetsData(prev => {
+          const next = { ...prev }
+          for (const campaignId of Object.keys(next)) {
+            next[campaignId] = next[campaignId].map(as =>
+              succeededIds.has(as.id) ? { ...as, status: 'ACTIVE' } : as
+            )
+          }
+          return next
+        })
+
+        // Update ads
+        setAdsData(prev => {
+          const next = { ...prev }
+          for (const adsetId of Object.keys(next)) {
+            next[adsetId] = next[adsetId].map(ad =>
+              succeededIds.has(ad.id) ? { ...ad, status: 'ACTIVE' } : ad
+            )
+          }
+          return next
+        })
+
+        clearSelection()
+      }
+    } catch (err) {
+      console.error('Bulk resume error:', err)
+      setBulkProgress(prev => prev ? {
+        ...prev,
+        title: 'Activation Failed',
+        completed: prev.total,
+        failed: prev.total
+      } : null)
+    } finally {
+      setBulkLoading(false)
+      setBulkLoadingAction(null)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!user || selectedItems.size === 0) return
+
+    const items = Array.from(selectedItems.values())
+
+    // Show confirmation
+    const confirmMessage = `Are you sure you want to delete ${items.length} item${items.length > 1 ? 's' : ''}? This action cannot be undone.`
+    if (!confirm(confirmMessage)) return
+
+    setBulkLoading(true)
+    setBulkLoadingAction('delete')
+    setBulkProgress({
+      isOpen: true,
+      title: 'Deleting items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entities: items.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name
+          }))
+        })
+      })
+
+      const result = await response.json()
+
+      setBulkProgress({
+        isOpen: true,
+        title: 'Delete Complete',
+        total: result.total,
+        completed: result.total,
+        failed: result.failed,
+        results: result.results.map((r: any) => ({
+          id: r.entityId,
+          name: r.name || r.entityId,
+          success: r.success,
+          error: r.error
+        }))
+      })
+
+      // Remove deleted items from local state
+      if (result.succeeded > 0) {
+        const deletedIds = new Set(result.results.filter((r: any) => r.success).map((r: any) => r.entityId))
+
+        // Remove campaigns
+        setCampaigns(prev => prev.filter(c => !deletedIds.has(c.id)))
+
+        // Remove adsets and their cached data
+        setAdSetsData(prev => {
+          const next = { ...prev }
+          for (const campaignId of Object.keys(next)) {
+            next[campaignId] = next[campaignId].filter(as => !deletedIds.has(as.id))
+          }
+          return next
+        })
+
+        // Remove ads
+        setAdsData(prev => {
+          const next = { ...prev }
+          for (const adsetId of Object.keys(next)) {
+            next[adsetId] = next[adsetId].filter(ad => !deletedIds.has(ad.id))
+          }
+          return next
+        })
+
+        clearSelection()
+      }
+    } catch (err) {
+      console.error('Bulk delete error:', err)
+      setBulkProgress(prev => prev ? {
+        ...prev,
+        title: 'Delete Failed',
+        completed: prev.total,
+        failed: prev.total
+      } : null)
+    } finally {
+      setBulkLoading(false)
+      setBulkLoadingAction(null)
+    }
+  }
+
+  const handleBulkDuplicate = () => {
+    setDuplicateModalOpen(true)
+  }
+
+  const handleDuplicateConfirm = async (options: { newNames: Record<string, string>; createPaused: boolean }) => {
+    if (!user || !currentAccountId) return
+
+    const items = Array.from(selectedItems.values())
+    const copyStatus = options.createPaused ? 'PAUSED' : 'ACTIVE'
+
+    setBulkLoading(true)
+    setBulkLoadingAction('duplicate')
+    setDuplicateModalOpen(false)
+    setBulkProgress({
+      isOpen: true,
+      title: 'Duplicating items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      results: []
+    })
+
+    const results: Array<{ id: string; name: string; success: boolean; error?: string }> = []
+    let succeeded = 0
+    let failed = 0
+
+    // Process items sequentially to avoid rate limits
+    for (const item of items) {
+      const newName = options.newNames[item.id]
+
+      try {
+        let response: Response
+        let endpoint: string
+
+        switch (item.type) {
+          case 'campaign':
+            endpoint = '/api/meta/duplicate-campaign'
+            response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user.id,
+                adAccountId: currentAccountId,
+                sourceCampaignId: item.id,
+                newName,
+                copyStatus
+              })
+            })
+            break
+
+          case 'adset':
+            endpoint = '/api/meta/duplicate-adset'
+            response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user.id,
+                adAccountId: currentAccountId,
+                sourceAdsetId: item.id,
+                targetCampaignId: item.parentCampaignId,
+                newName,
+                copyStatus
+              })
+            })
+            break
+
+          case 'ad':
+            endpoint = '/api/meta/duplicate-ad'
+            response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user.id,
+                adAccountId: currentAccountId,
+                sourceAdId: item.id,
+                targetAdsetId: item.parentAdsetId,
+                newName,
+                copyStatus
+              })
+            })
+            break
+
+          default:
+            throw new Error(`Unknown item type: ${item.type}`)
+        }
+
+        const result = await response.json()
+
+        if (result.error) {
+          results.push({ id: item.id, name: item.name, success: false, error: result.error })
+          failed++
+        } else {
+          const successMessage = item.type === 'campaign'
+            ? `→ ${result.newCampaignName} (${result.adsetsCopied} ad sets, ${result.adsCopied} ads)`
+            : item.type === 'adset'
+              ? `→ ${result.newAdsetName} (${result.adsCopied} ads)`
+              : `→ ${result.newAdName}`
+          results.push({ id: item.id, name: `${item.name} ${successMessage}`, success: true })
+          succeeded++
+        }
+      } catch (err) {
+        results.push({
+          id: item.id,
+          name: item.name,
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error'
+        })
+        failed++
+      }
+
+      // Update progress
+      setBulkProgress(prev => prev ? {
+        ...prev,
+        completed: results.length,
+        failed,
+        results
+      } : null)
+
+      // Small delay between items
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+
+    setBulkProgress({
+      isOpen: true,
+      title: 'Duplication Complete',
+      total: items.length,
+      completed: items.length,
+      failed,
+      results
+    })
+
+    // Reload campaigns to show new items
+    if (succeeded > 0) {
+      await loadCampaigns()
+      clearSelection()
+    }
+
+    setBulkLoading(false)
+    setBulkLoadingAction(null)
+  }
+
+  const handleBulkScaleBudget = () => {
+    setBulkBudgetModalOpen(true)
+  }
+
+  const handleBulkScaleBudgetConfirm = async (percentage: number) => {
+    if (!user || !currentAccountId) return
+
+    // Filter to only items with budgets
+    const budgetItems = Array.from(selectedItems.values()).filter(item =>
+      item.budget && item.budgetType && (item.type === 'campaign' || item.type === 'adset')
+    )
+
+    if (budgetItems.length === 0) return
+
+    setBulkLoading(true)
+    setBulkLoadingAction('scale')
+    setBulkBudgetModalOpen(false)
+    setBulkProgress({
+      isOpen: true,
+      title: 'Scaling budgets...',
+      total: budgetItems.length,
+      completed: 0,
+      failed: 0,
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-budget-scale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          entities: budgetItems.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name,
+            currentBudget: item.budget,
+            budgetType: item.budgetType
+          })),
+          scalePercentage: percentage
+        })
+      })
+
+      const result = await response.json()
+
+      setBulkProgress({
+        isOpen: true,
+        title: 'Budget Scaling Complete',
+        total: result.total,
+        completed: result.total,
+        failed: result.failed,
+        results: result.results.map((r: any) => ({
+          id: r.entityId,
+          name: `${r.name || r.entityId} ($${r.oldBudget} → $${r.newBudget})`,
+          success: r.success,
+          error: r.error
+        }))
+      })
+
+      // Update local state for succeeded items
+      if (result.succeeded > 0) {
+        const updatedBudgets = new Map(
+          result.results
+            .filter((r: any) => r.success)
+            .map((r: any) => [r.entityId, r.newBudget])
+        )
+
+        // Update campaigns
+        setCampaigns(prev => prev.map(c => {
+          const newBudget = updatedBudgets.get(c.id) as number | undefined
+          if (newBudget !== undefined) {
+            if (c.dailyBudget !== null) {
+              return { ...c, dailyBudget: newBudget }
+            } else {
+              return { ...c, lifetimeBudget: newBudget }
+            }
+          }
+          return c
+        }))
+
+        // Update adsets
+        setAdSetsData(prev => {
+          const next = { ...prev }
+          for (const campaignId of Object.keys(next)) {
+            next[campaignId] = next[campaignId].map(as => {
+              const newBudget = updatedBudgets.get(as.id) as number | undefined
+              if (newBudget !== undefined) {
+                if (as.dailyBudget !== null) {
+                  return { ...as, dailyBudget: newBudget }
+                } else {
+                  return { ...as, lifetimeBudget: newBudget }
+                }
+              }
+              return as
+            })
+          }
+          return next
+        })
+
+        clearSelection()
+      }
+    } catch (err) {
+      console.error('Bulk budget scale error:', err)
+      setBulkProgress(prev => prev ? {
+        ...prev,
+        title: 'Budget Scaling Failed',
+        completed: prev.total,
+        failed: prev.total
+      } : null)
+    } finally {
+      setBulkLoading(false)
+      setBulkLoadingAction(null)
+    }
+  }
+
+  const handleBulkCopyAds = () => {
+    setCopyAdsModalOpen(true)
+  }
+
+  const handleCopyAdsComplete = async () => {
+    // Reload campaigns to show new items
+    await loadCampaigns()
+    clearSelection()
+  }
+
   // Upgrade prompt for non-Pro users
   if (!canLaunch) {
     return (
@@ -774,6 +1359,29 @@ export default function LaunchPage() {
                 >
                   {/* Mobile: Stack layout / Desktop: Row layout */}
                   <div className="flex items-start sm:items-center gap-2 sm:gap-3">
+                    {/* Selection checkbox */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const isCBO = getBudgetType(campaign) === 'CBO'
+                        toggleSelection({
+                          id: campaign.id,
+                          type: 'campaign',
+                          name: campaign.name,
+                          status: campaign.status,
+                          budget: campaign.dailyBudget || campaign.lifetimeBudget || undefined,
+                          budgetType: campaign.dailyBudget ? 'daily' : campaign.lifetimeBudget ? 'lifetime' : undefined,
+                          isCBO
+                        })
+                      }}
+                      className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0 mt-0.5 sm:mt-0"
+                    >
+                      {selectedItems.has(campaign.id) ? (
+                        <CheckSquare className="w-4 h-4 text-accent" />
+                      ) : (
+                        <Square className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
+                      )}
+                    </button>
                     <button className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0 mt-0.5 sm:mt-0">
                       {isExpanded ? (
                         <ChevronDown className="w-4 h-4 text-zinc-400" />
@@ -925,6 +1533,29 @@ export default function LaunchPage() {
                               onClick={() => toggleAdSet(adSet.id)}
                             >
                               <div className="flex items-start sm:items-center gap-2">
+                                {/* Selection checkbox */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleSelection({
+                                      id: adSet.id,
+                                      type: 'adset',
+                                      name: adSet.name,
+                                      status: adSet.status,
+                                      parentCampaignId: campaign.id,
+                                      budget: adSet.dailyBudget || adSet.lifetimeBudget || undefined,
+                                      budgetType: adSet.dailyBudget ? 'daily' : adSet.lifetimeBudget ? 'lifetime' : undefined,
+                                      isCBO: false
+                                    })
+                                  }}
+                                  className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0"
+                                >
+                                  {selectedItems.has(adSet.id) ? (
+                                    <CheckSquare className="w-4 h-4 text-accent" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
+                                  )}
+                                </button>
                                 <button className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0">
                                   {isAdSetExpanded ? (
                                     <ChevronDown className="w-4 h-4 text-zinc-400" />
@@ -1045,6 +1676,27 @@ export default function LaunchPage() {
                                     return (
                                       <div key={ad.id} className="pl-6 sm:pl-20 pr-3 sm:pr-4 py-3 border-t border-border/30 hover:bg-bg-hover/20 transition-colors">
                                         <div className="flex items-center gap-2 sm:gap-3">
+                                          {/* Selection checkbox */}
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              toggleSelection({
+                                                id: ad.id,
+                                                type: 'ad',
+                                                name: ad.name,
+                                                status: ad.status,
+                                                parentCampaignId: campaign.id,
+                                                parentAdsetId: adSet.id
+                                              })
+                                            }}
+                                            className="p-1 hover:bg-bg-hover rounded transition-colors flex-shrink-0"
+                                          >
+                                            {selectedItems.has(ad.id) ? (
+                                              <CheckSquare className="w-4 h-4 text-accent" />
+                                            ) : (
+                                              <Square className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
+                                            )}
+                                          </button>
                                           {/* Creative Preview with Tooltip */}
                                           <CreativePreviewTooltip
                                             previewUrl={previewUrl}
@@ -1244,6 +1896,94 @@ export default function LaunchPage() {
             <p className="text-white text-sm font-medium truncate">{previewModal.name}</p>
           </div>
         </div>
+      )}
+
+      {/* Bulk Action Toolbar */}
+      <BulkActionToolbar
+        selectedItems={selectedItems}
+        onPause={handleBulkPause}
+        onResume={handleBulkResume}
+        onDelete={handleBulkDelete}
+        onDuplicate={handleBulkDuplicate}
+        onScaleBudget={handleBulkScaleBudget}
+        onCopyAds={handleBulkCopyAds}
+        onClear={clearSelection}
+        isLoading={bulkLoading}
+        loadingAction={bulkLoadingAction}
+      />
+
+      {/* Bulk Operation Progress Modal */}
+      {bulkProgress && (
+        <BulkOperationProgress
+          isOpen={bulkProgress.isOpen}
+          title={bulkProgress.title}
+          total={bulkProgress.total}
+          completed={bulkProgress.completed}
+          failed={bulkProgress.failed}
+          currentItem={bulkProgress.currentItem}
+          results={bulkProgress.results}
+          onClose={() => setBulkProgress(null)}
+        />
+      )}
+
+      {/* Bulk Budget Modal */}
+      <BulkBudgetModal
+        isOpen={bulkBudgetModalOpen}
+        onClose={() => setBulkBudgetModalOpen(false)}
+        entities={Array.from(selectedItems.values())
+          .filter(item => item.budget && item.budgetType && (item.type === 'campaign' || item.type === 'adset'))
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            type: item.type as 'campaign' | 'adset',
+            currentBudget: item.budget!,
+            budgetType: item.budgetType!,
+            isCBO: item.isCBO
+          }))}
+        onConfirm={handleBulkScaleBudgetConfirm}
+      />
+
+      {/* Duplicate Modal */}
+      <DuplicateModal
+        isOpen={duplicateModalOpen}
+        onClose={() => setDuplicateModalOpen(false)}
+        items={Array.from(selectedItems.values()).map(item => ({
+          id: item.id,
+          type: item.type,
+          name: item.name,
+          parentCampaignId: item.parentCampaignId,
+          parentAdsetId: item.parentAdsetId
+        }))}
+        onConfirm={handleDuplicateConfirm}
+      />
+
+      {/* Copy Ads Modal */}
+      {currentAccountId && user && (
+        <CopyAdsModal
+          isOpen={copyAdsModalOpen}
+          onClose={() => setCopyAdsModalOpen(false)}
+          selectedAds={Array.from(selectedItems.values())
+            .filter(item => item.type === 'ad')
+            .map(item => {
+              // Find the campaign and adset names
+              const adsetId = item.parentAdsetId || ''
+              const campaignId = item.parentCampaignId || ''
+              const campaign = campaigns.find(c => c.id === campaignId)
+              const adsets = adSetsData[campaignId] || []
+              const adset = adsets.find(as => as.id === adsetId)
+              return {
+                id: item.id,
+                name: item.name,
+                adsetId,
+                adsetName: adset?.name || 'Unknown Ad Set',
+                campaignId,
+                campaignName: campaign?.name || 'Unknown Campaign'
+              }
+            })}
+          userId={user.id}
+          adAccountId={currentAccountId}
+          onComplete={handleCopyAdsComplete}
+        />
       )}
     </div>
   )
