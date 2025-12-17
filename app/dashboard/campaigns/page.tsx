@@ -205,12 +205,11 @@ export default function LaunchPage() {
 
       setCampaigns(combined)
 
-      // UTM status loading disabled - causes too many API calls and rate limits
-      // TODO: Implement batched/throttled UTM fetching
-      // if (utmFetchedForAccount.current !== currentAccountId) {
-      //   utmFetchedForAccount.current = currentAccountId
-      //   loadAllAdsForUtmStatus(combined.map(c => c.id))
-      // }
+      // Fetch UTM status once per account
+      if (utmFetchedForAccount.current !== currentAccountId) {
+        utmFetchedForAccount.current = currentAccountId
+        loadAllAdsForUtmStatus(combined.map(c => c.id))
+      }
     } catch (err) {
       console.error('Failed to load campaigns:', err)
     } finally {
