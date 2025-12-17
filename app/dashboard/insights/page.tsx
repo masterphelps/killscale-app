@@ -404,8 +404,14 @@ export default function InsightsPage() {
         return false
       }
       // Filter by date
-      if (!row.date_start) return true
-      return row.date_start >= dateRange.start && row.date_start <= dateRange.end
+      if (row.date_start && (row.date_start < dateRange.start || row.date_start > dateRange.end)) {
+        return false
+      }
+      // Filter to ACTIVE only - insights should only analyze current active data
+      if (row.campaign_status !== 'ACTIVE' || row.adset_status !== 'ACTIVE') {
+        return false
+      }
+      return true
     })
 
     if (filteredData.length === 0) return []
