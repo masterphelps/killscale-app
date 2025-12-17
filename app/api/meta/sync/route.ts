@@ -157,7 +157,11 @@ export async function POST(request: NextRequest) {
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-    
+
+    // Normalize ad_account_id to always use act_ prefix (handles legacy format mismatches)
+    const cleanAccountId = adAccountId.replace(/^act_/, '')
+    const normalizedAccountId = `act_${cleanAccountId}`
+
     // Get user's Meta connection
     const { data: connection, error: connError } = await supabase
       .from('meta_connections')
@@ -436,7 +440,7 @@ export async function POST(request: NextRequest) {
       return {
         user_id: userId,
         source: 'meta_api',
-        ad_account_id: adAccountId,
+        ad_account_id: normalizedAccountId,
         date_start: insight.date_start,
         date_end: insight.date_stop,
         campaign_name: insight.campaign_name,
@@ -446,8 +450,8 @@ export async function POST(request: NextRequest) {
         ad_name: insight.ad_name,
         ad_id: insight.ad_id,
         status: adStatus,
-        adset_status: adset?.status || 'UNKNOWN',
-        campaign_status: campaign?.status || 'UNKNOWN',
+        adset_status: adset?.status || 'DELETED', // Not in /adsets = deleted
+        campaign_status: campaign?.status || 'DELETED', // Not in /campaigns = deleted
         campaign_daily_budget: campaign?.daily_budget ?? null,
         campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
         adset_daily_budget: adset?.daily_budget ?? null,
@@ -484,7 +488,7 @@ export async function POST(request: NextRequest) {
         adsWithoutInsights.push({
           user_id: userId,
           source: 'meta_api',
-          ad_account_id: adAccountId,
+          ad_account_id: normalizedAccountId,
           date_start: dateRange.since,
           date_end: dateRange.until,
           campaign_name: hierarchy.campaign_name,
@@ -494,8 +498,8 @@ export async function POST(request: NextRequest) {
           ad_name: hierarchy.ad_name,
           ad_id: adId,
           status: adStatus,
-          adset_status: adset?.status || 'UNKNOWN',
-          campaign_status: campaign?.status || 'UNKNOWN',
+          adset_status: adset?.status || 'DELETED', // Not in /adsets = deleted
+          campaign_status: campaign?.status || 'DELETED', // Not in /campaigns = deleted
           campaign_daily_budget: campaign?.daily_budget ?? null,
           campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
           adset_daily_budget: adset?.daily_budget ?? null,
@@ -523,12 +527,12 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Delete existing data for this specific account only (not all user data!)
+    // Delete existing data for this account (matches any format variation)
     const { error: deleteError } = await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', userId)
-      .eq('ad_account_id', adAccountId)
+      .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
 
     if (deleteError) {
       console.error('Delete error:', deleteError)

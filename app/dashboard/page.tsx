@@ -151,6 +151,7 @@ export default function DashboardPage() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
   const [includePaused, setIncludePaused] = useState(true)
+  const [includeDeleted, setIncludeDeleted] = useState(false)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [datePreset, setDatePreset] = useState(() => {
@@ -649,6 +650,9 @@ export default function DashboardPage() {
     if (isSyncing || syncingRef.current) return
     syncingRef.current = true
 
+    // Clear cache BEFORE sync to force fresh data
+    dataCache.delete(accountId)
+
     setIsSyncing(true)
 
     try {
@@ -691,6 +695,12 @@ export default function DashboardPage() {
     if (isSyncing || syncingRef.current) return
 
     syncingRef.current = true
+
+    // Clear cache for ALL workspace accounts BEFORE sync
+    for (const accountId of workspaceAccountIds) {
+      dataCache.delete(accountId)
+    }
+
     setIsSyncing(true)
 
     try {
@@ -1046,9 +1056,17 @@ export default function DashboardPage() {
         if (isPaused) return false
       }
 
+      // Deleted filter - hide deleted/unknown campaigns by default
+      if (!includeDeleted) {
+        const campaignStatus = row.campaign_status?.toUpperCase()
+        if (campaignStatus === 'DELETED' || campaignStatus === 'UNKNOWN') {
+          return false
+        }
+      }
+
       return true
     })
-  }, [accountFilteredData, visibleCampaigns, includePaused, getDateRange])
+  }, [accountFilteredData, visibleCampaigns, includePaused, includeDeleted, getDateRange])
   
   const selectedData = useMemo(() =>
     filteredData.filter(row => {
@@ -1628,25 +1646,46 @@ export default function DashboardPage() {
           
           {/* Verdict Filters - scrollable on mobile */}
           <div className="mb-4">
-            {/* Mobile: Filter label with Paused toggle */}
+            {/* Mobile: Filter label with Paused/Deleted toggles */}
             <div className="flex items-center justify-between mb-2 lg:hidden">
               <span className="text-sm text-zinc-500">Filter:</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIncludePaused(!includePaused)}
-                  className={`relative w-9 h-5 rounded-full transition-all ${
-                    includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                      includePaused ? 'left-4' : 'left-0.5'
+              <div className="flex items-center gap-4">
+                {/* Paused toggle */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIncludePaused(!includePaused)}
+                    className={`relative w-9 h-5 rounded-full transition-all ${
+                      includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
                     }`}
-                  />
-                </button>
-                <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                  Paused
-                </span>
+                  >
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                        includePaused ? 'left-4' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                    Paused
+                  </span>
+                </div>
+                {/* Deleted toggle */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIncludeDeleted(!includeDeleted)}
+                    className={`relative w-9 h-5 rounded-full transition-all ${
+                      includeDeleted ? 'bg-zinc-600' : 'bg-zinc-800'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                        includeDeleted ? 'left-4' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm ${includeDeleted ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                    Deleted
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1692,6 +1731,25 @@ export default function DashboardPage() {
                 </button>
                 <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
                   Include Paused
+                </span>
+              </div>
+
+              {/* Desktop: Show Deleted Toggle */}
+              <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-border flex-shrink-0">
+                <button
+                  onClick={() => setIncludeDeleted(!includeDeleted)}
+                  className={`relative w-9 h-5 rounded-full transition-all ${
+                    includeDeleted ? 'bg-zinc-600' : 'bg-zinc-800'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                      includeDeleted ? 'left-4' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+                <span className={`text-sm ${includeDeleted ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                  Show Deleted
                 </span>
               </div>
 
