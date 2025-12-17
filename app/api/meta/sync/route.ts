@@ -241,6 +241,20 @@ export async function POST(request: NextRequest) {
       fetchAllPages<MetaInsight>(insightsUrl.toString()),
     ])
 
+    // Check for partial failures - if we have insights but missing entity data,
+    // the sync would store UNKNOWN status which breaks the UI
+    if (allInsights.length > 0 && (allAdsets.length === 0 || allAdsData.length === 0)) {
+      console.error('Sync partial failure - insights exist but entity data missing:', {
+        campaigns: allCampaigns.length,
+        adsets: allAdsets.length,
+        ads: allAdsData.length,
+        insights: allInsights.length
+      })
+      return NextResponse.json({
+        error: 'Meta API rate limit - some data could not be fetched. Please wait a few minutes and try again.'
+      }, { status: 429 })
+    }
+
     // Build maps
     const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
