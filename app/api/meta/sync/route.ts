@@ -292,6 +292,47 @@ export async function POST(request: NextRequest) {
         }
       }
     })
+
+    // FALLBACK: Build hierarchy and maps from insights if entity calls failed
+    // This ensures we have names even if adsets/ads endpoints return empty
+    if (allAdsets.length === 0 || allAdsData.length === 0) {
+      console.log('Building hierarchy from insights data as fallback')
+      allInsights.forEach((insight: MetaInsight) => {
+        // Build adset map from insights
+        if (insight.adset_id && !adsetMap[insight.adset_id]) {
+          adsetMap[insight.adset_id] = {
+            name: insight.adset_name,
+            campaign_id: insight.campaign_id,
+            status: 'ACTIVE', // Assume active since it has insights
+            daily_budget: null,
+            lifetime_budget: null,
+          }
+        }
+        // Build campaign map from insights if missing
+        if (insight.campaign_id && !campaignMap[insight.campaign_id]) {
+          campaignMap[insight.campaign_id] = {
+            name: insight.campaign_name,
+            status: 'ACTIVE', // Assume active since it has insights
+            daily_budget: null,
+            lifetime_budget: null,
+          }
+        }
+        // Build hierarchy cache from insights
+        if (!adHierarchyCache[insight.ad_id]) {
+          adHierarchyCache[insight.ad_id] = {
+            campaign_name: insight.campaign_name,
+            campaign_id: insight.campaign_id,
+            adset_name: insight.adset_name,
+            adset_id: insight.adset_id,
+            ad_name: insight.ad_name,
+          }
+        }
+        // Set ad status to ACTIVE if it has insights (better than UNKNOWN)
+        if (!adStatusMap[insight.ad_id]) {
+          adStatusMap[insight.ad_id] = 'ACTIVE'
+        }
+      })
+    }
     
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
