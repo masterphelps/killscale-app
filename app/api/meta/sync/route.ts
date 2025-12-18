@@ -7,7 +7,7 @@ const supabase = createClient(
 )
 
 // Helper function to fetch all pages from Meta API with timeout
-async function fetchAllPages<T>(initialUrl: string, maxPages = 15): Promise<T[]> {
+async function fetchAllPages<T>(initialUrl: string, maxPages = 25): Promise<T[]> {
   const allData: T[] = []
   let nextUrl: string | null = initialUrl
   let pageCount = 0
@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
     insightsUrl.searchParams.set('access_token', accessToken)
     insightsUrl.searchParams.set('fields', fields)
     insightsUrl.searchParams.set('level', 'ad')
-    insightsUrl.searchParams.set('limit', '500')
+    insightsUrl.searchParams.set('limit', '1000')
     if (datePreset === 'custom' && customStartDate && customEndDate) {
       insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
     } else {
@@ -225,17 +225,17 @@ export async function POST(request: NextRequest) {
     const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
     campaignsUrl.searchParams.set('fields', 'id,name,effective_status,daily_budget,lifetime_budget')
-    campaignsUrl.searchParams.set('limit', '500')
+    campaignsUrl.searchParams.set('limit', '1000')
 
     const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
     adsetsUrl.searchParams.set('fields', 'id,name,campaign_id,effective_status,daily_budget,lifetime_budget')
-    adsetsUrl.searchParams.set('limit', '500')
+    adsetsUrl.searchParams.set('limit', '1000')
 
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
     adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
-    adsUrl.searchParams.set('limit', '500')
+    adsUrl.searchParams.set('limit', '1000')
 
     // PARALLEL FETCH - all 4 calls at once for speed
     const [allCampaigns, allAdsets, allAdsData, allInsights] = await Promise.all([
@@ -297,11 +297,19 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    // Filter out insights from deleted campaigns BEFORE any fallback processing
+    // The campaigns endpoint only returns non-deleted campaigns, so if a campaign
+    // isn't in our map, it was deleted. We don't want stale data from deleted campaigns.
+    const activeInsights = allInsights.filter((insight: MetaInsight) => {
+      return campaignMap[insight.campaign_id] !== undefined
+    })
+
     // FALLBACK: Build hierarchy and maps from insights if entity calls failed
     // This ensures we have names even if adsets/ads endpoints return empty
+    // Use activeInsights (already filtered for deleted campaigns)
     if (allAdsets.length === 0 || allAdsData.length === 0) {
       console.log('Building hierarchy from insights data as fallback')
-      allInsights.forEach((insight: MetaInsight) => {
+      activeInsights.forEach((insight: MetaInsight) => {
         // Build adset map from insights
         if (insight.adset_id && !adsetMap[insight.adset_id]) {
           adsetMap[insight.adset_id] = {
@@ -341,8 +349,8 @@ export async function POST(request: NextRequest) {
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
 
-    // Transform Meta data to our format
-    const adData = allInsights.map((insight: MetaInsight) => {
+    // Transform Meta data to our format (using activeInsights filtered above)
+    const adData = activeInsights.map((insight: MetaInsight) => {
       adsWithInsights.add(insight.ad_id)
 
       // Find purchase actions (for revenue tracking)
@@ -538,18 +546,21 @@ export async function POST(request: NextRequest) {
       console.error('Delete error:', deleteError)
     }
 
-    // Insert new data in chunks to avoid payload size limits
+    // Insert new data in parallel batches for speed
     const BATCH_SIZE = 1000
+    const batches: typeof allAdData[] = []
     for (let i = 0; i < allAdData.length; i += BATCH_SIZE) {
-      const batch = allAdData.slice(i, i + BATCH_SIZE)
-      const { error: insertError } = await supabase
-        .from('ad_data')
-        .insert(batch)
+      batches.push(allAdData.slice(i, i + BATCH_SIZE))
+    }
 
-      if (insertError) {
-        console.error('Insert error at batch', i / BATCH_SIZE, ':', insertError)
-        return NextResponse.json({ error: 'Failed to save ad data' }, { status: 500 })
-      }
+    const insertResults = await Promise.all(
+      batches.map(batch => supabase.from('ad_data').insert(batch))
+    )
+
+    const insertError = insertResults.find(r => r.error)?.error
+    if (insertError) {
+      console.error('Insert error:', insertError)
+      return NextResponse.json({ error: 'Failed to save ad data' }, { status: 500 })
     }
     
     // Update last sync time on connection
@@ -575,7 +586,8 @@ export async function POST(request: NextRequest) {
       message: 'Sync complete',
       count: allAdData.length,
       adsWithActivity: adData.length,
-      adsWithoutActivity: adsWithoutInsights.length 
+      adsWithoutActivity: adsWithoutInsights.length,
+      filteredDeletedInsights: allInsights.length - activeInsights.length
     })
     
   } catch (err) {
