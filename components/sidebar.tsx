@@ -41,7 +41,7 @@ interface Workspace {
 
 const navItems = [
   { href: '/dashboard', label: 'Performance', icon: BarChart3 },
-  { href: '/dashboard/campaigns', label: 'Campaigns', icon: Rocket },
+  { href: '/dashboard/campaigns', label: 'Manager', icon: Layers },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },

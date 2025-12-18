@@ -1637,31 +1637,16 @@ export default function DashboardPage() {
             </label>
             <span className="text-xs text-zinc-500">({selectedCampaigns.size} campaigns)</span>
 
-            {/* Expand All Toggle - same style as Simple/Detailed */}
-            <div className="flex items-center gap-1 bg-[#0f1419] rounded-lg p-1 border border-white/10">
-              <button
-                onClick={() => {
-                  setExpandTrigger(prev => prev + 1)
-                  setTableExpanded(!tableExpanded)
-                }}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  tableExpanded ? 'text-zinc-400 hover:text-white' : 'bg-indigo-500 text-white'
-                }`}
-              >
-                ⊞ Collapse
-              </button>
-              <button
-                onClick={() => {
-                  setExpandTrigger(prev => prev + 1)
-                  setTableExpanded(!tableExpanded)
-                }}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  tableExpanded ? 'bg-indigo-500 text-white' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                ⊟ Expand
-              </button>
-            </div>
+            {/* Expand/Collapse All Button */}
+            <button
+              onClick={() => {
+                setExpandTrigger(prev => prev + 1)
+                setTableExpanded(!tableExpanded)
+              }}
+              className="px-3 py-1.5 text-xs rounded-lg transition-colors bg-[#0f1419] border border-white/10 text-zinc-300 hover:border-white/20 hover:text-white"
+            >
+              {tableExpanded ? '⊞ Collapse All' : '⊟ Expand All'}
+            </button>
 
             {/* Right side controls */}
             <div className="ml-auto flex items-center gap-4">
