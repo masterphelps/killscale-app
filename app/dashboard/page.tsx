@@ -1610,21 +1610,25 @@ export default function DashboardPage() {
                 label="CPM"
                 value={formatCPM(totals.spend, totals.impressions)}
                 icon="👁️"
+                color="blue"
               />
               <StatCard
                 label="CPC"
                 value={formatCPC(totals.spend, totals.clicks)}
                 icon="👆"
+                color="amber"
               />
               <StatCard
                 label="CTR"
                 value={formatPercent(totals.ctr)}
                 icon="🎯"
+                color="purple"
               />
               <StatCard
                 label="AOV"
                 value={formatAOV(totals.revenue, totals.purchases)}
                 icon="🧾"
+                color="green"
               />
             </div>
 
@@ -1633,6 +1637,7 @@ export default function DashboardPage() {
               label="Conv Rate"
               value={formatPercent(totals.convRate)}
               icon="✅"
+              color="rose"
             />
           </div>
           

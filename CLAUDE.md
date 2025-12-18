@@ -366,7 +366,25 @@ Some items from `~/.claude/plans/iterative-wandering-finch.md` may still need at
 
 **Two-part system:**
 1. **Live Mock Preview** - Custom component renders realistic FB/IG ad mockup as user types (zero latency)
-2. **Real Meta Previews** - "Preview on Meta" button fetches actual iframe previews
+2. **Real Meta Previews** - "Preview on Meta" button fetches actual iframe previews via `generatepreview` API
+
+**Meta generatepreview API:**
+- Endpoint: `GET /{ad-account-id}/generatepreviews?creative={spec}&ad_format={format}`
+- Returns iframe HTML to embed
+- 75 placement formats available
+
+**Key Placements to Support:**
+| Platform | Formats |
+|----------|---------|
+| FB Feed | `DESKTOP_FEED_STANDARD`, `MOBILE_FEED_STANDARD` |
+| FB Stories/Reels | `FACEBOOK_STORY_MOBILE`, `FACEBOOK_REELS_MOBILE` |
+| IG Feed | `INSTAGRAM_STANDARD`, `INSTAGRAM_FEED_WEB` |
+| IG Stories/Reels | `INSTAGRAM_STORY`, `INSTAGRAM_REELS` |
+
+**Implementation:**
+1. New route: `/api/meta/preview/route.ts` - calls Meta's generatepreview
+2. New component: `components/placement-previews.tsx` - displays iframe grid
+3. Reuse creative spec builder from `create-campaign/route.ts`
 
 **Plan file:** `~/.claude/plans/bubbly-greeting-wombat.md`
 
