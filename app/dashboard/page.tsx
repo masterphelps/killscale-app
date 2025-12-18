@@ -1620,109 +1620,51 @@ export default function DashboardPage() {
             />
           </div>
           
-          {/* Controls Bar - new command center style */}
-          <div className="mb-4">
-            {/* Mobile controls */}
-            <div className="flex items-center justify-between gap-4 lg:hidden mb-3">
-              {/* Select All with count */}
-              <div className="flex items-center gap-2">
+          {/* Controls Bar - matching mockup exactly */}
+          <div className="flex items-center gap-4 mb-6">
+            {/* Select All on left */}
+            <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={handleSelectAll}
+                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/50"
+              />
+              Select All
+            </label>
+            <span className="text-xs text-zinc-500">({selectedCampaigns.size} campaigns)</span>
+
+            {/* Right side controls */}
+            <div className="ml-auto flex items-center gap-4">
+              {/* Include Paused checkbox */}
+              <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={includePaused}
+                  onChange={() => setIncludePaused(!includePaused)}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800"
+                />
+                Include Paused
+              </label>
+
+              {/* Simple/Detailed Toggle */}
+              <div className="flex items-center gap-1 bg-[#0f1419] rounded-lg p-1 border border-white/10">
                 <button
-                  onClick={handleSelectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1419] border border-white/10 rounded-lg text-sm hover:border-white/20 transition-colors"
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                    allSelected ? 'bg-accent border-accent' : someSelected ? 'bg-accent/50 border-accent' : 'border-zinc-500'
-                  }`}>
-                    {allSelected && <span className="text-white text-xs">✓</span>}
-                    {someSelected && !allSelected && <span className="text-white text-xs">−</span>}
-                  </div>
-                  <span className="text-zinc-400">All</span>
-                </button>
-                <span className="text-xs text-zinc-500">({selectedCampaigns.size} selected)</span>
-              </div>
-              {/* Include Paused toggle */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIncludePaused(!includePaused)}
-                  className={`relative w-9 h-5 rounded-full transition-all ${
-                    includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
+                  onClick={() => setViewMode('simple')}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                    viewMode === 'simple' ? 'bg-indigo-500 text-white' : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                      includePaused ? 'left-4' : 'left-0.5'
-                    }`}
-                  />
+                  Simple
                 </button>
-                <span className={`text-xs ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                  Paused
-                </span>
-              </div>
-            </div>
-
-            {/* Desktop controls bar */}
-            <div className="hidden lg:flex items-center justify-between bg-[#0a0d10] rounded-xl px-4 py-3 border border-white/10">
-              {/* Left side: Select All with count */}
-              <div className="flex items-center gap-4">
                 <button
-                  onClick={handleSelectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1419] border border-white/10 rounded-lg text-sm hover:border-white/20 transition-colors"
+                  onClick={() => setViewMode('detailed')}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                    viewMode === 'detailed' ? 'bg-indigo-500 text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
                 >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                    allSelected ? 'bg-accent border-accent text-white' : someSelected ? 'bg-accent/50 border-accent text-white' : 'border-zinc-500'
-                  }`}>
-                    {allSelected && <span className="text-xs">✓</span>}
-                    {someSelected && !allSelected && <span className="text-xs">−</span>}
-                  </div>
-                  <span className="text-zinc-300">Select All</span>
+                  Detailed
                 </button>
-                <span className="text-sm text-zinc-500">({selectedCampaigns.size} campaigns selected)</span>
-              </div>
-
-              {/* Right side: Controls */}
-              <div className="flex items-center gap-3">
-                {/* Include Paused toggle */}
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1419] border border-white/10 rounded-lg">
-                  <button
-                    onClick={() => setIncludePaused(!includePaused)}
-                    className={`relative w-9 h-5 rounded-full transition-all ${
-                      includePaused ? 'bg-accent' : 'bg-zinc-700'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                        includePaused ? 'left-4' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                  <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                    Include Paused
-                  </span>
-                </div>
-
-                {/* Simple/Detailed Toggle */}
-                <div className="flex items-center bg-[#0f1419] border border-white/10 rounded-lg overflow-hidden">
-                  <button
-                    onClick={() => setViewMode('simple')}
-                    className={`px-3 py-1.5 text-sm transition-colors ${
-                      viewMode === 'simple'
-                        ? 'bg-accent text-white'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    Simple
-                  </button>
-                  <button
-                    onClick={() => setViewMode('detailed')}
-                    className={`px-3 py-1.5 text-sm transition-colors ${
-                      viewMode === 'detailed'
-                        ? 'bg-accent text-white'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    Detailed
-                  </button>
-                </div>
               </div>
             </div>
           </div>

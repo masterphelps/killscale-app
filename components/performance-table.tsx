@@ -947,27 +947,30 @@ export function PerformanceTable({
           <div className="w-0.5 h-4 bg-border/50 rounded" />
         </div>
         
-        {/* Data columns */}
-        <div className="flex-1 flex items-center">
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.spend)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(node.revenue)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.results)}</div>
-          <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpr)}</div>
-          <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(node.roas)}</div>
-          {/* Detailed mode columns */}
-          {viewMode === 'detailed' && (
-            <>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.purchases)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpc)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.ctr)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(node.cpa)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(node.convRate)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.clicks)}</div>
-              <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(node.impressions)}</div>
-            </>
-          )}
-          {/* Budget column - shows for campaigns (CBO) and adsets (ABO) - positioned next to Verdict */}
-          <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0">
+        {/* Metrics - with labels above values (matching mockup) */}
+        <div className="hidden lg:flex items-center gap-4 text-sm">
+          <div className="text-right w-20">
+            <div className="text-zinc-500 text-xs mb-0.5">Spend</div>
+            <div className="font-mono text-white">{formatCurrency(node.spend)}</div>
+          </div>
+          <div className="text-right w-20">
+            <div className="text-zinc-500 text-xs mb-0.5">Revenue</div>
+            <div className="font-mono text-white">{formatCurrency(node.revenue)}</div>
+          </div>
+          <div className="text-right w-16">
+            <div className="text-zinc-500 text-xs mb-0.5">Results</div>
+            <div className="font-mono text-white">{formatNumber(node.results)}</div>
+          </div>
+          <div className="text-right w-16">
+            <div className="text-zinc-500 text-xs mb-0.5">CPR</div>
+            <div className="font-mono text-white">{formatMetric(node.cpr)}</div>
+          </div>
+          <div className="text-right w-16">
+            <div className="text-zinc-500 text-xs mb-0.5">ROAS</div>
+            <div className="font-mono text-white font-semibold">{formatROAS(node.roas)}</div>
+          </div>
+          <div className="text-right w-20">
+            <div className="text-zinc-500 text-xs mb-0.5">Budget</div>
             {(level === 'campaign' || level === 'adset') && node.budgetType && node.id ? (
               <button
                 onClick={(e) => {
@@ -986,60 +989,76 @@ export function PerformanceTable({
                   }
                 }}
                 className={cn(
-                  "flex items-center justify-end gap-1 w-full",
+                  "font-mono text-white",
                   onBudgetChange && canManageAds && "hover:text-accent cursor-pointer transition-colors"
                 )}
                 disabled={!onBudgetChange || !canManageAds}
               >
-                <span>{formatBudget(node.dailyBudget, node.lifetimeBudget).value}</span>
-                <span className="text-[10px] text-zinc-500">{formatBudget(node.dailyBudget, node.lifetimeBudget).type}</span>
+                {formatBudget(node.dailyBudget, node.lifetimeBudget).value}
               </button>
             ) : (
-              <span className="text-zinc-600">—</span>
+              <div className="font-mono text-zinc-600">—</div>
             )}
           </div>
-          <div className="w-20 flex justify-center px-2 flex-shrink-0">
-            {/* Show verdict only where budget lives:
-                - CBO: verdict at campaign level
-                - ABO: verdict at adset level
-                - Ads: always show performance arrow */}
-            {level === 'ad' ? (
-              <PerformanceArrow verdict={node.verdict} />
-            ) : level === 'campaign' && node.budgetType === 'CBO' ? (
-              <VerdictBadge verdict={node.verdict} size="sm" />
-            ) : level === 'adset' && node.budgetType === 'ABO' ? (
-              <VerdictBadge verdict={node.verdict} size="sm" />
-            ) : (
-              <span className="text-zinc-600">—</span>
-            )}
-          </div>
-          {/* Actions column */}
-          {canManageAds && onStatusChange && node.id && (
-            <div className="w-16 flex justify-center px-2 flex-shrink-0">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const isPaused = node.status && node.status !== 'ACTIVE'
-                  const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
-                  onStatusChange(node.id!, level, node.name, newStatus)
-                }}
-                className={cn(
-                  'w-7 h-7 flex items-center justify-center rounded-md border transition-all',
-                  node.status && node.status !== 'ACTIVE'
-                    ? 'border-green-500/30 text-green-500 hover:bg-green-500/20 hover:border-green-500/50'
-                    : 'border-amber-500/30 text-amber-500 hover:bg-amber-500/20 hover:border-amber-500/50'
-                )}
-                title={node.status && node.status !== 'ACTIVE' ? 'Resume' : 'Pause'}
-              >
-                {node.status && node.status !== 'ACTIVE' ? (
-                  <Play className="w-3.5 h-3.5" />
-                ) : (
-                  <Pause className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
+
+          {/* Detailed mode columns */}
+          {viewMode === 'detailed' && (
+            <>
+              <div className="text-right w-16">
+                <div className="text-zinc-500 text-xs mb-0.5">CPC</div>
+                <div className="font-mono text-white">{formatMetric(node.cpc)}</div>
+              </div>
+              <div className="text-right w-16">
+                <div className="text-zinc-500 text-xs mb-0.5">CTR</div>
+                <div className="font-mono text-white">{formatPercent(node.ctr)}</div>
+              </div>
+              <div className="text-right w-16">
+                <div className="text-zinc-500 text-xs mb-0.5">CPA</div>
+                <div className="font-mono text-white">{formatMetric(node.cpa)}</div>
+              </div>
+              <div className="text-right w-16">
+                <div className="text-zinc-500 text-xs mb-0.5">Conv%</div>
+                <div className="font-mono text-white">{formatPercent(node.convRate)}</div>
+              </div>
+              <div className="text-right w-16">
+                <div className="text-zinc-500 text-xs mb-0.5">Clicks</div>
+                <div className="font-mono text-white">{formatNumber(node.clicks)}</div>
+              </div>
+              <div className="text-right w-20">
+                <div className="text-zinc-500 text-xs mb-0.5">Impr</div>
+                <div className="font-mono text-white">{formatNumber(node.impressions)}</div>
+              </div>
+            </>
           )}
         </div>
+
+        {/* Verdict badge */}
+        {/* Show verdict only where budget lives: CBO at campaign, ABO at adset, arrows for ads */}
+        {level === 'ad' ? (
+          <PerformanceArrow verdict={node.verdict} />
+        ) : level === 'campaign' && node.budgetType === 'CBO' ? (
+          <VerdictBadge verdict={node.verdict} size="sm" />
+        ) : level === 'adset' && node.budgetType === 'ABO' ? (
+          <VerdictBadge verdict={node.verdict} size="sm" />
+        ) : (
+          <span className="w-[70px]" />
+        )}
+
+        {/* Actions button */}
+        {canManageAds && onStatusChange && node.id && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              const isPaused = node.status && node.status !== 'ACTIVE'
+              const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
+              onStatusChange(node.id!, level, node.name, newStatus)
+            }}
+            className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            title={node.status && node.status !== 'ACTIVE' ? 'Resume' : 'Pause'}
+          >
+            ⋮
+          </button>
+        )}
       </div>
     )
   }
@@ -1359,32 +1378,18 @@ export function PerformanceTable({
   
   return (
     <div ref={containerRef}>
-      {/* Desktop Table View */}
-      <div className="desktop-table bg-[#0a0d10] border border-white/10 rounded-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <h2 className="font-semibold text-white">Campaign Performance</h2>
-            <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
-            {verdictFilter !== 'all' && (
-              <span className="text-xs text-zinc-400 bg-[#0f1419] px-2 py-1 rounded-lg border border-white/10">
-                Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
-              </span>
-            )}
-          </div>
+      {/* Desktop Table View - no header, just cards */}
+      <div className="desktop-table">
+        {/* Expand All button */}
+        <div className="flex justify-end mb-4">
           <button
             onClick={toggleAll}
-            className="text-xs text-zinc-400 hover:text-white bg-[#0f1419] border border-white/10 px-3 py-1.5 rounded-lg transition-colors hover:border-white/20"
+            className="px-3 py-2 text-sm rounded-xl border border-white/10 bg-[#0f1419] text-zinc-400 hover:text-white hover:border-white/20 transition-colors"
           >
-            {allExpanded ? 'Collapse All' : 'Expand All'}
+            {allExpanded ? '⊟ Collapse All' : '⊞ Expand All'}
           </button>
         </div>
-        
-        {/* Table */}
-        <div className="overflow-x-auto p-4">
-          <HeaderRow />
-
-          <div className="max-h-[calc(100vh-500px)] overflow-y-auto space-y-2">
+        <div className="max-h-[calc(100vh-500px)] overflow-y-auto space-y-2">
             {sortedHierarchy.length === 0 ? (
               <div className="px-5 py-8 text-center text-zinc-500">
                 No ads match the selected filter
@@ -1436,7 +1441,6 @@ export function PerformanceTable({
             )}
           </div>
         </div>
-      </div>
 
       {/* Mobile Cards View */}
       <div className="mobile-cards">
