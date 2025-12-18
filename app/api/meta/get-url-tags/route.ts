@@ -59,9 +59,20 @@ export async function GET(request: NextRequest) {
     const creativeId = result.creative?.id || null
 
     let urlTags = ''
-    if (linkData?.url_tags) {
-      // For image/link ads, url_tags is a direct field
-      urlTags = linkData.url_tags
+    if (linkData?.call_to_action?.value?.link) {
+      // For image/link ads, extract UTM params from CTA link (same as video)
+      try {
+        const ctaUrl = new URL(linkData.call_to_action.value.link)
+        const utmParams: string[] = []
+        ctaUrl.searchParams.forEach((value, key) => {
+          if (key.startsWith('utm_')) {
+            utmParams.push(`${key}=${value}`)
+          }
+        })
+        urlTags = utmParams.join('&')
+      } catch {
+        // Invalid URL, leave urlTags empty
+      }
     } else if (videoData?.call_to_action?.value?.link) {
       // For video ads, extract UTM params from the CTA link URL
       try {

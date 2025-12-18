@@ -96,8 +96,23 @@ async function fetchAdUtmStatus(adId: string, accessToken: string): Promise<bool
     const videoData = objectStorySpec.video_data
 
     if (linkData) {
-      // Image/link ads: Check url_tags field
-      return Boolean(linkData.url_tags && linkData.url_tags.length > 0)
+      // Image/link ads: Check CTA link for utm_ params (same as video)
+      const ctaLink = linkData.call_to_action?.value?.link
+      if (ctaLink) {
+        try {
+          const url = new URL(ctaLink)
+          let hasUtm = false
+          url.searchParams.forEach((_, key) => {
+            if (key.startsWith('utm_')) {
+              hasUtm = true
+            }
+          })
+          return hasUtm
+        } catch {
+          return false
+        }
+      }
+      return false
     } else if (videoData) {
       // Video ads: Check if CTA link contains utm_ params
       const ctaLink = videoData.call_to_action?.value?.link

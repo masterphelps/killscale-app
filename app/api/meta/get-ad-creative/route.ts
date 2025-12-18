@@ -65,10 +65,25 @@ export async function GET(request: NextRequest) {
     if (linkData) {
       // IMAGE/LINK ADS
       creativeType = 'image'
-      urlTags = linkData.url_tags || ''
       primaryText = linkData.message || ''
       headline = linkData.name || ''
       description = linkData.description || ''
+
+      // Extract UTM params from CTA link (same as video)
+      if (linkData.call_to_action?.value?.link) {
+        try {
+          const ctaUrl = new URL(linkData.call_to_action.value.link)
+          const utmParams: string[] = []
+          ctaUrl.searchParams.forEach((value, key) => {
+            if (key.startsWith('utm_')) {
+              utmParams.push(`${key}=${value}`)
+            }
+          })
+          urlTags = utmParams.join('&')
+        } catch {
+          // Invalid URL, leave urlTags empty
+        }
+      }
     } else if (videoData) {
       // VIDEO ADS
       creativeType = 'video'

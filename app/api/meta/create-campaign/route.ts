@@ -379,9 +379,16 @@ export async function POST(request: NextRequest) {
             value: { lead_gen_form_id: formId }
           }
         } else {
+          // For non-lead image ads, append UTM params to CTA link (same as video)
+          // This ensures UTMs are detectable since url_tags is write-only
+          let ctaLink = websiteUrl
+          if (urlTags) {
+            const separator = websiteUrl.includes('?') ? '&' : '?'
+            ctaLink = `${websiteUrl}${separator}${urlTags}`
+          }
           linkData.call_to_action = {
             type: ctaType,
-            value: { link: websiteUrl }
+            value: { link: ctaLink }
           }
         }
 
@@ -406,11 +413,8 @@ export async function POST(request: NextRequest) {
         access_token: accessToken
       }
 
-      // Add URL tags for tracking (Meta substitutes {{ad.id}} etc. at click time)
-      // Only for non-lead campaigns
-      if (urlTags && objective !== 'leads') {
-        creativePayload.url_tags = urlTags
-      }
+      // NOTE: url_tags is write-only in Meta API - can't be detected later
+      // UTMs are now embedded in CTA link for both image and video ads
 
       // Log creative details for debugging
       console.log(`Creating creative ${i + 1}:`, {
