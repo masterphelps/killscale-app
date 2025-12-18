@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch images
     if (type === 'all' || type === 'images') {
-      const imagesUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adimages?fields=id,hash,name,url_128,permalink_url,width,height,created_time,bytes&limit=100&access_token=${accessToken}`
+      const imagesUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adimages?fields=id,hash,name,url,url_128,width,height,created_time,bytes&limit=100&access_token=${accessToken}`
 
       const imagesRes = await fetch(imagesUrl)
       const imagesData = await imagesRes.json()
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
             id: img.id || img.hash,
             hash: img.hash,
             name: img.name || 'Untitled',
-            url: img.url_128 || img.permalink_url || '',
+            url: img.url || img.url_128 || '',
             width: img.width || 0,
             height: img.height || 0,
             createdTime: img.created_time || new Date().toISOString(),
