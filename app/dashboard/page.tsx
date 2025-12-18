@@ -1585,7 +1585,7 @@ export default function DashboardPage() {
 
           {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
           <div className="overflow-x-auto">
-            <div className="hidden lg:grid grid-cols-6 gap-4 mb-8 min-w-[1000px] max-w-[1400px]">
+            <div className="hidden lg:grid grid-cols-5 gap-4 mb-8 min-w-[900px] max-w-[1400px]">
             {/* Daily Budgets - left bookend */}
             <BudgetCard
               totalBudget={formatCurrency(budgetTotals.total)}
@@ -1605,12 +1605,6 @@ export default function DashboardPage() {
               value={formatCPC(totals.spend, totals.clicks)}
               icon={StatIcons.cpc}
               glow="blue"
-            />
-            <StatCard
-              label="CTR"
-              value={formatPercent(totals.ctr)}
-              icon={StatIcons.ctr}
-              glow="purple"
             />
             <StatCard
               label="AOV"
