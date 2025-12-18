@@ -175,6 +175,19 @@ const verdictOrder: Record<Verdict, number> = {
   'kill': 1,
 }
 
+// Type color bars for visual hierarchy
+const typeColors = {
+  campaign: 'bg-blue-500',
+  adset: 'bg-purple-500',
+  ad: 'bg-zinc-500'
+}
+
+const typeLabels = {
+  campaign: 'Campaign',
+  adset: 'Ad Set',
+  ad: 'Ad'
+}
+
 function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaigns: Record<string, HierarchyNode & { _status?: string | null }> = {}
   const adsetStatuses: Record<string, string | null> = {}  // Track adset statuses by name
@@ -788,32 +801,26 @@ export function PerformanceTable({
   }) => {
     // Use displayName if provided (for privacy mode), otherwise use node.name
     const nameToShow = displayName ?? node.name
-    const indent = level === 'campaign' ? 0 : level === 'adset' ? 24 : 48
+    // New card-style indentation via marginLeft
+    const indent = level === 'campaign' ? 0 : level === 'adset' ? 28 : 56
     const isHighlighted = rowKey === highlightedRow
-    // Modern clean styling - subtle backgrounds, no heavy colors
-    const bgClass = isHighlighted
-      ? 'bg-accent/20 ring-2 ring-accent/50'
-      : level === 'ad'
-        ? 'hover:bg-bg-hover/50'
-        : (isSelected ? 'hover:bg-bg-hover/50' : 'opacity-60 hover:opacity-80')
     const textClass = level === 'campaign' ? 'text-white font-medium' : level === 'adset' ? 'text-zinc-200' : 'text-zinc-400'
-    // Subtle labels without heavy backgrounds
-    const labelBg = level === 'campaign'
-      ? 'bg-zinc-700/50 text-zinc-300'
-      : level === 'adset'
-        ? 'bg-zinc-700/30 text-zinc-400'
-        : 'bg-zinc-800/50 text-zinc-500'
-    const label = level === 'campaign' ? 'Camp' : level === 'adset' ? 'Set' : 'Ad'
 
     return (
       <div
         ref={isHighlighted ? highlightRef : undefined}
         className={cn(
-          'flex items-center border-b border-border/50 transition-colors',
-          bgClass,
+          // New card-style row with dark background
+          'rounded-xl p-3 transition-all duration-200',
+          'bg-[#0f1419]',
+          'border border-white/10',
+          'hover:border-white/20 hover:bg-[#131820]',
+          'flex items-center gap-2',
+          isHighlighted && 'ring-2 ring-accent/50 border-accent/50',
+          !isSelected && level !== 'ad' && 'opacity-60',
           onToggle && 'cursor-pointer'
         )}
-        style={{ height: level === 'ad' ? 40 : 48 }}
+        style={{ marginLeft: indent }}
       >
         {/* Checkbox */}
         {hasCheckboxes && (
@@ -874,37 +881,49 @@ export function PerformanceTable({
           </div>
         )}
         
-        {/* Name column */}
-        <div 
-          className="flex items-center min-w-0 px-3 relative"
-          style={{ width: nameColWidth, flexShrink: 0 }}
+        {/* Expand/collapse chevron */}
+        {onToggle ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            className="w-5 h-5 flex items-center justify-center text-zinc-500 hover:text-white transition-colors flex-shrink-0"
+          >
+            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+        ) : (
+          <div className="w-5 flex-shrink-0" />
+        )}
+
+        {/* Color bar indicator */}
+        <div className={cn('w-1 self-stretch rounded-full flex-shrink-0', typeColors[level])} style={{ minHeight: 32 }} />
+
+        {/* Name section - two rows */}
+        <div
+          className="flex-1 min-w-0 px-2"
+          style={{ maxWidth: nameColWidth }}
           onClick={onToggle}
         >
-          <div style={{ paddingLeft: indent }} className="flex items-center gap-2 min-w-0 flex-1">
-            {onToggle && (
-              <button className="text-zinc-500 hover:text-white transition-colors flex-shrink-0">
-                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </button>
-            )}
-            {!onToggle && <div className="w-4" />}
-            <span className={cn('text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded uppercase font-medium', labelBg)}>{label}</span>
-            <span className={cn('truncate text-sm', textClass)} title={nameToShow}>{nameToShow}</span>
+          {/* Row 1: Name */}
+          <div className={cn('truncate text-sm', textClass)} title={nameToShow}>{nameToShow}</div>
+          {/* Row 2: Type label + status badges + CBO/ABO badge */}
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span className="text-xs text-zinc-500">{typeLabels[level]}</span>
             {/* Paused indicator - only show when includePaused is true */}
-            {includePaused && node.status && node.status !== 'ACTIVE' ? (
-              <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5 ml-1">
+            {includePaused && node.status && node.status !== 'ACTIVE' && (
+              <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5">
                 <Pause className="w-2.5 h-2.5 fill-current" />
                 <span>{node.status === 'PAUSED' || node.status === 'ADSET_PAUSED' || node.status === 'CAMPAIGN_PAUSED' ? 'Paused' : node.status === 'UNKNOWN' ? 'Unknown' : node.status}</span>
               </span>
-            ) : includePaused && node.hasChildrenPaused ? (
-              <span className="flex-shrink-0 inline-flex items-center text-zinc-600 ml-1" title="Contains paused items">
+            )}
+            {includePaused && !node.status?.includes('PAUSED') && node.hasChildrenPaused && (
+              <span className="flex-shrink-0 inline-flex items-center text-zinc-600" title="Contains paused items">
                 <Pause className="w-3 h-3" strokeWidth={1.5} />
               </span>
-            ) : null}
+            )}
             {/* CBO/ABO Budget Type Badge */}
             {node.budgetType && (level === 'campaign' || level === 'adset') && (
               <span
                 className={cn(
-                  'flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded ml-1',
+                  'flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded',
                   node.budgetType === 'CBO'
                     ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                     : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
@@ -918,12 +937,14 @@ export function PerformanceTable({
               </span>
             )}
           </div>
-          <div 
-            className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center"
-            onMouseDown={handleMouseDown}
-          >
-            <div className="w-0.5 h-4 bg-border rounded" />
-          </div>
+        </div>
+        {/* Column resize handle */}
+        <div
+          className="w-1 self-stretch cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center flex-shrink-0"
+          onMouseDown={handleMouseDown}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-0.5 h-4 bg-border/50 rounded" />
         </div>
         
         {/* Data columns */}
@@ -1024,11 +1045,11 @@ export function PerformanceTable({
   }
 
   const HeaderRow = () => (
-    <div className="flex items-center text-xs text-zinc-500 uppercase tracking-wide border-b border-border" style={{ height: 44 }}>
+    <div className="flex items-center text-xs text-zinc-500 uppercase tracking-wide bg-[#0a0d10] rounded-xl p-3 mb-2 border border-white/5">
       {hasCheckboxes && (
         <div
-          className="flex flex-col items-center justify-center flex-shrink-0 cursor-pointer"
-          style={{ width: checkboxWidth }}
+          className="flex items-center justify-center flex-shrink-0 cursor-pointer"
+          style={{ width: 24 }}
           onClick={onSelectAll}
         >
           <div className={cn(
@@ -1042,24 +1063,22 @@ export function PerformanceTable({
             {allSelected && <Check className="w-3 h-3" />}
             {someSelected && !allSelected && <Minus className="w-3 h-3" />}
           </div>
-          <span className="text-[8px] text-zinc-600 mt-0.5">All</span>
         </div>
       )}
+      {/* Spacer for chevron column */}
+      <div className="w-5 flex-shrink-0" />
+      {/* Spacer for color bar column */}
+      <div className="w-1 flex-shrink-0" />
       <div
-        className="px-3 relative flex-shrink-0 font-semibold flex items-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors"
-        style={{ width: nameColWidth }}
+        className="px-2 flex-1 min-w-0 font-semibold flex items-center gap-1 cursor-pointer hover:text-zinc-300 transition-colors"
+        style={{ maxWidth: nameColWidth }}
         onClick={() => handleSort('name')}
       >
         Name
         <SortIcon field="name" />
-        <div 
-          className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 flex items-center justify-center"
-          onMouseDown={handleMouseDown}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="w-0.5 h-4 bg-border rounded" />
-        </div>
       </div>
+      {/* Spacer for resize handle */}
+      <div className="w-1 flex-shrink-0" />
       <div className="flex-1 flex items-center">
         <div className="flex-1 text-right px-2 flex items-center justify-end gap-1 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort('spend')}>
           Spend <SortIcon field="spend" />
@@ -1118,57 +1137,8 @@ export function PerformanceTable({
     </div>
   )
 
-  const TotalsRow = () => (
-    <div className="flex items-center border-b border-border font-medium bg-bg-dark/50" style={{ height: 48 }}>
-      {hasCheckboxes && (
-        <div 
-          className="flex items-center justify-center flex-shrink-0 cursor-pointer"
-          style={{ width: checkboxWidth }}
-          onClick={onSelectAll}
-        >
-          <div className={cn(
-            'w-4 h-4 rounded border flex items-center justify-center transition-colors',
-            allSelected 
-              ? 'bg-accent border-accent text-white' 
-              : someSelected
-                ? 'bg-accent/50 border-accent text-white'
-                : 'border-zinc-600 hover:border-zinc-500'
-          )}>
-            {allSelected && <Check className="w-3 h-3" />}
-            {someSelected && !allSelected && <Minus className="w-3 h-3" />}
-          </div>
-        </div>
-      )}
-      <div className="px-3 text-white flex-shrink-0 text-sm font-semibold" style={{ width: nameColWidth }}>All Campaigns</div>
-      <div className="flex-1 flex items-center">
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.spend)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatCurrency(totals.revenue)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.results)}</div>
-        <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpr)}</div>
-        <div className="flex-1 text-right font-mono text-sm font-semibold px-2">{formatROAS(totals.roas)}</div>
-        {/* Detailed mode columns */}
-        {viewMode === 'detailed' && (
-          <>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.purchases)}</div>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpc)}</div>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.ctr)}</div>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatMetric(totals.cpa)}</div>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatPercent(totals.convRate)}</div>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.clicks)}</div>
-            <div className="flex-1 text-right font-mono text-sm px-2">{formatNumber(totals.impressions)}</div>
-          </>
-        )}
-        {/* Budget column - empty for totals row */}
-        <div className="w-24 text-right font-mono text-sm px-2 flex-shrink-0 text-zinc-600">—</div>
-        <div className="w-20 flex justify-center px-2 flex-shrink-0">
-          <VerdictBadge verdict={totals.verdict} size="sm" />
-        </div>
-        {canManageAds && (
-          <div className="w-16 flex-shrink-0" />
-        )}
-      </div>
-    </div>
-  )
+  // Note: TotalsRow is no longer used in the new card-based design
+  // The totals are shown in the stat cards above the table instead
 
   // Mobile Card Component
   const MobileCard = ({ node, level, isExpanded, onToggle, displayName }: {
@@ -1390,31 +1360,31 @@ export function PerformanceTable({
   return (
     <div ref={containerRef}>
       {/* Desktop Table View */}
-      <div className="desktop-table bg-bg-card border border-border rounded-xl overflow-hidden">
+      <div className="desktop-table bg-[#0a0d10] border border-white/10 rounded-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <h2 className="font-semibold">Campaign Performance</h2>
+            <h2 className="font-semibold text-white">Campaign Performance</h2>
             <span className="text-sm text-zinc-500">{sortedHierarchy.length} campaigns</span>
             {verdictFilter !== 'all' && (
-              <span className="text-xs text-zinc-400 bg-bg-dark px-2 py-1 rounded">
+              <span className="text-xs text-zinc-400 bg-[#0f1419] px-2 py-1 rounded-lg border border-white/10">
                 Showing: {verdictFilter.charAt(0).toUpperCase() + verdictFilter.slice(1)} only
               </span>
             )}
           </div>
           <button
             onClick={toggleAll}
-            className="text-xs text-zinc-400 hover:text-white bg-bg-dark border border-border px-3 py-1.5 rounded-md transition-colors"
+            className="text-xs text-zinc-400 hover:text-white bg-[#0f1419] border border-white/10 px-3 py-1.5 rounded-lg transition-colors hover:border-white/20"
           >
             {allExpanded ? 'Collapse All' : 'Expand All'}
           </button>
         </div>
         
         {/* Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto p-4">
           <HeaderRow />
 
-          <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-500px)] overflow-y-auto space-y-2">
             {sortedHierarchy.length === 0 ? (
               <div className="px-5 py-8 text-center text-zinc-500">
                 No ads match the selected filter

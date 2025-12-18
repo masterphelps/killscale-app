@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Upload, Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
-import { StatCard } from '@/components/stat-card'
+import { StatCard, BudgetCard, StatIcons } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
 import { StatusChangeModal } from '@/components/confirm-modal'
@@ -1547,155 +1547,101 @@ export default function DashboardPage() {
             <StatCard
               label="Total Spend"
               value={formatCurrency(totals.spend)}
-              icon="💰"
-              color="blue"
+              icon={StatIcons.spend}
+              glow="blue"
             />
             <StatCard
               label="Revenue"
               value={formatCurrency(totals.revenue)}
-              icon="💵"
-              color="green"
+              icon={StatIcons.revenue}
+              glow="green"
             />
             <StatCard
               label="ROAS"
               value={formatROAS(totals.roas)}
-              icon="📈"
-              color="purple"
+              icon={StatIcons.roas}
+              glow="purple"
             />
             <StatCard
               label="Results"
               value={formatNumber(totals.results)}
-              icon="🎯"
-              color="amber"
+              icon={StatIcons.results}
+              glow="amber"
             />
             <StatCard
               label="CPR/CPA"
               value={totals.cpr > 0 ? formatCurrency(totals.cpr) : '—'}
-              icon="💳"
-              color="rose"
+              icon={StatIcons.cpr}
+              glow="rose"
             />
           </div>
 
           {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
-          <div className="hidden lg:grid grid-cols-5 gap-4 mb-8">
+          <div className="hidden lg:grid grid-cols-6 gap-4 mb-8">
             {/* Daily Budgets - left bookend */}
-            <div className="relative overflow-hidden rounded-xl p-4 transition-all duration-300 bg-gradient-to-br from-zinc-800/80 to-zinc-900/90 border border-indigo-500/30 shadow-lg shadow-indigo-500/10 hover:border-indigo-500/50 hover:shadow-xl">
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none" />
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg drop-shadow-sm">📊</span>
-                  <span className="text-sm text-zinc-400 uppercase tracking-wide">Daily Budgets</span>
-                </div>
-                <div className="text-2xl font-bold font-mono text-white mb-2">
-                  {formatCurrency(budgetTotals.total)}
-                </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-hierarchy-campaign rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>
-                    <span className="text-zinc-500">CBO</span>
-                    <span className="text-zinc-300 font-mono">{formatCurrency(budgetTotals.cbo)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-hierarchy-adset rounded-full shadow-[0_0_8px_rgba(168,85,247,0.6)]"></span>
-                    <span className="text-zinc-500">ABO</span>
-                    <span className="text-zinc-300 font-mono">{formatCurrency(budgetTotals.abo)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <BudgetCard
+              totalBudget={formatCurrency(budgetTotals.total)}
+              cboBudget={formatCurrency(budgetTotals.cbo)}
+              aboBudget={formatCurrency(budgetTotals.abo)}
+            />
 
-            {/* Middle metrics - 3 columns spanning the middle */}
-            <div className="col-span-3 grid grid-cols-4 gap-4">
-              <StatCard
-                label="CPM"
-                value={formatCPM(totals.spend, totals.impressions)}
-                icon="👁️"
-                color="blue"
-              />
-              <StatCard
-                label="CPC"
-                value={formatCPC(totals.spend, totals.clicks)}
-                icon="👆"
-                color="amber"
-              />
-              <StatCard
-                label="CTR"
-                value={formatPercent(totals.ctr)}
-                icon="🎯"
-                color="purple"
-              />
-              <StatCard
-                label="AOV"
-                value={formatAOV(totals.revenue, totals.purchases)}
-                icon="🧾"
-                color="green"
-              />
-            </div>
+            {/* Middle metrics */}
+            <StatCard
+              label="CPM"
+              value={formatCPM(totals.spend, totals.impressions)}
+              icon={StatIcons.cpm}
+              glow="cyan"
+            />
+            <StatCard
+              label="CPC"
+              value={formatCPC(totals.spend, totals.clicks)}
+              icon={StatIcons.cpc}
+              glow="blue"
+            />
+            <StatCard
+              label="CTR"
+              value={formatPercent(totals.ctr)}
+              icon={StatIcons.ctr}
+              glow="purple"
+            />
+            <StatCard
+              label="AOV"
+              value={formatAOV(totals.revenue, totals.purchases)}
+              icon={StatIcons.aov}
+              glow="green"
+            />
 
             {/* Conv Rate - right bookend */}
             <StatCard
               label="Conv Rate"
               value={formatPercent(totals.convRate)}
-              icon="✅"
-              color="rose"
+              icon={StatIcons.convRate}
+              glow="amber"
             />
           </div>
           
-          {/* Verdict Filters - scrollable on mobile */}
+          {/* Controls Bar - new command center style */}
           <div className="mb-4">
-            {/* Mobile: Filter label with Paused/Deleted toggles */}
-            <div className="flex items-center justify-between mb-2 lg:hidden">
-              <span className="text-sm text-zinc-500">Filter:</span>
-              <div className="flex items-center gap-4">
-                {/* Paused toggle */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIncludePaused(!includePaused)}
-                    className={`relative w-9 h-5 rounded-full transition-all ${
-                      includePaused ? 'bg-zinc-600' : 'bg-zinc-800'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                        includePaused ? 'left-4' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                  <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                    Paused
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Filter buttons row */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-0 lg:overflow-visible">
-              {/* Desktop: Filter label inline */}
-              <span className="text-sm text-zinc-500 mr-2 flex-shrink-0 hidden lg:inline">Filter:</span>
-              {filterButtons.map((filter) => (
+            {/* Mobile controls */}
+            <div className="flex items-center justify-between gap-4 lg:hidden mb-3">
+              {/* Select All with count */}
+              <div className="flex items-center gap-2">
                 <button
-                  key={filter.value}
-                  onClick={() => setVerdictFilter(filter.value)}
-                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex-shrink-0 ${
-                    verdictFilter === filter.value
-                      ? filter.value === 'all'
-                        ? 'bg-zinc-700 border-zinc-600 text-white'
-                        : filter.value === 'scale'
-                          ? 'bg-verdict-scale/20 border-verdict-scale/50 text-verdict-scale'
-                          : filter.value === 'watch'
-                            ? 'bg-verdict-watch/20 border-verdict-watch/50 text-verdict-watch'
-                            : filter.value === 'kill'
-                              ? 'bg-verdict-kill/20 border-verdict-kill/50 text-verdict-kill'
-                              : 'bg-verdict-learn/20 border-verdict-learn/50 text-verdict-learn'
-                      : 'bg-bg-card border-border text-zinc-400 hover:border-zinc-500'
-                  }`}
+                  onClick={handleSelectAll}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1419] border border-white/10 rounded-lg text-sm hover:border-white/20 transition-colors"
                 >
-                  {filter.label}
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                    allSelected ? 'bg-accent border-accent' : someSelected ? 'bg-accent/50 border-accent' : 'border-zinc-500'
+                  }`}>
+                    {allSelected && <span className="text-white text-xs">✓</span>}
+                    {someSelected && !allSelected && <span className="text-white text-xs">−</span>}
+                  </div>
+                  <span className="text-zinc-400">All</span>
                 </button>
-              ))}
-
-              {/* Desktop: Include Paused Toggle */}
-              <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-border flex-shrink-0">
+                <span className="text-xs text-zinc-500">({selectedCampaigns.size} selected)</span>
+              </div>
+              {/* Include Paused toggle */}
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIncludePaused(!includePaused)}
                   className={`relative w-9 h-5 rounded-full transition-all ${
@@ -1708,33 +1654,75 @@ export default function DashboardPage() {
                     }`}
                   />
                 </button>
-                <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                  Include Paused
+                <span className={`text-xs ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                  Paused
                 </span>
               </div>
+            </div>
 
-              {/* Desktop only: Simple/Detailed Toggle */}
-              <div className="hidden lg:flex items-center gap-1 ml-4 pl-4 border-l border-border flex-shrink-0">
+            {/* Desktop controls bar */}
+            <div className="hidden lg:flex items-center justify-between bg-[#0a0d10] rounded-xl px-4 py-3 border border-white/10">
+              {/* Left side: Select All with count */}
+              <div className="flex items-center gap-4">
                 <button
-                  onClick={() => setViewMode('simple')}
-                  className={`px-2.5 py-1 text-xs rounded-l-md border transition-colors ${
-                    viewMode === 'simple'
-                      ? 'bg-accent border-accent text-white'
-                      : 'bg-bg-card border-border text-zinc-400 hover:text-white'
-                  }`}
+                  onClick={handleSelectAll}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1419] border border-white/10 rounded-lg text-sm hover:border-white/20 transition-colors"
                 >
-                  Simple
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                    allSelected ? 'bg-accent border-accent text-white' : someSelected ? 'bg-accent/50 border-accent text-white' : 'border-zinc-500'
+                  }`}>
+                    {allSelected && <span className="text-xs">✓</span>}
+                    {someSelected && !allSelected && <span className="text-xs">−</span>}
+                  </div>
+                  <span className="text-zinc-300">Select All</span>
                 </button>
-                <button
-                  onClick={() => setViewMode('detailed')}
-                  className={`px-2.5 py-1 text-xs rounded-r-md border border-l-0 transition-colors ${
-                    viewMode === 'detailed'
-                      ? 'bg-accent border-accent text-white'
-                      : 'bg-bg-card border-border text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Detailed
-                </button>
+                <span className="text-sm text-zinc-500">({selectedCampaigns.size} campaigns selected)</span>
+              </div>
+
+              {/* Right side: Controls */}
+              <div className="flex items-center gap-3">
+                {/* Include Paused toggle */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0f1419] border border-white/10 rounded-lg">
+                  <button
+                    onClick={() => setIncludePaused(!includePaused)}
+                    className={`relative w-9 h-5 rounded-full transition-all ${
+                      includePaused ? 'bg-accent' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                        includePaused ? 'left-4' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm ${includePaused ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                    Include Paused
+                  </span>
+                </div>
+
+                {/* Simple/Detailed Toggle */}
+                <div className="flex items-center bg-[#0f1419] border border-white/10 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setViewMode('simple')}
+                    className={`px-3 py-1.5 text-sm transition-colors ${
+                      viewMode === 'simple'
+                        ? 'bg-accent text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Simple
+                  </button>
+                  <button
+                    onClick={() => setViewMode('detailed')}
+                    className={`px-3 py-1.5 text-sm transition-colors ${
+                      viewMode === 'detailed'
+                        ? 'bg-accent text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Detailed
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1743,7 +1731,7 @@ export default function DashboardPage() {
             data={tableData}
             rules={rules}
             dateRange={dateRange}
-            verdictFilter={verdictFilter}
+            verdictFilter="all"
             includePaused={includePaused}
             viewMode={viewMode}
             selectedCampaigns={selectedCampaigns}
