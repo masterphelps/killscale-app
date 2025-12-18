@@ -1147,11 +1147,12 @@ export default function DashboardPage() {
   }))
 
   // Build a map of campaign -> ABO adsets for selection cascading
+  // Uses accountFilteredData (current account only) not data (all accounts)
   const campaignAboAdsets = useMemo(() => {
     const map = new Map<string, Set<string>>()
     const seenAdsets = new Set<string>()
 
-    data.forEach(row => {
+    accountFilteredData.forEach(row => {
       const adsetKey = `${row.campaign_name}::${row.adset_name}`
       if (!seenAdsets.has(adsetKey)) {
         seenAdsets.add(adsetKey)
@@ -1167,7 +1168,7 @@ export default function DashboardPage() {
       }
     })
     return map
-  }, [data])
+  }, [accountFilteredData])
 
   const handleCampaignToggle = (key: string) => {
     const newSelected = new Set(selectedCampaigns)
