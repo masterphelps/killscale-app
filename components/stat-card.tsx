@@ -96,7 +96,7 @@ export function StatCard({ label, value, subValue, change, icon, glow, color }: 
 
   return (
     <div className={cn(
-      'relative rounded-2xl p-3 lg:p-5 transition-all duration-200 overflow-hidden',
+      'relative rounded-2xl p-4 lg:p-5 transition-all duration-200 overflow-hidden',
       'bg-[#0f1419]',
       'border border-white/10',
       'hover:border-white/20',
@@ -104,9 +104,9 @@ export function StatCard({ label, value, subValue, change, icon, glow, color }: 
       hasGlow && glowStyles[glowColor],
     )}>
       <div className="relative">
-        <div className="flex items-center gap-2 mb-1 lg:mb-2">
+        <div className="flex items-center gap-2 mb-2">
           {icon && <span className="text-zinc-400">{icon}</span>}
-          <span className="text-xs lg:text-sm text-zinc-400 uppercase tracking-wide">{label}</span>
+          <span className="text-xs lg:text-sm text-zinc-400">{label}</span>
         </div>
         <div className="flex items-center justify-between">
           <div>
@@ -140,16 +140,16 @@ type BudgetCardProps = {
 export function BudgetCard({ totalBudget, cboBudget, aboBudget }: BudgetCardProps) {
   return (
     <div className={cn(
-      'relative rounded-2xl p-3 lg:p-5 transition-all duration-200 overflow-hidden',
+      'relative rounded-2xl p-4 lg:p-5 transition-all duration-200 overflow-hidden',
       'bg-[#0f1419]',
       'border border-indigo-500/20',
       'hover:border-indigo-500/30',
       'before:absolute before:inset-0 before:bg-gradient-to-br before:from-indigo-500/10 before:to-transparent before:pointer-events-none',
     )}>
       <div className="relative">
-        <div className="flex items-center gap-2 mb-1 lg:mb-2">
+        <div className="flex items-center gap-2 mb-2">
           <span className="text-zinc-400">{StatIcons.budget}</span>
-          <span className="text-xs lg:text-sm text-zinc-400 uppercase tracking-wide">Daily Budgets</span>
+          <span className="text-xs lg:text-sm text-zinc-400">Daily Budgets</span>
         </div>
         <div className="text-xl lg:text-2xl font-bold font-mono text-white mb-2">{totalBudget}</div>
         <div className="flex items-center gap-4 text-xs">

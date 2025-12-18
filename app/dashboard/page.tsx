@@ -177,6 +177,11 @@ export default function DashboardPage() {
   const [showCustomDateInputs, setShowCustomDateInputs] = useState(false)
     const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [viewMode, setViewMode] = useState<'simple' | 'detailed'>('simple') // Simple by default
+  const [tableExpanded, setTableExpanded] = useState(false)
+  const [expandTrigger, setExpandTrigger] = useState(0)
+  const [showSortDropdown, setShowSortDropdown] = useState(false)
+  const [sortField, setSortField] = useState<'name' | 'spend' | 'revenue' | 'roas' | 'results' | 'cpr'>('spend')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [statusChangeModal, setStatusChangeModal] = useState<{
     isOpen: boolean
     entityId: string
@@ -1542,8 +1547,9 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Primary Stats Row - responsive grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4">
+          {/* Primary Stats Row - responsive grid with min/max constraints */}
+          <div className="overflow-x-auto">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4 min-w-[600px] lg:min-w-[900px] max-w-[1400px]">
             <StatCard
               label="Total Spend"
               value={formatCurrency(totals.spend)}
@@ -1574,10 +1580,12 @@ export default function DashboardPage() {
               icon={StatIcons.cpr}
               glow="rose"
             />
+            </div>
           </div>
 
           {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
-          <div className="hidden lg:grid grid-cols-6 gap-4 mb-8">
+          <div className="overflow-x-auto">
+            <div className="hidden lg:grid grid-cols-6 gap-4 mb-8 min-w-[1000px] max-w-[1400px]">
             {/* Daily Budgets - left bookend */}
             <BudgetCard
               totalBudget={formatCurrency(budgetTotals.total)}
@@ -1618,10 +1626,11 @@ export default function DashboardPage() {
               icon={StatIcons.convRate}
               glow="amber"
             />
+            </div>
           </div>
-          
+
           {/* Controls Bar - matching mockup exactly */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4 mb-6 min-w-[900px] max-w-[1400px]">
             {/* Select All on left */}
             <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
               <input
@@ -1634,8 +1643,75 @@ export default function DashboardPage() {
             </label>
             <span className="text-xs text-zinc-500">({selectedCampaigns.size} campaigns)</span>
 
+            {/* Expand All Toggle - same style as Simple/Detailed */}
+            <div className="flex items-center gap-1 bg-[#0f1419] rounded-lg p-1 border border-white/10">
+              <button
+                onClick={() => {
+                  setExpandTrigger(prev => prev + 1)
+                  setTableExpanded(!tableExpanded)
+                }}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  tableExpanded ? 'text-zinc-400 hover:text-white' : 'bg-indigo-500 text-white'
+                }`}
+              >
+                ⊞ Collapse
+              </button>
+              <button
+                onClick={() => {
+                  setExpandTrigger(prev => prev + 1)
+                  setTableExpanded(!tableExpanded)
+                }}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  tableExpanded ? 'bg-indigo-500 text-white' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                ⊟ Expand
+              </button>
+            </div>
+
             {/* Right side controls */}
             <div className="ml-auto flex items-center gap-4">
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSortDropdown(!showSortDropdown)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-[#0f1419] border-white/10 text-zinc-300 hover:border-white/20"
+                >
+                  <span className="text-zinc-500">Sort:</span>
+                  <span>{sortField === 'name' ? 'Name' : sortField === 'spend' ? 'Spend' : sortField === 'revenue' ? 'Revenue' : sortField === 'roas' ? 'ROAS' : sortField === 'results' ? 'Results' : 'CPR'}</span>
+                  <span className="text-zinc-500">{sortDirection === 'desc' ? '↓' : '↑'}</span>
+                </button>
+
+                {showSortDropdown && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-[#0f1419] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                    {(['name', 'spend', 'revenue', 'roas', 'results', 'cpr'] as const).map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => {
+                          if (sortField === option) {
+                            setSortDirection(sortDirection === 'desc' ? 'asc' : 'desc')
+                          } else {
+                            setSortField(option)
+                            setSortDirection('desc')
+                          }
+                          setShowSortDropdown(false)
+                        }}
+                        className={`w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors ${
+                          sortField === option
+                            ? 'bg-indigo-500/20 text-indigo-400'
+                            : 'text-zinc-300 hover:bg-white/5'
+                        }`}
+                      >
+                        <span>{option === 'name' ? 'Name' : option === 'spend' ? 'Spend' : option === 'revenue' ? 'Revenue' : option === 'roas' ? 'ROAS' : option === 'results' ? 'Results' : 'CPR'}</span>
+                        {sortField === option && (
+                          <span className="text-xs">{sortDirection === 'desc' ? '↓ High to Low' : '↑ Low to High'}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Include Paused checkbox */}
               <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
                 <input
@@ -1647,8 +1723,8 @@ export default function DashboardPage() {
                 Include Paused
               </label>
 
-              {/* Simple/Detailed Toggle */}
-              <div className="flex items-center gap-1 bg-[#0f1419] rounded-lg p-1 border border-white/10">
+              {/* Simple/Detailed Toggle - hidden on mobile */}
+              <div className="hidden lg:flex items-center gap-1 bg-[#0f1419] rounded-lg p-1 border border-white/10">
                 <button
                   onClick={() => setViewMode('simple')}
                   className={`px-3 py-1 text-xs rounded-md transition-colors ${
@@ -1689,6 +1765,10 @@ export default function DashboardPage() {
             campaignAboAdsets={campaignAboAdsets}
             lastTouchAttribution={isKillScaleActive ? lastTouchAttribution : undefined}
             isMultiTouchModel={isMultiTouchModel}
+            expandAllTrigger={expandTrigger}
+            onExpandedStateChange={setTableExpanded}
+            externalSortField={sortField}
+            externalSortDirection={sortDirection}
           />
         </>
       )}

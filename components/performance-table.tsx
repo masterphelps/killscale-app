@@ -107,6 +107,12 @@ type PerformanceTableProps = {
   lastTouchAttribution?: AttributionData
   // TRUE when using multi-touch model (linear, time_decay, position_based)
   isMultiTouchModel?: boolean
+  // External expand control from parent
+  expandAllTrigger?: number
+  onExpandedStateChange?: (expanded: boolean) => void
+  // External sort control from parent
+  externalSortField?: SortField
+  externalSortDirection?: SortDirection
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -467,7 +473,11 @@ export function PerformanceTable({
   userId,
   campaignAboAdsets,
   lastTouchAttribution,
-  isMultiTouchModel = false
+  isMultiTouchModel = false,
+  expandAllTrigger,
+  onExpandedStateChange,
+  externalSortField,
+  externalSortDirection
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -476,8 +486,13 @@ export function PerformanceTable({
   const highlightRef = useRef<HTMLDivElement>(null)
   const [allExpanded, setAllExpanded] = useState(false)
   const [nameColWidth, setNameColWidth] = useState(300)
-  const [sortField, setSortField] = useState<SortField>('spend')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  // Use external sort if provided, otherwise internal state
+  const [internalSortField, setInternalSortField] = useState<SortField>('spend')
+  const [internalSortDirection, setInternalSortDirection] = useState<SortDirection>('desc')
+  const sortField = externalSortField ?? internalSortField
+  const sortDirection = externalSortDirection ?? internalSortDirection
+  const setSortField = setInternalSortField
+  const setSortDirection = setInternalSortDirection
 
   // Privacy mode masking for entity names
   const maskName = (name: string, type: 'campaign' | 'adset' | 'ad', index: number): string => {
@@ -619,7 +634,7 @@ export function PerformanceTable({
 
     return () => clearTimeout(timeout)
   }, [highlightEntity, hierarchy])
-  
+
   const filteredHierarchy = useMemo(() => {
     // First filter by paused status if needed
     let filtered = hierarchy
@@ -746,6 +761,20 @@ export function PerformanceTable({
     setAllExpanded(!allExpanded)
   }
 
+  // Respond to external expand trigger from parent
+  const prevExpandTrigger = useRef(expandAllTrigger)
+  useEffect(() => {
+    if (expandAllTrigger !== undefined && expandAllTrigger !== prevExpandTrigger.current && expandAllTrigger > 0) {
+      toggleAll()
+      prevExpandTrigger.current = expandAllTrigger
+    }
+  }, [expandAllTrigger])
+
+  // Notify parent of expand state changes
+  useEffect(() => {
+    onExpandedStateChange?.(allExpanded)
+  }, [allExpanded, onExpandedStateChange])
+
   const handleMouseDown = (e: React.MouseEvent) => {
     resizing.current = true
     startX.current = e.clientX
@@ -811,11 +840,13 @@ export function PerformanceTable({
         ref={isHighlighted ? highlightRef : undefined}
         className={cn(
           // New card-style row with dark background
-          'rounded-xl p-4 transition-all duration-200',
+          'rounded-xl px-4 py-5 transition-all duration-200',
           'bg-[#0f1419]',
           'border border-white/10',
           'hover:border-white/20 hover:bg-[#131820]',
-          'flex items-center gap-3',
+          'flex gap-3',
+          // Align to top in detailed mode (two-row metrics), center in simple mode
+          viewMode === 'detailed' ? 'items-start' : 'items-center',
           isHighlighted && 'ring-2 ring-accent/50 border-accent/50',
           !isSelected && level !== 'ad' && 'opacity-60',
           onToggle && 'cursor-pointer'
@@ -896,9 +927,9 @@ export function PerformanceTable({
         {/* Color bar indicator */}
         <div className={cn('w-1 self-stretch rounded-full flex-shrink-0', typeColors[level])} style={{ minHeight: 32 }} />
 
-        {/* Name section - two rows */}
+        {/* Name section - two rows, max-width to ensure metrics align */}
         <div
-          className="flex-1 min-w-0"
+          className="flex-1 min-w-0 max-w-[280px]"
           onClick={onToggle}
         >
           {/* Row 1: Name */}
@@ -939,67 +970,75 @@ export function PerformanceTable({
         </div>
 
         {/* Metrics - with labels above values (matching mockup) */}
-        <div className="hidden lg:flex items-center gap-4 text-sm">
-          <div className="text-right w-20">
-            <div className="text-zinc-500 text-xs mb-0.5">Spend</div>
-            <div className="font-mono text-white">{formatCurrency(node.spend)}</div>
-          </div>
-          <div className="text-right w-20">
-            <div className="text-zinc-500 text-xs mb-0.5">Revenue</div>
-            <div className="font-mono text-white">{formatCurrency(node.revenue)}</div>
-          </div>
-          <div className="text-right w-16">
-            <div className="text-zinc-500 text-xs mb-0.5">Results</div>
-            <div className="font-mono text-white">{formatNumber(node.results)}</div>
-          </div>
-          <div className="text-right w-16">
-            <div className="text-zinc-500 text-xs mb-0.5">CPR</div>
-            <div className="font-mono text-white">{formatMetric(node.cpr)}</div>
-          </div>
-          <div className="text-right w-16">
-            <div className="text-zinc-500 text-xs mb-0.5">ROAS</div>
-            <div className="font-mono text-white font-semibold">{formatROAS(node.roas)}</div>
-          </div>
-          <div className="text-right w-20">
-            <div className="text-zinc-500 text-xs mb-0.5">Budget</div>
-            {(level === 'campaign' || level === 'adset') && node.budgetType && node.id ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (onBudgetChange && canManageAds) {
-                    const budgetType = node.dailyBudget ? 'daily' : 'lifetime'
-                    const currentBudget = node.dailyBudget || node.lifetimeBudget || 0
-                    setBudgetEditModal({
-                      isOpen: true,
-                      entityId: node.id!,
-                      entityName: node.name,
-                      entityType: level,
-                      currentBudget,
-                      currentBudgetType: budgetType,
-                    })
-                  }
-                }}
-                className={cn(
-                  "font-mono text-white",
-                  onBudgetChange && canManageAds && "hover:text-accent cursor-pointer transition-colors"
-                )}
-                disabled={!onBudgetChange || !canManageAds}
-              >
-                {formatBudget(node.dailyBudget, node.lifetimeBudget).value}
-              </button>
-            ) : (
-              <div className="font-mono text-zinc-600">—</div>
-            )}
+        {/* Simple mode: single row | Detailed mode: two rows */}
+        {/* ml-auto pushes to right, flex-shrink-0 prevents shrinking for consistent alignment */}
+        <div className={cn(
+          "hidden lg:flex text-sm ml-auto flex-shrink-0",
+          viewMode === 'detailed' ? 'flex-col gap-2' : 'items-center gap-4'
+        )}>
+          {/* Row 1: Core metrics (always shown) */}
+          <div className="flex items-center gap-4">
+            <div className="text-right w-20">
+              <div className="text-zinc-500 text-xs mb-0.5">Spend</div>
+              <div className="font-mono text-white">{formatCurrency(node.spend)}</div>
+            </div>
+            <div className="text-right w-20">
+              <div className="text-zinc-500 text-xs mb-0.5">Revenue</div>
+              <div className="font-mono text-white">{formatCurrency(node.revenue)}</div>
+            </div>
+            <div className="text-right w-16">
+              <div className="text-zinc-500 text-xs mb-0.5">Results</div>
+              <div className="font-mono text-white">{formatNumber(node.results)}</div>
+            </div>
+            <div className="text-right w-16">
+              <div className="text-zinc-500 text-xs mb-0.5">CPR</div>
+              <div className="font-mono text-white">{formatMetric(node.cpr)}</div>
+            </div>
+            <div className="text-right w-16">
+              <div className="text-zinc-500 text-xs mb-0.5">ROAS</div>
+              <div className="font-mono text-white font-semibold">{formatROAS(node.roas)}</div>
+            </div>
+            <div className="text-right w-20">
+              <div className="text-zinc-500 text-xs mb-0.5">Budget</div>
+              {(level === 'campaign' || level === 'adset') && node.budgetType && node.id ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (onBudgetChange && canManageAds) {
+                      const budgetType = node.dailyBudget ? 'daily' : 'lifetime'
+                      const currentBudget = node.dailyBudget || node.lifetimeBudget || 0
+                      setBudgetEditModal({
+                        isOpen: true,
+                        entityId: node.id!,
+                        entityName: node.name,
+                        entityType: level,
+                        currentBudget,
+                        currentBudgetType: budgetType,
+                      })
+                    }
+                  }}
+                  className={cn(
+                    "font-mono text-white",
+                    onBudgetChange && canManageAds && "hover:text-accent cursor-pointer transition-colors"
+                  )}
+                  disabled={!onBudgetChange || !canManageAds}
+                >
+                  {formatBudget(node.dailyBudget, node.lifetimeBudget).value}
+                </button>
+              ) : (
+                <div className="font-mono text-zinc-600">—</div>
+              )}
+            </div>
           </div>
 
-          {/* Detailed mode columns */}
+          {/* Row 2: Detailed metrics (only in detailed mode) */}
           {viewMode === 'detailed' && (
-            <>
-              <div className="text-right w-16">
+            <div className="flex items-center gap-4">
+              <div className="text-right w-20">
                 <div className="text-zinc-500 text-xs mb-0.5">CPC</div>
                 <div className="font-mono text-white">{formatMetric(node.cpc)}</div>
               </div>
-              <div className="text-right w-16">
+              <div className="text-right w-20">
                 <div className="text-zinc-500 text-xs mb-0.5">CTR</div>
                 <div className="font-mono text-white">{formatPercent(node.ctr)}</div>
               </div>
@@ -1019,7 +1058,7 @@ export function PerformanceTable({
                 <div className="text-zinc-500 text-xs mb-0.5">Impr</div>
                 <div className="font-mono text-white">{formatNumber(node.impressions)}</div>
               </div>
-            </>
+            </div>
           )}
         </div>
 
@@ -1028,9 +1067,9 @@ export function PerformanceTable({
         {level === 'ad' ? (
           <PerformanceArrow verdict={node.verdict} />
         ) : level === 'campaign' && node.budgetType === 'CBO' ? (
-          <VerdictBadge verdict={node.verdict} size="sm" />
+          <VerdictBadge verdict={node.verdict} />
         ) : level === 'adset' && node.budgetType === 'ABO' ? (
-          <VerdictBadge verdict={node.verdict} size="sm" />
+          <VerdictBadge verdict={node.verdict} />
         ) : (
           <span className="w-[70px]" />
         )}
@@ -1225,9 +1264,9 @@ export function PerformanceTable({
             {level === 'ad' ? (
               <PerformanceArrow verdict={node.verdict} />
             ) : level === 'campaign' && node.budgetType === 'CBO' ? (
-              <VerdictBadge verdict={node.verdict} size="sm" />
+              <VerdictBadge verdict={node.verdict} />
             ) : level === 'adset' && node.budgetType === 'ABO' ? (
-              <VerdictBadge verdict={node.verdict} size="sm" />
+              <VerdictBadge verdict={node.verdict} />
             ) : null}
             {/* Pause/Resume button for mobile */}
             {canManageAds && onStatusChange && node.id && (
@@ -1357,7 +1396,7 @@ export function PerformanceTable({
     <div className="bg-zinc-900 border border-border rounded-xl p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold">All Campaigns</h3>
-        <VerdictBadge verdict={totals.verdict} size="sm" />
+        <VerdictBadge verdict={totals.verdict} />
       </div>
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-bg-dark rounded-lg p-2 text-center">
@@ -1379,17 +1418,8 @@ export function PerformanceTable({
   return (
     <div ref={containerRef}>
       {/* Desktop Table View - no header, just cards */}
-      <div className="desktop-table">
-        {/* Expand All button */}
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={toggleAll}
-            className="px-3 py-2 text-sm rounded-xl border border-white/10 bg-[#0f1419] text-zinc-400 hover:text-white hover:border-white/20 transition-colors"
-          >
-            {allExpanded ? '⊟ Collapse All' : '⊞ Expand All'}
-          </button>
-        </div>
-        <div className="max-h-[calc(100vh-500px)] overflow-y-auto space-y-2">
+      <div className="desktop-table overflow-x-auto">
+        <div className="space-y-2 min-w-[900px] max-w-[1400px]">
             {sortedHierarchy.length === 0 ? (
               <div className="px-5 py-8 text-center text-zinc-500">
                 No ads match the selected filter

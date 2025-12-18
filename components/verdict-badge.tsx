@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { Verdict, getVerdictDisplay } from '@/lib/supabase'
+import { Verdict } from '@/lib/supabase'
 
 type VerdictBadgeProps = {
   verdict: Verdict
@@ -9,21 +9,25 @@ type VerdictBadgeProps = {
 }
 
 export function VerdictBadge({ verdict, size = 'md' }: VerdictBadgeProps) {
-  const { label, icon } = getVerdictDisplay(verdict)
-  
+  const labels: Record<Verdict, string> = {
+    scale: 'SCALE',
+    watch: 'WATCH',
+    kill: 'KILL',
+    learn: 'LEARN',
+  }
+
   return (
     <span className={cn(
-      'inline-flex items-center justify-center gap-1 font-semibold uppercase tracking-wide rounded-md border whitespace-nowrap',
-      size === 'sm' ? 'text-[10px] px-2 py-0.5 min-w-[60px]' : 'text-xs px-2.5 py-1 min-w-[70px]',
+      'inline-flex items-center justify-center font-bold uppercase tracking-wide rounded-lg border whitespace-nowrap text-center',
+      size === 'sm' ? 'text-[10px] px-2.5 py-1 min-w-[60px]' : 'text-xs px-3 py-1.5 min-w-[70px]',
       {
-        'bg-verdict-scale-bg text-verdict-scale border-verdict-scale/30': verdict === 'scale',
-        'bg-verdict-watch-bg text-verdict-watch border-verdict-watch/30': verdict === 'watch',
-        'bg-verdict-kill-bg text-verdict-kill border-verdict-kill/30': verdict === 'kill',
-        'bg-verdict-learn-bg text-verdict-learn border-verdict-learn/30': verdict === 'learn',
+        'bg-emerald-500/10 text-emerald-400 border-emerald-500/20': verdict === 'scale',
+        'bg-amber-500/10 text-amber-400 border-amber-500/20': verdict === 'watch',
+        'bg-red-500/10 text-red-400 border-red-500/20': verdict === 'kill',
+        'bg-zinc-500/10 text-zinc-400 border-zinc-500/20': verdict === 'learn',
       }
     )}>
-      <span>{icon}</span>
-      <span>{label}</span>
+      {labels[verdict]}
     </span>
   )
 }
