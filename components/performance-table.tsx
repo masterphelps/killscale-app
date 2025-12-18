@@ -811,11 +811,11 @@ export function PerformanceTable({
         ref={isHighlighted ? highlightRef : undefined}
         className={cn(
           // New card-style row with dark background
-          'rounded-xl p-3 transition-all duration-200',
+          'rounded-xl p-4 transition-all duration-200',
           'bg-[#0f1419]',
           'border border-white/10',
           'hover:border-white/20 hover:bg-[#131820]',
-          'flex items-center gap-2',
+          'flex items-center gap-3',
           isHighlighted && 'ring-2 ring-accent/50 border-accent/50',
           !isSelected && level !== 'ad' && 'opacity-60',
           onToggle && 'cursor-pointer'
@@ -898,8 +898,7 @@ export function PerformanceTable({
 
         {/* Name section - two rows */}
         <div
-          className="flex-1 min-w-0 px-2"
-          style={{ maxWidth: nameColWidth }}
+          className="flex-1 min-w-0"
           onClick={onToggle}
         >
           {/* Row 1: Name */}
@@ -938,15 +937,7 @@ export function PerformanceTable({
             )}
           </div>
         </div>
-        {/* Column resize handle */}
-        <div
-          className="w-1 self-stretch cursor-col-resize hover:bg-accent/30 active:bg-accent/50 flex items-center justify-center flex-shrink-0"
-          onMouseDown={handleMouseDown}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="w-0.5 h-4 bg-border/50 rounded" />
-        </div>
-        
+
         {/* Metrics - with labels above values (matching mockup) */}
         <div className="hidden lg:flex items-center gap-4 text-sm">
           <div className="text-right w-20">
@@ -1044,7 +1035,7 @@ export function PerformanceTable({
           <span className="w-[70px]" />
         )}
 
-        {/* Actions button */}
+        {/* Actions - Play/Pause button */}
         {canManageAds && onStatusChange && node.id && (
           <button
             onClick={(e) => {
@@ -1053,10 +1044,19 @@ export function PerformanceTable({
               const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
               onStatusChange(node.id!, level, node.name, newStatus)
             }}
-            className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            className={cn(
+              'w-8 h-8 flex items-center justify-center rounded-lg border transition-all flex-shrink-0',
+              node.status && node.status !== 'ACTIVE'
+                ? 'border-green-500/30 text-green-500 hover:bg-green-500/20 hover:border-green-500/50'
+                : 'border-amber-500/30 text-amber-500 hover:bg-amber-500/20 hover:border-amber-500/50'
+            )}
             title={node.status && node.status !== 'ACTIVE' ? 'Resume' : 'Pause'}
           >
-            ⋮
+            {node.status && node.status !== 'ACTIVE' ? (
+              <Play className="w-4 h-4" />
+            ) : (
+              <Pause className="w-4 h-4" />
+            )}
           </button>
         )}
       </div>
