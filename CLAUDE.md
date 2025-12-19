@@ -6,6 +6,59 @@ KillScale is a SaaS app for Meta Ads advertisers. Users connect via Meta API (or
 
 **Live URLs:** Landing at killscale.com, App at app.killscale.com
 
+---
+
+## ⚠️ ACTIVE FEATURE BRANCHES - READ THIS FIRST ⚠️
+
+### Google Ads Integration (Long-Running)
+
+```
+Branch: feature/google-ads-integration
+Status: IN PROGRESS - DO NOT MERGE TO MAIN UNTIL COMPLETE
+Started: December 2025
+```
+
+**STOP! Before doing ANY Google-related work:**
+1. Switch to the feature branch: `git checkout feature/google-ads-integration`
+2. All Google Ads code lives there, NOT in main
+3. Keep main clean for bug fixes and other features
+
+**What's on this branch:**
+- `lib/feature-flags.ts` - Feature flag system
+- `lib/google/gclid.ts` - gclid capture utilities
+- `app/api/google/offline/route.ts` - Google Offline Conversions API (placeholder)
+
+**Feature Flag:**
+```typescript
+// Google integration is OFF by default
+// Set NEXT_PUBLIC_FF_GOOGLE_ADS=true to enable
+import { FEATURES } from '@/lib/feature-flags'
+if (FEATURES.GOOGLE_ADS_INTEGRATION) { ... }
+```
+
+**Workflow:**
+| Task | Which Branch? |
+|------|---------------|
+| Bug fixes, small features | `main` |
+| Google Ads integration | `feature/google-ads-integration` |
+
+**Keeping the branch current:**
+```bash
+git checkout feature/google-ads-integration
+git fetch origin
+git merge origin/main
+```
+
+**When Google integration is ready to ship:**
+1. Merge `feature/google-ads-integration` → `main`
+2. Deploy with `NEXT_PUBLIC_FF_GOOGLE_ADS=false` (flag OFF)
+3. Test in production with flag ON for test accounts
+4. Flip flag to `true` for everyone when confident
+
+**Plan file:** `~/.claude/plans/snug-roaming-seal.md` (Phase 3: Google Ads, Phase 5: Google Offline Conversions)
+
+---
+
 ## Development Commands
 
 ```bash
@@ -27,6 +80,8 @@ npm run lint    # Run Next.js linter
 ## Key Conventions
 
 - Ask before performing git commits
+- **CHECK THE BRANCH** before working - see "Active Feature Branches" section above
+- **Use feature flags** for new integrations (`lib/feature-flags.ts`)
 - Rules and alerts are scoped per ad account (not global per user)
 - Mobile-first responsive design using Tailwind's `lg:` breakpoint
 
@@ -109,7 +164,12 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `lib/supabase.ts` - DB clients + TypeScript types + verdict calculation
 - `lib/auth.tsx` - AuthContext & useAuth hook
 - `lib/subscription.tsx` - SubscriptionContext & useSubscription hook
+- `lib/feature-flags.ts` - Feature flags for gating new integrations
 - `components/launch-wizard.tsx` - Campaign creation wizard
+
+**Google Ads Integration (feature branch only):**
+- `lib/google/gclid.ts` - gclid capture and validation
+- `app/api/google/offline/route.ts` - Google Offline Conversions API
 
 ## Verdict Logic
 
@@ -168,6 +228,14 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 META_APP_ID=...
 META_APP_SECRET=...
 NEXT_PUBLIC_META_APP_ID=...
+
+# Feature Flags (see lib/feature-flags.ts)
+NEXT_PUBLIC_FF_GOOGLE_ADS=false  # Google Ads integration - DO NOT enable until ready
+
+# Google Ads API (only needed when NEXT_PUBLIC_FF_GOOGLE_ADS=true)
+# GOOGLE_ADS_DEVELOPER_TOKEN=...
+# GOOGLE_ADS_CLIENT_ID=...
+# GOOGLE_ADS_CLIENT_SECRET=...
 ```
 
 ## Pricing Tiers
@@ -344,7 +412,7 @@ Static landing page with outcome-focused messaging.
 - `pixel_status` table had dangerous "anyone can upsert" policy
 - Fixed with proper user-scoped policies + service role access
 
-### Signup Trigger Chain (Fixed Dec 2024)
+### Signup Trigger Chain (Fixed Dec 2025)
 Critical trigger chain: `auth.users → handle_new_user() → profiles → create_default_workspace() → workspaces`
 - Both functions MUST have `SECURITY DEFINER` to bypass RLS
 - If either function is missing or lacks proper permissions, ALL signups break
@@ -1023,3 +1091,4 @@ CREATE INDEX idx_andromeda_audits_account ON andromeda_audits(ad_account_id, cre
 - **Automated fix suggestions** - "Merge these 3 ad sets" with one click
 - **Competitor benchmarks** - "Your score is higher than 65% of accounts"
 - **Alerts** - "Your Andromeda score dropped 15 points this week"
+- There are active feature tags. Pay attention to them.
