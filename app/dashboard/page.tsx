@@ -416,6 +416,7 @@ export default function DashboardPage() {
 
     if (!selectedAccountId || !user) return
     if (datePreset === 'custom') return // Custom dates handled by handleCustomDateApply
+    if (pendingInitialSync) return // Initial sync will handle this
 
     // Check if current cache can serve this request
     const cachedEntry = dataCache.get(selectedAccountId)
@@ -1644,7 +1645,7 @@ export default function DashboardPage() {
                 setExpandTrigger(prev => prev + 1)
                 setTableExpanded(!tableExpanded)
               }}
-              className="px-3 py-1.5 text-xs rounded-lg transition-colors bg-[#0f1419] border border-white/10 text-zinc-300 hover:border-white/20 hover:text-white"
+              className="px-3 py-1.5 text-xs rounded-lg transition-colors bg-bg-card border border-border text-zinc-300 hover:border-border/50 hover:text-white"
             >
               {tableExpanded ? '⊞ Collapse All' : '⊟ Expand All'}
             </button>
@@ -1655,7 +1656,7 @@ export default function DashboardPage() {
               <div className="relative">
                 <button
                   onClick={() => setShowSortDropdown(!showSortDropdown)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-[#0f1419] border-white/10 text-zinc-300 hover:border-white/20"
+                  className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-bg-card border-border text-zinc-300 hover:border-border/50"
                 >
                   <span className="text-zinc-500">Sort:</span>
                   <span>{sortField === 'name' ? 'Name' : sortField === 'spend' ? 'Spend' : sortField === 'revenue' ? 'Revenue' : sortField === 'roas' ? 'ROAS' : sortField === 'results' ? 'Results' : 'CPR'}</span>
@@ -1663,7 +1664,7 @@ export default function DashboardPage() {
                 </button>
 
                 {showSortDropdown && (
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-[#0f1419] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
                     {(['name', 'spend', 'revenue', 'roas', 'results', 'cpr'] as const).map((option) => (
                       <button
                         key={option}
@@ -1704,7 +1705,7 @@ export default function DashboardPage() {
               </label>
 
               {/* Simple/Detailed Toggle - hidden on mobile */}
-              <div className="hidden lg:flex items-center gap-1 bg-[#0f1419] rounded-lg p-1 border border-white/10">
+              <div className="hidden lg:flex items-center gap-1 bg-bg-card rounded-lg p-1 border border-border">
                 <button
                   onClick={() => setViewMode('simple')}
                   className={`px-3 py-1 text-xs rounded-md transition-colors ${
