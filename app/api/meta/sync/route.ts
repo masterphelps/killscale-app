@@ -270,11 +270,15 @@ export async function POST(request: NextRequest) {
     adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
     adsUrl.searchParams.set('limit', '1000')
 
-    // SEQUENTIAL FETCH - avoid connection issues with Meta API
-    // Insights first (slowest), then entity endpoints
+    // SEQUENTIAL FETCH with delays - avoid Meta API issues
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
     const insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+    await delay(500)
     const campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+    await delay(500)
     const adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
+    await delay(500)
     const adsResult = await fetchAllPages<AdData>(adsUrl.toString())
 
     // Extract data from results
