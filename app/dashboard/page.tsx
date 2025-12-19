@@ -684,6 +684,31 @@ export default function DashboardPage() {
         // Silent refresh - don't show loading spinner, preserves table state
         const newData = await loadDataAndCache(accountId)
         setLastSyncTime(new Date())
+
+        // After sync, ensure ABO adsets are selected (they may have been missed on initial load)
+        if (newData && newData.length > 0) {
+          setSelectedCampaigns(prev => {
+            const updated = new Set(prev)
+            const seenAdsets = new Set<string>()
+            newData.forEach(r => {
+              // Ensure campaign is selected
+              if (!updated.has(r.campaign_name)) {
+                updated.add(r.campaign_name)
+              }
+              // Add ABO adsets that aren't selected yet
+              const adsetKey = `${r.campaign_name}::${r.adset_name}`
+              if (!seenAdsets.has(adsetKey)) {
+                seenAdsets.add(adsetKey)
+                const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                              !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+                if (isAbo && !updated.has(adsetKey)) {
+                  updated.add(adsetKey)
+                }
+              }
+            })
+            return updated
+          })
+        }
       } else {
         alert(result.error || 'Sync failed')
       }

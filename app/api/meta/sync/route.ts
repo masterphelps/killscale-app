@@ -270,13 +270,12 @@ export async function POST(request: NextRequest) {
     adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
     adsUrl.searchParams.set('limit', '1000')
 
-    // PARALLEL FETCH - all 4 calls at once for speed
-    const [campaignsResult, adsetsResult, adsResult, insightsResult] = await Promise.all([
-      fetchAllPages<CampaignData>(campaignsUrl.toString()),
-      fetchAllPages<AdsetData>(adsetsUrl.toString()),
-      fetchAllPages<AdData>(adsUrl.toString()),
-      fetchAllPages<MetaInsight>(insightsUrl.toString()),
-    ])
+    // SEQUENTIAL FETCH - avoid connection issues with Meta API
+    // Insights first (slowest), then entity endpoints
+    const insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+    const campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+    const adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
+    const adsResult = await fetchAllPages<AdData>(adsUrl.toString())
 
     // Extract data from results
     const allCampaigns = campaignsResult.data
