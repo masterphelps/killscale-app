@@ -9,6 +9,7 @@ import { CSVUpload } from '@/components/csv-upload'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
+import { SyncOverlay } from '@/components/sync-overlay'
 import { CSVRow } from '@/lib/csv-parser'
 import { Rules } from '@/lib/supabase'
 import { formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
@@ -1804,6 +1805,16 @@ export default function DashboardPage() {
           }}
         />
       )}
+
+      {/* Sync Overlay - shows during initial sync */}
+      <SyncOverlay
+        isVisible={isSyncing}
+        accountName={
+          workspaceAccountIds.length > 0
+            ? `${workspaceAccountIds.length} accounts`
+            : accounts.find(a => a.id === currentAccountId)?.name || currentAccountId || undefined
+        }
+      />
     </>
   )
 }
