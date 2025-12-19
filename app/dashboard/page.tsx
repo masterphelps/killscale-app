@@ -267,6 +267,7 @@ export default function DashboardPage() {
       const hasFreshCache = cached && isCacheValid(cached, 'last_30d')
 
       // Sync if: fresh login (new session) OR no valid cache
+      // Check hasTriggeredInitialSync to prevent race conditions from effect re-runs
       if (isFirstSessionLoad.current || !hasFreshCache) {
         hasTriggeredInitialSync.current = true
         sessionStorage.setItem('ks_session_synced', 'true')
