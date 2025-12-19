@@ -841,9 +841,9 @@ export function PerformanceTable({
         className={cn(
           // New card-style row with dark background
           'rounded-xl px-4 py-5 transition-all duration-200',
-          'bg-[#0f1419]',
-          'border border-white/10',
-          'hover:border-white/20 hover:bg-[#131820]',
+          'bg-bg-card',
+          'border border-border',
+          'hover:border-border/50 hover:bg-bg-hover',
           'flex gap-3',
           // Align to top in detailed mode (two-row metrics), center in simple mode
           viewMode === 'detailed' ? 'items-start' : 'items-center',
@@ -1103,7 +1103,7 @@ export function PerformanceTable({
   }
 
   const HeaderRow = () => (
-    <div className="flex items-center text-xs text-zinc-500 uppercase tracking-wide bg-[#0a0d10] rounded-xl p-3 mb-2 border border-white/5">
+    <div className="flex items-center text-xs text-zinc-500 uppercase tracking-wide bg-bg-dark rounded-xl p-3 mb-2 border border-border/50">
       {hasCheckboxes && (
         <div
           className="flex items-center justify-center flex-shrink-0 cursor-pointer"

@@ -97,9 +97,9 @@ export function StatCard({ label, value, subValue, change, icon, glow, color }: 
   return (
     <div className={cn(
       'relative rounded-2xl p-4 lg:p-5 transition-all duration-200 overflow-hidden',
-      'bg-[#0f1419]',
-      'border border-white/10',
-      'hover:border-white/20',
+      'bg-bg-card',
+      'border border-border',
+      'hover:border-border/50',
       hasGlow && 'before:absolute before:inset-0 before:bg-gradient-to-br before:to-transparent before:pointer-events-none',
       hasGlow && glowStyles[glowColor],
     )}>
@@ -141,7 +141,7 @@ export function BudgetCard({ totalBudget, cboBudget, aboBudget }: BudgetCardProp
   return (
     <div className={cn(
       'relative rounded-2xl p-4 lg:p-5 transition-all duration-200 overflow-hidden',
-      'bg-[#0f1419]',
+      'bg-bg-card',
       'border border-indigo-500/20',
       'hover:border-indigo-500/30',
       'before:absolute before:inset-0 before:bg-gradient-to-br before:from-indigo-500/10 before:to-transparent before:pointer-events-none',
