@@ -55,21 +55,32 @@ export async function GET(request: NextRequest) {
 
     if (result.video_id) {
       mediaType = 'video'
-      // Try to get video thumbnail
-      if (result.thumbnail_url) {
-        previewUrl = result.thumbnail_url
-      }
 
-      // Fetch actual video source URL for playback
+      // Fetch video source and high-quality thumbnails
       try {
-        const videoUrl = `https://graph.facebook.com/v18.0/${result.video_id}?fields=source&access_token=${accessToken}`
+        const videoUrl = `https://graph.facebook.com/v18.0/${result.video_id}?fields=source,thumbnails&access_token=${accessToken}`
         const videoResponse = await fetch(videoUrl)
         const videoData = await videoResponse.json()
         if (videoData.source) {
           videoSource = videoData.source
         }
+        // Pick the largest thumbnail for high-quality preview
+        const thumbnails = videoData.thumbnails?.data || []
+        if (thumbnails.length > 0) {
+          const bestThumb = thumbnails.sort((a: { width?: number }, b: { width?: number }) =>
+            (b.width || 0) - (a.width || 0)
+          )[0]
+          if (bestThumb?.uri) {
+            previewUrl = bestThumb.uri
+          }
+        }
       } catch (videoErr) {
         console.error('Failed to fetch video source:', videoErr)
+      }
+
+      // Fallback to thumbnail_url if no high-quality thumbnail found
+      if (!previewUrl && result.thumbnail_url) {
+        previewUrl = result.thumbnail_url
       }
     } else if (result.image_url || result.image_hash) {
       mediaType = 'image'
@@ -81,20 +92,34 @@ export async function GET(request: NextRequest) {
     if (storySpec) {
       if (storySpec.video_data?.video_id) {
         mediaType = 'video'
-        previewUrl = storySpec.video_data.image_url || previewUrl
 
-        // Fetch video source if not already fetched
+        // Fetch video source and high-quality thumbnails if not already fetched
         if (!videoSource) {
           try {
-            const videoUrl = `https://graph.facebook.com/v18.0/${storySpec.video_data.video_id}?fields=source&access_token=${accessToken}`
+            const videoUrl = `https://graph.facebook.com/v18.0/${storySpec.video_data.video_id}?fields=source,thumbnails&access_token=${accessToken}`
             const videoResponse = await fetch(videoUrl)
             const videoData = await videoResponse.json()
             if (videoData.source) {
               videoSource = videoData.source
             }
+            // Pick the largest thumbnail for high-quality preview
+            const thumbnails = videoData.thumbnails?.data || []
+            if (thumbnails.length > 0) {
+              const bestThumb = thumbnails.sort((a: { width?: number }, b: { width?: number }) =>
+                (b.width || 0) - (a.width || 0)
+              )[0]
+              if (bestThumb?.uri) {
+                previewUrl = bestThumb.uri
+              }
+            }
           } catch (videoErr) {
             console.error('Failed to fetch video source from story spec:', videoErr)
           }
+        }
+
+        // Fallback to story spec image_url if no high-quality thumbnail
+        if (!previewUrl) {
+          previewUrl = storySpec.video_data.image_url
         }
       } else if (storySpec.link_data?.image_hash || storySpec.link_data?.picture) {
         mediaType = 'image'
