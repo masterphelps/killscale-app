@@ -6,45 +6,78 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Helper function to fetch all pages from Meta API with timeout
-async function fetchAllPages<T>(initialUrl: string, maxPages = 25): Promise<T[]> {
+// Result type for fetch operations - tracks success/failure
+type FetchResult<T> = {
+  data: T[]
+  success: boolean
+  error?: string
+}
+
+// Helper function to fetch all pages from Meta API with timeout and retry
+async function fetchAllPages<T>(initialUrl: string, maxPages = 25, retries = 1): Promise<FetchResult<T>> {
   const allData: T[] = []
   let nextUrl: string | null = initialUrl
   let pageCount = 0
   const timeoutMs = 20000 // 20 second timeout per request
+  let lastError: string | undefined
 
   while (nextUrl && pageCount < maxPages) {
-    try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    let success = false
+    let attempts = 0
+    const currentUrl = nextUrl // Capture current URL for this iteration
 
-      const res: Response = await fetch(nextUrl, { signal: controller.signal })
-      clearTimeout(timeoutId)
+    while (!success && attempts <= retries) {
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
-      const result: { data?: T[], error?: unknown, paging?: { next?: string } } = await res.json()
+        const res: Response = await fetch(currentUrl, { signal: controller.signal })
+        clearTimeout(timeoutId)
 
-      if (result.error) {
-        console.error('Meta API pagination error:', result.error)
-        break
+        const result: { data?: T[], error?: { message?: string }, paging?: { next?: string } } = await res.json()
+
+        if (result.error) {
+          lastError = result.error.message || 'Meta API error'
+          console.error('Meta API pagination error:', result.error)
+          attempts++
+          if (attempts <= retries) {
+            console.log(`Retrying... (attempt ${attempts + 1})`)
+            await new Promise(r => setTimeout(r, 1000)) // Wait 1s before retry
+          }
+          continue
+        }
+
+        if (result.data && Array.isArray(result.data)) {
+          allData.push(...result.data)
+        }
+
+        nextUrl = result.paging?.next || null
+        pageCount++
+        success = true
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          lastError = `Request timed out after ${timeoutMs}ms`
+          console.error(lastError)
+        } else {
+          lastError = err instanceof Error ? err.message : 'Unknown fetch error'
+          console.error('Fetch error:', err)
+        }
+        attempts++
+        if (attempts <= retries) {
+          console.log(`Retrying... (attempt ${attempts + 1})`)
+          await new Promise(r => setTimeout(r, 1000)) // Wait 1s before retry
+        }
       }
+    }
 
-      if (result.data && Array.isArray(result.data)) {
-        allData.push(...result.data)
-      }
-
-      nextUrl = result.paging?.next || null
-      pageCount++
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.error('Request timed out after', timeoutMs, 'ms')
-      } else {
-        console.error('Fetch error:', err)
-      }
-      break
+    // If we exhausted retries on this page, stop pagination
+    if (!success) {
+      console.error(`Failed to fetch page after ${retries + 1} attempts`)
+      return { data: allData, success: false, error: lastError }
     }
   }
 
-  return allData
+  return { data: allData, success: true }
 }
 
 type MetaInsight = {
@@ -238,12 +271,30 @@ export async function POST(request: NextRequest) {
     adsUrl.searchParams.set('limit', '1000')
 
     // PARALLEL FETCH - all 4 calls at once for speed
-    const [allCampaigns, allAdsets, allAdsData, allInsights] = await Promise.all([
+    const [campaignsResult, adsetsResult, adsResult, insightsResult] = await Promise.all([
       fetchAllPages<CampaignData>(campaignsUrl.toString()),
       fetchAllPages<AdsetData>(adsetsUrl.toString()),
       fetchAllPages<AdData>(adsUrl.toString()),
       fetchAllPages<MetaInsight>(insightsUrl.toString()),
     ])
+
+    // Extract data from results
+    const allCampaigns = campaignsResult.data
+    const allAdsets = adsetsResult.data
+    const allAdsData = adsResult.data
+    const allInsights = insightsResult.data
+
+    // Log fetch results for debugging
+    console.log('Meta sync fetch results:', {
+      campaigns: { count: allCampaigns.length, success: campaignsResult.success, error: campaignsResult.error },
+      adsets: { count: allAdsets.length, success: adsetsResult.success, error: adsetsResult.error },
+      ads: { count: allAdsData.length, success: adsResult.success, error: adsResult.error },
+      insights: { count: allInsights.length, success: insightsResult.success, error: insightsResult.error }
+    })
+
+    // Track if entity fetches failed (vs just returning empty)
+    const adsetsFetchFailed = !adsetsResult.success
+    const adsFetchFailed = !adsResult.success
 
     // Log if we have partial data (but don't block - let sync complete)
     if (allInsights.length > 0 && (allAdsets.length === 0 || allAdsData.length === 0)) {
@@ -251,7 +302,9 @@ export async function POST(request: NextRequest) {
         campaigns: allCampaigns.length,
         adsets: allAdsets.length,
         ads: allAdsData.length,
-        insights: allInsights.length
+        insights: allInsights.length,
+        adsetsFetchFailed,
+        adsFetchFailed
       })
     }
 
@@ -304,19 +357,30 @@ export async function POST(request: NextRequest) {
       return campaignMap[insight.campaign_id] !== undefined
     })
 
-    // FALLBACK: Build hierarchy and maps from insights if entity calls failed
-    // This ensures we have names even if adsets/ads endpoints return empty
+    // FALLBACK: Build hierarchy and maps from insights if entity calls returned empty
+    // Only use fallback if endpoint SUCCEEDED but returned empty (truly no entities)
+    // If endpoint FAILED, we use UNKNOWN status to indicate unreliable data
     // Use activeInsights (already filtered for deleted campaigns)
     if (allAdsets.length === 0 || allAdsData.length === 0) {
-      console.log('Building hierarchy from insights data as fallback')
+      console.log('Building hierarchy from insights data as fallback', {
+        adsetsFetchFailed,
+        adsFetchFailed
+      })
+
+      // Determine what status to use for fallback entities
+      // If fetch succeeded but returned empty: entity has insights so probably ACTIVE
+      // If fetch failed: we don't know, use UNKNOWN
+      const fallbackAdsetStatus = adsetsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
+      const fallbackAdStatus = adsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
+
       activeInsights.forEach((insight: MetaInsight) => {
         // Build adset map from insights
         if (insight.adset_id && !adsetMap[insight.adset_id]) {
           adsetMap[insight.adset_id] = {
             name: insight.adset_name,
             campaign_id: insight.campaign_id,
-            status: 'ACTIVE', // Assume active since it has insights
-            daily_budget: null,
+            status: fallbackAdsetStatus,
+            daily_budget: null, // Can't get budget from insights
             lifetime_budget: null,
           }
         }
@@ -324,7 +388,7 @@ export async function POST(request: NextRequest) {
         if (insight.campaign_id && !campaignMap[insight.campaign_id]) {
           campaignMap[insight.campaign_id] = {
             name: insight.campaign_name,
-            status: 'ACTIVE', // Assume active since it has insights
+            status: 'ACTIVE', // Campaigns endpoint rarely fails, assume active
             daily_budget: null,
             lifetime_budget: null,
           }
@@ -339,9 +403,9 @@ export async function POST(request: NextRequest) {
             ad_name: insight.ad_name,
           }
         }
-        // Set ad status to ACTIVE if it has insights (better than UNKNOWN)
+        // Set ad status - use fallback status based on whether fetch failed
         if (!adStatusMap[insight.ad_id]) {
-          adStatusMap[insight.ad_id] = 'ACTIVE'
+          adStatusMap[insight.ad_id] = fallbackAdStatus
         }
       })
     }
