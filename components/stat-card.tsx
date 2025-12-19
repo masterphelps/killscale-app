@@ -98,10 +98,9 @@ export function StatCard({ label, value, subValue, change, icon, glow, color }: 
     <div className={cn(
       'relative rounded-2xl p-4 lg:p-5 transition-all duration-200 overflow-hidden',
       'bg-bg-card',
-      'border border-border',
-      'hover:border-border/50',
-      hasGlow && 'before:absolute before:inset-0 before:bg-gradient-to-br before:to-transparent before:pointer-events-none',
-      hasGlow && glowStyles[glowColor],
+      'border border-indigo-500/20',
+      'hover:border-indigo-500/30',
+      'before:absolute before:inset-0 before:bg-gradient-to-br before:from-indigo-500/10 before:to-transparent before:pointer-events-none',
     )}>
       <div className="relative">
         <div className="flex items-center gap-2 mb-2">
