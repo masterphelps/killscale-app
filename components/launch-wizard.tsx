@@ -70,7 +70,20 @@ const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {
   })
 }
 
-type Step = 'account' | 'budget' | 'abo-options' | 'details' | 'leadform' | 'targeting' | 'creatives' | 'copy' | 'review'
+type Step =
+  | 'account'           // Page selection
+  | 'entity-type'       // NEW: Campaign vs Ad Set vs Ad
+  | 'select-campaign'   // NEW: For Ad Set and Ad paths
+  | 'select-adset'      // NEW: For Ad path only
+  | 'budget'            // Campaign path only: CBO vs ABO
+  | 'abo-options'       // Campaign path only
+  | 'details'           // Campaign path only
+  | 'adset-details'     // NEW: Ad Set path
+  | 'leadform'          // Campaign/Ad Set paths
+  | 'targeting'         // Campaign/Ad Set paths
+  | 'creatives'         // All paths
+  | 'copy'              // All paths
+  | 'review'            // All paths
 
 interface LeadForm {
   id: string
@@ -90,8 +103,19 @@ interface Campaign {
   id: string
   name: string
   status: string
+  objective?: string
+  isCBO?: boolean
+  dailyBudget?: number | null
   adSetCount?: number
   adCount?: number
+}
+
+interface AdSet {
+  id: string
+  name: string
+  status: string
+  dailyBudget?: number | null
+  optimizationGoal?: string
 }
 
 interface Creative {
@@ -129,6 +153,21 @@ interface TargetingOption {
 interface WizardState {
   adAccountId: string
   pageId: string
+  // Entity type selection (new)
+  entityType: 'campaign' | 'adset' | 'ad'
+  // Selected campaign for adset/ad paths
+  selectedCampaignId: string
+  selectedCampaignName: string
+  selectedCampaignObjective: 'leads' | 'conversions' | 'traffic' | null
+  selectedCampaignIsCBO: boolean
+  // Selected adset for ad path
+  selectedAdsetId: string
+  selectedAdsetName: string
+  // Ad set budget (for adset path)
+  adsetName: string
+  adsetDailyBudget: number
+  adsetHasSpendCap: boolean
+  // Campaign path fields
   budgetType: 'cbo' | 'abo'
   aboOption: 'new' | 'existing'
   existingCampaignId: string
@@ -252,6 +291,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   // Data from APIs
   const [pages, setPages] = useState<Page[]>([])
   const [existingCampaigns, setExistingCampaigns] = useState<Campaign[]>([])
+  const [existingAdsets, setExistingAdsets] = useState<AdSet[]>([])
+  const [loadingAdsets, setLoadingAdsets] = useState(false)
   const [locationResults, setLocationResults] = useState<LocationResult[]>([])
   const [locationQuery, setLocationQuery] = useState('')
   const [searchingLocations, setSearchingLocations] = useState(false)
@@ -273,6 +314,21 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [state, setState] = useState<WizardState>({
     adAccountId: adAccountId, // Use the prop from sidebar context
     pageId: '',
+    // Entity type selection (default to campaign for existing behavior)
+    entityType: 'campaign',
+    // Selected campaign for adset/ad paths
+    selectedCampaignId: '',
+    selectedCampaignName: '',
+    selectedCampaignObjective: null,
+    selectedCampaignIsCBO: true,
+    // Selected adset for ad path
+    selectedAdsetId: '',
+    selectedAdsetName: '',
+    // Ad set details
+    adsetName: '',
+    adsetDailyBudget: 50,
+    adsetHasSpendCap: false,
+    // Campaign path fields
     budgetType: 'cbo',
     aboOption: 'new',
     existingCampaignId: '',
@@ -347,6 +403,25 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       }
     } catch (err) {
       console.error('Failed to load campaigns:', err)
+    }
+  }
+
+  // Load ad sets for a specific campaign (for Ad path)
+  const loadAdsets = async (campaignId: string) => {
+    if (!user || !campaignId) return
+
+    setLoadingAdsets(true)
+    setExistingAdsets([])
+    try {
+      const res = await fetch(`/api/meta/adsets?userId=${user.id}&campaignId=${campaignId}&adAccountId=${state.adAccountId}`)
+      const data = await res.json()
+      if (data.adsets) {
+        setExistingAdsets(data.adsets)
+      }
+    } catch (err) {
+      console.error('Failed to load ad sets:', err)
+    } finally {
+      setLoadingAdsets(false)
     }
   }
 
@@ -734,107 +809,271 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         fileName: c.name || c.file?.name || 'Untitled'
       }))
 
-      setDeploymentPhase('Creating campaign, ad set, and ads...')
+      let res: Response
+      let entityLabel: string
 
-      // Create campaign
-      const res = await fetch('/api/meta/create-campaign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: state.adAccountId,
-          pageId: state.pageId,
-          budgetType: state.budgetType,
-          existingCampaignId: state.budgetType === 'abo' && state.aboOption === 'existing'
-            ? state.existingCampaignId
-            : undefined,
-          campaignName: state.campaignName,
-          objective: state.objective,
-          conversionEvent: state.objective === 'conversions' ? state.conversionEvent : undefined,
-          formId: state.objective === 'leads' ? state.selectedFormId : undefined,
-          dailyBudget: state.dailyBudget,
-          specialAdCategory: state.specialAdCategory,
-          locationTarget: state.locationType === 'city'
-            ? {
-                type: 'city',
-                key: state.locationKey,
-                name: state.locationName,
-                radius: state.locationRadius
-              }
-            : {
-                type: 'country',
-                countries: ['US']
-              },
-          creatives: creativesWithHashes,
-          primaryText: state.primaryText,
-          headline: state.headline,
-          description: state.description,
-          websiteUrl: state.websiteUrl,  // Base URL only
-          urlTags: state.autoInjectUTMs ? KILLSCALE_UTM_TAGS : undefined,  // UTMs go in url_tags for Meta substitution
-          ctaType: state.ctaType,
-          creativeEnhancements: state.creativeEnhancements,
-          targetingMode: state.targetingMode,
-          selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
-          selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+      // Route to correct API based on entity type
+      if (state.entityType === 'ad') {
+        // Create just an ad
+        setDeploymentPhase('Creating ad...')
+        entityLabel = 'ad'
+
+        res = await fetch('/api/meta/create-ad', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: state.adAccountId,
+            adsetId: state.selectedAdsetId,
+            pageId: state.pageId,
+            adName: state.headline || 'New Ad',
+            objective: state.selectedCampaignObjective || 'conversions',
+            formId: state.selectedCampaignObjective === 'leads' ? state.selectedFormId : undefined,
+            creatives: creativesWithHashes,
+            primaryText: state.primaryText,
+            headline: state.headline,
+            description: state.description,
+            websiteUrl: state.websiteUrl,
+            urlTags: state.autoInjectUTMs ? KILLSCALE_UTM_TAGS : undefined,
+            ctaType: state.ctaType
+          })
         })
-      })
+
+      } else if (state.entityType === 'adset') {
+        // Create ad set + ads
+        setDeploymentPhase('Creating ad set and ads...')
+        entityLabel = 'ad set'
+
+        res = await fetch('/api/meta/create-adset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: state.adAccountId,
+            campaignId: state.selectedCampaignId,
+            pageId: state.pageId,
+            adsetName: state.adsetName,
+            objective: state.selectedCampaignObjective || 'conversions',
+            conversionEvent: state.selectedCampaignObjective === 'conversions' ? state.conversionEvent : undefined,
+            formId: state.selectedCampaignObjective === 'leads' ? state.selectedFormId : undefined,
+            dailyBudget: state.adsetDailyBudget,
+            isCBO: state.selectedCampaignIsCBO,
+            hasSpendCap: state.adsetHasSpendCap,
+            specialAdCategory: state.specialAdCategory,
+            locationTarget: state.locationType === 'city'
+              ? {
+                  type: 'city',
+                  key: state.locationKey,
+                  name: state.locationName,
+                  radius: state.locationRadius
+                }
+              : {
+                  type: 'country',
+                  countries: ['US']
+                },
+            creatives: creativesWithHashes,
+            primaryText: state.primaryText,
+            headline: state.headline,
+            description: state.description,
+            websiteUrl: state.websiteUrl,
+            urlTags: state.autoInjectUTMs ? KILLSCALE_UTM_TAGS : undefined,
+            ctaType: state.ctaType,
+            creativeEnhancements: state.creativeEnhancements,
+            targetingMode: state.targetingMode,
+            selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
+            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+          })
+        })
+
+      } else {
+        // Full campaign creation (existing behavior)
+        setDeploymentPhase('Creating campaign, ad set, and ads...')
+        entityLabel = 'campaign'
+
+        res = await fetch('/api/meta/create-campaign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: state.adAccountId,
+            pageId: state.pageId,
+            budgetType: state.budgetType,
+            existingCampaignId: state.budgetType === 'abo' && state.aboOption === 'existing'
+              ? state.existingCampaignId
+              : undefined,
+            campaignName: state.campaignName,
+            objective: state.objective,
+            conversionEvent: state.objective === 'conversions' ? state.conversionEvent : undefined,
+            formId: state.objective === 'leads' ? state.selectedFormId : undefined,
+            dailyBudget: state.dailyBudget,
+            specialAdCategory: state.specialAdCategory,
+            locationTarget: state.locationType === 'city'
+              ? {
+                  type: 'city',
+                  key: state.locationKey,
+                  name: state.locationName,
+                  radius: state.locationRadius
+                }
+              : {
+                  type: 'country',
+                  countries: ['US']
+                },
+            creatives: creativesWithHashes,
+            primaryText: state.primaryText,
+            headline: state.headline,
+            description: state.description,
+            websiteUrl: state.websiteUrl,
+            urlTags: state.autoInjectUTMs ? KILLSCALE_UTM_TAGS : undefined,
+            ctaType: state.ctaType,
+            creativeEnhancements: state.creativeEnhancements,
+            targetingMode: state.targetingMode,
+            selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
+            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+          })
+        })
+      }
 
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to create campaign')
+        throw new Error(data.error || `Failed to create ${entityLabel}`)
       }
 
       onComplete()
     } catch (err) {
       console.error('Submit error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to create campaign')
+      setError(err instanceof Error ? err.message : 'Failed to create')
     } finally {
       setSubmitting(false)
       setDeploymentPhase('')
     }
   }
 
-  // Navigation
+  // Navigation - branching based on entityType
   const getNextStep = (): Step | null => {
     switch (step) {
-      case 'account': return 'budget'
-      case 'budget': return state.budgetType === 'abo' ? 'abo-options' : 'details'
-      case 'abo-options': return 'details'
-      case 'details': return state.objective === 'leads' ? 'leadform' : 'targeting'
-      case 'leadform': return 'targeting'
-      case 'targeting': return 'creatives'
-      case 'creatives': return 'copy'
-      case 'copy': return 'review'
-      case 'review': return null
+      case 'account':
+        return 'entity-type'
+
+      case 'entity-type':
+        if (state.entityType === 'campaign') {
+          return 'budget'
+        }
+        // Both adset and ad paths go to select-campaign
+        return 'select-campaign'
+
+      case 'select-campaign':
+        if (state.entityType === 'adset') {
+          return 'adset-details'
+        }
+        // Ad path goes to select-adset
+        return 'select-adset'
+
+      case 'select-adset':
+        // Ad path skips targeting, goes straight to creatives
+        return 'creatives'
+
+      case 'adset-details':
+        // Ad set path: check objective from selected campaign
+        return state.selectedCampaignObjective === 'leads' ? 'leadform' : 'targeting'
+
+      // Campaign path (unchanged)
+      case 'budget':
+        return state.budgetType === 'abo' ? 'abo-options' : 'details'
+      case 'abo-options':
+        return 'details'
+      case 'details':
+        return state.objective === 'leads' ? 'leadform' : 'targeting'
+
+      // Shared steps
+      case 'leadform':
+        if (state.entityType === 'ad') {
+          return 'creatives' // Ad path skips targeting
+        }
+        return 'targeting'
+      case 'targeting':
+        return 'creatives'
+      case 'creatives':
+        return 'copy'
+      case 'copy':
+        return 'review'
+      case 'review':
+        return null
     }
   }
 
   const getPrevStep = (): Step | null => {
     switch (step) {
-      case 'account': return null
-      case 'budget': return 'account'
-      case 'abo-options': return 'budget'
-      case 'details': return state.budgetType === 'abo' ? 'abo-options' : 'budget'
-      case 'leadform': return 'details'
-      case 'targeting': return state.objective === 'leads' ? 'leadform' : 'details'
-      case 'creatives': return 'targeting'
-      case 'copy': return 'creatives'
-      case 'review': return 'copy'
+      case 'account':
+        return null
+      case 'entity-type':
+        return 'account'
+
+      case 'select-campaign':
+        return 'entity-type'
+      case 'select-adset':
+        return 'select-campaign'
+
+      case 'adset-details':
+        return 'select-campaign'
+
+      // Campaign path
+      case 'budget':
+        return 'entity-type'
+      case 'abo-options':
+        return 'budget'
+      case 'details':
+        return state.budgetType === 'abo' ? 'abo-options' : 'budget'
+
+      // Shared steps with branching
+      case 'leadform':
+        if (state.entityType === 'campaign') return 'details'
+        if (state.entityType === 'adset') return 'adset-details'
+        return 'select-adset' // Ad path shouldn't reach leadform, but fallback
+      case 'targeting':
+        if (state.entityType === 'campaign') {
+          return state.objective === 'leads' ? 'leadform' : 'details'
+        }
+        // Ad set path
+        return state.selectedCampaignObjective === 'leads' ? 'leadform' : 'adset-details'
+      case 'creatives':
+        if (state.entityType === 'ad') return 'select-adset'
+        return 'targeting'
+      case 'copy':
+        return 'creatives'
+      case 'review':
+        return 'copy'
     }
   }
 
   const canProceed = (): boolean => {
     switch (step) {
       case 'account':
-        // adAccountId comes from prop, just need pageId
         return !!state.pageId
+
+      case 'entity-type':
+        return !!state.entityType
+
+      case 'select-campaign':
+        return !!state.selectedCampaignId
+
+      case 'select-adset':
+        return !!state.selectedAdsetId
+
+      case 'adset-details':
+        // Name required, budget required for ABO or if spend cap enabled for CBO
+        const needsBudget = !state.selectedCampaignIsCBO || state.adsetHasSpendCap
+        return !!state.adsetName && (!needsBudget || state.adsetDailyBudget > 0)
+
+      // Campaign path (unchanged)
       case 'budget':
         return true
       case 'abo-options':
         return state.aboOption === 'new' || !!state.existingCampaignId
       case 'details':
         return !!state.campaignName && state.dailyBudget > 0
+
+      // Shared steps
       case 'leadform':
         return !!state.selectedFormId
       case 'targeting':
@@ -842,7 +1081,6 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         if (state.targetingMode === 'broad') {
           return hasLocation
         }
-        // Custom mode: require location AND at least one interest or behavior
         return hasLocation && (state.selectedInterests.length > 0 || state.selectedBehaviors.length > 0)
       case 'creatives':
         return state.creatives.length > 0
@@ -916,6 +1154,334 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 </div>
               )}
             </div>
+          </div>
+        )
+
+      case 'entity-type':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400 mb-4">What do you want to create?</p>
+
+            <button
+              onClick={() => setState(s => ({ ...s, entityType: 'campaign' }))}
+              className={cn(
+                "w-full p-5 rounded-xl border text-left transition-all",
+                state.entityType === 'campaign'
+                  ? "border-accent bg-accent/10"
+                  : "border-border hover:border-zinc-600"
+              )}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <Rocket className="w-5 h-5 text-accent" />
+                <span className="font-semibold">Full Campaign</span>
+              </div>
+              <p className="text-sm text-zinc-400 ml-8">
+                Create a new campaign with ad set and ads
+              </p>
+              <div className="flex gap-4 ml-8 mt-3 text-xs text-zinc-500">
+                <span>✓ Best for new initiatives</span>
+                <span>✓ Full control over structure</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setState(s => ({ ...s, entityType: 'adset' }))}
+              className={cn(
+                "w-full p-5 rounded-xl border text-left transition-all",
+                state.entityType === 'adset'
+                  ? "border-accent bg-accent/10"
+                  : "border-border hover:border-zinc-600"
+              )}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <FolderOpen className="w-5 h-5 text-purple-500" />
+                <span className="font-semibold">Ad Set</span>
+              </div>
+              <p className="text-sm text-zinc-400 ml-8">
+                Add a new ad set to an existing campaign
+              </p>
+              <div className="flex gap-4 ml-8 mt-3 text-xs text-zinc-500">
+                <span>✓ Test new targeting</span>
+                <span>✓ Use proven campaign</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setState(s => ({ ...s, entityType: 'ad' }))}
+              className={cn(
+                "w-full p-5 rounded-xl border text-left transition-all",
+                state.entityType === 'ad'
+                  ? "border-accent bg-accent/10"
+                  : "border-border hover:border-zinc-600"
+              )}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <ImageIcon className="w-5 h-5 text-green-500" />
+                <span className="font-semibold">Ad</span>
+              </div>
+              <p className="text-sm text-zinc-400 ml-8">
+                Add a new ad to an existing ad set
+              </p>
+              <div className="flex gap-4 ml-8 mt-3 text-xs text-zinc-500">
+                <span>✓ Test new creative</span>
+                <span>✓ Fastest option</span>
+              </div>
+            </button>
+          </div>
+        )
+
+      case 'select-campaign':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400 mb-4">
+              Select which campaign to add your {state.entityType === 'adset' ? 'ad set' : 'ad'} to
+            </p>
+
+            {existingCampaigns.length > 0 ? (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {existingCampaigns.map((campaign) => {
+                  // Map Meta objective to readable form
+                  const objectiveMap: Record<string, 'leads' | 'conversions' | 'traffic'> = {
+                    'OUTCOME_LEADS': 'leads',
+                    'OUTCOME_SALES': 'conversions',
+                    'OUTCOME_TRAFFIC': 'traffic',
+                    'LEAD_GENERATION': 'leads',
+                    'CONVERSIONS': 'conversions',
+                    'LINK_CLICKS': 'traffic'
+                  }
+                  const mappedObjective = campaign.objective ? objectiveMap[campaign.objective] || null : null
+                  const objectiveLabel = mappedObjective === 'leads' ? 'Leads' :
+                    mappedObjective === 'conversions' ? 'Conversions' :
+                    mappedObjective === 'traffic' ? 'Traffic' : 'Unknown'
+
+                  return (
+                    <button
+                      key={campaign.id}
+                      onClick={() => {
+                        setState(s => ({
+                          ...s,
+                          selectedCampaignId: campaign.id,
+                          selectedCampaignName: campaign.name,
+                          selectedCampaignObjective: mappedObjective,
+                          selectedCampaignIsCBO: campaign.isCBO ?? false
+                        }))
+                        // Load ad sets if user is creating an ad
+                        if (state.entityType === 'ad') {
+                          loadAdsets(campaign.id)
+                        }
+                      }}
+                      className={cn(
+                        "w-full p-4 rounded-xl border text-left transition-all",
+                        state.selectedCampaignId === campaign.id
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-zinc-600"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                            state.selectedCampaignId === campaign.id
+                              ? "border-accent bg-accent"
+                              : "border-zinc-500"
+                          )}>
+                            {state.selectedCampaignId === campaign.id && (
+                              <Check className="w-3 h-3 text-white" />
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-medium">{campaign.name}</span>
+                            <p className="text-xs text-zinc-500">
+                              {objectiveLabel} • {campaign.adSetCount || 0} ad sets • {campaign.adCount || 0} ads
+                            </p>
+                          </div>
+                        </div>
+                        <span className={cn(
+                          "text-xs px-2 py-1 rounded",
+                          campaign.isCBO
+                            ? "bg-yellow-500/20 text-yellow-500"
+                            : "bg-zinc-500/20 text-zinc-400"
+                        )}>
+                          {campaign.isCBO ? 'CBO' : 'ABO'}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                <p className="text-sm text-yellow-500 font-medium mb-1">No campaigns found</p>
+                <p className="text-xs text-zinc-400">
+                  You need at least one existing campaign to add an ad set or ad to it.
+                  Try creating a full campaign first.
+                </p>
+              </div>
+            )}
+
+            {state.selectedCampaignId && (
+              <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg">
+                <p className="text-xs text-zinc-400">
+                  {state.entityType === 'adset'
+                    ? `Your ad set will inherit the "${state.selectedCampaignObjective}" objective from this campaign.`
+                    : 'Next, select which ad set to add your ad to.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )
+
+      case 'select-adset':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-zinc-800/50 rounded-lg mb-4">
+              <p className="text-xs text-zinc-400">
+                Campaign: <span className="text-white font-medium">{state.selectedCampaignName}</span>
+              </p>
+            </div>
+
+            <p className="text-sm text-zinc-400">Select which ad set to add your ad to</p>
+
+            {loadingAdsets ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-accent" />
+              </div>
+            ) : existingAdsets.length > 0 ? (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {existingAdsets.map((adset) => (
+                  <button
+                    key={adset.id}
+                    onClick={() => setState(s => ({
+                      ...s,
+                      selectedAdsetId: adset.id,
+                      selectedAdsetName: adset.name
+                    }))}
+                    className={cn(
+                      "w-full p-4 rounded-xl border text-left transition-all",
+                      state.selectedAdsetId === adset.id
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                        state.selectedAdsetId === adset.id
+                          ? "border-accent bg-accent"
+                          : "border-zinc-500"
+                      )}>
+                        {state.selectedAdsetId === adset.id && (
+                          <Check className="w-3 h-3 text-white" />
+                        )}
+                      </div>
+                      <div>
+                        <span className="font-medium">{adset.name}</span>
+                        <p className="text-xs text-zinc-500">
+                          {adset.dailyBudget ? `$${adset.dailyBudget}/day` : 'Budget managed by campaign'}
+                          {adset.status && ` • ${adset.status}`}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                <p className="text-sm text-yellow-500 font-medium mb-1">No ad sets found</p>
+                <p className="text-xs text-zinc-400">
+                  This campaign doesn't have any ad sets yet. Try creating an ad set first.
+                </p>
+              </div>
+            )}
+
+            {state.selectedAdsetId && (
+              <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg">
+                <p className="text-xs text-zinc-400">
+                  Your ad will use the targeting settings from this ad set.
+                </p>
+              </div>
+            )}
+          </div>
+        )
+
+      case 'adset-details':
+        return (
+          <div className="space-y-6">
+            <div className="p-3 bg-zinc-800/50 rounded-lg">
+              <p className="text-xs text-zinc-400">
+                Adding to: <span className="text-white font-medium">{state.selectedCampaignName}</span>
+                <span className="ml-2 text-zinc-500">
+                  ({state.selectedCampaignObjective === 'leads' ? 'Leads' :
+                    state.selectedCampaignObjective === 'conversions' ? 'Conversions' : 'Traffic'})
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Ad Set Name</label>
+              <input
+                type="text"
+                value={state.adsetName}
+                onChange={(e) => setState(s => ({ ...s, adsetName: e.target.value }))}
+                placeholder="e.g., Broad Audience - Cities"
+                className="w-full px-4 py-3 bg-zinc-800 border border-border rounded-lg focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            {!state.selectedCampaignIsCBO ? (
+              // ABO campaign - budget required
+              <div>
+                <label className="block text-sm font-medium mb-2">Daily Budget</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">$</span>
+                  <input
+                    type="number"
+                    value={state.adsetDailyBudget}
+                    onChange={(e) => setState(s => ({ ...s, adsetDailyBudget: parseFloat(e.target.value) || 0 }))}
+                    className="w-full pl-8 pr-16 py-3 bg-zinc-800 border border-border rounded-lg focus:outline-none focus:border-accent"
+                    min="1"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">/day</span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  This is an ABO campaign - each ad set manages its own budget
+                </p>
+              </div>
+            ) : (
+              // CBO campaign - optional spend cap
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={state.adsetHasSpendCap}
+                    onChange={(e) => setState(s => ({ ...s, adsetHasSpendCap: e.target.checked }))}
+                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-accent focus:ring-accent"
+                  />
+                  <span className="text-sm">Set a daily spend cap for this ad set</span>
+                </label>
+
+                {state.adsetHasSpendCap && (
+                  <div className="mt-3">
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">$</span>
+                      <input
+                        type="number"
+                        value={state.adsetDailyBudget}
+                        onChange={(e) => setState(s => ({ ...s, adsetDailyBudget: parseFloat(e.target.value) || 0 }))}
+                        className="w-full pl-8 pr-16 py-3 bg-zinc-800 border border-border rounded-lg focus:outline-none focus:border-accent"
+                        min="1"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">/day max</span>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-zinc-500 mt-2">
+                  This is a CBO campaign - the campaign budget is distributed automatically.
+                  {!state.adsetHasSpendCap && ' You can optionally set a maximum daily spend for this ad set.'}
+                </p>
+              </div>
+            )}
           </div>
         )
 
@@ -1875,67 +2441,138 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         )
 
       case 'review':
+        // Dynamic review based on entity type
+        const entityLabel = state.entityType === 'ad' ? 'Ad' : state.entityType === 'adset' ? 'Ad Set' : 'Campaign'
+        const effectiveObjective = state.entityType === 'campaign' ? state.objective : state.selectedCampaignObjective
+
         return (
           <div className="space-y-6">
             <div className="bg-bg-hover rounded-xl p-5 space-y-4">
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Campaign</span>
-                <span className="font-medium">{state.campaignName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Budget Type</span>
-                <span className="font-medium uppercase">{state.budgetType}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Objective</span>
-                <span className="font-medium capitalize">{state.objective}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Budget</span>
-                <span className="font-medium">${state.dailyBudget}/day</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Location</span>
-                <span className="font-medium">
-                  {state.locationType === 'country' ? 'United States' : `${state.locationName} (${state.locationRadius}mi)`}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Audience</span>
-                <span className="font-medium">
-                  {state.targetingMode === 'broad'
-                    ? 'Broad (Advantage+)'
-                    : `Custom (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
-                  }
-                </span>
-              </div>
+              {/* Campaign path */}
+              {state.entityType === 'campaign' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Campaign</span>
+                    <span className="font-medium">{state.campaignName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Budget Type</span>
+                    <span className="font-medium uppercase">{state.budgetType}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Objective</span>
+                    <span className="font-medium capitalize">{state.objective}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Budget</span>
+                    <span className="font-medium">${state.dailyBudget}/day</span>
+                  </div>
+                </>
+              )}
+
+              {/* Ad Set path */}
+              {state.entityType === 'adset' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Adding to Campaign</span>
+                    <span className="font-medium">{state.selectedCampaignName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Ad Set Name</span>
+                    <span className="font-medium">{state.adsetName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Objective</span>
+                    <span className="font-medium capitalize">{state.selectedCampaignObjective} (inherited)</span>
+                  </div>
+                  {(!state.selectedCampaignIsCBO || state.adsetHasSpendCap) && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Budget</span>
+                      <span className="font-medium">
+                        ${state.adsetDailyBudget}/day {state.selectedCampaignIsCBO ? '(cap)' : ''}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Ad path */}
+              {state.entityType === 'ad' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Adding to Campaign</span>
+                    <span className="font-medium">{state.selectedCampaignName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Adding to Ad Set</span>
+                    <span className="font-medium">{state.selectedAdsetName}</span>
+                  </div>
+                </>
+              )}
+
+              {/* Common fields for campaign and adset */}
+              {state.entityType !== 'ad' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Location</span>
+                    <span className="font-medium">
+                      {state.locationType === 'country' ? 'United States' : `${state.locationName} (${state.locationRadius}mi)`}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Audience</span>
+                    <span className="font-medium">
+                      {state.targetingMode === 'broad'
+                        ? 'Broad (Advantage+)'
+                        : `Custom (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
+                      }
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* Creatives - all paths */}
               <div className="flex justify-between">
                 <span className="text-zinc-400">Creatives</span>
                 <span className="font-medium">{state.creatives.length} {state.creatives.length === 1 ? 'creative' : 'creatives'}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Enhancements</span>
-                <span className="font-medium">{state.creativeEnhancements ? 'Meta Advantage+' : 'KillScale Recommended'}</span>
-              </div>
+
+              {/* Enhancements - campaign and adset only */}
+              {state.entityType !== 'ad' && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Enhancements</span>
+                  <span className="font-medium">{state.creativeEnhancements ? 'Meta Advantage+' : 'KillScale Recommended'}</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2 text-sm">
+              {state.entityType === 'campaign' && (
+                <>
+                  <div className="flex items-center gap-2 text-verdict-scale">
+                    <Check className="w-4 h-4" />
+                    <span>{state.budgetType === 'cbo' ? 'CBO Campaign' : 'ABO Campaign'} - Budget at {state.budgetType === 'cbo' ? 'campaign' : 'ad set'} level</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-verdict-scale">
+                    <Check className="w-4 h-4" />
+                    <span>
+                      {state.targetingMode === 'broad'
+                        ? '1 Ad Set - Advantage+ Audience (broad)'
+                        : `1 Ad Set - Custom targeting (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
+                      }
+                    </span>
+                  </div>
+                </>
+              )}
+              {state.entityType === 'adset' && (
+                <div className="flex items-center gap-2 text-verdict-scale">
+                  <Check className="w-4 h-4" />
+                  <span>1 Ad Set with new targeting</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />
-                <span>{state.budgetType === 'cbo' ? 'CBO Campaign' : 'ABO Campaign'} - Budget at {state.budgetType === 'cbo' ? 'campaign' : 'ad set'} level</span>
-              </div>
-              <div className="flex items-center gap-2 text-verdict-scale">
-                <Check className="w-4 h-4" />
-                <span>
-                  {state.targetingMode === 'broad'
-                    ? '1 Ad Set - Advantage+ Audience (broad)'
-                    : `1 Ad Set - Custom targeting (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
-                  }
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-verdict-scale">
-                <Check className="w-4 h-4" />
-                <span>{state.creatives.length} Ads - Your creatives + copy</span>
+                <span>{state.creatives.length} {state.creatives.length === 1 ? 'Ad' : 'Ads'} - Your creatives + copy</span>
               </div>
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />
@@ -1958,7 +2595,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
               <div className="text-sm">
-                <p className="font-medium text-yellow-500">Campaign will be created as PAUSED</p>
+                <p className="font-medium text-yellow-500">{entityLabel} will be created as PAUSED</p>
                 <p className="text-zinc-400 mt-1">
                   You can activate it from KillScale or Meta Ads Manager when ready.
                 </p>
@@ -2014,9 +2651,13 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
   const stepTitles: Record<Step, string> = {
     account: 'Select Page',
+    'entity-type': 'What to Create',
+    'select-campaign': 'Select Campaign',
+    'select-adset': 'Select Ad Set',
     budget: 'Budget Structure',
     'abo-options': 'ABO Options',
     details: 'Campaign Details',
+    'adset-details': 'Ad Set Details',
     leadform: 'Lead Form',
     targeting: 'Targeting',
     creatives: 'Creatives',

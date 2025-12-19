@@ -97,6 +97,9 @@ export async function GET(request: NextRequest) {
         dailyBudget: campaign.daily_budget ? parseInt(campaign.daily_budget) / 100 : null,
         lifetimeBudget: campaign.lifetime_budget ? parseInt(campaign.lifetime_budget) / 100 : null,
         objective: campaign.objective,
+        // CBO = Campaign Budget Optimization (budget set at campaign level)
+        // ABO = Ad Set Budget Optimization (no campaign-level budget)
+        isCBO: !!(campaign.daily_budget || campaign.lifetime_budget),
         adSetCount: campaignCounts[campaign.id]?.adSetCount || 0,
         adCount: campaignCounts[campaign.id]?.adCount || 0
       }))
