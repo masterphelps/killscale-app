@@ -1566,18 +1566,18 @@ export default function DashboardPage() {
           )}
         </div>
         
-        <div className="flex flex-wrap items-center gap-2 lg:gap-3">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 overflow-x-auto">
           {data.length > 0 && (
             <>
 
               {/* Date Picker Dropdown */}
-              <div className="relative">
+              <div className="relative flex-shrink-0">
                 <DatePickerButton
                   label={getDateLabel()}
                   onClick={() => setShowDatePicker(!showDatePicker)}
                   isOpen={showDatePicker}
                 />
-                
+
                 <DatePicker
                   isOpen={showDatePicker}
                   onClose={() => {
@@ -1597,12 +1597,12 @@ export default function DashboardPage() {
               </div>
             </>
           )}
-          
+
           {/* Sync Button - now shows syncing state more prominently */}
           <button
             onClick={handleSync}
             disabled={!canSync || isSyncing || (!selectedAccountId && workspaceAccountIds.length === 0)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               isSyncing
                 ? 'bg-accent/20 border border-accent/50 text-accent'
                 : canSync && (selectedAccountId || workspaceAccountIds.length > 0)
@@ -1614,19 +1614,19 @@ export default function DashboardPage() {
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
             {isSyncing ? <span className="hidden sm:inline">Syncing...</span> : <span className="hidden sm:inline">Sync</span>}
             {lastSyncTime && !isSyncing && (
-              <span className="text-xs text-zinc-500">{getTimeSinceSync()}</span>
+              <span className="text-xs text-zinc-500 hidden lg:inline">{getTimeSinceSync()}</span>
             )}
           </button>
-          
+
           {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
           {isProPlus && isKillScaleActive && currentWorkspaceId && (
             <button
               onClick={() => setShowWalkinModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
               title="Log a walk-in or offline conversion"
             >
               <UserPlus className="w-4 h-4" />
-              <span className="hidden sm:inline">Log Walk-In</span>
+              <span className="hidden lg:inline">Walk-In</span>
             </button>
           )}
 
@@ -1641,17 +1641,18 @@ export default function DashboardPage() {
 
           <button
             onClick={() => setShowUpload(true)}
-            className="hidden sm:flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+            className="flex-shrink-0 hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Upload CSV</span>
+            <span className="hidden lg:inline">CSV</span>
           </button>
 
           {/* Delete Button - far right */}
           {data.length > 0 && (
-            <button 
+            <button
               onClick={handleClearData}
-              className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+              className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-bg-card border border-border rounded-lg text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+              title="Clear all data"
             >
               <Trash2 className="w-4 h-4" />
             </button>

@@ -41,21 +41,23 @@ export function StarredAdsPopover({ starredAds, onBuildPerformanceSet, onUnstarA
   const count = starredAds.length
 
   return (
-    <div className="relative">
+    <div className="relative flex-shrink-0">
       {/* Badge Button */}
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all',
+          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm transition-all',
           count > 0
             ? 'border-yellow-500/30 text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20'
             : 'border-zinc-700 text-zinc-500 bg-zinc-800/50 cursor-default'
         )}
         disabled={count === 0}
+        title={count > 0 ? `${count} starred ads` : 'No starred ads'}
       >
         <Star className={cn('w-4 h-4', count > 0 && 'fill-yellow-500')} />
-        <span className="font-medium">{count} Starred</span>
+        <span className="font-medium">{count}</span>
+        <span className="hidden lg:inline">Starred</span>
       </button>
 
       {/* Popover */}
