@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Upload, Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
+import { Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
 import { StatCard, BudgetCard, StatIcons } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
-import { CSVUpload } from '@/components/csv-upload'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
 import { StarredAdsPopover } from '@/components/starred-ads-popover'
@@ -143,14 +142,12 @@ const isCacheValid = (cache: CacheEntry, datePreset: string, customStart?: strin
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
-  const [showUpload, setShowUpload] = useState(false)
   const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
   const isFirstSessionLoad = useRef(typeof window !== 'undefined' && !sessionStorage.getItem('ks_session_synced')) // Fresh login detection
   const userManuallyDeselected = useRef(false) // Track if user manually deselected all
   const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
-  const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
   const [includePaused, setIncludePaused] = useState(true)
@@ -735,50 +732,6 @@ export default function DashboardPage() {
       // No rules configured for this account yet - use defaults
       setRules(DEFAULT_RULES)
     }
-  }
-
-  const handleUpload = async (rows: CSVRow[]) => {
-    if (!user) return
-    
-    setIsSaving(true)
-    
-    // Delete all existing data
-    await supabase
-      .from('ad_data')
-      .delete()
-      .eq('user_id', user.id)
-
-    const insertData = rows.map(row => ({
-      user_id: user.id,
-      source: 'csv',  // Mark as CSV data
-      date_start: row.date_start,
-      date_end: row.date_end,
-      campaign_name: row.campaign_name,
-      adset_name: row.adset_name,
-      ad_name: row.ad_name,
-      impressions: row.impressions,
-      clicks: row.clicks,
-      spend: row.spend,
-      purchases: row.purchases,
-      revenue: row.revenue,
-      // CSV data doesn't have status - leave as null/default
-    }))
-
-    const { error } = await supabase
-      .from('ad_data')
-      .insert(insertData)
-
-    if (!error) {
-      setData(rows)
-      const campaigns = new Set(rows.map(r => r.campaign_name))
-      setSelectedCampaigns(campaigns)
-    } else {
-      console.error('Error saving data:', error)
-      alert('Error saving data. Please try again.')
-    }
-    
-    setIsSaving(false)
-    setShowUpload(false)
   }
 
   const handleClearData = async () => {
@@ -1639,14 +1592,6 @@ export default function DashboardPage() {
             />
           )}
 
-          <button
-            onClick={() => setShowUpload(true)}
-            className="flex-shrink-0 hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden lg:inline">CSV</span>
-          </button>
-
           {/* Delete Button - far right */}
           {data.length > 0 && (
             <button
@@ -1672,14 +1617,14 @@ export default function DashboardPage() {
             <>
               <div className="text-6xl mb-4">📊</div>
               <h2 className="text-xl font-semibold mb-2">No data yet</h2>
-              <p className="text-zinc-500 mb-6">
+              <p className="text-zinc-500 mb-6 text-center max-w-md">
                 {canSync && (selectedAccountId || workspaceAccountIds.length > 0)
-                  ? 'Click Sync to fetch data from Meta Ads, or upload a CSV'
-                  : 'Upload a CSV export from Meta Ads to get started'
+                  ? 'Click Sync to fetch data from Meta Ads'
+                  : 'Connect a Meta Ads account or import CSV data from Settings → Accounts'
                 }
               </p>
-              <div className="flex flex-wrap items-center gap-2 lg:gap-3">
-                {canSync && (selectedAccountId || workspaceAccountIds.length > 0) && (
+              <div className="flex flex-wrap items-center gap-3">
+                {canSync && (selectedAccountId || workspaceAccountIds.length > 0) ? (
                   <button
                     onClick={handleSync}
                     className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
@@ -1687,18 +1632,14 @@ export default function DashboardPage() {
                     <RefreshCw className="w-4 h-4" />
                     Sync from Meta
                   </button>
+                ) : (
+                  <Link
+                    href="/dashboard/settings/accounts"
+                    className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
+                  >
+                    Connect Account
+                  </Link>
                 )}
-                <button
-                  onClick={() => setShowUpload(true)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                    canSync && (selectedAccountId || workspaceAccountIds.length > 0)
-                      ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
-                      : 'bg-accent hover:bg-accent-hover text-white'
-                  }`}
-                >
-                  <Upload className="w-4 h-4" />
-                  <span className="hidden sm:inline">Upload CSV</span>
-                </button>
               </div>
             </>
           )}
@@ -1961,32 +1902,6 @@ export default function DashboardPage() {
         </>
       )}
       
-      {showUpload && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/50 z-40"
-            onClick={() => setShowUpload(false)}
-          />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-bg-sidebar border border-border rounded-xl p-6 z-50">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold"><span className="hidden sm:inline">Upload CSV</span></h2>
-              <button 
-                onClick={() => setShowUpload(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-card border border-border text-zinc-400 hover:text-white transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            <CSVUpload onUpload={handleUpload} isLoading={isSaving} />
-            {isSaving && (
-              <div className="mt-4 text-center text-sm text-zinc-500">
-                Saving your data...
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
       {/* Status Change Confirmation Modal */}
       {statusChangeModal && (
         <StatusChangeModal
