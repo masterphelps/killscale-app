@@ -1519,7 +1519,7 @@ export default function DashboardPage() {
           )}
         </div>
         
-        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 overflow-x-auto">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
           {data.length > 0 && (
             <>
 
