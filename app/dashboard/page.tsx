@@ -1495,113 +1495,116 @@ export default function DashboardPage() {
   
   return (
     <>
-      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
-            <p className="text-zinc-500">Your Meta Ads performance at a glance</p>
-          </div>
-          
-          {/* Entity counts next to Dashboard */}
-          {data.length > 0 && (
-            <div className="hidden lg:flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
-                <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
-              </div>
-              <div className="w-px h-3 bg-border" />
-              <span className="text-zinc-400">{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
-              <div className="w-px h-3 bg-border" />
-              <span className="text-zinc-400">{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
-              <div className="w-px h-3 bg-border" />
-              <span className="text-zinc-400">{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
+      {/* Header row - title left, buttons right, same max-width as cards */}
+      <div className="max-w-[1400px] mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+              <p className="text-zinc-500 text-sm lg:text-base">Your Meta Ads performance at a glance</p>
             </div>
-          )}
-        </div>
-        
-        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
-          {data.length > 0 && (
-            <>
 
-              {/* Date Picker Dropdown */}
-              <div className="relative flex-shrink-0">
-                <DatePickerButton
-                  label={getDateLabel()}
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  isOpen={showDatePicker}
-                />
-
-                <DatePicker
-                  isOpen={showDatePicker}
-                  onClose={() => {
-                    setShowDatePicker(false)
-                    setShowCustomDateInputs(false)
-                  }}
-                  datePreset={datePreset}
-                  onPresetChange={handleDatePresetChange}
-                  customStartDate={customStartDate}
-                  customEndDate={customEndDate}
-                  onCustomDateChange={(start, end) => {
-                    setCustomStartDate(start)
-                    setCustomEndDate(end)
-                  }}
-                  onApply={handleCustomDateApply}
-                />
+            {/* Entity counts next to Dashboard - desktop only */}
+            {data.length > 0 && (
+              <div className="hidden xl:flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
+                  <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="w-px h-3 bg-border" />
+                <span className="text-zinc-400">{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
+                <div className="w-px h-3 bg-border" />
+                <span className="text-zinc-400">{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
+                <div className="w-px h-3 bg-border" />
+                <span className="text-zinc-400">{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
               </div>
-            </>
-          )}
-
-          {/* Sync Button - now shows syncing state more prominently */}
-          <button
-            onClick={handleSync}
-            disabled={!canSync || isSyncing || (!selectedAccountId && workspaceAccountIds.length === 0)}
-            className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              isSyncing
-                ? 'bg-accent/20 border border-accent/50 text-accent'
-                : canSync && (selectedAccountId || workspaceAccountIds.length > 0)
-                  ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
-                  : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
-            }`}
-            title={!canSync ? 'Sync requires Pro plan' : (!selectedAccountId && workspaceAccountIds.length === 0) ? 'Connect an account first' : workspaceAccountIds.length > 0 ? `Sync ${workspaceAccountIds.length} accounts` : 'Sync from Meta'}
-          >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? <span className="hidden sm:inline">Syncing...</span> : <span className="hidden sm:inline">Sync</span>}
-            {lastSyncTime && !isSyncing && (
-              <span className="text-xs text-zinc-500 hidden lg:inline">{getTimeSinceSync()}</span>
             )}
-          </button>
+          </div>
 
-          {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
-          {isProPlus && isKillScaleActive && currentWorkspaceId && (
+          {/* Action buttons - wrap on mobile, single row on desktop */}
+          <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap">
+            {data.length > 0 && (
+              <>
+                {/* Date Picker Dropdown */}
+                <div className="relative flex-shrink-0">
+                  <DatePickerButton
+                    label={getDateLabel()}
+                    onClick={() => setShowDatePicker(!showDatePicker)}
+                    isOpen={showDatePicker}
+                  />
+
+                  <DatePicker
+                    isOpen={showDatePicker}
+                    onClose={() => {
+                      setShowDatePicker(false)
+                      setShowCustomDateInputs(false)
+                    }}
+                    datePreset={datePreset}
+                    onPresetChange={handleDatePresetChange}
+                    customStartDate={customStartDate}
+                    customEndDate={customEndDate}
+                    onCustomDateChange={(start, end) => {
+                      setCustomStartDate(start)
+                      setCustomEndDate(end)
+                    }}
+                    onApply={handleCustomDateApply}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Sync Button */}
             <button
-              onClick={() => setShowWalkinModal(true)}
-              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
-              title="Log a walk-in or offline conversion"
+              onClick={handleSync}
+              disabled={!canSync || isSyncing || (!selectedAccountId && workspaceAccountIds.length === 0)}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                isSyncing
+                  ? 'bg-accent/20 border border-accent/50 text-accent'
+                  : canSync && (selectedAccountId || workspaceAccountIds.length > 0)
+                    ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
+                    : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+              }`}
+              title={!canSync ? 'Sync requires Pro plan' : (!selectedAccountId && workspaceAccountIds.length === 0) ? 'Connect an account first' : workspaceAccountIds.length > 0 ? `Sync ${workspaceAccountIds.length} accounts` : 'Sync from Meta'}
             >
-              <UserPlus className="w-4 h-4" />
-              <span className="hidden lg:inline">Walk-In</span>
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync'}</span>
+              {lastSyncTime && !isSyncing && (
+                <span className="text-xs text-zinc-500 hidden xl:inline">{getTimeSinceSync()}</span>
+              )}
             </button>
-          )}
 
-          {/* Starred Ads Badge + Popover - for building Performance Sets */}
-          {isProPlus && (
-            <StarredAdsPopover
-              starredAds={starredAds}
-              onBuildPerformanceSet={handleBuildPerformanceSet}
-              onUnstarAd={handleUnstarAd}
-            />
-          )}
+            {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
+            {isProPlus && isKillScaleActive && currentWorkspaceId && (
+              <button
+                onClick={() => setShowWalkinModal(true)}
+                className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
+                title="Log a walk-in or offline conversion"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span className="hidden xl:inline">Walk-In</span>
+              </button>
+            )}
 
-          {/* Delete Button - far right */}
-          {data.length > 0 && (
-            <button
-              onClick={handleClearData}
-              className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-bg-card border border-border rounded-lg text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
-              title="Clear all data"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
+            {/* Starred Ads Badge + Popover */}
+            {isProPlus && (
+              <StarredAdsPopover
+                starredAds={starredAds}
+                onBuildPerformanceSet={handleBuildPerformanceSet}
+                onUnstarAd={handleUnstarAd}
+              />
+            )}
+
+            {/* Delete Button - always visible, far right */}
+            {data.length > 0 && (
+              <button
+                onClick={handleClearData}
+                className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-bg-card border border-border rounded-lg text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+                title="Clear all data"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1694,9 +1697,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Primary Stats Row - responsive grid with min/max constraints */}
-          <div className="overflow-x-auto">
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4 min-w-[600px] lg:min-w-[900px] max-w-[1400px]">
+          {/* Primary Stats Row - responsive grid, no horizontal scroll */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
             <StatCard
               label="Total Spend"
               value={formatCurrency(totals.spend)}
@@ -1727,12 +1729,10 @@ export default function DashboardPage() {
               icon={StatIcons.cpr}
               glow="rose"
             />
-            </div>
           </div>
 
           {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
-          <div className="overflow-x-auto">
-            <div className="hidden lg:grid grid-cols-5 gap-4 mb-8 min-w-[900px] max-w-[1400px]">
+          <div className="hidden lg:grid grid-cols-5 gap-4 mb-8 max-w-[1400px]">
             {/* Daily Budgets - left bookend */}
             <BudgetCard
               totalBudget={formatCurrency(budgetTotals.total)}
@@ -1767,11 +1767,10 @@ export default function DashboardPage() {
               icon={StatIcons.convRate}
               glow="amber"
             />
-            </div>
           </div>
 
-          {/* Controls Bar - matching mockup exactly */}
-          <div className="flex items-center gap-4 mb-6 min-w-[900px] max-w-[1400px]">
+          {/* Controls Bar */}
+          <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 lg:gap-4 mb-6 max-w-[1400px]">
             {/* Select All on left */}
             <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
               <input
