@@ -321,8 +321,8 @@ export async function POST(request: NextRequest) {
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
     // Always fetch insights (that's the data that changes)
-    const insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
-    const allInsights = insightsResult.data
+    let insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+    let allInsights = insightsResult.data
 
     // For delta sync, skip entity fetches - use existing data from Supabase
     // Entity data (status, budget) rarely changes and can be fetched separately if needed
@@ -343,10 +343,24 @@ export async function POST(request: NextRequest) {
         .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
         .limit(1000)
 
-      // If DB is empty, fall back to full sync
+      // If DB is empty, fall back to full sync and re-fetch insights with full date range
       if (!existingData || existingData.length === 0) {
         console.log('[Sync] Delta sync aborted - no existing data, falling back to full sync')
         isDeltaSync = false
+
+        // Re-build insights URL with full date range (not delta)
+        if (datePreset === 'custom' && customStartDate && customEndDate) {
+          insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
+        } else {
+          insightsUrl.searchParams.delete('time_range')
+          insightsUrl.searchParams.set('date_preset', VALID_META_PRESETS[datePreset] || 'last_30d')
+        }
+
+        // Re-fetch insights with correct date range
+        console.log('[Sync] Re-fetching insights with full date range:', datePreset)
+        insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+        allInsights = insightsResult.data
+        console.log('[Sync] Full sync insights count:', allInsights.length)
       } else {
         console.log('[Sync] Delta sync - using', existingData.length, 'existing rows')
 
