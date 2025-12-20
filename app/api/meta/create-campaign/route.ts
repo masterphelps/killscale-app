@@ -54,6 +54,9 @@ interface CreateCampaignRequest {
   targetingMode?: 'broad' | 'custom'
   selectedInterests?: TargetingOption[]
   selectedBehaviors?: TargetingOption[]
+  // Performance Set specific fields
+  isPerformanceSet?: boolean
+  existingCreativeIds?: { adId: string; adName: string; creativeId: string }[]
 }
 
 // Map our objectives to Meta's
@@ -97,7 +100,9 @@ export async function POST(request: NextRequest) {
       creativeEnhancements,
       targetingMode,
       selectedInterests,
-      selectedBehaviors
+      selectedBehaviors,
+      isPerformanceSet,
+      existingCreativeIds
     } = body
 
     // Validate required fields
@@ -105,7 +110,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    if (creatives.length === 0) {
+    // Performance Set uses existing creative IDs, regular campaigns need new creatives
+    if (isPerformanceSet) {
+      if (!existingCreativeIds || existingCreativeIds.length === 0) {
+        return NextResponse.json({ error: 'Performance Set requires at least one existing creative' }, { status: 400 })
+      }
+    } else if (creatives.length === 0) {
       return NextResponse.json({ error: 'At least one creative is required' }, { status: 400 })
     }
 
@@ -314,8 +324,55 @@ export async function POST(request: NextRequest) {
 
     adsetId = adsetResult.id
 
-    // ========== STEP 3: Create ad creatives and ads ==========
-    for (let i = 0; i < creatives.length; i++) {
+    // ========== STEP 3: Create ads ==========
+
+    if (isPerformanceSet && existingCreativeIds && existingCreativeIds.length > 0) {
+      // ========== PERFORMANCE SET: Create ads using existing creative IDs ==========
+      console.log(`Creating Performance Set with ${existingCreativeIds.length} existing creatives`)
+
+      // Rate limiting delay helper
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+      for (let i = 0; i < existingCreativeIds.length; i++) {
+        const { adId: sourceAdId, adName, creativeId } = existingCreativeIds[i]
+
+        // Create ad using existing creative_id (no need to create new creative)
+        const adPayload: Record<string, unknown> = {
+          name: adName,  // Keep the original ad name
+          adset_id: adsetId,
+          creative: { creative_id: creativeId },
+          status: 'PAUSED',
+          access_token: accessToken
+        }
+
+        console.log(`Creating ad ${i + 1}/${existingCreativeIds.length}: ${adName} with creative ${creativeId}`)
+
+        const adResponse = await fetch(
+          `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/ads`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(adPayload)
+          }
+        )
+
+        const adResult = await adResponse.json()
+
+        if (adResult.error) {
+          console.error(`Ad creation error for ${adName}:`, adResult.error)
+          continue
+        }
+
+        adIds.push(adResult.id)
+
+        // Add delay between ad creation calls to avoid rate limiting (not after last one)
+        if (i < existingCreativeIds.length - 1) {
+          await delay(100)
+        }
+      }
+    } else {
+      // ========== REGULAR: Create new ad creatives and ads ==========
+      for (let i = 0; i < creatives.length; i++) {
       const creative = creatives[i]
 
       // Build creative payload - different structure for images vs videos
@@ -472,7 +529,8 @@ export async function POST(request: NextRequest) {
       }
 
       adIds.push(adResult.id)
-    }
+      }
+    } // End of else block (regular creative creation)
 
     if (adIds.length === 0) {
       return NextResponse.json({

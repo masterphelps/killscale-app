@@ -8,10 +8,12 @@ import { PerformanceTable } from '@/components/performance-table'
 import { CSVUpload } from '@/components/csv-upload'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
+import { StarredAdsPopover } from '@/components/starred-ads-popover'
+import { LaunchWizard, StarredAdForWizard } from '@/components/launch-wizard'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { SyncOverlay } from '@/components/sync-overlay'
 import { CSVRow } from '@/lib/csv-parser'
-import { Rules } from '@/lib/supabase'
+import { Rules, StarredAd } from '@/lib/supabase'
 import { formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
@@ -198,6 +200,11 @@ export default function DashboardPage() {
     adsetName?: string
   } | null>(null)
   const [showWalkinModal, setShowWalkinModal] = useState(false)
+  const [starredAds, setStarredAds] = useState<StarredAd[]>([])
+  const [showLaunchWizard, setShowLaunchWizard] = useState(false)
+  const [launchWizardEntityType, setLaunchWizardEntityType] = useState<'campaign' | 'adset' | 'ad' | 'performance-set'>('campaign')
+  const [showClearStarsPrompt, setShowClearStarsPrompt] = useState(false)
+  const [performanceSetAdIds, setPerformanceSetAdIds] = useState<string[]>([])
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
@@ -242,6 +249,115 @@ export default function DashboardPage() {
       customEnd: customEndDate || undefined
     })
   }, [datePreset, customStartDate, customEndDate])
+
+  // Compute starred ad IDs for quick lookup
+  const starredAdIds = useMemo(() => {
+    return new Set(starredAds.map(ad => ad.ad_id))
+  }, [starredAds])
+
+  // Load starred ads when account changes
+  const loadStarredAds = async (accountId: string) => {
+    if (!user?.id) return
+    try {
+      const response = await fetch(`/api/starred?userId=${user.id}&adAccountId=${accountId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setStarredAds(data.starred || [])
+      }
+    } catch (error) {
+      console.error('Failed to load starred ads:', error)
+    }
+  }
+
+  // Handle starring an ad
+  const handleStarAd = async (ad: {
+    adId: string
+    adName: string
+    adsetId: string
+    adsetName: string
+    campaignId: string
+    campaignName: string
+    spend: number
+    revenue: number
+    roas: number
+  }) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      const response = await fetch('/api/starred', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          adId: ad.adId,
+          adName: ad.adName,
+          adsetId: ad.adsetId,
+          adsetName: ad.adsetName,
+          campaignId: ad.campaignId,
+          campaignName: ad.campaignName,
+          spend: ad.spend,
+          revenue: ad.revenue,
+          roas: ad.roas
+        })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setStarredAds(prev => [...prev, data.starred])
+      }
+    } catch (error) {
+      console.error('Failed to star ad:', error)
+    }
+  }
+
+  // Handle unstarring an ad
+  const handleUnstarAd = async (adId: string) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      const response = await fetch('/api/starred', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          adId
+        })
+      })
+      if (response.ok) {
+        setStarredAds(prev => prev.filter(ad => ad.ad_id !== adId))
+      }
+    } catch (error) {
+      console.error('Failed to unstar ad:', error)
+    }
+  }
+
+  // Handle opening the launch wizard for Performance Set
+  const handleBuildPerformanceSet = () => {
+    setLaunchWizardEntityType('performance-set')
+    setShowLaunchWizard(true)
+  }
+
+  // Handle clearing multiple stars at once (after Performance Set creation)
+  const handleClearStars = async (adIds: string[]) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      // Delete each starred ad
+      await Promise.all(adIds.map(adId =>
+        fetch('/api/starred', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            adId
+          })
+        })
+      ))
+      // Update local state
+      setStarredAds(prev => prev.filter(ad => !adIds.includes(ad.ad_id)))
+    } catch (error) {
+      console.error('Failed to clear stars:', error)
+    }
+  }
   
   const canSync = true // All plans can sync via Meta API
   const planLower = plan?.toLowerCase() || ''
@@ -266,28 +382,37 @@ export default function DashboardPage() {
       const cached = dataCache.get(cacheKey)
       const hasFreshCache = cached && isCacheValid(cached, 'last_30d')
 
-      // Sync if: fresh login (new session) OR no valid cache
-      // Check hasTriggeredInitialSync to prevent race conditions from effect re-runs
-      if (isFirstSessionLoad.current || !hasFreshCache) {
+      // Only sync on fresh login (new session)
+      // If we've already synced this session, just load from Supabase - don't hit Meta API again
+      const hasSessionSync = sessionStorage.getItem('ks_session_synced')
+      if (isFirstSessionLoad.current && !hasSessionSync) {
         hasTriggeredInitialSync.current = true
         sessionStorage.setItem('ks_session_synced', 'true')
-        console.log('[Dashboard] Syncing - fresh login:', isFirstSessionLoad.current, 'no cache:', !hasFreshCache)
+        console.log('[Dashboard] Fresh session - triggering initial sync')
         setDatePreset('last_30d')
         setPendingInitialSync(accountToSync)
       } else {
-        console.log('[Dashboard] Using cached data, no sync needed')
+        console.log('[Dashboard] Already synced this session - loading from Supabase only')
       }
     }
 
     initialLoad()
   }, [user?.id, accounts.length]) // Include accounts.length to re-run when accounts load
 
+  // Track when we're executing the initial sync (to prevent Effect 4 from double-syncing)
+  const isExecutingInitialSyncRef = useRef(false)
+
   // Execute pending initial sync (separate effect to ensure datePreset is updated)
   useEffect(() => {
     if (pendingInitialSync && datePreset === 'last_30d' && !isSyncing) {
       console.log('[Dashboard] Executing initial 30-day sync for', pendingInitialSync)
+      isExecutingInitialSyncRef.current = true
       setPendingInitialSync(null) // Clear before executing to prevent loops
       handleSyncAccount(pendingInitialSync)
+      // Reset the flag after a delay to allow the sync to complete
+      setTimeout(() => {
+        isExecutingInitialSyncRef.current = false
+      }, 2000)
     }
   }, [pendingInitialSync, datePreset, isSyncing])
 
@@ -400,6 +525,15 @@ export default function DashboardPage() {
     }
   }, [selectedAccountId, workspaceAccountIds])
 
+  // Load starred ads when account changes
+  useEffect(() => {
+    if (selectedAccountId && user?.id) {
+      loadStarredAds(selectedAccountId)
+    } else {
+      setStarredAds([])
+    }
+  }, [selectedAccountId, user?.id])
+
   // Track if this is the initial mount (to prevent auto-sync on page load)
   const isInitialMount = useRef(true)
 
@@ -407,7 +541,10 @@ export default function DashboardPage() {
   // Only "today" preset has truly live data. Removed misleading "Live" indicator.
 
   // NOTE: Sync uses the selected date range from the date picker
-  // Smart sync when date preset changes - only sync if cache can't serve the request
+  // Track if user has manually changed the date preset (vs component mount/navigation)
+  const userChangedDatePreset = useRef(false)
+
+  // Smart sync when date preset changes - only sync if USER changed it and cache can't serve
   useEffect(() => {
     // Skip initial mount
     if (isInitialMount.current) {
@@ -418,6 +555,15 @@ export default function DashboardPage() {
     if (!selectedAccountId || !user) return
     if (datePreset === 'custom') return // Custom dates handled by handleCustomDateApply
     if (pendingInitialSync) return // Initial sync will handle this
+    if (isExecutingInitialSyncRef.current) return // Don't double-sync during initial load
+
+    // Only sync if user explicitly changed the date preset
+    // This prevents syncs from component remount/navigation
+    if (!userChangedDatePreset.current) {
+      console.log('[Dashboard] Date preset effect skipped - not a user change')
+      return
+    }
+    userChangedDatePreset.current = false // Reset after handling
 
     // Check if current cache can serve this request
     const cachedEntry = dataCache.get(selectedAccountId)
@@ -429,6 +575,8 @@ export default function DashboardPage() {
     // Need larger range than cached - sync new data
     // Debounce to avoid rapid syncs when clicking through presets
     const timeout = setTimeout(() => {
+      // Double-check we're not in initial sync when timeout fires
+      if (isExecutingInitialSyncRef.current) return
       handleSyncAccount(selectedAccountId)
     }, 500)
 
@@ -648,6 +796,8 @@ export default function DashboardPage() {
 
   // Ref-based guard for sync (state updates are async so we need synchronous check)
   const syncingRef = useRef(false)
+  const lastSyncCompletedRef = useRef<number>(0)
+  const SYNC_COOLDOWN_MS = 5000 // 5 second cooldown between syncs
 
   // Sync a specific account (used by sidebar dropdown)
   const handleSyncAccount = async (accountId: string) => {
@@ -655,6 +805,14 @@ export default function DashboardPage() {
 
     // Prevent duplicate syncs (both state and ref check)
     if (isSyncing || syncingRef.current) return
+
+    // Enforce cooldown between syncs to prevent Meta API returning empty data
+    const timeSinceLastSync = Date.now() - lastSyncCompletedRef.current
+    if (timeSinceLastSync < SYNC_COOLDOWN_MS && lastSyncCompletedRef.current > 0) {
+      console.log(`[Sync] Cooldown active - ${Math.ceil((SYNC_COOLDOWN_MS - timeSinceLastSync) / 1000)}s remaining`)
+      return
+    }
+
     syncingRef.current = true
 
     // Clear cache BEFORE sync to force fresh data
@@ -717,6 +875,7 @@ export default function DashboardPage() {
       alert('Sync failed. Please try again.')
     }
 
+    lastSyncCompletedRef.current = Date.now()
     syncingRef.current = false
     setIsSyncing(false)
   }
@@ -725,6 +884,13 @@ export default function DashboardPage() {
   const handleSyncWorkspace = async () => {
     if (!user || !canSync || workspaceAccountIds.length === 0) return
     if (isSyncing || syncingRef.current) return
+
+    // Enforce cooldown between syncs
+    const timeSinceLastSync = Date.now() - lastSyncCompletedRef.current
+    if (timeSinceLastSync < SYNC_COOLDOWN_MS && lastSyncCompletedRef.current > 0) {
+      console.log(`[Sync] Cooldown active - ${Math.ceil((SYNC_COOLDOWN_MS - timeSinceLastSync) / 1000)}s remaining`)
+      return
+    }
 
     syncingRef.current = true
 
@@ -765,6 +931,7 @@ export default function DashboardPage() {
       alert('Sync failed. Please try again.')
     }
 
+    lastSyncCompletedRef.current = Date.now()
     syncingRef.current = false
     setIsSyncing(false)
   }
@@ -874,6 +1041,7 @@ export default function DashboardPage() {
   }
 
   const handleDatePresetChange = (preset: string) => {
+    userChangedDatePreset.current = true // Mark as user-initiated change
     setDatePreset(preset)
     if (preset === 'custom') {
       setShowCustomDateInputs(true)
@@ -1462,6 +1630,15 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {/* Starred Ads Badge + Popover - for building Performance Sets */}
+          {isProPlus && (
+            <StarredAdsPopover
+              starredAds={starredAds}
+              onBuildPerformanceSet={handleBuildPerformanceSet}
+              onUnstarAd={handleUnstarAd}
+            />
+          )}
+
           <button
             onClick={() => setShowUpload(true)}
             className="hidden sm:flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
@@ -1776,6 +1953,9 @@ export default function DashboardPage() {
             onExpandedStateChange={setTableExpanded}
             externalSortField={sortField}
             externalSortDirection={sortDirection}
+            starredAdIds={starredAdIds}
+            onStarAd={handleStarAd}
+            onUnstarAd={handleUnstarAd}
           />
         </>
       )}
@@ -1842,6 +2022,83 @@ export default function DashboardPage() {
             : accounts.find(a => a.id === currentAccountId)?.name || currentAccountId || undefined
         }
       />
+
+      {/* Launch Wizard - Full Screen Overlay */}
+      {showLaunchWizard && currentAccountId && (
+        <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
+          <div className="min-h-screen px-4 py-8">
+            <LaunchWizard
+              adAccountId={currentAccountId}
+              onComplete={(performanceSetResult) => {
+                setShowLaunchWizard(false)
+                // Refresh data after creating campaign
+                loadData()
+                // Show clear stars prompt if this was a Performance Set
+                if (performanceSetResult?.usedAdIds && performanceSetResult.usedAdIds.length > 0) {
+                  setPerformanceSetAdIds(performanceSetResult.usedAdIds)
+                  setShowClearStarsPrompt(true)
+                }
+              }}
+              onCancel={() => setShowLaunchWizard(false)}
+              initialEntityType={launchWizardEntityType}
+              starredAds={starredAds.map(ad => ({
+                ad_id: ad.ad_id,
+                ad_name: ad.ad_name,
+                adset_id: ad.adset_id,
+                adset_name: ad.adset_name,
+                campaign_id: ad.campaign_id,
+                campaign_name: ad.campaign_name,
+                spend: ad.spend,
+                revenue: ad.revenue,
+                roas: ad.roas
+              }))}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Clear Stars Prompt - shown after Performance Set creation */}
+      {showClearStarsPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-bg-card border border-border rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Performance Set Created!</h3>
+            </div>
+            <p className="text-zinc-400 mb-6">
+              Your new CBO campaign with {performanceSetAdIds.length} winner{performanceSetAdIds.length !== 1 ? 's' : ''} has been created and is paused for your review.
+            </p>
+            <p className="text-sm text-zinc-500 mb-4">
+              Clear these stars from your list?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowClearStarsPrompt(false)
+                  setPerformanceSetAdIds([])
+                }}
+                className="flex-1 px-4 py-2 border border-border rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
+              >
+                Keep Stars
+              </button>
+              <button
+                onClick={async () => {
+                  await handleClearStars(performanceSetAdIds)
+                  setShowClearStarsPrompt(false)
+                  setPerformanceSetAdIds([])
+                }}
+                className="flex-1 px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg font-medium transition-colors"
+              >
+                Clear Stars
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
