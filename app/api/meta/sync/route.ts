@@ -334,7 +334,7 @@ export async function POST(request: NextRequest) {
 
     if (isDeltaSync) {
       // Delta sync: Get entity data from existing Supabase data instead of Meta API
-      console.log('[Sync] Delta sync - skipping entity API calls, using existing data')
+      console.log('[Sync] Delta sync - checking for existing data')
       const { data: existingData } = await supabase
         .from('ad_data')
         .select('campaign_id, campaign_name, campaign_status, campaign_daily_budget, campaign_lifetime_budget, adset_id, adset_name, adset_status, adset_daily_budget, adset_lifetime_budget, ad_id, ad_name, status')
@@ -342,48 +342,58 @@ export async function POST(request: NextRequest) {
         .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
         .limit(1000)
 
-      // Build entity maps from existing data
-      const campaignMap = new Map<string, CampaignData>()
-      const adsetMap = new Map<string, AdsetData>()
-      const adMap = new Map<string, AdData>()
+      // If DB is empty, fall back to full sync
+      if (!existingData || existingData.length === 0) {
+        console.log('[Sync] Delta sync aborted - no existing data, falling back to full sync')
+        isDeltaSync = false
+      } else {
+        console.log('[Sync] Delta sync - using', existingData.length, 'existing rows')
 
-      for (const row of existingData || []) {
-        if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
-          campaignMap.set(row.campaign_id, {
-            id: row.campaign_id,
-            name: row.campaign_name,
-            effective_status: row.campaign_status || 'ACTIVE',
-            daily_budget: row.campaign_daily_budget?.toString(),
-            lifetime_budget: row.campaign_lifetime_budget?.toString()
-          })
+        // Build entity maps from existing data
+        const campaignMap = new Map<string, CampaignData>()
+        const adsetMap = new Map<string, AdsetData>()
+        const adMap = new Map<string, AdData>()
+
+        for (const row of existingData) {
+          if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
+            campaignMap.set(row.campaign_id, {
+              id: row.campaign_id,
+              name: row.campaign_name,
+              effective_status: row.campaign_status || 'ACTIVE',
+              daily_budget: row.campaign_daily_budget?.toString(),
+              lifetime_budget: row.campaign_lifetime_budget?.toString()
+            })
+          }
+          if (row.adset_id && !adsetMap.has(row.adset_id)) {
+            adsetMap.set(row.adset_id, {
+              id: row.adset_id,
+              name: row.adset_name,
+              campaign_id: row.campaign_id,
+              effective_status: row.adset_status || 'ACTIVE',
+              daily_budget: row.adset_daily_budget?.toString(),
+              lifetime_budget: row.adset_lifetime_budget?.toString()
+            })
+          }
+          if (row.ad_id && !adMap.has(row.ad_id)) {
+            adMap.set(row.ad_id, {
+              id: row.ad_id,
+              name: row.ad_name,
+              adset_id: row.adset_id,
+              effective_status: row.status || 'ACTIVE'
+            })
+          }
         }
-        if (row.adset_id && !adsetMap.has(row.adset_id)) {
-          adsetMap.set(row.adset_id, {
-            id: row.adset_id,
-            name: row.adset_name,
-            campaign_id: row.campaign_id,
-            effective_status: row.adset_status || 'ACTIVE',
-            daily_budget: row.adset_daily_budget?.toString(),
-            lifetime_budget: row.adset_lifetime_budget?.toString()
-          })
-        }
-        if (row.ad_id && !adMap.has(row.ad_id)) {
-          adMap.set(row.ad_id, {
-            id: row.ad_id,
-            name: row.ad_name,
-            adset_id: row.adset_id,
-            effective_status: row.status || 'ACTIVE'
-          })
-        }
+
+        allCampaigns = Array.from(campaignMap.values())
+        allAdsets = Array.from(adsetMap.values())
+        allAdsData = Array.from(adMap.values())
+        campaignsResult = { data: allCampaigns, success: true }
+        adsetsResult = { data: allAdsets, success: true }
+        adsResult = { data: allAdsData, success: true }
       }
+    }
 
-      allCampaigns = Array.from(campaignMap.values())
-      allAdsets = Array.from(adsetMap.values())
-      allAdsData = Array.from(adMap.values())
-      campaignsResult = { data: allCampaigns, success: true }
-      adsetsResult = { data: allAdsets, success: true }
-      adsResult = { data: allAdsData, success: true }
-    } else {
+    if (!isDeltaSync) {
       // Full sync: Fetch all entity data from Meta API
       await delay(1000)
       campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
