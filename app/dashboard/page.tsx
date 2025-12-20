@@ -1215,18 +1215,9 @@ export default function DashboardPage() {
   
   const selectedData = useMemo(() =>
     filteredData.filter(row => {
-      // Check if this is an ABO adset (adset has budget, campaign doesn't)
-      const isAbo = (row.adset_daily_budget || row.adset_lifetime_budget) &&
-                    !(row.campaign_daily_budget || row.campaign_lifetime_budget)
-
-      if (isAbo) {
-        // For ABO: include if the specific adset is selected (campaign selection is implicit)
-        const adsetKey = `${row.campaign_name}::${row.adset_name}`
-        return selectedCampaigns.has(adsetKey)
-      } else {
-        // For CBO: include if campaign is selected
-        return selectedCampaigns.has(row.campaign_name)
-      }
+      // Include row if its campaign is selected
+      // For stats, we always want all adsets under a selected campaign
+      return selectedCampaigns.has(row.campaign_name)
     }),
     [filteredData, selectedCampaigns]
   )
@@ -1365,7 +1356,6 @@ export default function DashboardPage() {
   }
 
   const handleSelectAll = () => {
-    // Check if all campaigns are selected (ABO adsets don't affect this check)
     const allCampaignsSelected = visibleCampaigns.every(c => selectedCampaigns.has(c))
 
     if (allCampaignsSelected) {
@@ -1373,15 +1363,7 @@ export default function DashboardPage() {
       setSelectedCampaigns(new Set())
     } else {
       userManuallyDeselected.current = false
-      // Select all campaigns and their ABO adsets
-      const newSelected = new Set<string>(visibleCampaigns)
-      visibleCampaigns.forEach(campaignName => {
-        const aboAdsets = campaignAboAdsets.get(campaignName)
-        if (aboAdsets) {
-          aboAdsets.forEach(adsetKey => newSelected.add(adsetKey))
-        }
-      })
-      setSelectedCampaigns(newSelected)
+      setSelectedCampaigns(new Set(visibleCampaigns))
     }
   }
 

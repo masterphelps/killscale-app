@@ -519,58 +519,49 @@ export async function POST(request: NextRequest) {
       return campaignMap[insight.campaign_id] !== undefined
     })
 
-    // FALLBACK: Build hierarchy and maps from insights if entity calls returned empty
-    // Only use fallback if endpoint SUCCEEDED but returned empty (truly no entities)
-    // If endpoint FAILED, we use UNKNOWN status to indicate unreliable data
-    // Use activeInsights (already filtered for deleted campaigns)
-    if (allAdsets.length === 0 || allAdsData.length === 0) {
-      console.log('Building hierarchy from insights data as fallback', {
-        adsetsFetchFailed,
-        adsFetchFailed
-      })
+    // Ensure all entities from insights exist in maps (fill gaps from entity fetches)
+    // This handles cases where:
+    // 1. Entity endpoints returned empty/failed
+    // 2. Entity endpoints returned partial data (some adsets missing)
+    // 3. New entities were created after entity fetch but before insights fetch
+    const fallbackAdsetStatus = adsetsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
+    const fallbackAdStatus = adsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
 
-      // Determine what status to use for fallback entities
-      // If fetch succeeded but returned empty: entity has insights so probably ACTIVE
-      // If fetch failed: we don't know, use UNKNOWN
-      const fallbackAdsetStatus = adsetsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
-      const fallbackAdStatus = adsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
-
-      activeInsights.forEach((insight: MetaInsight) => {
-        // Build adset map from insights
-        if (insight.adset_id && !adsetMap[insight.adset_id]) {
-          adsetMap[insight.adset_id] = {
-            name: insight.adset_name,
-            campaign_id: insight.campaign_id,
-            status: fallbackAdsetStatus,
-            daily_budget: null, // Can't get budget from insights
-            lifetime_budget: null,
-          }
+    activeInsights.forEach((insight: MetaInsight) => {
+      // Ensure adset exists in map (use fallback if missing)
+      if (insight.adset_id && !adsetMap[insight.adset_id]) {
+        adsetMap[insight.adset_id] = {
+          name: insight.adset_name,
+          campaign_id: insight.campaign_id,
+          status: fallbackAdsetStatus,
+          daily_budget: null, // Can't get budget from insights
+          lifetime_budget: null,
         }
-        // Build campaign map from insights if missing
-        if (insight.campaign_id && !campaignMap[insight.campaign_id]) {
-          campaignMap[insight.campaign_id] = {
-            name: insight.campaign_name,
-            status: 'ACTIVE', // Campaigns endpoint rarely fails, assume active
-            daily_budget: null,
-            lifetime_budget: null,
-          }
+      }
+      // Ensure campaign exists in map (use fallback if missing)
+      if (insight.campaign_id && !campaignMap[insight.campaign_id]) {
+        campaignMap[insight.campaign_id] = {
+          name: insight.campaign_name,
+          status: 'ACTIVE',
+          daily_budget: null,
+          lifetime_budget: null,
         }
-        // Build hierarchy cache from insights
-        if (!adHierarchyCache[insight.ad_id]) {
-          adHierarchyCache[insight.ad_id] = {
-            campaign_name: insight.campaign_name,
-            campaign_id: insight.campaign_id,
-            adset_name: insight.adset_name,
-            adset_id: insight.adset_id,
-            ad_name: insight.ad_name,
-          }
+      }
+      // Build hierarchy cache from insights
+      if (!adHierarchyCache[insight.ad_id]) {
+        adHierarchyCache[insight.ad_id] = {
+          campaign_name: insight.campaign_name,
+          campaign_id: insight.campaign_id,
+          adset_name: insight.adset_name,
+          adset_id: insight.adset_id,
+          ad_name: insight.ad_name,
         }
-        // Set ad status - use fallback status based on whether fetch failed
-        if (!adStatusMap[insight.ad_id]) {
-          adStatusMap[insight.ad_id] = fallbackAdStatus
-        }
-      })
-    }
+      }
+      // Set ad status if not already known
+      if (!adStatusMap[insight.ad_id]) {
+        adStatusMap[insight.ad_id] = fallbackAdStatus
+      }
+    })
     
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
