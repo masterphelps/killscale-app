@@ -464,26 +464,33 @@ export async function POST(request: NextRequest) {
     }
 
     // Build maps
+    // IMPORTANT: Meta API returns budgets in cents, but DB stores in dollars
+    // For delta sync, data comes from DB (already in dollars) - don't divide by 100
+    // For full sync, data comes from Meta API (in cents) - divide by 100
     const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adStatusMap: Record<string, string> = {}
 
     allCampaigns.forEach((c) => {
+      // For delta sync, budgets are already in dollars from DB
+      // For full sync from Meta API, budgets are in cents
+      const budgetDivisor = isDeltaSync ? 1 : 100
       campaignMap[c.id] = {
         name: c.name,
         status: c.effective_status,
-        daily_budget: c.daily_budget ? parseInt(c.daily_budget) / 100 : null,
-        lifetime_budget: c.lifetime_budget ? parseInt(c.lifetime_budget) / 100 : null,
+        daily_budget: c.daily_budget ? parseInt(c.daily_budget) / budgetDivisor : null,
+        lifetime_budget: c.lifetime_budget ? parseInt(c.lifetime_budget) / budgetDivisor : null,
       }
     })
 
     allAdsets.forEach((a) => {
+      const budgetDivisor = isDeltaSync ? 1 : 100
       adsetMap[a.id] = {
         name: a.name,
         campaign_id: a.campaign_id,
         status: a.effective_status,
-        daily_budget: a.daily_budget ? parseInt(a.daily_budget) / 100 : null,
-        lifetime_budget: a.lifetime_budget ? parseInt(a.lifetime_budget) / 100 : null,
+        daily_budget: a.daily_budget ? parseInt(a.daily_budget) / budgetDivisor : null,
+        lifetime_budget: a.lifetime_budget ? parseInt(a.lifetime_budget) / budgetDivisor : null,
       }
     })
 
