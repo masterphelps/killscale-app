@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
       adsetName,
       campaignId,
       campaignName,
+      creativeId,
       spend,
       revenue,
       roas
@@ -56,6 +57,47 @@ export async function POST(request: NextRequest) {
 
     if (!userId || !adAccountId || !adId || !adName) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Check if this creative is already starred (by a different ad)
+    // Also check by ad name as a fallback (same creative may have different IDs)
+    if (creativeId) {
+      const { data: existingCreative } = await supabase
+        .from('starred_ads')
+        .select('ad_id, ad_name')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .eq('creative_id', creativeId)
+        .neq('ad_id', adId)
+        .single()
+
+      if (existingCreative) {
+        return NextResponse.json({
+          error: 'This creative is already starred',
+          duplicateAdId: existingCreative.ad_id,
+          duplicateAdName: existingCreative.ad_name
+        }, { status: 409 })
+      }
+    }
+
+    // Also check for duplicate ad names (same creative content, different ad IDs)
+    if (adName) {
+      const { data: existingName } = await supabase
+        .from('starred_ads')
+        .select('ad_id, ad_name')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .eq('ad_name', adName)
+        .neq('ad_id', adId)
+        .single()
+
+      if (existingName) {
+        return NextResponse.json({
+          error: 'An ad with this name is already starred',
+          duplicateAdId: existingName.ad_id,
+          duplicateAdName: existingName.ad_name
+        }, { status: 409 })
+      }
     }
 
     // Upsert to handle re-starring (updates metrics if already starred)
@@ -70,6 +112,7 @@ export async function POST(request: NextRequest) {
         adset_name: adsetName || '',
         campaign_id: campaignId || '',
         campaign_name: campaignName || '',
+        creative_id: creativeId || null,
         spend: spend || 0,
         revenue: revenue || 0,
         roas: roas || 0,

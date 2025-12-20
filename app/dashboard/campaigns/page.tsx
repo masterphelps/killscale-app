@@ -139,6 +139,8 @@ export default function LaunchPage() {
   const [loadingAdSets, setLoadingAdSets] = useState<Set<string>>(new Set())
   const [loadingAds, setLoadingAds] = useState<Set<string>>(new Set())
   const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
+  // Ref to track creatives we've already loaded or started loading (avoids stale closures)
+  const loadedCreativesRef = useRef<Set<string>>(new Set())
 
   // UTM tracking status
   const [utmStatus, setUtmStatus] = useState<Record<string, boolean>>({})
@@ -227,6 +229,7 @@ export default function LaunchPage() {
       setAdSetsData({})
       setAdsData({})
       setCreativesData({})
+      loadedCreativesRef.current = new Set() // Clear loaded creatives ref
       setCampaigns([])
       setSelectedItems(new Map()) // Clear selection on account change
 
@@ -619,8 +622,9 @@ export default function LaunchPage() {
       if (data.ads) {
         setAdsData(prev => ({ ...prev, [adSetId]: data.ads }))
         // Load creatives for ads that have them
+        // Use ref to check if already loaded (avoids stale closures)
         for (const ad of data.ads) {
-          if (ad.creative?.id && !creativesData[ad.creative.id]) {
+          if (ad.creative?.id && !loadedCreativesRef.current.has(ad.creative.id)) {
             loadCreative(ad.creative.id)
           }
         }
@@ -641,9 +645,13 @@ export default function LaunchPage() {
 
   // Load creative details
   const loadCreative = async (creativeId: string) => {
-    if (!user || creativesData[creativeId] || loadingCreatives.has(creativeId)) return
+    // Use ref for immediate check (avoids stale closures)
+    if (!user || loadedCreativesRef.current.has(creativeId)) return
 
+    // Mark as loading immediately using ref
+    loadedCreativesRef.current.add(creativeId)
     setLoadingCreatives(prev => new Set(prev).add(creativeId))
+
     try {
       const res = await fetch(`/api/meta/creative?userId=${user.id}&creativeId=${creativeId}`)
       const data = await res.json()
@@ -652,6 +660,8 @@ export default function LaunchPage() {
       }
     } catch (err) {
       console.error('Failed to load creative:', err)
+      // Remove from ref on error so it can be retried
+      loadedCreativesRef.current.delete(creativeId)
     } finally {
       setLoadingCreatives(prev => {
         const next = new Set(prev)

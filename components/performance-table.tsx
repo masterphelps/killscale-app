@@ -47,6 +47,7 @@ type AdRow = {
   adset_id?: string | null
   ad_name: string
   ad_id?: string | null
+  creative_id?: string | null  // For star deduplication
   impressions: number
   clicks: number
   spend: number
@@ -116,6 +117,7 @@ type PerformanceTableProps = {
   externalSortDirection?: SortDirection
   // Starred ads for Performance Set
   starredAdIds?: Set<string>
+  starredCreativeIds?: Set<string>  // For showing if a creative is already starred
   onStarAd?: (ad: {
     adId: string
     adName: string
@@ -123,6 +125,7 @@ type PerformanceTableProps = {
     adsetName: string
     campaignId: string
     campaignName: string
+    creativeId?: string  // Optional - for deduplication
     spend: number
     revenue: number
     roas: number
@@ -161,6 +164,8 @@ type HierarchyNode = {
   adsetName?: string
   campaignId?: string | null
   campaignName?: string
+  // Creative info (for star deduplication)
+  creativeId?: string | null
 }
 
 const formatPercent = (value: number) => {
@@ -328,7 +333,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         adsetId: adset.id,
         adsetName: adset.name,
         campaignId: campaign.id,
-        campaignName: campaign.name
+        campaignName: campaign.name,
+        // Creative info for star deduplication
+        creativeId: row.creative_id
       }
       adset.children?.push(ad)
     }
@@ -504,6 +511,7 @@ export function PerformanceTable({
   externalSortField,
   externalSortDirection,
   starredAdIds,
+  starredCreativeIds,
   onStarAd,
   onUnstarAd
 }: PerformanceTableProps) {
@@ -898,6 +906,7 @@ export function PerformanceTable({
                     adsetName: node.adsetName || '',
                     campaignId: node.campaignId || '',
                     campaignName: node.campaignName || '',
+                    creativeId: node.creativeId || undefined,
                     spend: node.spend,
                     revenue: node.revenue,
                     roas: node.roas

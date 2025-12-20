@@ -69,6 +69,7 @@ export type StarredAd = {
   adset_name: string
   campaign_id: string
   campaign_name: string
+  creative_id: string | null  // For deduplication - prevent starring same creative twice
   spend: number
   revenue: number
   roas: number

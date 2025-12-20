@@ -118,6 +118,7 @@ type AdData = {
   name: string
   adset_id: string
   effective_status: string
+  creative?: { id: string }
 }
 
 // Map our UI presets to valid Meta API date_preset values
@@ -313,7 +314,7 @@ export async function POST(request: NextRequest) {
 
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
-    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
+    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status,creative{id}')
     adsUrl.searchParams.set('limit', '1000')
 
     // SEQUENTIAL FETCH with delays - avoid Meta API rate limits
@@ -395,11 +396,12 @@ export async function POST(request: NextRequest) {
 
     if (!isDeltaSync) {
       // Full sync: Fetch all entity data from Meta API
-      await delay(1000)
+      // Increased delays to avoid rate limits (creative{id} field adds overhead)
+      await delay(2000)
       campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
-      await delay(1000)
+      await delay(2000)
       adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
-      await delay(1000)
+      await delay(2000)
       adsResult = await fetchAllPages<AdData>(adsUrl.toString())
 
       allCampaigns = campaignsResult.data
@@ -480,6 +482,7 @@ export async function POST(request: NextRequest) {
     const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adStatusMap: Record<string, string> = {}
+    const adCreativeMap: Record<string, string | null> = {}  // ad_id -> creative_id
 
     allCampaigns.forEach((c) => {
       // For delta sync, budgets are already in dollars from DB
@@ -506,6 +509,7 @@ export async function POST(request: NextRequest) {
 
     allAdsData.forEach((ad) => {
       adStatusMap[ad.id] = ad.effective_status
+      adCreativeMap[ad.id] = ad.creative?.id || null
       // Build hierarchy cache from entity data
       if (!adHierarchyCache[ad.id] && ad.adset_id) {
         const adset = adsetMap[ad.adset_id]
@@ -691,6 +695,7 @@ export async function POST(request: NextRequest) {
         campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
         adset_daily_budget: adset?.daily_budget ?? null,
         adset_lifetime_budget: adset?.lifetime_budget ?? null,
+        creative_id: adCreativeMap[insight.ad_id] || null,
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,
@@ -739,6 +744,7 @@ export async function POST(request: NextRequest) {
           campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
           adset_daily_budget: adset?.daily_budget ?? null,
           adset_lifetime_budget: adset?.lifetime_budget ?? null,
+          creative_id: adCreativeMap[adId] || null,
           impressions: 0,
           clicks: 0,
           spend: 0,

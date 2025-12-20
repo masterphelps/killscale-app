@@ -252,6 +252,11 @@ export default function DashboardPage() {
     return new Set(starredAds.map(ad => ad.ad_id))
   }, [starredAds])
 
+  // Compute starred creative IDs for deduplication check
+  const starredCreativeIds = useMemo(() => {
+    return new Set(starredAds.filter(ad => ad.creative_id).map(ad => ad.creative_id!))
+  }, [starredAds])
+
   // Load starred ads when account changes
   const loadStarredAds = async (accountId: string) => {
     if (!user?.id) return
@@ -274,6 +279,7 @@ export default function DashboardPage() {
     adsetName: string
     campaignId: string
     campaignName: string
+    creativeId?: string  // Optional - for deduplication
     spend: number
     revenue: number
     roas: number
@@ -292,6 +298,7 @@ export default function DashboardPage() {
           adsetName: ad.adsetName,
           campaignId: ad.campaignId,
           campaignName: ad.campaignName,
+          creativeId: ad.creativeId,
           spend: ad.spend,
           revenue: ad.revenue,
           roas: ad.roas
@@ -300,6 +307,10 @@ export default function DashboardPage() {
       if (response.ok) {
         const data = await response.json()
         setStarredAds(prev => [...prev, data.starred])
+      } else if (response.status === 409) {
+        // Creative already starred by another ad
+        const data = await response.json()
+        alert(`This creative is already starred from "${data.duplicateAdName}". Each creative can only be starred once.`)
       }
     } catch (error) {
       console.error('Failed to star ad:', error)
@@ -1877,6 +1888,7 @@ export default function DashboardPage() {
             externalSortField={sortField}
             externalSortDirection={sortDirection}
             starredAdIds={starredAdIds}
+            starredCreativeIds={starredCreativeIds}
             onStarAd={handleStarAd}
             onUnstarAd={handleUnstarAd}
           />
