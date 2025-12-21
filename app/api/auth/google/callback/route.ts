@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
     const customersData = await customersResponse.json()
 
     if (customersData.error) {
-      console.error('Failed to list customers:', customersData.error)
+      console.error('Failed to list customers:', JSON.stringify(customersData.error, null, 2))
       return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=no_google_ads_accounts`)
     }
 
