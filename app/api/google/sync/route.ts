@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getValidGoogleToken, getGoogleConnection, normalizeCustomerId, updateLastSyncAt } from '@/lib/google/auth'
+import { getValidGoogleToken, normalizeCustomerId, updateLastSyncAt } from '@/lib/google/auth'
 
 const GOOGLE_ADS_DEVELOPER_TOKEN = process.env.GOOGLE_ADS_DEVELOPER_TOKEN!
 
@@ -9,9 +9,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// GAQL query to fetch ad performance data
-// Note: campaign_budget is not compatible with ad_group_ad resource
-const buildGaqlQuery = (startDate: string, endDate: string) => `
+// GAQL query to fetch ad STRUCTURE (all entities, no date filter)
+// This returns ALL campaigns/ad_groups/ads including paused ones
+const STRUCTURE_QUERY = `
 SELECT
   campaign.id,
   campaign.name,
@@ -24,7 +24,20 @@ SELECT
   ad_group_ad.ad.id,
   ad_group_ad.ad.name,
   ad_group_ad.status,
-  ad_group_ad.ad.type,
+  ad_group_ad.ad.type
+FROM ad_group_ad
+WHERE campaign.status != 'REMOVED'
+  AND ad_group.status != 'REMOVED'
+  AND ad_group_ad.status != 'REMOVED'
+`
+
+// GAQL query to fetch METRICS (with date filter)
+// Only returns entities with activity in the date range
+const buildMetricsQuery = (startDate: string, endDate: string) => `
+SELECT
+  campaign.id,
+  ad_group.id,
+  ad_group_ad.ad.id,
   metrics.impressions,
   metrics.clicks,
   metrics.cost_micros,
@@ -50,7 +63,8 @@ function normalizeStatus(googleStatus: string): string {
   }
 }
 
-interface GoogleAdRow {
+// Structure row - from STRUCTURE_QUERY (no metrics)
+interface StructureRow {
   campaign: {
     id: string
     name: string
@@ -71,6 +85,13 @@ interface GoogleAdRow {
     }
     status: string
   }
+}
+
+// Metrics row - from buildMetricsQuery (with date segment)
+interface MetricsRow {
+  campaign: { id: string }
+  adGroup: { id: string }
+  adGroupAd: { ad: { id: string } }
   metrics: {
     impressions: string
     clicks: string
@@ -81,6 +102,42 @@ interface GoogleAdRow {
   segments: {
     date: string
   }
+}
+
+// Helper to execute a GAQL query
+async function executeGaqlQuery<T>(
+  query: string,
+  accessToken: string,
+  customerId: string
+): Promise<{ data: T[], error?: string }> {
+  const response = await fetch(
+    `https://googleads.googleapis.com/v22/customers/${customerId}/googleAds:searchStream`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
+        'login-customer-id': customerId,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    console.error('Google Ads API error:', JSON.stringify(errorData, null, 2))
+    return { data: [], error: JSON.stringify(errorData) }
+  }
+
+  const data = await response.json()
+  const allRows: T[] = []
+  for (const batch of data) {
+    if (batch.results) {
+      allRows.push(...batch.results)
+    }
+  }
+  return { data: allRows }
 }
 
 export async function POST(request: NextRequest) {
@@ -111,105 +168,148 @@ export async function POST(request: NextRequest) {
     // Normalize customer ID for API calls (remove hyphens)
     const normalizedCustomerId = normalizeCustomerId(customerId)
 
-    // Execute GAQL query via searchStream
-    const query = buildGaqlQuery(start, end)
+    // ============================================
+    // TWO-STEP APPROACH (mirrors Meta sync)
+    // 1. Fetch STRUCTURE - all entities including paused
+    // 2. Fetch METRICS - only entities with activity in date range
+    // 3. Merge - combine structure with metrics
+    // ============================================
 
-    const response = await fetch(
-      `https://googleads.googleapis.com/v22/customers/${normalizedCustomerId}/googleAds:searchStream`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
-          'login-customer-id': normalizedCustomerId,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query }),
-      }
+    console.log('Google sync: Fetching structure (all entities)...')
+    const structureResult = await executeGaqlQuery<StructureRow>(
+      STRUCTURE_QUERY,
+      accessToken,
+      normalizedCustomerId
     )
 
-    if (!response.ok) {
-      const errorData = await response.json()
-      console.error('Google Ads API error:', JSON.stringify(errorData, null, 2))
+    if (structureResult.error) {
       return NextResponse.json(
-        { error: 'Failed to fetch data from Google Ads', details: errorData },
-        { status: response.status }
+        { error: 'Failed to fetch structure from Google Ads', details: structureResult.error },
+        { status: 500 }
       )
     }
 
-    const data = await response.json()
+    console.log(`Google sync: Found ${structureResult.data.length} ad entities`)
 
-    // searchStream returns an array of result batches
-    const allRows: GoogleAdRow[] = []
-    for (const batch of data) {
-      if (batch.results) {
-        allRows.push(...batch.results)
-      }
-    }
-
-    if (allRows.length === 0) {
-      // No data for this period - update sync time and return
+    if (structureResult.data.length === 0) {
+      // No ads in account at all
       await updateLastSyncAt(userId)
       return NextResponse.json({
         success: true,
-        message: 'No ad data found for the selected period',
+        message: 'No ads found in this account',
         rowsProcessed: 0,
       })
     }
 
-    // Transform and prepare rows for upsert
-    const transformedRows = allRows.map((row) => {
-      const costMicros = parseInt(row.metrics.costMicros || '0', 10)
-      const spend = costMicros / 1_000_000
-      const conversionsValue = parseFloat(row.metrics.conversionsValue || '0')
-      const conversions = parseFloat(row.metrics.conversions || '0')
-      const impressions = parseInt(row.metrics.impressions || '0', 10)
-      const clicks = parseInt(row.metrics.clicks || '0', 10)
-      // Budget requires separate query - set to 0 for now
-      const budgetMicros = 0
+    console.log(`Google sync: Fetching metrics for ${start} to ${end}...`)
+    const metricsResult = await executeGaqlQuery<MetricsRow>(
+      buildMetricsQuery(start, end),
+      accessToken,
+      normalizedCustomerId
+    )
 
-      // Calculate metrics
-      const roas = spend > 0 ? conversionsValue / spend : 0
-      const cpc = clicks > 0 ? spend / clicks : 0
-      const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0
-      const ctr = impressions > 0 ? clicks / impressions : 0
+    console.log(`Google sync: Found ${metricsResult.data.length} metric rows`)
 
-      return {
+    // Build structure map keyed by ad_id
+    // This gives us campaign/ad_group/ad info for ALL entities
+    const structureMap = new Map<string, StructureRow>()
+    for (const row of structureResult.data) {
+      const adId = row.adGroupAd.ad.id
+      // Keep the first occurrence (dedupe)
+      if (!structureMap.has(adId)) {
+        structureMap.set(adId, row)
+      }
+    }
+
+    // Aggregate metrics by ad_id (sum across all dates in range)
+    // We store one row per ad with aggregated metrics for the date range
+    const metricsMap = new Map<string, {
+      impressions: number
+      clicks: number
+      spend: number
+      conversions: number
+      conversionsValue: number
+    }>()
+
+    for (const row of metricsResult.data) {
+      const adId = row.adGroupAd.ad.id
+      const existing = metricsMap.get(adId) || {
+        impressions: 0,
+        clicks: 0,
+        spend: 0,
+        conversions: 0,
+        conversionsValue: 0,
+      }
+
+      metricsMap.set(adId, {
+        impressions: existing.impressions + parseInt(row.metrics.impressions || '0', 10),
+        clicks: existing.clicks + parseInt(row.metrics.clicks || '0', 10),
+        spend: existing.spend + (parseInt(row.metrics.costMicros || '0', 10) / 1_000_000),
+        conversions: existing.conversions + parseFloat(row.metrics.conversions || '0'),
+        conversionsValue: existing.conversionsValue + parseFloat(row.metrics.conversionsValue || '0'),
+      })
+    }
+
+    // Merge structure + metrics into final rows
+    // Every ad in structureMap gets a row, with 0 metrics if not in metricsMap
+    const transformedRows: Array<Record<string, unknown>> = []
+    const adsWithMetrics = new Set<string>()
+
+    for (const [adId, structure] of structureMap) {
+      const metrics = metricsMap.get(adId) || {
+        impressions: 0,
+        clicks: 0,
+        spend: 0,
+        conversions: 0,
+        conversionsValue: 0,
+      }
+
+      if (metricsMap.has(adId)) {
+        adsWithMetrics.add(adId)
+      }
+
+      // Calculate derived metrics
+      const roas = metrics.spend > 0 ? metrics.conversionsValue / metrics.spend : 0
+      const cpc = metrics.clicks > 0 ? metrics.spend / metrics.clicks : 0
+      const cpm = metrics.impressions > 0 ? (metrics.spend / metrics.impressions) * 1000 : 0
+      const ctr = metrics.impressions > 0 ? metrics.clicks / metrics.impressions : 0
+
+      transformedRows.push({
         user_id: userId,
         customer_id: customerId, // Store with hyphens for display
-        date_start: row.segments.date,
-        date_end: row.segments.date,
+        date_start: start,
+        date_end: end,
 
         // Campaign
-        campaign_name: row.campaign.name,
-        campaign_id: row.campaign.id,
-        campaign_status: normalizeStatus(row.campaign.status),
-        campaign_type: row.campaign.advertisingChannelType,
-        campaign_budget: budgetMicros / 1_000_000,
+        campaign_name: structure.campaign.name,
+        campaign_id: structure.campaign.id,
+        campaign_status: normalizeStatus(structure.campaign.status),
+        campaign_type: structure.campaign.advertisingChannelType,
+        campaign_budget: 0, // TODO: Add budget query
 
         // Ad Group
-        ad_group_name: row.adGroup.name,
-        ad_group_id: row.adGroup.id,
-        ad_group_status: normalizeStatus(row.adGroup.status),
-        ad_group_type: row.adGroup.type,
+        ad_group_name: structure.adGroup.name,
+        ad_group_id: structure.adGroup.id,
+        ad_group_status: normalizeStatus(structure.adGroup.status),
+        ad_group_type: structure.adGroup.type,
 
         // Ad
-        ad_name: row.adGroupAd.ad.name || `Ad ${row.adGroupAd.ad.id}`,
-        ad_id: row.adGroupAd.ad.id,
-        ad_status: normalizeStatus(row.adGroupAd.status),
-        ad_type: row.adGroupAd.ad.type,
+        ad_name: structure.adGroupAd.ad.name || `Ad ${adId}`,
+        ad_id: adId,
+        ad_status: normalizeStatus(structure.adGroupAd.status),
+        ad_type: structure.adGroupAd.ad.type,
 
         // Metrics
-        impressions,
-        clicks,
-        spend,
-        conversions,
-        conversions_value: conversionsValue,
+        impressions: metrics.impressions,
+        clicks: metrics.clicks,
+        spend: parseFloat(metrics.spend.toFixed(2)),
+        conversions: metrics.conversions,
+        conversions_value: metrics.conversionsValue,
 
         // Results (for unified verdict logic)
-        results: conversions,
-        result_value: conversionsValue > 0 ? conversionsValue : null,
-        result_type: conversionsValue > 0 ? 'purchase' : 'conversion',
+        results: metrics.conversions,
+        result_value: metrics.conversionsValue > 0 ? metrics.conversionsValue : null,
+        result_type: metrics.conversionsValue > 0 ? 'purchase' : 'conversion',
 
         // Calculated
         roas: parseFloat(roas.toFixed(2)),
@@ -218,10 +318,12 @@ export async function POST(request: NextRequest) {
         ctr: parseFloat(ctr.toFixed(4)),
 
         synced_at: new Date().toISOString(),
-      }
-    })
+      })
+    }
 
-    // Delete existing data for this customer and date range first
+    console.log(`Google sync: ${transformedRows.length} total ads, ${adsWithMetrics.size} with activity`)
+
+    // Delete existing data for this customer and date range
     await supabase
       .from('google_ad_data')
       .delete()
@@ -251,6 +353,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       rowsProcessed: transformedRows.length,
+      adsWithActivity: adsWithMetrics.size,
+      adsWithoutActivity: transformedRows.length - adsWithMetrics.size,
       dateRange: { start, end },
     })
 
