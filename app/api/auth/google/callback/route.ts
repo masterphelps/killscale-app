@@ -107,19 +107,25 @@ export async function GET(request: NextRequest) {
     // Extract customer IDs from resource names (format: customers/1234567890)
     const resourceNames: string[] = customersData.resourceNames || []
 
-    // Fetch details for each customer
+    // Fetch details for each customer using GAQL query
     const customerDetails = await Promise.all(
       resourceNames.map(async (resourceName: string) => {
         const customerId = resourceName.replace('customers/', '')
 
         try {
+          // Use GAQL to query customer details
+          const query = `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager, customer.test_account FROM customer LIMIT 1`
+
           const detailResponse = await fetch(
-            `https://googleads.googleapis.com/v22/customers/${customerId}`,
+            `https://googleads.googleapis.com/v22/customers/${customerId}/googleAds:search`,
             {
+              method: 'POST',
               headers: {
                 Authorization: `Bearer ${access_token}`,
                 'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
+                'Content-Type': 'application/json',
               },
+              body: JSON.stringify({ query }),
             }
           )
 
@@ -134,17 +140,24 @@ export async function GET(request: NextRequest) {
           }
 
           if (detailData.error) {
-            // This customer might be a manager account or inaccessible
+            // This customer might be inaccessible
             console.log(`Skipping customer ${customerId}:`, detailData.error.message)
+            return null
+          }
+
+          // Extract customer data from GAQL response
+          const customerData = detailData.results?.[0]?.customer
+          if (!customerData) {
+            console.log(`No customer data for ${customerId}`)
             return null
           }
 
           return {
             id: formatCustomerId(customerId),
-            name: detailData.descriptiveName || `Account ${formatCustomerId(customerId)}`,
-            currency: detailData.currencyCode || 'USD',
-            manager: detailData.manager || false,
-            testAccount: detailData.testAccount || false,
+            name: customerData.descriptiveName || `Account ${formatCustomerId(customerId)}`,
+            currency: customerData.currencyCode || 'USD',
+            manager: customerData.manager || false,
+            testAccount: customerData.testAccount || false,
           }
         } catch (err) {
           console.error(`Error fetching customer ${customerId}:`, err)
