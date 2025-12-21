@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
     const transformedRows: Array<Record<string, unknown>> = []
     const adsWithMetrics = new Set<string>()
 
-    for (const [adId, structure] of structureMap) {
+    for (const [adId, structure] of Array.from(structureMap.entries())) {
       const metrics = metricsMap.get(adId) || {
         impressions: 0,
         clicks: 0,
