@@ -49,6 +49,16 @@ WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
   AND campaign.status != 'REMOVED'
 `
 
+// GAQL query to fetch CAMPAIGN BUDGETS
+// campaign_budget is only available from campaign resource, not ad_group_ad
+const BUDGET_QUERY = `
+SELECT
+  campaign.id,
+  campaign_budget.amount_micros
+FROM campaign
+WHERE campaign.status != 'REMOVED'
+`
+
 // Normalize Google status to match our display conventions
 function normalizeStatus(googleStatus: string): string {
   switch (googleStatus) {
@@ -101,6 +111,14 @@ interface MetricsRow {
   }
   segments: {
     date: string
+  }
+}
+
+// Budget row - from BUDGET_QUERY
+interface BudgetRow {
+  campaign: { id: string }
+  campaignBudget: {
+    amountMicros: string
   }
 }
 
@@ -210,6 +228,24 @@ export async function POST(request: NextRequest) {
 
     console.log(`Google sync: Found ${metricsResult.data.length} metric rows`)
 
+    // Step 3: Fetch campaign budgets
+    console.log('Google sync: Fetching campaign budgets...')
+    const budgetResult = await executeGaqlQuery<BudgetRow>(
+      BUDGET_QUERY,
+      accessToken,
+      normalizedCustomerId
+    )
+    console.log(`Google sync: Found ${budgetResult.data.length} budget rows`)
+
+    // Build budget map keyed by campaign_id
+    const budgetMap = new Map<string, number>()
+    for (const row of budgetResult.data) {
+      const campaignId = row.campaign.id
+      // Google returns amount in micros (1/1,000,000)
+      const budgetAmount = parseInt(row.campaignBudget?.amountMicros || '0', 10) / 1_000_000
+      budgetMap.set(campaignId, budgetAmount)
+    }
+
     // Build structure map keyed by ad_id
     // This gives us campaign/ad_group/ad info for ALL entities
     const structureMap = new Map<string, StructureRow>()
@@ -285,7 +321,7 @@ export async function POST(request: NextRequest) {
         campaign_id: structure.campaign.id,
         campaign_status: normalizeStatus(structure.campaign.status),
         campaign_type: structure.campaign.advertisingChannelType,
-        campaign_budget: 0, // TODO: Add budget query
+        campaign_budget: budgetMap.get(structure.campaign.id) || 0,
 
         // Ad Group
         ad_group_name: structure.adGroup.name,
