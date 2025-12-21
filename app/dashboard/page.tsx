@@ -1368,6 +1368,10 @@ export default function DashboardPage() {
     campaign_lifetime_budget: row.campaign_lifetime_budget,
     adset_daily_budget: row.adset_daily_budget,
     adset_lifetime_budget: row.adset_lifetime_budget,
+    // Platform and account info for Google Ads integration
+    _platform: row._platform,
+    ad_account_id: row.ad_account_id,
+    campaign_budget_resource_name: row.campaign_budget_resource_name,
   }))
 
   // Build a map of campaign -> ABO adsets for selection cascading
