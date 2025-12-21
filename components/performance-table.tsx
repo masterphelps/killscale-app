@@ -69,7 +69,7 @@ const PlatformBadge = ({ platform }: { platform?: 'meta' | 'google' }) => {
 }
 
 type AdRow = {
-  ad_account_id?: string  // Meta ad_account_id or Google customer_id
+  ad_account_id?: string | null  // Meta ad_account_id or Google customer_id
   campaign_name: string
   campaign_id?: string | null
   adset_name: string
@@ -124,9 +124,9 @@ type PerformanceTableProps = {
   onSelectAll?: () => void
   allSelected?: boolean
   someSelected?: boolean
-  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED', platform?: 'meta' | 'google', accountId?: string) => void
+  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED', platform?: 'meta' | 'google', accountId?: string | null) => void
   canManageAds?: boolean
-  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number, platform?: 'meta' | 'google', accountId?: string, budgetResourceName?: string) => Promise<void>
+  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number, platform?: 'meta' | 'google', accountId?: string | null, budgetResourceName?: string) => Promise<void>
   // For deep-linking from alerts
   highlightEntity?: {
     type: 'campaign' | 'adset' | 'ad'
@@ -194,7 +194,7 @@ type HierarchyNode = {
   lifetimeBudget?: number | null
   // Platform (for Google Ads integration)
   platform?: 'meta' | 'google'
-  accountId?: string  // Meta ad_account_id or Google customer_id
+  accountId?: string | null  // Meta ad_account_id or Google customer_id
   budgetResourceName?: string  // Google budget resource name for mutations
   // Parent info (for ads - needed for starring)
   adsetId?: string | null
@@ -596,7 +596,7 @@ export function PerformanceTable({
     currentBudget: number
     currentBudgetType: 'daily' | 'lifetime'
     platform?: 'meta' | 'google'
-    accountId?: string
+    accountId?: string | null
     budgetResourceName?: string  // Google budget resource name
   } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)

@@ -199,7 +199,7 @@ export default function DashboardPage() {
     entityName: string
     action: 'pause' | 'resume'
     platform?: 'meta' | 'google'
-    accountId?: string  // Meta ad_account_id or Google customer_id
+    accountId?: string | null  // Meta ad_account_id or Google customer_id
   } | null>(null)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const [highlightEntity, setHighlightEntity] = useState<{
@@ -1068,7 +1068,7 @@ export default function DashboardPage() {
     entityName: string,
     newStatus: 'ACTIVE' | 'PAUSED',
     platform?: 'meta' | 'google',
-    accountId?: string
+    accountId?: string | null
   ) => {
     setStatusChangeModal({
       isOpen: true,
@@ -1144,7 +1144,7 @@ export default function DashboardPage() {
     budgetType: 'daily' | 'lifetime',
     oldBudget?: number,
     platform?: 'meta' | 'google',
-    accountId?: string,
+    accountId?: string | null,
     budgetResourceName?: string
   ) => {
     if (!user) throw new Error('Not authenticated')
