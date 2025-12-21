@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
 
     // Get list of accessible Google Ads customer IDs
     const customersResponse = await fetch(
-      'https://googleads.googleapis.com/v18/customers:listAccessibleCustomers',
+      'https://googleads.googleapis.com/v19/customers:listAccessibleCustomers',
       {
         headers: {
           Authorization: `Bearer ${access_token}`,
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
 
         try {
           const detailResponse = await fetch(
-            `https://googleads.googleapis.com/v18/customers/${customerId}`,
+            `https://googleads.googleapis.com/v19/customers/${customerId}`,
             {
               headers: {
                 Authorization: `Bearer ${access_token}`,
