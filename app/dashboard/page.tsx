@@ -509,6 +509,8 @@ export default function DashboardPage() {
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
+        // Platform marker for display
+        _platform: 'meta' as const,
       }))
     }
 
@@ -603,6 +605,8 @@ export default function DashboardPage() {
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
+        // Platform marker for display
+        _platform: 'meta' as const,
       }))
     }
 
