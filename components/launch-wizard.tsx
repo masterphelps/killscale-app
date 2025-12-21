@@ -72,17 +72,18 @@ const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {
 
 type Step =
   | 'account'           // Page selection
-  | 'entity-type'       // NEW: Campaign vs Ad Set vs Ad
+  | 'entity-type'       // NEW: Campaign vs Ad Set vs Ad vs Performance Set
   | 'select-campaign'   // NEW: For Ad Set and Ad paths
   | 'select-adset'      // NEW: For Ad path only
+  | 'starred-ads'       // Performance Set path: select starred ads to include
   | 'budget'            // Campaign path only: CBO vs ABO
   | 'abo-options'       // Campaign path only
-  | 'details'           // Campaign path only
+  | 'details'           // Campaign/Performance Set path
   | 'adset-details'     // NEW: Ad Set path
   | 'leadform'          // Campaign/Ad Set paths
-  | 'targeting'         // Campaign/Ad Set paths
-  | 'creatives'         // All paths
-  | 'copy'              // All paths
+  | 'targeting'         // Campaign/Ad Set/Performance Set paths
+  | 'creatives'         // Campaign/Ad Set/Ad paths (NOT Performance Set)
+  | 'copy'              // Campaign/Ad Set/Ad paths (NOT Performance Set)
   | 'review'            // All paths
 
 interface LeadForm {
@@ -154,7 +155,9 @@ interface WizardState {
   adAccountId: string
   pageId: string
   // Entity type selection (new)
-  entityType: 'campaign' | 'adset' | 'ad'
+  entityType: 'campaign' | 'adset' | 'ad' | 'performance-set'
+  // Selected starred ads for performance-set path
+  selectedStarredAds: string[]  // Array of ad IDs
   // Selected campaign for adset/ad paths
   selectedCampaignId: string
   selectedCampaignName: string
@@ -274,13 +277,32 @@ function buildUrlWithUTMs(baseUrl: string): string {
   return `${baseUrl}${separator}${KILLSCALE_UTM_TAGS}`
 }
 
-interface LaunchWizardProps {
-  adAccountId: string  // Passed from context - the currently selected ad account
-  onComplete: () => void
-  onCancel: () => void
+export interface StarredAdForWizard {
+  ad_id: string
+  ad_name: string
+  adset_id: string
+  adset_name: string
+  campaign_id: string
+  campaign_name: string
+  spend: number
+  revenue: number
+  roas: number
 }
 
-export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizardProps) {
+interface PerformanceSetResult {
+  usedAdIds: string[]  // The starred ad IDs that were used to build the Performance Set
+}
+
+interface LaunchWizardProps {
+  adAccountId: string  // Passed from context - the currently selected ad account
+  onComplete: (performanceSetResult?: PerformanceSetResult) => void
+  onCancel: () => void
+  // For Performance Set flow - preselect entity type and pass starred ads
+  initialEntityType?: 'campaign' | 'adset' | 'ad' | 'performance-set'
+  starredAds?: StarredAdForWizard[]
+}
+
+export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityType, starredAds = [] }: LaunchWizardProps) {
   const { user } = useAuth()
   const [step, setStep] = useState<Step>('account') // First step is now just Page selection
   const [loading, setLoading] = useState(true)
@@ -314,8 +336,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
   const [state, setState] = useState<WizardState>({
     adAccountId: adAccountId, // Use the prop from sidebar context
     pageId: '',
-    // Entity type selection (default to campaign for existing behavior)
-    entityType: 'campaign',
+    // Entity type selection (default to campaign, or use initialEntityType for Performance Set flow)
+    entityType: initialEntityType || 'campaign',
+    // Selected starred ads for performance-set path (pre-select all if coming from Performance Set flow)
+    selectedStarredAds: initialEntityType === 'performance-set' ? starredAds.map(ad => ad.ad_id) : [],
     // Selected campaign for adset/ad paths
     selectedCampaignId: '',
     selectedCampaignName: '',
@@ -790,27 +814,32 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
     setSubmitting(true)
     setError(null)
-    setDeploymentPhase('Uploading creatives to Meta...')
 
     try {
-      // First upload any remaining creatives
-      const uploadResult = await uploadCreatives()
-      if (!uploadResult.success) {
-        throw new Error('Failed to upload some creatives')
-      }
-
-      // Use the returned creatives (not state, due to async setState)
-      const creativesWithHashes = uploadResult.creatives.map(c => ({
-        type: c.type,
-        imageHash: c.imageHash,
-        videoId: c.videoId,
-        thumbnailUrl: c.thumbnailUrl,
-        thumbnailHash: c.thumbnailHash,
-        fileName: c.name || c.file?.name || 'Untitled'
-      }))
-
       let res: Response
       let entityLabel: string
+      let creativesWithHashes: { type: string; imageHash?: string; videoId?: string; thumbnailUrl?: string; thumbnailHash?: string; fileName: string }[] = []
+
+      // Performance Set skips creative upload - it reuses existing creatives
+      if (state.entityType !== 'performance-set') {
+        setDeploymentPhase('Uploading creatives to Meta...')
+
+        // First upload any remaining creatives
+        const uploadResult = await uploadCreatives()
+        if (!uploadResult.success) {
+          throw new Error('Failed to upload some creatives')
+        }
+
+        // Use the returned creatives (not state, due to async setState)
+        creativesWithHashes = uploadResult.creatives.map(c => ({
+          type: c.type,
+          imageHash: c.imageHash,
+          videoId: c.videoId,
+          thumbnailUrl: c.thumbnailUrl,
+          thumbnailHash: c.thumbnailHash,
+          fileName: c.name || c.file?.name || 'Untitled'
+        }))
+      }
 
       // Route to correct API based on entity type
       if (state.entityType === 'ad') {
@@ -885,6 +914,67 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
           })
         })
 
+      } else if (state.entityType === 'performance-set') {
+        // Performance Set - CBO campaign from starred ads (reuse existing creatives)
+        setDeploymentPhase('Fetching creatives from starred ads...')
+        entityLabel = 'Performance Set'
+
+        // Get the selected starred ads from the starredAds prop
+        const selectedAds = starredAds.filter(ad => state.selectedStarredAds.includes(ad.ad_id))
+        const adIds = selectedAds.map(ad => ad.ad_id).join(',')
+
+        // Fetch creative IDs from the source ads
+        const creativeRes = await fetch(`/api/meta/ad-creative?adIds=${adIds}&userId=${user.id}`)
+        const creativeData = await creativeRes.json()
+
+        if (!creativeRes.ok || !creativeData.creatives || creativeData.creatives.length === 0) {
+          throw new Error(creativeData.error || 'Failed to fetch creatives from starred ads')
+        }
+
+        // Map creatives to the format expected by create-campaign
+        const existingCreativeIds = creativeData.creatives.map((c: { adId: string; adName: string; creativeId: string }) => ({
+          adId: c.adId,
+          adName: c.adName,
+          creativeId: c.creativeId
+        }))
+
+        setDeploymentPhase('Creating Performance Set...')
+
+        res = await fetch('/api/meta/create-campaign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: state.adAccountId,
+            pageId: state.pageId,
+            budgetType: 'cbo', // Performance Set is always CBO
+            campaignName: state.campaignName || `Performance Set - ${new Date().toLocaleDateString()}`,
+            objective: state.objective,
+            conversionEvent: state.objective === 'conversions' ? state.conversionEvent : undefined,
+            formId: state.objective === 'leads' ? state.selectedFormId : undefined,
+            dailyBudget: state.dailyBudget,
+            specialAdCategory: state.specialAdCategory,
+            locationTarget: state.locationType === 'city'
+              ? {
+                  type: 'city',
+                  key: state.locationKey,
+                  name: state.locationName,
+                  radius: state.locationRadius
+                }
+              : {
+                  type: 'country',
+                  countries: ['US']
+                },
+            // Performance Set specific - reuse existing creatives
+            isPerformanceSet: true,
+            existingCreativeIds,
+            creativeEnhancements: state.creativeEnhancements,
+            targetingMode: state.targetingMode,
+            selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
+            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+          })
+        })
+
       } else {
         // Full campaign creation (existing behavior)
         setDeploymentPhase('Creating campaign, ad set, and ads...')
@@ -939,7 +1029,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         throw new Error(data.error || `Failed to create ${entityLabel}`)
       }
 
-      onComplete()
+      // Pass Performance Set result if applicable
+      if (state.entityType === 'performance-set') {
+        onComplete({ usedAdIds: state.selectedStarredAds })
+      } else {
+        onComplete()
+      }
     } catch (err) {
       console.error('Submit error:', err)
       setError(err instanceof Error ? err.message : 'Failed to create')
@@ -959,8 +1054,15 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         if (state.entityType === 'campaign') {
           return 'budget'
         }
+        if (state.entityType === 'performance-set') {
+          return 'starred-ads'
+        }
         // Both adset and ad paths go to select-campaign
         return 'select-campaign'
+
+      case 'starred-ads':
+        // Performance Set path: go to details (campaign name, objective)
+        return 'details'
 
       case 'select-campaign':
         if (state.entityType === 'adset') {
@@ -983,6 +1085,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'abo-options':
         return 'details'
       case 'details':
+        if (state.entityType === 'performance-set') {
+          // Performance Set: skip leadform, go to targeting (always build fresh)
+          return 'targeting'
+        }
         return state.objective === 'leads' ? 'leadform' : 'targeting'
 
       // Shared steps
@@ -992,6 +1098,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         }
         return 'targeting'
       case 'targeting':
+        if (state.entityType === 'performance-set') {
+          // Performance Set: skip creatives and copy, go straight to review
+          return 'review'
+        }
         return 'creatives'
       case 'creatives':
         return 'copy'
@@ -1009,6 +1119,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'entity-type':
         return 'account'
 
+      case 'starred-ads':
+        return 'entity-type'
+
       case 'select-campaign':
         return 'entity-type'
       case 'select-adset':
@@ -1023,6 +1136,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'abo-options':
         return 'budget'
       case 'details':
+        if (state.entityType === 'performance-set') {
+          return 'starred-ads'
+        }
         return state.budgetType === 'abo' ? 'abo-options' : 'budget'
 
       // Shared steps with branching
@@ -1031,6 +1147,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
         if (state.entityType === 'adset') return 'adset-details'
         return 'select-adset' // Ad path shouldn't reach leadform, but fallback
       case 'targeting':
+        if (state.entityType === 'performance-set') {
+          return 'details'
+        }
         if (state.entityType === 'campaign') {
           return state.objective === 'leads' ? 'leadform' : 'details'
         }
@@ -1042,6 +1161,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
       case 'copy':
         return 'creatives'
       case 'review':
+        if (state.entityType === 'performance-set') {
+          return 'targeting' // Performance Set skips creatives and copy
+        }
         return 'copy'
     }
   }
@@ -1053,6 +1175,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
 
       case 'entity-type':
         return !!state.entityType
+
+      case 'starred-ads':
+        return state.selectedStarredAds.length > 0
 
       case 'select-campaign':
         return !!state.selectedCampaignId
@@ -1227,6 +1352,38 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                 <span>✓ Fastest option</span>
               </div>
             </button>
+
+            <button
+              onClick={() => setState(s => ({ ...s, entityType: 'performance-set' }))}
+              className={cn(
+                "w-full p-5 rounded-xl border text-left transition-all",
+                state.entityType === 'performance-set'
+                  ? "border-yellow-500 bg-yellow-500/10"
+                  : "border-border hover:border-zinc-600",
+                starredAds.length === 0 && "opacity-50 cursor-not-allowed"
+              )}
+              disabled={starredAds.length === 0}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <Star className="w-5 h-5 text-yellow-500" />
+                <span className="font-semibold">Performance Set</span>
+                {starredAds.length > 0 && (
+                  <span className="text-xs bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full">
+                    {starredAds.length} starred
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-zinc-400 ml-8">
+                {starredAds.length > 0
+                  ? "Build a CBO campaign from your starred winners"
+                  : "Star winning ads from the Performance table first"
+                }
+              </p>
+              <div className="flex gap-4 ml-8 mt-3 text-xs text-zinc-500">
+                <span>✓ Scale proven winners</span>
+                <span>✓ Fresh targeting</span>
+              </div>
+            </button>
           </div>
         )
 
@@ -1325,6 +1482,107 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
                   {state.entityType === 'adset'
                     ? `Your ad set will inherit the "${state.selectedCampaignObjective}" objective from this campaign.`
                     : 'Next, select which ad set to add your ad to.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )
+
+      case 'starred-ads':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400 mb-4">
+              Select which starred ads to include in your Performance Set.
+              These winning creatives will be combined into a single CBO campaign.
+            </p>
+
+            {/* Select All / Deselect All */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-zinc-400">
+                {state.selectedStarredAds.length} of {starredAds.length} selected
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setState(s => ({ ...s, selectedStarredAds: starredAds.map(ad => ad.ad_id) }))}
+                  className="text-xs text-accent hover:underline"
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={() => setState(s => ({ ...s, selectedStarredAds: [] }))}
+                  className="text-xs text-zinc-400 hover:text-white"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+
+            {starredAds.length > 0 ? (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {starredAds.map((ad) => {
+                  const isSelected = state.selectedStarredAds.includes(ad.ad_id)
+                  return (
+                    <button
+                      key={ad.ad_id}
+                      onClick={() => {
+                        setState(s => ({
+                          ...s,
+                          selectedStarredAds: isSelected
+                            ? s.selectedStarredAds.filter(id => id !== ad.ad_id)
+                            : [...s.selectedStarredAds, ad.ad_id]
+                        }))
+                      }}
+                      className={cn(
+                        "w-full p-4 rounded-xl border text-left transition-all",
+                        isSelected
+                          ? "border-yellow-500 bg-yellow-500/10"
+                          : "border-border hover:border-zinc-600"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-5 h-5 rounded border-2 flex items-center justify-center",
+                            isSelected
+                              ? "border-yellow-500 bg-yellow-500"
+                              : "border-zinc-500"
+                          )}>
+                            {isSelected && <Check className="w-3 h-3 text-black" />}
+                          </div>
+                          <div>
+                            <span className="font-medium">{ad.ad_name}</span>
+                            <p className="text-xs text-zinc-500">
+                              {ad.campaign_name} → {ad.adset_name}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-sm font-semibold text-emerald-400">
+                            {ad.roas.toFixed(2)}x
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            ${ad.spend.toFixed(0)} spent
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                <p className="text-sm text-yellow-500 font-medium mb-1">No starred ads</p>
+                <p className="text-xs text-zinc-400">
+                  Star winning ads from the Performance table first, then come back here.
+                </p>
+              </div>
+            )}
+
+            {state.selectedStarredAds.length > 0 && (
+              <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg">
+                <p className="text-xs text-zinc-400">
+                  A new CBO campaign will be created with all {state.selectedStarredAds.length} ads in a single ad set.
+                  Targeting will be built fresh on the next step.
                 </p>
               </div>
             )}
@@ -2654,9 +2912,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel }: LaunchWizard
     'entity-type': 'What to Create',
     'select-campaign': 'Select Campaign',
     'select-adset': 'Select Ad Set',
+    'starred-ads': 'Select Starred Ads',
     budget: 'Budget Structure',
     'abo-options': 'ABO Options',
-    details: 'Campaign Details',
+    details: state.entityType === 'performance-set' ? 'Performance Set Details' : 'Campaign Details',
     'adset-details': 'Ad Set Details',
     leadform: 'Lead Form',
     targeting: 'Targeting',

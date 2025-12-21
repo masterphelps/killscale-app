@@ -5,7 +5,8 @@ import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, 
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
-import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
+import { StarButton } from './star-button'
+import { Rules, calculateVerdict, Verdict, isEntityActive, StarredAd } from '@/lib/supabase'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { FEATURES } from '@/lib/feature-flags'
 
@@ -75,6 +76,7 @@ type AdRow = {
   adset_id?: string | null
   ad_name: string
   ad_id?: string | null
+  creative_id?: string | null  // For star deduplication
   impressions: number
   clicks: number
   spend: number
@@ -146,6 +148,22 @@ type PerformanceTableProps = {
   // External sort control from parent
   externalSortField?: SortField
   externalSortDirection?: SortDirection
+  // Starred ads for Performance Set
+  starredAdIds?: Set<string>
+  starredCreativeIds?: Set<string>  // For showing if a creative is already starred
+  onStarAd?: (ad: {
+    adId: string
+    adName: string
+    adsetId: string
+    adsetName: string
+    campaignId: string
+    campaignName: string
+    creativeId?: string  // Optional - for deduplication
+    spend: number
+    revenue: number
+    roas: number
+  }) => Promise<void>
+  onUnstarAd?: (adId: string) => Promise<void>
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -178,6 +196,13 @@ type HierarchyNode = {
   platform?: 'meta' | 'google'
   accountId?: string  // Meta ad_account_id or Google customer_id
   budgetResourceName?: string  // Google budget resource name for mutations
+  // Parent info (for ads - needed for starring)
+  adsetId?: string | null
+  adsetName?: string
+  campaignId?: string | null
+  campaignName?: string
+  // Creative info (for star deduplication)
+  creativeId?: string | null
 }
 
 const formatPercent = (value: number) => {
@@ -354,6 +379,13 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         verdict: 'learn',
         platform: row._platform,  // Inherit platform from row
         accountId: row.ad_account_id,  // Inherit accountId from row
+        // Parent info for starring
+        adsetId: adset.id,
+        adsetName: adset.name,
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        // Creative info for star deduplication
+        creativeId: row.creative_id
       }
       adset.children?.push(ad)
     }
@@ -527,7 +559,11 @@ export function PerformanceTable({
   expandAllTrigger,
   onExpandedStateChange,
   externalSortField,
-  externalSortDirection
+  externalSortDirection,
+  starredAdIds,
+  starredCreativeIds,
+  onStarAd,
+  onUnstarAd
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -906,8 +942,34 @@ export function PerformanceTable({
         )}
         style={{ marginLeft: indent }}
       >
-        {/* Checkbox */}
-        {hasCheckboxes && (
+        {/* Star button for ads - positioned where checkbox would be */}
+        {level === 'ad' && node.id && onStarAd && onUnstarAd ? (
+          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32 }}>
+            <StarButton
+              isStarred={starredAdIds?.has(node.id) ?? false}
+              onToggle={async () => {
+                const isCurrentlyStarred = starredAdIds?.has(node.id!) ?? false
+                if (isCurrentlyStarred) {
+                  await onUnstarAd(node.id!)
+                } else {
+                  await onStarAd({
+                    adId: node.id!,
+                    adName: node.name,
+                    adsetId: node.adsetId || '',
+                    adsetName: node.adsetName || '',
+                    campaignId: node.campaignId || '',
+                    campaignName: node.campaignName || '',
+                    creativeId: node.creativeId || undefined,
+                    spend: node.spend,
+                    revenue: node.revenue,
+                    roas: node.roas
+                  })
+                }
+              }}
+            />
+          </div>
+        ) : hasCheckboxes ? (
+          /* Checkbox for campaigns and ABO adsets */
           <div
             className="flex items-center justify-center flex-shrink-0"
             style={{ width: checkboxWidth }}
@@ -963,7 +1025,7 @@ export function PerformanceTable({
               )
             })()}
           </div>
-        )}
+        ) : null}
         
         {/* Expand/collapse chevron */}
         {onToggle ? (
@@ -1288,6 +1350,32 @@ export function PerformanceTable({
       )}>
         {/* Header with name and verdict */}
         <div className="flex items-start justify-between mb-3">
+          {/* Star button on left for ads */}
+          {level === 'ad' && node.id && onStarAd && onUnstarAd && (
+            <div className="flex-shrink-0 mr-3">
+              <StarButton
+                isStarred={starredAdIds?.has(node.id) ?? false}
+                onToggle={async () => {
+                  const isCurrentlyStarred = starredAdIds?.has(node.id!) ?? false
+                  if (isCurrentlyStarred) {
+                    await onUnstarAd(node.id!)
+                  } else {
+                    await onStarAd({
+                      adId: node.id!,
+                      adName: node.name,
+                      adsetId: node.adsetId || '',
+                      adsetName: node.adsetName || '',
+                      campaignId: node.campaignId || '',
+                      campaignName: node.campaignName || '',
+                      spend: node.spend,
+                      revenue: node.revenue,
+                      roas: node.roas
+                    })
+                  }
+                }}
+              />
+            </div>
+          )}
           <div className="flex-1 pr-3">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-[10px] text-zinc-500 uppercase tracking-wide">{levelLabels[level]}</span>
@@ -1350,7 +1438,7 @@ export function PerformanceTable({
             )}
           </div>
         </div>
-        
+
         {/* Key Metrics */}
         <div className="grid grid-cols-4 gap-2 mb-3">
           <div className="bg-bg-dark rounded-lg p-2 text-center">

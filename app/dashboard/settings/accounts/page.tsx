@@ -6,8 +6,10 @@ import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
 import { createClient } from '@supabase/supabase-js'
-import { Lock, Link2, Unlink, CheckCircle, AlertCircle, ChevronDown, Eye, EyeOff } from 'lucide-react'
+import { Lock, Link2, Unlink, CheckCircle, AlertCircle, ChevronDown, Eye, EyeOff, Upload, FileSpreadsheet, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { CSVUpload } from '@/components/csv-upload'
+import { CSVRow } from '@/lib/csv-parser'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,6 +65,11 @@ export default function AccountsPage() {
   // Expandable sections
   const [metaExpanded, setMetaExpanded] = useState(true)
   const [googleExpanded, setGoogleExpanded] = useState(true)
+
+  // CSV upload state - keyed by account ID
+  const [csvUploadAccountId, setCsvUploadAccountId] = useState<string | null>(null)
+  const [csvUploading, setCsvUploading] = useState(false)
+  const [accountCsvCounts, setAccountCsvCounts] = useState<Record<string, number>>({})
 
   const accountLimit = ACCOUNT_LIMITS[plan] || 1
   const metaAccountCount = metaConnection?.ad_accounts?.filter(a => a.in_dashboard).length || 0
@@ -125,7 +132,81 @@ export default function AccountsPage() {
       setGoogleConnection(googleData)
     }
 
+    // Check CSV data counts per account
+    if (metaData?.ad_accounts) {
+      const counts: Record<string, number> = {}
+      for (const account of metaData.ad_accounts) {
+        const { count } = await supabase
+          .from('ad_data')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('ad_account_id', account.id)
+          .eq('source', 'csv')
+        counts[account.id] = count || 0
+      }
+      setAccountCsvCounts(counts)
+    }
+
     setLoading(false)
+  }
+
+  const handleCsvUpload = async (rows: CSVRow[], accountId: string) => {
+    if (!user) return
+
+    setCsvUploading(true)
+
+    // Delete existing CSV data for this account
+    await supabase
+      .from('ad_data')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('ad_account_id', accountId)
+      .eq('source', 'csv')
+
+    const insertData = rows.map(row => ({
+      user_id: user.id,
+      ad_account_id: accountId,
+      source: 'csv',
+      date_start: row.date_start,
+      date_end: row.date_end,
+      campaign_name: row.campaign_name,
+      adset_name: row.adset_name,
+      ad_name: row.ad_name,
+      impressions: row.impressions,
+      clicks: row.clicks,
+      spend: row.spend,
+      purchases: row.purchases,
+      revenue: row.revenue,
+    }))
+
+    const { error } = await supabase
+      .from('ad_data')
+      .insert(insertData)
+
+    if (!error) {
+      setAccountCsvCounts(prev => ({ ...prev, [accountId]: rows.length }))
+      setCsvUploadAccountId(null)
+      setMessage({ type: 'success', text: `Imported ${rows.length} rows from CSV` })
+    } else {
+      console.error('Error saving CSV data:', error)
+      setMessage({ type: 'error', text: 'Failed to save CSV data. Please try again.' })
+    }
+
+    setCsvUploading(false)
+  }
+
+  const handleDeleteCsvData = async (accountId: string) => {
+    if (!user || !confirm('Delete imported CSV data for this account?')) return
+
+    await supabase
+      .from('ad_data')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('ad_account_id', accountId)
+      .eq('source', 'csv')
+
+    setAccountCsvCounts(prev => ({ ...prev, [accountId]: 0 }))
+    setMessage({ type: 'success', text: 'CSV data deleted' })
   }
 
   const handleConnectMeta = () => {
@@ -310,6 +391,9 @@ export default function AccountsPage() {
                       const isInWorkspace = account.in_dashboard
                       const canAdd = isInWorkspace || totalDashboardCount < accountLimit
 
+                      const csvCount = accountCsvCounts[account.id] || 0
+                      const isUploadingThis = csvUploadAccountId === account.id
+
                       return (
                         <div
                           key={account.id}
@@ -326,28 +410,67 @@ export default function AccountsPage() {
                               </div>
                               <div className="text-sm text-zinc-500">
                                 {account.id.replace('act_', '')} • {account.currency}
+                                {csvCount > 0 && (
+                                  <span className="ml-2 text-accent">• {csvCount} CSV rows</span>
+                                )}
                               </div>
                             </div>
 
-                            <button
-                              onClick={() => handleToggleWorkspace('meta', account.id)}
-                              disabled={!canAdd && !isInWorkspace}
-                              title={isInWorkspace ? 'Hide from dropdown' : 'Show in dropdown'}
-                              className={`p-2 rounded-lg transition-colors ${
-                                isInWorkspace
-                                  ? 'text-accent hover:bg-accent/10'
-                                  : canAdd
-                                    ? 'text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover'
-                                    : 'text-zinc-600 cursor-not-allowed'
-                              }`}
-                            >
-                              {isInWorkspace ? (
-                                <Eye className="w-5 h-5" />
+                            <div className="flex items-center gap-1">
+                              {/* CSV Import/Delete */}
+                              {csvCount > 0 ? (
+                                <button
+                                  onClick={() => handleDeleteCsvData(account.id)}
+                                  title="Delete CSV data"
+                                  className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               ) : (
-                                <EyeOff className="w-5 h-5" />
+                                <button
+                                  onClick={() => setCsvUploadAccountId(isUploadingThis ? null : account.id)}
+                                  title="Import CSV data"
+                                  className={`p-2 rounded-lg transition-colors ${
+                                    isUploadingThis
+                                      ? 'text-accent bg-accent/10'
+                                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover'
+                                  }`}
+                                >
+                                  <Upload className="w-4 h-4" />
+                                </button>
                               )}
-                            </button>
+
+                              {/* Visibility toggle */}
+                              <button
+                                onClick={() => handleToggleWorkspace('meta', account.id)}
+                                disabled={!canAdd && !isInWorkspace}
+                                title={isInWorkspace ? 'Hide from dropdown' : 'Show in dropdown'}
+                                className={`p-2 rounded-lg transition-colors ${
+                                  isInWorkspace
+                                    ? 'text-accent hover:bg-accent/10'
+                                    : canAdd
+                                      ? 'text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover'
+                                      : 'text-zinc-600 cursor-not-allowed'
+                                }`}
+                              >
+                                {isInWorkspace ? (
+                                  <Eye className="w-5 h-5" />
+                                ) : (
+                                  <EyeOff className="w-5 h-5" />
+                                )}
+                              </button>
+                            </div>
                           </div>
+
+                          {/* CSV Upload area - shown when this account is selected */}
+                          {isUploadingThis && (
+                            <div className="mt-3 pt-3 border-t border-border">
+                              <CSVUpload
+                                onUpload={(rows) => handleCsvUpload(rows, account.id)}
+                                isLoading={csvUploading}
+                              />
+                            </div>
+                          )}
                         </div>
                       )
                     })}

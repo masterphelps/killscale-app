@@ -59,6 +59,23 @@ export type BudgetChange = {
   changed_at: string
 }
 
+export type StarredAd = {
+  id: string
+  user_id: string
+  ad_account_id: string
+  ad_id: string
+  ad_name: string
+  adset_id: string
+  adset_name: string
+  campaign_id: string
+  campaign_name: string
+  creative_id: string | null  // For deduplication - prevent starring same creative twice
+  spend: number
+  revenue: number
+  roas: number
+  starred_at: string
+}
+
 export type AdData = {
   id: string
   ad_account_id: string

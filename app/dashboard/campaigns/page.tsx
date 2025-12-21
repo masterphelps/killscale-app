@@ -139,11 +139,43 @@ export default function LaunchPage() {
   const [loadingAdSets, setLoadingAdSets] = useState<Set<string>>(new Set())
   const [loadingAds, setLoadingAds] = useState<Set<string>>(new Set())
   const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
+  // Ref to track creatives we've already loaded or started loading (avoids stale closures)
+  const loadedCreativesRef = useRef<Set<string>>(new Set())
 
   // UTM tracking status
   const [utmStatus, setUtmStatus] = useState<Record<string, boolean>>({})
   const [utmLoading, setUtmLoading] = useState(false)
   const utmFetchedForAccount = useRef<string | null>(null) // Track which account we've fetched UTM for
+
+  // UTM cache helpers (5 minute TTL)
+  const UTM_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+  const getUtmCacheKey = (accountId: string) => `ks_utm_cache_${accountId}`
+
+  const getUtmFromCache = (accountId: string): Record<string, boolean> | null => {
+    try {
+      const cached = sessionStorage.getItem(getUtmCacheKey(accountId))
+      if (!cached) return null
+      const { data, timestamp } = JSON.parse(cached)
+      if (Date.now() - timestamp > UTM_CACHE_TTL) {
+        sessionStorage.removeItem(getUtmCacheKey(accountId))
+        return null
+      }
+      return data
+    } catch {
+      return null
+    }
+  }
+
+  const setUtmToCache = (accountId: string, data: Record<string, boolean>) => {
+    try {
+      sessionStorage.setItem(getUtmCacheKey(accountId), JSON.stringify({
+        data,
+        timestamp: Date.now()
+      }))
+    } catch {
+      // Ignore storage errors
+    }
+  }
 
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Map<string, SelectedItem>>(new Map())
@@ -173,6 +205,21 @@ export default function LaunchPage() {
   // Track the last loaded account to detect changes
   const [lastLoadedAccountId, setLastLoadedAccountId] = useState<string | null>(null)
 
+  // Restore UTM from cache when account is available (handles client-side navigation)
+  const hasRestoredUtmCache = useRef(false)
+  useEffect(() => {
+    // Only try to restore once per mount, and only if we don't have UTM data
+    if (currentAccountId && !hasRestoredUtmCache.current && Object.keys(utmStatus).length === 0) {
+      const cachedUtm = getUtmFromCache(currentAccountId)
+      if (cachedUtm) {
+        console.log('[UTM] Restored from sessionStorage cache')
+        setUtmStatus(cachedUtm)
+        utmFetchedForAccount.current = currentAccountId
+        hasRestoredUtmCache.current = true
+      }
+    }
+  }, [currentAccountId, utmStatus])
+
   // Load campaigns when account changes
   useEffect(() => {
     if (currentAccountId && user && currentAccountId !== lastLoadedAccountId) {
@@ -182,10 +229,21 @@ export default function LaunchPage() {
       setAdSetsData({})
       setAdsData({})
       setCreativesData({})
+      loadedCreativesRef.current = new Set() // Clear loaded creatives ref
       setCampaigns([])
-      setUtmStatus({})
       setSelectedItems(new Map()) // Clear selection on account change
-      utmFetchedForAccount.current = null // Reset UTM fetch tracking for new account
+
+      // Check UTM cache BEFORE clearing state - restore from cache if available
+      const cachedUtm = getUtmFromCache(currentAccountId)
+      if (cachedUtm) {
+        console.log('[UTM] Restored from cache on mount for', currentAccountId)
+        setUtmStatus(cachedUtm)
+        utmFetchedForAccount.current = currentAccountId
+      } else {
+        setUtmStatus({})
+        utmFetchedForAccount.current = null // Reset UTM fetch tracking for new account
+      }
+
       setLastLoadedAccountId(currentAccountId)
       loadCampaigns()
     } else if (!accountLoading && !currentAccountId) {
@@ -229,10 +287,20 @@ export default function LaunchPage() {
 
       setCampaigns(combined)
 
-      // Fetch UTM status once per account
-      if (utmFetchedForAccount.current !== currentAccountId) {
-        utmFetchedForAccount.current = currentAccountId
-        loadAllAdsForUtmStatus(combined.map(c => c.id))
+      // Always check UTM cache first - avoid expensive API calls
+      // Skip if we already have UTM data in state for this account
+      if (Object.keys(utmStatus).length === 0 || utmFetchedForAccount.current !== currentAccountId) {
+        const cachedUtm = getUtmFromCache(currentAccountId)
+        if (cachedUtm && Object.keys(cachedUtm).length > 0) {
+          console.log('[UTM] Using cached UTM status for', currentAccountId, '- skipping API calls')
+          setUtmStatus(cachedUtm)
+          utmFetchedForAccount.current = currentAccountId
+        } else if (utmFetchedForAccount.current !== currentAccountId) {
+          // Only fetch if no cache AND we haven't already fetched for this account
+          console.log('[UTM] No cache found, fetching from API')
+          utmFetchedForAccount.current = currentAccountId
+          loadAllAdsForUtmStatus(combined.map(c => c.id))
+        }
       }
     } catch (err) {
       console.error('Failed to load campaigns:', err)
@@ -285,6 +353,7 @@ export default function LaunchPage() {
 
       // Now fetch UTM status for all ads
       if (allAdIds.length > 0) {
+        console.log('[UTM] Fetching UTM status for', allAdIds.length, 'ads')
         const res = await fetch('/api/meta/sync-utm-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -293,6 +362,9 @@ export default function LaunchPage() {
         const result = await res.json()
         if (result.success) {
           setUtmStatus(result.utmStatus)
+          // Cache the result
+          setUtmToCache(currentAccountId, result.utmStatus)
+          console.log('[UTM] Cached UTM status for', currentAccountId)
         }
       }
     } catch (err) {
@@ -550,8 +622,9 @@ export default function LaunchPage() {
       if (data.ads) {
         setAdsData(prev => ({ ...prev, [adSetId]: data.ads }))
         // Load creatives for ads that have them
+        // Use ref to check if already loaded (avoids stale closures)
         for (const ad of data.ads) {
-          if (ad.creative?.id && !creativesData[ad.creative.id]) {
+          if (ad.creative?.id && !loadedCreativesRef.current.has(ad.creative.id)) {
             loadCreative(ad.creative.id)
           }
         }
@@ -572,9 +645,13 @@ export default function LaunchPage() {
 
   // Load creative details
   const loadCreative = async (creativeId: string) => {
-    if (!user || creativesData[creativeId] || loadingCreatives.has(creativeId)) return
+    // Use ref for immediate check (avoids stale closures)
+    if (!user || loadedCreativesRef.current.has(creativeId)) return
 
+    // Mark as loading immediately using ref
+    loadedCreativesRef.current.add(creativeId)
     setLoadingCreatives(prev => new Set(prev).add(creativeId))
+
     try {
       const res = await fetch(`/api/meta/creative?userId=${user.id}&creativeId=${creativeId}`)
       const data = await res.json()
@@ -583,6 +660,8 @@ export default function LaunchPage() {
       }
     } catch (err) {
       console.error('Failed to load creative:', err)
+      // Remove from ref on error so it can be retried
+      loadedCreativesRef.current.delete(creativeId)
     } finally {
       setLoadingCreatives(prev => {
         const next = new Set(prev)
@@ -592,7 +671,7 @@ export default function LaunchPage() {
     }
   }
 
-  // Fetch UTM status for ads
+  // Fetch UTM status for ads (incremental - only fetches ads not in state/cache)
   const fetchUtmStatus = async (adIds: string[]) => {
     if (!user || !currentAccountId || adIds.length === 0) return
 
@@ -609,7 +688,10 @@ export default function LaunchPage() {
       })
       const result = await res.json()
       if (result.success) {
-        setUtmStatus(prev => ({ ...prev, ...result.utmStatus }))
+        const newStatus = { ...utmStatus, ...result.utmStatus }
+        setUtmStatus(newStatus)
+        // Update cache with merged data
+        setUtmToCache(currentAccountId, newStatus)
       }
     } catch (err) {
       console.error('Failed to fetch UTM status:', err)

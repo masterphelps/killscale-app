@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Upload, Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
+import { Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
 import { StatCard, BudgetCard, StatIcons } from '@/components/stat-card'
 import { PerformanceTable } from '@/components/performance-table'
-import { CSVUpload } from '@/components/csv-upload'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
+import { StarredAdsPopover } from '@/components/starred-ads-popover'
+import { LaunchWizard, StarredAdForWizard } from '@/components/launch-wizard'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { SyncOverlay } from '@/components/sync-overlay'
 import { CSVRow } from '@/lib/csv-parser'
-import { Rules } from '@/lib/supabase'
+import { Rules, StarredAd } from '@/lib/supabase'
 import { formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
@@ -149,7 +150,6 @@ const isCacheValid = (cache: CacheEntry, datePreset: string, customStart?: strin
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
-  const [showUpload, setShowUpload] = useState(false)
   const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
@@ -209,6 +209,11 @@ export default function DashboardPage() {
     adsetName?: string
   } | null>(null)
   const [showWalkinModal, setShowWalkinModal] = useState(false)
+  const [starredAds, setStarredAds] = useState<StarredAd[]>([])
+  const [showLaunchWizard, setShowLaunchWizard] = useState(false)
+  const [launchWizardEntityType, setLaunchWizardEntityType] = useState<'campaign' | 'adset' | 'ad' | 'performance-set'>('campaign')
+  const [showClearStarsPrompt, setShowClearStarsPrompt] = useState(false)
+  const [performanceSetAdIds, setPerformanceSetAdIds] = useState<string[]>([])
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
@@ -253,6 +258,126 @@ export default function DashboardPage() {
       customEnd: customEndDate || undefined
     })
   }, [datePreset, customStartDate, customEndDate])
+
+  // Compute starred ad IDs for quick lookup
+  const starredAdIds = useMemo(() => {
+    return new Set(starredAds.map(ad => ad.ad_id))
+  }, [starredAds])
+
+  // Compute starred creative IDs for deduplication check
+  const starredCreativeIds = useMemo(() => {
+    return new Set(starredAds.filter(ad => ad.creative_id).map(ad => ad.creative_id!))
+  }, [starredAds])
+
+  // Load starred ads when account changes
+  const loadStarredAds = async (accountId: string) => {
+    if (!user?.id) return
+    try {
+      const response = await fetch(`/api/starred?userId=${user.id}&adAccountId=${accountId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setStarredAds(data.starred || [])
+      }
+    } catch (error) {
+      console.error('Failed to load starred ads:', error)
+    }
+  }
+
+  // Handle starring an ad
+  const handleStarAd = async (ad: {
+    adId: string
+    adName: string
+    adsetId: string
+    adsetName: string
+    campaignId: string
+    campaignName: string
+    creativeId?: string  // Optional - for deduplication
+    spend: number
+    revenue: number
+    roas: number
+  }) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      const response = await fetch('/api/starred', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          adId: ad.adId,
+          adName: ad.adName,
+          adsetId: ad.adsetId,
+          adsetName: ad.adsetName,
+          campaignId: ad.campaignId,
+          campaignName: ad.campaignName,
+          creativeId: ad.creativeId,
+          spend: ad.spend,
+          revenue: ad.revenue,
+          roas: ad.roas
+        })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setStarredAds(prev => [...prev, data.starred])
+      } else if (response.status === 409) {
+        // Creative already starred by another ad
+        const data = await response.json()
+        alert(`This creative is already starred from "${data.duplicateAdName}". Each creative can only be starred once.`)
+      }
+    } catch (error) {
+      console.error('Failed to star ad:', error)
+    }
+  }
+
+  // Handle unstarring an ad
+  const handleUnstarAd = async (adId: string) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      const response = await fetch('/api/starred', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          adId
+        })
+      })
+      if (response.ok) {
+        setStarredAds(prev => prev.filter(ad => ad.ad_id !== adId))
+      }
+    } catch (error) {
+      console.error('Failed to unstar ad:', error)
+    }
+  }
+
+  // Handle opening the launch wizard for Performance Set
+  const handleBuildPerformanceSet = () => {
+    setLaunchWizardEntityType('performance-set')
+    setShowLaunchWizard(true)
+  }
+
+  // Handle clearing multiple stars at once (after Performance Set creation)
+  const handleClearStars = async (adIds: string[]) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      // Delete each starred ad
+      await Promise.all(adIds.map(adId =>
+        fetch('/api/starred', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            adId
+          })
+        })
+      ))
+      // Update local state
+      setStarredAds(prev => prev.filter(ad => !adIds.includes(ad.ad_id)))
+    } catch (error) {
+      console.error('Failed to clear stars:', error)
+    }
+  }
   
   const canSync = true // All plans can sync via Meta API
   const planLower = plan?.toLowerCase() || ''
@@ -274,11 +399,13 @@ export default function DashboardPage() {
       const cached = dataCache.get(cacheKey)
       const hasFreshCache = cached && isCacheValid(cached, 'last_30d')
 
-      // Sync if: fresh login (new session) OR no valid cache
-      // Check hasTriggeredInitialSync to prevent race conditions from effect re-runs
-      if (isFirstSessionLoad.current || !hasFreshCache) {
+      // Only sync on fresh login (new session)
+      // If we've already synced this session, just load from Supabase - don't hit Meta API again
+      const hasSessionSync = sessionStorage.getItem('ks_session_synced')
+      if (isFirstSessionLoad.current && !hasSessionSync) {
         hasTriggeredInitialSync.current = true
         sessionStorage.setItem('ks_session_synced', 'true')
+        console.log('[Dashboard] Fresh session - triggering initial sync')
         setDatePreset('last_30d')
 
         // Workspace mode: sync all workspace accounts
@@ -294,19 +421,27 @@ export default function DashboardPage() {
           }
         }
       } else {
-        console.log('[Dashboard] Using cached data, no sync needed')
+        console.log('[Dashboard] Already synced this session - loading from Supabase only')
       }
     }
 
     initialLoad()
   }, [user?.id, accounts.length]) // Include accounts.length to re-run when accounts load
 
+  // Track when we're executing the initial sync (to prevent Effect 4 from double-syncing)
+  const isExecutingInitialSyncRef = useRef(false)
+
   // Execute pending initial sync (separate effect to ensure datePreset is updated)
   useEffect(() => {
     if (pendingInitialSync && datePreset === 'last_30d' && !isSyncing) {
       console.log('[Dashboard] Executing initial 30-day sync for', pendingInitialSync)
+      isExecutingInitialSyncRef.current = true
       setPendingInitialSync(null) // Clear before executing to prevent loops
       handleSyncAccount(pendingInitialSync)
+      // Reset the flag after a delay to allow the sync to complete
+      setTimeout(() => {
+        isExecutingInitialSyncRef.current = false
+      }, 2000)
     }
   }, [pendingInitialSync, datePreset, isSyncing])
 
@@ -428,6 +563,15 @@ export default function DashboardPage() {
     }
   }, [selectedAccountId, workspaceAccountIds])
 
+  // Load starred ads when account changes
+  useEffect(() => {
+    if (selectedAccountId && user?.id) {
+      loadStarredAds(selectedAccountId)
+    } else {
+      setStarredAds([])
+    }
+  }, [selectedAccountId, user?.id])
+
   // Track if this is the initial mount (to prevent auto-sync on page load)
   const isInitialMount = useRef(true)
 
@@ -435,7 +579,10 @@ export default function DashboardPage() {
   // Only "today" preset has truly live data. Removed misleading "Live" indicator.
 
   // NOTE: Sync uses the selected date range from the date picker
-  // Smart sync when date preset changes - only sync if cache can't serve the request
+  // Track if user has manually changed the date preset (vs component mount/navigation)
+  const userChangedDatePreset = useRef(false)
+
+  // Smart sync when date preset changes - only sync if USER changed it and cache can't serve
   useEffect(() => {
     // Skip initial mount
     if (isInitialMount.current) {
@@ -446,6 +593,15 @@ export default function DashboardPage() {
     if (!selectedAccountId || !user) return
     if (datePreset === 'custom') return // Custom dates handled by handleCustomDateApply
     if (pendingInitialSync) return // Initial sync will handle this
+    if (isExecutingInitialSyncRef.current) return // Don't double-sync during initial load
+
+    // Only sync if user explicitly changed the date preset
+    // This prevents syncs from component remount/navigation
+    if (!userChangedDatePreset.current) {
+      console.log('[Dashboard] Date preset effect skipped - not a user change')
+      return
+    }
+    userChangedDatePreset.current = false // Reset after handling
 
     // Check if current cache can serve this request
     const cachedEntry = dataCache.get(selectedAccountId)
@@ -457,6 +613,8 @@ export default function DashboardPage() {
     // Need larger range than cached - sync new data
     // Debounce to avoid rapid syncs when clicking through presets
     const timeout = setTimeout(() => {
+      // Double-check we're not in initial sync when timeout fires
+      if (isExecutingInitialSyncRef.current) return
       handleSyncAccount(selectedAccountId)
     }, 500)
 
@@ -713,50 +871,6 @@ export default function DashboardPage() {
     }
   }
 
-  const handleUpload = async (rows: CSVRow[]) => {
-    if (!user) return
-    
-    setIsSaving(true)
-    
-    // Delete all existing data
-    await supabase
-      .from('ad_data')
-      .delete()
-      .eq('user_id', user.id)
-
-    const insertData = rows.map(row => ({
-      user_id: user.id,
-      source: 'csv',  // Mark as CSV data
-      date_start: row.date_start,
-      date_end: row.date_end,
-      campaign_name: row.campaign_name,
-      adset_name: row.adset_name,
-      ad_name: row.ad_name,
-      impressions: row.impressions,
-      clicks: row.clicks,
-      spend: row.spend,
-      purchases: row.purchases,
-      revenue: row.revenue,
-      // CSV data doesn't have status - leave as null/default
-    }))
-
-    const { error } = await supabase
-      .from('ad_data')
-      .insert(insertData)
-
-    if (!error) {
-      setData(rows)
-      const campaigns = new Set(rows.map(r => r.campaign_name))
-      setSelectedCampaigns(campaigns)
-    } else {
-      console.error('Error saving data:', error)
-      alert('Error saving data. Please try again.')
-    }
-    
-    setIsSaving(false)
-    setShowUpload(false)
-  }
-
   const handleClearData = async () => {
     if (!user) return
     if (!confirm('Are you sure you want to clear all your ad data?')) return
@@ -772,6 +886,8 @@ export default function DashboardPage() {
 
   // Ref-based guard for sync (state updates are async so we need synchronous check)
   const syncingRef = useRef(false)
+  const lastSyncCompletedRef = useRef<number>(0)
+  const SYNC_COOLDOWN_MS = 5000 // 5 second cooldown between syncs
 
   // Sync a specific account (used by sidebar dropdown)
   const handleSyncAccount = async (accountId: string) => {
@@ -779,6 +895,14 @@ export default function DashboardPage() {
 
     // Prevent duplicate syncs (both state and ref check)
     if (isSyncing || syncingRef.current) return
+
+    // Enforce cooldown between syncs to prevent Meta API returning empty data
+    const timeSinceLastSync = Date.now() - lastSyncCompletedRef.current
+    if (timeSinceLastSync < SYNC_COOLDOWN_MS && lastSyncCompletedRef.current > 0) {
+      console.log(`[Sync] Cooldown active - ${Math.ceil((SYNC_COOLDOWN_MS - timeSinceLastSync) / 1000)}s remaining`)
+      return
+    }
+
     syncingRef.current = true
 
     // Clear cache BEFORE sync to force fresh data
@@ -854,6 +978,7 @@ export default function DashboardPage() {
       alert('Sync failed. Please try again.')
     }
 
+    lastSyncCompletedRef.current = Date.now()
     syncingRef.current = false
     setIsSyncing(false)
   }
@@ -862,6 +987,13 @@ export default function DashboardPage() {
   const handleSyncWorkspace = async () => {
     if (!user || !canSync || workspaceAccountIds.length === 0) return
     if (isSyncing || syncingRef.current) return
+
+    // Enforce cooldown between syncs
+    const timeSinceLastSync = Date.now() - lastSyncCompletedRef.current
+    if (timeSinceLastSync < SYNC_COOLDOWN_MS && lastSyncCompletedRef.current > 0) {
+      console.log(`[Sync] Cooldown active - ${Math.ceil((SYNC_COOLDOWN_MS - timeSinceLastSync) / 1000)}s remaining`)
+      return
+    }
 
     syncingRef.current = true
 
@@ -915,6 +1047,7 @@ export default function DashboardPage() {
       alert('Sync failed. Please try again.')
     }
 
+    lastSyncCompletedRef.current = Date.now()
     syncingRef.current = false
     setIsSyncing(false)
   }
@@ -1074,6 +1207,7 @@ export default function DashboardPage() {
   }
 
   const handleDatePresetChange = (preset: string) => {
+    userChangedDatePreset.current = true // Mark as user-initiated change
     setDatePreset(preset)
     if (preset === 'custom') {
       setShowCustomDateInputs(true)
@@ -1294,18 +1428,9 @@ export default function DashboardPage() {
   
   const selectedData = useMemo(() =>
     filteredData.filter(row => {
-      // Check if this is an ABO adset (adset has budget, campaign doesn't)
-      const isAbo = (row.adset_daily_budget || row.adset_lifetime_budget) &&
-                    !(row.campaign_daily_budget || row.campaign_lifetime_budget)
-
-      if (isAbo) {
-        // For ABO: include if the specific adset is selected (campaign selection is implicit)
-        const adsetKey = `${row.campaign_name}::${row.adset_name}`
-        return selectedCampaigns.has(adsetKey)
-      } else {
-        // For CBO: include if campaign is selected
-        return selectedCampaigns.has(row.campaign_name)
-      }
+      // Include row if its campaign is selected
+      // For stats, we always want all adsets under a selected campaign
+      return selectedCampaigns.has(row.campaign_name)
     }),
     [filteredData, selectedCampaigns]
   )
@@ -1448,7 +1573,6 @@ export default function DashboardPage() {
   }
 
   const handleSelectAll = () => {
-    // Check if all campaigns are selected (ABO adsets don't affect this check)
     const allCampaignsSelected = visibleCampaigns.every(c => selectedCampaigns.has(c))
 
     if (allCampaignsSelected) {
@@ -1456,15 +1580,7 @@ export default function DashboardPage() {
       setSelectedCampaigns(new Set())
     } else {
       userManuallyDeselected.current = false
-      // Select all campaigns and their ABO adsets
-      const newSelected = new Set<string>(visibleCampaigns)
-      visibleCampaigns.forEach(campaignName => {
-        const aboAdsets = campaignAboAdsets.get(campaignName)
-        if (aboAdsets) {
-          aboAdsets.forEach(adsetKey => newSelected.add(adsetKey))
-        }
-      })
-      setSelectedCampaigns(newSelected)
+      setSelectedCampaigns(new Set(visibleCampaigns))
     }
   }
 
@@ -1582,111 +1698,116 @@ export default function DashboardPage() {
   
   return (
     <>
-      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
-            <p className="text-zinc-500">Your Meta Ads performance at a glance</p>
-          </div>
-          
-          {/* Entity counts next to Dashboard */}
-          {data.length > 0 && (
-            <div className="hidden lg:flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
-                <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
-              </div>
-              <div className="w-px h-3 bg-border" />
-              <span className="text-zinc-400">{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
-              <div className="w-px h-3 bg-border" />
-              <span className="text-zinc-400">{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
-              <div className="w-px h-3 bg-border" />
-              <span className="text-zinc-400">{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
+      {/* Header row - title left, buttons right, same max-width as cards */}
+      <div className="max-w-[1400px] mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+              <p className="text-zinc-500 text-sm lg:text-base">Your Meta Ads performance at a glance</p>
             </div>
-          )}
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-2 lg:gap-3">
-          {data.length > 0 && (
-            <>
 
-              {/* Date Picker Dropdown */}
-              <div className="relative">
-                <DatePickerButton
-                  label={getDateLabel()}
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  isOpen={showDatePicker}
-                />
-                
-                <DatePicker
-                  isOpen={showDatePicker}
-                  onClose={() => {
-                    setShowDatePicker(false)
-                    setShowCustomDateInputs(false)
-                  }}
-                  datePreset={datePreset}
-                  onPresetChange={handleDatePresetChange}
-                  customStartDate={customStartDate}
-                  customEndDate={customEndDate}
-                  onCustomDateChange={(start, end) => {
-                    setCustomStartDate(start)
-                    setCustomEndDate(end)
-                  }}
-                  onApply={handleCustomDateApply}
-                />
+            {/* Entity counts next to Dashboard - desktop only */}
+            {data.length > 0 && (
+              <div className="hidden xl:flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
+                  <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="w-px h-3 bg-border" />
+                <span className="text-zinc-400">{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
+                <div className="w-px h-3 bg-border" />
+                <span className="text-zinc-400">{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
+                <div className="w-px h-3 bg-border" />
+                <span className="text-zinc-400">{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
               </div>
-            </>
-          )}
-          
-          {/* Sync Button - now shows syncing state more prominently */}
-          <button
-            onClick={handleSync}
-            disabled={!canSync || isSyncing || (!selectedAccountId && workspaceAccountIds.length === 0)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              isSyncing
-                ? 'bg-accent/20 border border-accent/50 text-accent'
-                : canSync && (selectedAccountId || workspaceAccountIds.length > 0)
-                  ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
-                  : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
-            }`}
-            title={!canSync ? 'Sync requires Pro plan' : (!selectedAccountId && workspaceAccountIds.length === 0) ? 'Connect an account first' : workspaceAccountIds.length > 0 ? `Sync ${workspaceAccountIds.length} accounts` : 'Sync from Meta'}
-          >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? <span className="hidden sm:inline">Syncing...</span> : <span className="hidden sm:inline">Sync</span>}
-            {lastSyncTime && !isSyncing && (
-              <span className="text-xs text-zinc-500">{getTimeSinceSync()}</span>
             )}
-          </button>
-          
-          {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
-          {isProPlus && isKillScaleActive && currentWorkspaceId && (
+          </div>
+
+          {/* Action buttons - wrap on mobile, single row on desktop */}
+          <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap">
+            {data.length > 0 && (
+              <>
+                {/* Date Picker Dropdown */}
+                <div className="relative flex-shrink-0">
+                  <DatePickerButton
+                    label={getDateLabel()}
+                    onClick={() => setShowDatePicker(!showDatePicker)}
+                    isOpen={showDatePicker}
+                  />
+
+                  <DatePicker
+                    isOpen={showDatePicker}
+                    onClose={() => {
+                      setShowDatePicker(false)
+                      setShowCustomDateInputs(false)
+                    }}
+                    datePreset={datePreset}
+                    onPresetChange={handleDatePresetChange}
+                    customStartDate={customStartDate}
+                    customEndDate={customEndDate}
+                    onCustomDateChange={(start, end) => {
+                      setCustomStartDate(start)
+                      setCustomEndDate(end)
+                    }}
+                    onApply={handleCustomDateApply}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Sync Button */}
             <button
-              onClick={() => setShowWalkinModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
-              title="Log a walk-in or offline conversion"
+              onClick={handleSync}
+              disabled={!canSync || isSyncing || (!selectedAccountId && workspaceAccountIds.length === 0)}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                isSyncing
+                  ? 'bg-accent/20 border border-accent/50 text-accent'
+                  : canSync && (selectedAccountId || workspaceAccountIds.length > 0)
+                    ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
+                    : 'bg-bg-card border border-border text-zinc-600 cursor-not-allowed'
+              }`}
+              title={!canSync ? 'Sync requires Pro plan' : (!selectedAccountId && workspaceAccountIds.length === 0) ? 'Connect an account first' : workspaceAccountIds.length > 0 ? `Sync ${workspaceAccountIds.length} accounts` : 'Sync from Meta'}
             >
-              <UserPlus className="w-4 h-4" />
-              <span className="hidden sm:inline">Log Walk-In</span>
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync'}</span>
+              {lastSyncTime && !isSyncing && (
+                <span className="text-xs text-zinc-500 hidden xl:inline">{getTimeSinceSync()}</span>
+              )}
             </button>
-          )}
 
-          <button
-            onClick={() => setShowUpload(true)}
-            className="hidden sm:flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Upload CSV</span>
-          </button>
+            {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
+            {isProPlus && isKillScaleActive && currentWorkspaceId && (
+              <button
+                onClick={() => setShowWalkinModal(true)}
+                className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
+                title="Log a walk-in or offline conversion"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span className="hidden xl:inline">Walk-In</span>
+              </button>
+            )}
 
-          {/* Delete Button - far right */}
-          {data.length > 0 && (
-            <button 
-              onClick={handleClearData}
-              className="flex items-center gap-2 px-3 py-2 bg-bg-card border border-border rounded-lg text-sm text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
+            {/* Starred Ads Badge + Popover */}
+            {isProPlus && (
+              <StarredAdsPopover
+                starredAds={starredAds}
+                onBuildPerformanceSet={handleBuildPerformanceSet}
+                onUnstarAd={handleUnstarAd}
+              />
+            )}
+
+            {/* Delete Button - always visible, far right */}
+            {data.length > 0 && (
+              <button
+                onClick={handleClearData}
+                className="flex-shrink-0 flex items-center justify-center w-8 h-8 bg-bg-card border border-border rounded-lg text-zinc-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+                title="Clear all data"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1702,14 +1823,14 @@ export default function DashboardPage() {
             <>
               <div className="text-6xl mb-4">📊</div>
               <h2 className="text-xl font-semibold mb-2">No data yet</h2>
-              <p className="text-zinc-500 mb-6">
+              <p className="text-zinc-500 mb-6 text-center max-w-md">
                 {canSync && (selectedAccountId || workspaceAccountIds.length > 0)
-                  ? 'Click Sync to fetch data from Meta Ads, or upload a CSV'
-                  : 'Upload a CSV export from Meta Ads to get started'
+                  ? 'Click Sync to fetch data from Meta Ads'
+                  : 'Connect a Meta Ads account or import CSV data from Settings → Accounts'
                 }
               </p>
-              <div className="flex flex-wrap items-center gap-2 lg:gap-3">
-                {canSync && (selectedAccountId || workspaceAccountIds.length > 0) && (
+              <div className="flex flex-wrap items-center gap-3">
+                {canSync && (selectedAccountId || workspaceAccountIds.length > 0) ? (
                   <button
                     onClick={handleSync}
                     className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
@@ -1717,18 +1838,14 @@ export default function DashboardPage() {
                     <RefreshCw className="w-4 h-4" />
                     Sync from Meta
                   </button>
+                ) : (
+                  <Link
+                    href="/dashboard/settings/accounts"
+                    className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
+                  >
+                    Connect Account
+                  </Link>
                 )}
-                <button
-                  onClick={() => setShowUpload(true)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                    canSync && (selectedAccountId || workspaceAccountIds.length > 0)
-                      ? 'bg-bg-card border border-border text-zinc-300 hover:text-white hover:border-zinc-500'
-                      : 'bg-accent hover:bg-accent-hover text-white'
-                  }`}
-                >
-                  <Upload className="w-4 h-4" />
-                  <span className="hidden sm:inline">Upload CSV</span>
-                </button>
               </div>
             </>
           )}
@@ -1783,9 +1900,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Primary Stats Row - responsive grid with min/max constraints */}
-          <div className="overflow-x-auto">
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4 min-w-[600px] lg:min-w-[900px] max-w-[1400px]">
+          {/* Primary Stats Row - responsive grid, no horizontal scroll */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
             <StatCard
               label="Total Spend"
               value={formatCurrency(totals.spend)}
@@ -1816,12 +1932,10 @@ export default function DashboardPage() {
               icon={StatIcons.cpr}
               glow="rose"
             />
-            </div>
           </div>
 
           {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
-          <div className="overflow-x-auto">
-            <div className="hidden lg:grid grid-cols-5 gap-4 mb-8 min-w-[900px] max-w-[1400px]">
+          <div className="hidden lg:grid grid-cols-5 gap-4 mb-8 max-w-[1400px]">
             {/* Daily Budgets - left bookend */}
             <BudgetCard
               totalBudget={formatCurrency(budgetTotals.total)}
@@ -1856,11 +1970,10 @@ export default function DashboardPage() {
               icon={StatIcons.convRate}
               glow="amber"
             />
-            </div>
           </div>
 
-          {/* Controls Bar - matching mockup exactly */}
-          <div className="flex items-center gap-4 mb-6 min-w-[900px] max-w-[1400px]">
+          {/* Controls Bar */}
+          <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 lg:gap-4 mb-6 max-w-[1400px]">
             {/* Select All on left */}
             <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
               <input
@@ -1984,36 +2097,14 @@ export default function DashboardPage() {
             onExpandedStateChange={setTableExpanded}
             externalSortField={sortField}
             externalSortDirection={sortDirection}
+            starredAdIds={starredAdIds}
+            starredCreativeIds={starredCreativeIds}
+            onStarAd={handleStarAd}
+            onUnstarAd={handleUnstarAd}
           />
         </>
       )}
       
-      {showUpload && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/50 z-40"
-            onClick={() => setShowUpload(false)}
-          />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-bg-sidebar border border-border rounded-xl p-6 z-50">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold"><span className="hidden sm:inline">Upload CSV</span></h2>
-              <button 
-                onClick={() => setShowUpload(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-card border border-border text-zinc-400 hover:text-white transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            <CSVUpload onUpload={handleUpload} isLoading={isSaving} />
-            {isSaving && (
-              <div className="mt-4 text-center text-sm text-zinc-500">
-                Saving your data...
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
       {/* Status Change Confirmation Modal */}
       {statusChangeModal && (
         <StatusChangeModal
@@ -2050,6 +2141,83 @@ export default function DashboardPage() {
             : accounts.find(a => a.id === currentAccountId)?.name || currentAccountId || undefined
         }
       />
+
+      {/* Launch Wizard - Full Screen Overlay */}
+      {showLaunchWizard && currentAccountId && (
+        <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
+          <div className="min-h-screen px-4 py-8">
+            <LaunchWizard
+              adAccountId={currentAccountId}
+              onComplete={(performanceSetResult) => {
+                setShowLaunchWizard(false)
+                // Refresh data after creating campaign
+                loadData()
+                // Show clear stars prompt if this was a Performance Set
+                if (performanceSetResult?.usedAdIds && performanceSetResult.usedAdIds.length > 0) {
+                  setPerformanceSetAdIds(performanceSetResult.usedAdIds)
+                  setShowClearStarsPrompt(true)
+                }
+              }}
+              onCancel={() => setShowLaunchWizard(false)}
+              initialEntityType={launchWizardEntityType}
+              starredAds={starredAds.map(ad => ({
+                ad_id: ad.ad_id,
+                ad_name: ad.ad_name,
+                adset_id: ad.adset_id,
+                adset_name: ad.adset_name,
+                campaign_id: ad.campaign_id,
+                campaign_name: ad.campaign_name,
+                spend: ad.spend,
+                revenue: ad.revenue,
+                roas: ad.roas
+              }))}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Clear Stars Prompt - shown after Performance Set creation */}
+      {showClearStarsPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-bg-card border border-border rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Performance Set Created!</h3>
+            </div>
+            <p className="text-zinc-400 mb-6">
+              Your new CBO campaign with {performanceSetAdIds.length} winner{performanceSetAdIds.length !== 1 ? 's' : ''} has been created and is paused for your review.
+            </p>
+            <p className="text-sm text-zinc-500 mb-4">
+              Clear these stars from your list?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowClearStarsPrompt(false)
+                  setPerformanceSetAdIds([])
+                }}
+                className="flex-1 px-4 py-2 border border-border rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
+              >
+                Keep Stars
+              </button>
+              <button
+                onClick={async () => {
+                  await handleClearStars(performanceSetAdIds)
+                  setShowClearStarsPrompt(false)
+                  setPerformanceSetAdIds([])
+                }}
+                className="flex-1 px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg font-medium transition-colors"
+              >
+                Clear Stars
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

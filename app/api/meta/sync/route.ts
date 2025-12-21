@@ -118,6 +118,7 @@ type AdData = {
   name: string
   adset_id: string
   effective_status: string
+  creative?: { id: string }
 }
 
 // Map our UI presets to valid Meta API date_preset values
@@ -185,7 +186,7 @@ function getDateRangeFromPreset(datePreset: string): { since: string; until: str
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, datePreset = 'last_30d', customStartDate, customEndDate } = await request.json()
+    const { userId, adAccountId, datePreset = 'last_30d', customStartDate, customEndDate, forceFullSync = false } = await request.json()
 
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -195,7 +196,7 @@ export async function POST(request: NextRequest) {
     const cleanAccountId = adAccountId.replace(/^act_/, '')
     const normalizedAccountId = `act_${cleanAccountId}`
 
-    // Get user's Meta connection
+    // Get user's Meta connection (includes last_sync_at)
     const { data: connection, error: connError } = await supabase
       .from('meta_connections')
       .select('*')
@@ -210,8 +211,50 @@ export async function POST(request: NextRequest) {
     if (new Date(connection.token_expires_at) < new Date()) {
       return NextResponse.json({ error: 'Token expired, please reconnect' }, { status: 401 })
     }
-    
+
     const accessToken = connection.access_token
+
+    // SMART DELTA SYNC: Only fetch what's needed
+    // If we synced recently and user isn't expanding the date range, just fetch today
+    const lastSyncAt = connection.last_sync_at ? new Date(connection.last_sync_at) : null
+    const today = new Date()
+    const formatDate = (d: Date) => d.toISOString().split('T')[0]
+    const todayStr = formatDate(today)
+
+    // Calculate requested date range
+    const requestedRange = datePreset === 'custom' && customStartDate && customEndDate
+      ? { since: customStartDate, until: customEndDate }
+      : getDateRangeFromPreset(datePreset)
+
+    // Determine if this is a delta sync (only today) or full sync
+    let isDeltaSync = false
+    let deltaStartDate = todayStr
+    let deltaEndDate = todayStr
+
+    if (!forceFullSync && lastSyncAt) {
+      const lastSyncDate = formatDate(lastSyncAt)
+      const hoursSinceSync = (today.getTime() - lastSyncAt.getTime()) / (1000 * 60 * 60)
+
+      // Delta sync if: synced within last 24 hours and requesting same/smaller range
+      if (hoursSinceSync < 24) {
+        // Check if we need to expand the range (user wants older data than what we have)
+        // For now, assume we always have last_30d - if user requests last_30d or smaller, delta sync
+        const smallRanges = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d']
+        if (datePreset !== 'custom' && smallRanges.includes(datePreset)) {
+          isDeltaSync = true
+          // Fetch today and yesterday to ensure we have complete data
+          const yesterday = new Date(today)
+          yesterday.setDate(yesterday.getDate() - 1)
+          deltaStartDate = formatDate(yesterday)
+          deltaEndDate = todayStr
+          console.log('[Sync] Delta sync - only fetching', deltaStartDate, 'to', deltaEndDate)
+        }
+      }
+    }
+
+    if (!isDeltaSync) {
+      console.log('[Sync] Full sync - fetching', requestedRange.since, 'to', requestedRange.until)
+    }
 
     // Fetch rules (including event_values) for this ad account
     const { data: rulesData } = await supabase
@@ -247,7 +290,11 @@ export async function POST(request: NextRequest) {
     insightsUrl.searchParams.set('fields', fields)
     insightsUrl.searchParams.set('level', 'ad')
     insightsUrl.searchParams.set('limit', '1000')
-    if (datePreset === 'custom' && customStartDate && customEndDate) {
+
+    // For delta sync, only fetch today + yesterday; for full sync use requested range
+    if (isDeltaSync) {
+      insightsUrl.searchParams.set('time_range', JSON.stringify({ since: deltaStartDate, until: deltaEndDate }))
+    } else if (datePreset === 'custom' && customStartDate && customEndDate) {
       insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
     } else {
       insightsUrl.searchParams.set('date_preset', VALID_META_PRESETS[datePreset] || 'last_30d')
@@ -267,28 +314,118 @@ export async function POST(request: NextRequest) {
 
     const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
-    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status')
+    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status,creative{id}')
     adsUrl.searchParams.set('limit', '1000')
 
-    // SEQUENTIAL FETCH with delays - avoid Meta API issues
+    // SEQUENTIAL FETCH with delays - avoid Meta API rate limits
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-    const insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
-    await delay(500)
-    const campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
-    await delay(500)
-    const adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
-    await delay(500)
-    const adsResult = await fetchAllPages<AdData>(adsUrl.toString())
+    // Always fetch insights (that's the data that changes)
+    let insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+    let allInsights = insightsResult.data
 
-    // Extract data from results
-    const allCampaigns = campaignsResult.data
-    const allAdsets = adsetsResult.data
-    const allAdsData = adsResult.data
-    const allInsights = insightsResult.data
+    // For delta sync, skip entity fetches - use existing data from Supabase
+    // Entity data (status, budget) rarely changes and can be fetched separately if needed
+    let allCampaigns: CampaignData[] = []
+    let allAdsets: AdsetData[] = []
+    let allAdsData: AdData[] = []
+    let campaignsResult: FetchResult<CampaignData> = { data: [], success: true }
+    let adsetsResult: FetchResult<AdsetData> = { data: [], success: true }
+    let adsResult: FetchResult<AdData> = { data: [], success: true }
+
+    if (isDeltaSync) {
+      // Delta sync: Get entity data from existing Supabase data instead of Meta API
+      console.log('[Sync] Delta sync - checking for existing data')
+      const { data: existingData } = await supabase
+        .from('ad_data')
+        .select('campaign_id, campaign_name, campaign_status, campaign_daily_budget, campaign_lifetime_budget, adset_id, adset_name, adset_status, adset_daily_budget, adset_lifetime_budget, ad_id, ad_name, status')
+        .eq('user_id', userId)
+        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+        .limit(1000)
+
+      // If DB is empty, fall back to full sync and re-fetch insights with full date range
+      if (!existingData || existingData.length === 0) {
+        console.log('[Sync] Delta sync aborted - no existing data, falling back to full sync')
+        isDeltaSync = false
+
+        // Re-build insights URL with full date range (not delta)
+        if (datePreset === 'custom' && customStartDate && customEndDate) {
+          insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
+        } else {
+          insightsUrl.searchParams.delete('time_range')
+          insightsUrl.searchParams.set('date_preset', VALID_META_PRESETS[datePreset] || 'last_30d')
+        }
+
+        // Re-fetch insights with correct date range
+        console.log('[Sync] Re-fetching insights with full date range:', datePreset)
+        insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
+        allInsights = insightsResult.data
+        console.log('[Sync] Full sync insights count:', allInsights.length)
+      } else {
+        console.log('[Sync] Delta sync - using', existingData.length, 'existing rows')
+
+        // Build entity maps from existing data
+        const campaignMap = new Map<string, CampaignData>()
+        const adsetMap = new Map<string, AdsetData>()
+        const adMap = new Map<string, AdData>()
+
+        for (const row of existingData) {
+          if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
+            campaignMap.set(row.campaign_id, {
+              id: row.campaign_id,
+              name: row.campaign_name,
+              effective_status: row.campaign_status || 'ACTIVE',
+              daily_budget: row.campaign_daily_budget?.toString(),
+              lifetime_budget: row.campaign_lifetime_budget?.toString()
+            })
+          }
+          if (row.adset_id && !adsetMap.has(row.adset_id)) {
+            adsetMap.set(row.adset_id, {
+              id: row.adset_id,
+              name: row.adset_name,
+              campaign_id: row.campaign_id,
+              effective_status: row.adset_status || 'ACTIVE',
+              daily_budget: row.adset_daily_budget?.toString(),
+              lifetime_budget: row.adset_lifetime_budget?.toString()
+            })
+          }
+          if (row.ad_id && !adMap.has(row.ad_id)) {
+            adMap.set(row.ad_id, {
+              id: row.ad_id,
+              name: row.ad_name,
+              adset_id: row.adset_id,
+              effective_status: row.status || 'ACTIVE'
+            })
+          }
+        }
+
+        allCampaigns = Array.from(campaignMap.values())
+        allAdsets = Array.from(adsetMap.values())
+        allAdsData = Array.from(adMap.values())
+        campaignsResult = { data: allCampaigns, success: true }
+        adsetsResult = { data: allAdsets, success: true }
+        adsResult = { data: allAdsData, success: true }
+      }
+    }
+
+    if (!isDeltaSync) {
+      // Full sync: Fetch all entity data from Meta API
+      // Increased delays to avoid rate limits (creative{id} field adds overhead)
+      await delay(2000)
+      campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+      await delay(2000)
+      adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
+      await delay(2000)
+      adsResult = await fetchAllPages<AdData>(adsUrl.toString())
+
+      allCampaigns = campaignsResult.data
+      allAdsets = adsetsResult.data
+      allAdsData = adsResult.data
+    }
 
     // Log fetch results for debugging
     console.log('Meta sync fetch results:', {
+      syncType: isDeltaSync ? 'delta' : 'full',
       campaigns: { count: allCampaigns.length, success: campaignsResult.success, error: campaignsResult.error },
       adsets: { count: allAdsets.length, success: adsetsResult.success, error: adsetsResult.error },
       ads: { count: allAdsData.length, success: adsResult.success, error: adsResult.error },
@@ -298,6 +435,47 @@ export async function POST(request: NextRequest) {
     // Track if entity fetches failed (vs just returning empty)
     const adsetsFetchFailed = !adsetsResult.success
     const adsFetchFailed = !adsResult.success
+
+    // CRITICAL: Detect when entity endpoints returned empty or failed but insights show entities exist
+    // This happens on rapid successive syncs - Meta API returns empty arrays or rate limit errors
+    // If we proceed, we'd lose all budget/status data. Better to error out.
+    const insightAdsetIds = new Set(allInsights.map(i => i.adset_id).filter(Boolean))
+    const insightAdIds = new Set(allInsights.map(i => i.ad_id).filter(Boolean))
+
+    // Case 1: Successful but empty (Meta returned empty arrays without error)
+    const adsetsReturnedEmpty = adsetsResult.success && allAdsets.length === 0 && insightAdsetIds.size > 0
+    const adsReturnedEmpty = adsResult.success && allAdsData.length === 0 && insightAdIds.size > 0
+
+    // Case 2: Failed fetch (rate limit, timeout, etc) when we have insights that need this data
+    const adsetsFetchFailedWithData = adsetsFetchFailed && insightAdsetIds.size > 0
+    const adsFetchFailedWithData = adsFetchFailed && insightAdIds.size > 0
+
+    if (adsetsReturnedEmpty || adsReturnedEmpty) {
+      console.error('Meta API returned empty entity data despite having insights - likely rapid sync issue:', {
+        adsetsEmpty: adsetsReturnedEmpty,
+        adsEmpty: adsReturnedEmpty,
+        insightAdsetCount: insightAdsetIds.size,
+        insightAdCount: insightAdIds.size
+      })
+      return NextResponse.json({
+        error: 'Meta API returned incomplete data. Please wait a few seconds and try again.',
+        retryable: true
+      }, { status: 503 })
+    }
+
+    // If entity fetches failed (rate limit, etc), don't save partial data that would overwrite good data
+    if (adsetsFetchFailedWithData || adsFetchFailedWithData) {
+      console.error('Entity fetch failed - not saving partial data:', {
+        adsetsFailed: adsetsFetchFailedWithData,
+        adsFailed: adsFetchFailedWithData,
+        adsetsError: adsetsResult.error,
+        adsError: adsResult.error
+      })
+      return NextResponse.json({
+        error: adsetsResult.error || adsResult.error || 'Meta API rate limit reached. Please wait a minute and try again.',
+        retryable: true
+      }, { status: 429 })
+    }
 
     // Log if we have partial data (but don't block - let sync complete)
     if (allInsights.length > 0 && (allAdsets.length === 0 || allAdsData.length === 0)) {
@@ -312,31 +490,40 @@ export async function POST(request: NextRequest) {
     }
 
     // Build maps
+    // IMPORTANT: Meta API returns budgets in cents, but DB stores in dollars
+    // For delta sync, data comes from DB (already in dollars) - don't divide by 100
+    // For full sync, data comes from Meta API (in cents) - divide by 100
     const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adStatusMap: Record<string, string> = {}
+    const adCreativeMap: Record<string, string | null> = {}  // ad_id -> creative_id
 
     allCampaigns.forEach((c) => {
+      // For delta sync, budgets are already in dollars from DB
+      // For full sync from Meta API, budgets are in cents
+      const budgetDivisor = isDeltaSync ? 1 : 100
       campaignMap[c.id] = {
         name: c.name,
         status: c.effective_status,
-        daily_budget: c.daily_budget ? parseInt(c.daily_budget) / 100 : null,
-        lifetime_budget: c.lifetime_budget ? parseInt(c.lifetime_budget) / 100 : null,
+        daily_budget: c.daily_budget ? parseInt(c.daily_budget) / budgetDivisor : null,
+        lifetime_budget: c.lifetime_budget ? parseInt(c.lifetime_budget) / budgetDivisor : null,
       }
     })
 
     allAdsets.forEach((a) => {
+      const budgetDivisor = isDeltaSync ? 1 : 100
       adsetMap[a.id] = {
         name: a.name,
         campaign_id: a.campaign_id,
         status: a.effective_status,
-        daily_budget: a.daily_budget ? parseInt(a.daily_budget) / 100 : null,
-        lifetime_budget: a.lifetime_budget ? parseInt(a.lifetime_budget) / 100 : null,
+        daily_budget: a.daily_budget ? parseInt(a.daily_budget) / budgetDivisor : null,
+        lifetime_budget: a.lifetime_budget ? parseInt(a.lifetime_budget) / budgetDivisor : null,
       }
     })
 
     allAdsData.forEach((ad) => {
       adStatusMap[ad.id] = ad.effective_status
+      adCreativeMap[ad.id] = ad.creative?.id || null
       // Build hierarchy cache from entity data
       if (!adHierarchyCache[ad.id] && ad.adset_id) {
         const adset = adsetMap[ad.adset_id]
@@ -360,58 +547,49 @@ export async function POST(request: NextRequest) {
       return campaignMap[insight.campaign_id] !== undefined
     })
 
-    // FALLBACK: Build hierarchy and maps from insights if entity calls returned empty
-    // Only use fallback if endpoint SUCCEEDED but returned empty (truly no entities)
-    // If endpoint FAILED, we use UNKNOWN status to indicate unreliable data
-    // Use activeInsights (already filtered for deleted campaigns)
-    if (allAdsets.length === 0 || allAdsData.length === 0) {
-      console.log('Building hierarchy from insights data as fallback', {
-        adsetsFetchFailed,
-        adsFetchFailed
-      })
+    // Ensure all entities from insights exist in maps (fill gaps from entity fetches)
+    // This handles cases where:
+    // 1. Entity endpoints returned empty/failed
+    // 2. Entity endpoints returned partial data (some adsets missing)
+    // 3. New entities were created after entity fetch but before insights fetch
+    const fallbackAdsetStatus = adsetsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
+    const fallbackAdStatus = adsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
 
-      // Determine what status to use for fallback entities
-      // If fetch succeeded but returned empty: entity has insights so probably ACTIVE
-      // If fetch failed: we don't know, use UNKNOWN
-      const fallbackAdsetStatus = adsetsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
-      const fallbackAdStatus = adsFetchFailed ? 'UNKNOWN' : 'ACTIVE'
-
-      activeInsights.forEach((insight: MetaInsight) => {
-        // Build adset map from insights
-        if (insight.adset_id && !adsetMap[insight.adset_id]) {
-          adsetMap[insight.adset_id] = {
-            name: insight.adset_name,
-            campaign_id: insight.campaign_id,
-            status: fallbackAdsetStatus,
-            daily_budget: null, // Can't get budget from insights
-            lifetime_budget: null,
-          }
+    activeInsights.forEach((insight: MetaInsight) => {
+      // Ensure adset exists in map (use fallback if missing)
+      if (insight.adset_id && !adsetMap[insight.adset_id]) {
+        adsetMap[insight.adset_id] = {
+          name: insight.adset_name,
+          campaign_id: insight.campaign_id,
+          status: fallbackAdsetStatus,
+          daily_budget: null, // Can't get budget from insights
+          lifetime_budget: null,
         }
-        // Build campaign map from insights if missing
-        if (insight.campaign_id && !campaignMap[insight.campaign_id]) {
-          campaignMap[insight.campaign_id] = {
-            name: insight.campaign_name,
-            status: 'ACTIVE', // Campaigns endpoint rarely fails, assume active
-            daily_budget: null,
-            lifetime_budget: null,
-          }
+      }
+      // Ensure campaign exists in map (use fallback if missing)
+      if (insight.campaign_id && !campaignMap[insight.campaign_id]) {
+        campaignMap[insight.campaign_id] = {
+          name: insight.campaign_name,
+          status: 'ACTIVE',
+          daily_budget: null,
+          lifetime_budget: null,
         }
-        // Build hierarchy cache from insights
-        if (!adHierarchyCache[insight.ad_id]) {
-          adHierarchyCache[insight.ad_id] = {
-            campaign_name: insight.campaign_name,
-            campaign_id: insight.campaign_id,
-            adset_name: insight.adset_name,
-            adset_id: insight.adset_id,
-            ad_name: insight.ad_name,
-          }
+      }
+      // Build hierarchy cache from insights
+      if (!adHierarchyCache[insight.ad_id]) {
+        adHierarchyCache[insight.ad_id] = {
+          campaign_name: insight.campaign_name,
+          campaign_id: insight.campaign_id,
+          adset_name: insight.adset_name,
+          adset_id: insight.adset_id,
+          ad_name: insight.ad_name,
         }
-        // Set ad status - use fallback status based on whether fetch failed
-        if (!adStatusMap[insight.ad_id]) {
-          adStatusMap[insight.ad_id] = fallbackAdStatus
-        }
-      })
-    }
+      }
+      // Set ad status if not already known
+      if (!adStatusMap[insight.ad_id]) {
+        adStatusMap[insight.ad_id] = fallbackAdStatus
+      }
+    })
     
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
@@ -531,6 +709,7 @@ export async function POST(request: NextRequest) {
         campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
         adset_daily_budget: adset?.daily_budget ?? null,
         adset_lifetime_budget: adset?.lifetime_budget ?? null,
+        creative_id: adCreativeMap[insight.ad_id] || null,
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,
@@ -579,6 +758,7 @@ export async function POST(request: NextRequest) {
           campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
           adset_daily_budget: adset?.daily_budget ?? null,
           adset_lifetime_budget: adset?.lifetime_budget ?? null,
+          creative_id: adCreativeMap[adId] || null,
           impressions: 0,
           clicks: 0,
           spend: 0,
@@ -602,15 +782,32 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Delete existing data for this account (matches any format variation)
-    const { error: deleteError } = await supabase
-      .from('ad_data')
-      .delete()
-      .eq('user_id', userId)
-      .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+    // Delete existing data - for delta sync only delete the dates we're updating
+    if (isDeltaSync) {
+      // Only delete data for the delta date range (today + yesterday)
+      console.log('[Sync] Delta delete - removing data for', deltaStartDate, 'to', deltaEndDate)
+      const { error: deleteError } = await supabase
+        .from('ad_data')
+        .delete()
+        .eq('user_id', userId)
+        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+        .gte('date_start', deltaStartDate)
+        .lte('date_start', deltaEndDate)
 
-    if (deleteError) {
-      console.error('Delete error:', deleteError)
+      if (deleteError) {
+        console.error('Delta delete error:', deleteError)
+      }
+    } else {
+      // Full sync - delete all data for this account
+      const { error: deleteError } = await supabase
+        .from('ad_data')
+        .delete()
+        .eq('user_id', userId)
+        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+
+      if (deleteError) {
+        console.error('Delete error:', deleteError)
+      }
     }
 
     // Insert new data in parallel batches for speed
@@ -650,11 +847,13 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json({
-      message: 'Sync complete',
+      message: isDeltaSync ? 'Delta sync complete (today + yesterday only)' : 'Full sync complete',
       count: allAdData.length,
       adsWithActivity: adData.length,
       adsWithoutActivity: adsWithoutInsights.length,
-      filteredDeletedInsights: allInsights.length - activeInsights.length
+      filteredDeletedInsights: allInsights.length - activeInsights.length,
+      syncType: isDeltaSync ? 'delta' : 'full',
+      dateRange: isDeltaSync ? { since: deltaStartDate, until: deltaEndDate } : requestedRange
     })
     
   } catch (err) {
