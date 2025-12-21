@@ -198,6 +198,8 @@ export default function DashboardPage() {
     entityType: 'campaign' | 'adset' | 'ad'
     entityName: string
     action: 'pause' | 'resume'
+    platform?: 'meta' | 'google'
+    accountId?: string  // Meta ad_account_id or Google customer_id
   } | null>(null)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const [highlightEntity, setHighlightEntity] = useState<{
@@ -548,6 +550,8 @@ export default function DashboardPage() {
           adset_lifetime_budget: null,
           // Platform marker for display
           _platform: 'google' as const,
+          // Google budget resource name for mutations
+          campaign_budget_resource_name: row.campaign_budget_resource_name,
         }))
         rows = [...rows, ...googleRows]
       }
@@ -637,6 +641,7 @@ export default function DashboardPage() {
           adset_daily_budget: null,
           adset_lifetime_budget: null,
           _platform: 'google' as const,
+          campaign_budget_resource_name: row.campaign_budget_resource_name,
         }))
         rows = [...rows, ...googleRows]
       }
@@ -924,37 +929,62 @@ export default function DashboardPage() {
     entityId: string,
     entityType: 'campaign' | 'adset' | 'ad',
     entityName: string,
-    newStatus: 'ACTIVE' | 'PAUSED'
+    newStatus: 'ACTIVE' | 'PAUSED',
+    platform?: 'meta' | 'google',
+    accountId?: string
   ) => {
     setStatusChangeModal({
       isOpen: true,
       entityId,
       entityType,
       entityName,
-      action: newStatus === 'PAUSED' ? 'pause' : 'resume'
+      action: newStatus === 'PAUSED' ? 'pause' : 'resume',
+      platform,
+      accountId,
     })
   }
 
   // Confirm and execute status change
   const handleStatusChangeConfirm = async () => {
     if (!statusChangeModal || !user) return
-    
+
     setIsUpdatingStatus(true)
-    
+
     try {
-      const response = await fetch('/api/meta/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          entityId: statusChangeModal.entityId,
-          entityType: statusChangeModal.entityType,
-          status: statusChangeModal.action === 'pause' ? 'PAUSED' : 'ACTIVE'
-        }),
-      })
-      
+      const newStatus = statusChangeModal.action === 'pause' ? 'PAUSED' : 'ACTIVE'
+      const isGoogle = statusChangeModal.platform === 'google'
+
+      let response: Response
+
+      if (isGoogle) {
+        // Google Ads API
+        response = await fetch('/api/google/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            customerId: statusChangeModal.accountId,
+            entityId: statusChangeModal.entityId,
+            entityType: statusChangeModal.entityType,
+            status: newStatus,
+          }),
+        })
+      } else {
+        // Meta API (default)
+        response = await fetch('/api/meta/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            entityId: statusChangeModal.entityId,
+            entityType: statusChangeModal.entityType,
+            status: newStatus,
+          }),
+        })
+      }
+
       const result = await response.json()
-      
+
       if (response.ok) {
         // Refresh data to reflect the change
         await loadData()
@@ -965,7 +995,7 @@ export default function DashboardPage() {
     } catch (err) {
       alert('Failed to update status. Please try again.')
     }
-    
+
     setIsUpdatingStatus(false)
   }
 
@@ -975,23 +1005,48 @@ export default function DashboardPage() {
     entityType: 'campaign' | 'adset',
     newBudget: number,
     budgetType: 'daily' | 'lifetime',
-    oldBudget?: number
+    oldBudget?: number,
+    platform?: 'meta' | 'google',
+    accountId?: string,
+    budgetResourceName?: string
   ) => {
     if (!user) throw new Error('Not authenticated')
 
-    const response = await fetch('/api/meta/update-budget', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: user.id,
-        entityId,
-        entityType,
-        budget: newBudget,
-        budgetType,
-        oldBudget,
-        adAccountId: selectedAccountId
-      }),
-    })
+    let response: Response
+
+    if (platform === 'google') {
+      // Google Ads API - only supports campaign-level budgets
+      if (!budgetResourceName) {
+        throw new Error('Budget resource name required for Google Ads')
+      }
+      response = await fetch('/api/google/update-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          customerId: accountId,
+          campaignId: entityId,
+          budgetResourceName,
+          budget: newBudget,
+          oldBudget,
+        }),
+      })
+    } else {
+      // Meta API (default)
+      response = await fetch('/api/meta/update-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entityId,
+          entityType,
+          budget: newBudget,
+          budgetType,
+          oldBudget,
+          adAccountId: accountId || selectedAccountId,
+        }),
+      })
+    }
 
     const result = await response.json()
 
@@ -1431,6 +1486,7 @@ export default function DashboardPage() {
     const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string; campaignStatus: string | null | undefined }>()
 
     // Process ALL data to build budget maps, then filter by selection
+    // Use ad_account_id in keys to avoid conflicts when Meta and Google have same campaign names
     data.forEach(row => {
       // Determine if this is CBO or ABO based on where budget lives
       // CBO: campaign has budget, adset does NOT have budget
@@ -1438,9 +1494,12 @@ export default function DashboardPage() {
       const isCBO = !!(row.campaign_daily_budget || row.campaign_lifetime_budget) &&
                     !(row.adset_daily_budget || row.adset_lifetime_budget)
 
+      // Use account-qualified keys to handle same campaign names across platforms
+      const campaignKey = `${row.ad_account_id || ''}|${row.campaign_name}`
+
       // Track campaign-level budget (only for true CBO campaigns)
-      if (isCBO && row.campaign_daily_budget && !campaignBudgets.has(row.campaign_name)) {
-        campaignBudgets.set(row.campaign_name, {
+      if (isCBO && row.campaign_daily_budget && !campaignBudgets.has(campaignKey)) {
+        campaignBudgets.set(campaignKey, {
           budget: row.campaign_daily_budget,
           status: row.campaign_status,
           isCBO: true,
@@ -1449,7 +1508,7 @@ export default function DashboardPage() {
       }
 
       // Track adset-level budgets (ABO)
-      const adsetKey = `${row.campaign_name}|${row.adset_name}`
+      const adsetKey = `${row.ad_account_id || ''}|${row.campaign_name}|${row.adset_name}`
       const adsetSelectionKey = `${row.campaign_name}::${row.adset_name}`
       if (row.adset_daily_budget && !adsetBudgets.has(adsetKey)) {
         adsetBudgets.set(adsetKey, {
@@ -1461,8 +1520,8 @@ export default function DashboardPage() {
         })
 
         // Also track that this campaign is ABO (for status checking)
-        if (!campaignBudgets.has(row.campaign_name)) {
-          campaignBudgets.set(row.campaign_name, {
+        if (!campaignBudgets.has(campaignKey)) {
+          campaignBudgets.set(campaignKey, {
             budget: 0,
             status: row.campaign_status,
             isCBO: false,

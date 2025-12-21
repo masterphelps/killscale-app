@@ -41,32 +41,34 @@ const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
 }
 
 // Platform badge for distinguishing Meta vs Google accounts
+// Compact M/G icons with brand colors
 const PlatformBadge = ({ platform }: { platform?: 'meta' | 'google' }) => {
   if (!FEATURES.GOOGLE_ADS_INTEGRATION || !platform) return null
 
   if (platform === 'google') {
     return (
       <span
-        className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30"
+        className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold bg-[#EA4335] text-white"
         title="Google Ads"
       >
-        Google
+        G
       </span>
     )
   }
 
-  // Meta - show subtle blue badge (or don't show if all accounts are Meta)
+  // Meta - blue brand color
   return (
     <span
-      className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30"
+      className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold bg-[#0866FF] text-white"
       title="Meta Ads"
     >
-      Meta
+      M
     </span>
   )
 }
 
 type AdRow = {
+  ad_account_id?: string  // Meta ad_account_id or Google customer_id
   campaign_name: string
   campaign_id?: string | null
   adset_name: string
@@ -93,6 +95,8 @@ type AdRow = {
   adset_lifetime_budget?: number | null
   // Platform indicator (for Google Ads integration)
   _platform?: 'meta' | 'google'
+  // Google budget resource name for mutations
+  campaign_budget_resource_name?: string | null
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -118,9 +122,9 @@ type PerformanceTableProps = {
   onSelectAll?: () => void
   allSelected?: boolean
   someSelected?: boolean
-  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED') => void
+  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED', platform?: 'meta' | 'google', accountId?: string) => void
   canManageAds?: boolean
-  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number) => Promise<void>
+  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number, platform?: 'meta' | 'google', accountId?: string, budgetResourceName?: string) => Promise<void>
   // For deep-linking from alerts
   highlightEntity?: {
     type: 'campaign' | 'adset' | 'ad'
@@ -172,6 +176,8 @@ type HierarchyNode = {
   lifetimeBudget?: number | null
   // Platform (for Google Ads integration)
   platform?: 'meta' | 'google'
+  accountId?: string  // Meta ad_account_id or Google customer_id
+  budgetResourceName?: string  // Google budget resource name for mutations
 }
 
 const formatPercent = (value: number) => {
@@ -289,6 +295,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         verdict: 'learn',
         children: [],
         platform: row._platform,  // Google Ads integration
+        accountId: row.ad_account_id,  // Meta ad_account_id or Google customer_id
+        budgetResourceName: row.campaign_budget_resource_name || undefined,  // Google budget resource name
       }
     }
     const campaign = campaigns[row.campaign_name]
@@ -314,7 +322,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         cpa: 0,
         convRate: 0,
         verdict: 'learn',
-        children: []
+        children: [],
+        platform: row._platform,  // Inherit platform from row
+        accountId: row.ad_account_id,  // Inherit accountId from row
       }
       campaign.children?.push(adset)
     }
@@ -341,7 +351,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         cpa: 0,
         convRate: 0,
         status: row.status,
-        verdict: 'learn'
+        verdict: 'learn',
+        platform: row._platform,  // Inherit platform from row
+        accountId: row.ad_account_id,  // Inherit accountId from row
       }
       adset.children?.push(ad)
     }
@@ -547,6 +559,9 @@ export function PerformanceTable({
     entityType: 'campaign' | 'adset'
     currentBudget: number
     currentBudgetType: 'daily' | 'lifetime'
+    platform?: 'meta' | 'google'
+    accountId?: string
+    budgetResourceName?: string  // Google budget resource name
   } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
@@ -1054,6 +1069,9 @@ export function PerformanceTable({
                         entityType: level,
                         currentBudget,
                         currentBudgetType: budgetType,
+                        platform: node.platform,
+                        accountId: node.accountId,
+                        budgetResourceName: node.budgetResourceName,
                       })
                     }
                   }}
@@ -1121,7 +1139,7 @@ export function PerformanceTable({
               e.stopPropagation()
               const isPaused = node.status && node.status !== 'ACTIVE'
               const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
-              onStatusChange(node.id!, level, node.name, newStatus)
+              onStatusChange(node.id!, level, node.name, newStatus, node.platform, node.accountId)
             }}
             className={cn(
               'w-8 h-8 flex items-center justify-center rounded-lg border transition-all flex-shrink-0',
@@ -1314,7 +1332,7 @@ export function PerformanceTable({
                 onClick={(e) => {
                   e.stopPropagation()
                   const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
-                  onStatusChange(node.id!, level, node.name, newStatus)
+                  onStatusChange(node.id!, level, node.name, newStatus, node.platform, node.accountId)
                 }}
                 className={cn(
                   'w-8 h-8 flex items-center justify-center rounded-lg border transition-all',
@@ -1365,6 +1383,9 @@ export function PerformanceTable({
                   entityType: level,
                   currentBudget,
                   currentBudgetType: budgetType,
+                  platform: node.platform,
+                  accountId: node.accountId,
+                  budgetResourceName: node.budgetResourceName,
                 })
               }
             }}
@@ -1588,7 +1609,10 @@ export function PerformanceTable({
                 budgetEditModal.entityType,
                 newBudget,
                 budgetType,
-                budgetEditModal.currentBudget
+                budgetEditModal.currentBudget,
+                budgetEditModal.platform,
+                budgetEditModal.accountId,
+                budgetEditModal.budgetResourceName
               )
             }
           }}

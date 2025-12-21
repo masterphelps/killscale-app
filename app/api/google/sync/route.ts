@@ -51,10 +51,12 @@ WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
 
 // GAQL query to fetch CAMPAIGN BUDGETS
 // campaign_budget is only available from campaign resource, not ad_group_ad
+// Include resource_name for budget mutations
 const BUDGET_QUERY = `
 SELECT
   campaign.id,
-  campaign_budget.amount_micros
+  campaign_budget.amount_micros,
+  campaign_budget.resource_name
 FROM campaign
 WHERE campaign.status != 'REMOVED'
 `
@@ -119,6 +121,7 @@ interface BudgetRow {
   campaign: { id: string }
   campaignBudget: {
     amountMicros: string
+    resourceName: string  // e.g., "customers/123/campaignBudgets/456"
   }
 }
 
@@ -237,13 +240,14 @@ export async function POST(request: NextRequest) {
     )
     console.log(`Google sync: Found ${budgetResult.data.length} budget rows`)
 
-    // Build budget map keyed by campaign_id
-    const budgetMap = new Map<string, number>()
+    // Build budget map keyed by campaign_id (stores amount and resource name)
+    const budgetMap = new Map<string, { amount: number; resourceName: string | null }>()
     for (const row of budgetResult.data) {
       const campaignId = row.campaign.id
       // Google returns amount in micros (1/1,000,000)
       const budgetAmount = parseInt(row.campaignBudget?.amountMicros || '0', 10) / 1_000_000
-      budgetMap.set(campaignId, budgetAmount)
+      const resourceName = row.campaignBudget?.resourceName || null
+      budgetMap.set(campaignId, { amount: budgetAmount, resourceName })
     }
 
     // Build structure map keyed by ad_id
@@ -321,7 +325,8 @@ export async function POST(request: NextRequest) {
         campaign_id: structure.campaign.id,
         campaign_status: normalizeStatus(structure.campaign.status),
         campaign_type: structure.campaign.advertisingChannelType,
-        campaign_budget: budgetMap.get(structure.campaign.id) || 0,
+        campaign_budget: budgetMap.get(structure.campaign.id)?.amount || 0,
+        campaign_budget_resource_name: budgetMap.get(structure.campaign.id)?.resourceName || null,
 
         // Ad Group
         ad_group_name: structure.adGroup.name,
