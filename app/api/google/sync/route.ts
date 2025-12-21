@@ -10,13 +10,13 @@ const supabase = createClient(
 )
 
 // GAQL query to fetch ad performance data
+// Note: campaign_budget is not compatible with ad_group_ad resource
 const buildGaqlQuery = (startDate: string, endDate: string) => `
 SELECT
   campaign.id,
   campaign.name,
   campaign.status,
   campaign.advertising_channel_type,
-  campaign_budget.amount_micros,
   ad_group.id,
   ad_group.name,
   ad_group.status,
@@ -56,9 +56,6 @@ interface GoogleAdRow {
     name: string
     status: string
     advertisingChannelType: string
-  }
-  campaignBudget?: {
-    amountMicros: string
   }
   adGroup: {
     id: string
@@ -168,7 +165,8 @@ export async function POST(request: NextRequest) {
       const conversions = parseFloat(row.metrics.conversions || '0')
       const impressions = parseInt(row.metrics.impressions || '0', 10)
       const clicks = parseInt(row.metrics.clicks || '0', 10)
-      const budgetMicros = parseInt(row.campaignBudget?.amountMicros || '0', 10)
+      // Budget requires separate query - set to 0 for now
+      const budgetMicros = 0
 
       // Calculate metrics
       const roas = spend > 0 ? conversionsValue / spend : 0
