@@ -204,12 +204,15 @@ export default function WorkspacesPage() {
     setEditingName('')
   }
 
-  const handleAddAccount = async (workspaceId: string, account: { id: string; name: string }) => {
+  const handleAddAccount = async (workspaceId: string, account: { id: string; name: string; platform?: 'meta' | 'google' }) => {
+    // Detect platform from account or infer from ID format
+    const platform = account.platform || (account.id.startsWith('act_') ? 'meta' : 'google')
+
     const { error } = await supabase
       .from('workspace_accounts')
       .insert({
         workspace_id: workspaceId,
-        platform: 'meta',
+        platform,
         ad_account_id: account.id,
         ad_account_name: account.name,
         currency: 'USD',
@@ -223,7 +226,7 @@ export default function WorkspacesPage() {
           {
             id: crypto.randomUUID(),
             workspace_id: workspaceId,
-            platform: 'meta',
+            platform,
             ad_account_id: account.id,
             ad_account_name: account.name,
             currency: 'USD',
@@ -756,7 +759,7 @@ export default function WorkspacesPage() {
                         <option value="" disabled>Select an account...</option>
                         {availableAccounts.map((account) => (
                           <option key={account.id} value={account.id}>
-                            {account.name}
+                            [{account.platform === 'google' ? 'Google' : 'Meta'}] {account.name}
                           </option>
                         ))}
                       </select>
