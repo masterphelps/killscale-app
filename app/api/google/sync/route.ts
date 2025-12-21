@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     const query = buildGaqlQuery(start, end)
 
     const response = await fetch(
-      `https://googleads.googleapis.com/v17/customers/${normalizedCustomerId}/googleAds:searchStream`,
+      `https://googleads.googleapis.com/v22/customers/${normalizedCustomerId}/googleAds:searchStream`,
       {
         method: 'POST',
         headers: {
