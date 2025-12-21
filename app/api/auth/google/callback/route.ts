@@ -119,12 +119,19 @@ export async function GET(request: NextRequest) {
               headers: {
                 Authorization: `Bearer ${access_token}`,
                 'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
-                'login-customer-id': customerId,  // Use the customer as its own login
               },
             }
           )
 
-          const detailData = await detailResponse.json()
+          // Log non-JSON responses for debugging
+          const responseText = await detailResponse.text()
+          let detailData
+          try {
+            detailData = JSON.parse(responseText)
+          } catch {
+            console.error(`Customer ${customerId} returned non-JSON:`, responseText.substring(0, 200))
+            return null
+          }
 
           if (detailData.error) {
             // This customer might be a manager account or inaccessible
