@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorData = await response.json()
-      console.error('Google Ads API error:', errorData)
+      console.error('Google Ads API error:', JSON.stringify(errorData, null, 2))
       return NextResponse.json(
         { error: 'Failed to fetch data from Google Ads', details: errorData },
         { status: response.status }
