@@ -19,6 +19,7 @@ import { useAccount } from '@/lib/account'
 import { useAttribution } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
+import { FEATURES } from '@/lib/feature-flags'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -107,6 +108,13 @@ type CacheEntry = {
 }
 const dataCache = new Map<string, CacheEntry>()
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+// Helper to detect Google vs Meta accounts
+// Meta accounts start with 'act_', Google customer IDs don't
+const isGoogleAccount = (accountId: string | null): boolean => {
+  if (!accountId) return false
+  return FEATURES.GOOGLE_ADS_INTEGRATION && !accountId.startsWith('act_')
+}
 
 // Helper to get cache key
 const getCacheKey = (accountId: string | null, workspaceAccountIds: string[]): string => {
@@ -437,20 +445,23 @@ export default function DashboardPage() {
 
   const loadData = async (showLoading = true) => {
     if (!user) return
-    
+
     // Only show loading spinner on very first load (never loaded before)
     if (showLoading && !hasLoadedOnce) {
       setIsLoading(true)
     }
-    
+
+    // Load Meta ad data
     const { data: adData, error } = await supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: false })
 
+    let rows: CSVRow[] = []
+
     if (adData && !error) {
-      const rows = adData.map(row => ({
+      rows = adData.map(row => ({
         ad_account_id: row.ad_account_id, // Include for account filtering
         date_start: row.date_start,
         date_end: row.date_end,
@@ -479,11 +490,54 @@ export default function DashboardPage() {
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
       }))
-      setData(rows)
-
-      // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
-      // This ensures selection is always for the currently selected account
     }
+
+    // Load Google ad data if feature enabled
+    if (FEATURES.GOOGLE_ADS_INTEGRATION) {
+      const { data: googleData, error: googleError } = await supabase
+        .from('google_ad_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date_start', { ascending: false })
+
+      if (googleData && !googleError) {
+        const googleRows = googleData.map(row => ({
+          ad_account_id: row.customer_id, // Google uses customer_id
+          date_start: row.date_start,
+          date_end: row.date_end,
+          campaign_name: row.campaign_name,
+          campaign_id: row.campaign_id,
+          // Map Google ad_group to adset fields for unified display
+          adset_name: row.ad_group_name,
+          adset_id: row.ad_group_id,
+          ad_name: row.ad_name,
+          ad_id: row.ad_id,
+          impressions: row.impressions,
+          clicks: row.clicks,
+          spend: parseFloat(row.spend),
+          purchases: row.conversions || 0,
+          revenue: parseFloat(row.conversions_value) || 0,
+          results: row.results || 0,
+          result_value: row.result_value ?? null,
+          result_type: row.result_type ?? null,
+          status: row.ad_status,
+          adset_status: row.ad_group_status,
+          campaign_status: row.campaign_status,
+          // Google is always CBO - budget at campaign level only
+          campaign_daily_budget: row.campaign_budget,
+          campaign_lifetime_budget: null,
+          adset_daily_budget: null,
+          adset_lifetime_budget: null,
+          // Platform marker for display
+          _platform: 'google' as const,
+        }))
+        rows = [...rows, ...googleRows]
+      }
+    }
+
+    setData(rows)
+    // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
+    // This ensures selection is always for the currently selected account
     setHasLoadedOnce(true)
     setIsLoading(false)
   }
@@ -492,14 +546,17 @@ export default function DashboardPage() {
   const loadDataAndCache = async (accountId: string | null, wsAccountIds: string[] = []) => {
     if (!user) return
 
+    // Load Meta ad data
     const { data: adData, error } = await supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: false })
 
+    let rows: CSVRow[] = []
+
     if (adData && !error) {
-      const rows = adData.map(row => ({
+      rows = adData.map(row => ({
         ad_account_id: row.ad_account_id,
         date_start: row.date_start,
         date_end: row.date_end,
@@ -525,32 +582,72 @@ export default function DashboardPage() {
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
       }))
-
-      setData(rows)
-
-      // Cache the relevant subset
-      const cacheKey = getCacheKey(accountId, wsAccountIds)
-      let cacheData: CSVRow[]
-
-      if (wsAccountIds.length > 0) {
-        cacheData = rows.filter(row => wsAccountIds.includes(row.ad_account_id || ''))
-      } else if (accountId) {
-        cacheData = rows.filter(row => row.ad_account_id === accountId)
-      } else {
-        cacheData = rows
-      }
-
-      dataCache.set(cacheKey, {
-        data: cacheData,
-        datePreset,
-        customStartDate,
-        customEndDate,
-        fetchedAt: Date.now()
-      })
-      console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
-
-      return rows
     }
+
+    // Load Google ad data if feature enabled
+    if (FEATURES.GOOGLE_ADS_INTEGRATION) {
+      const { data: googleData, error: googleError } = await supabase
+        .from('google_ad_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date_start', { ascending: false })
+
+      if (googleData && !googleError) {
+        const googleRows = googleData.map(row => ({
+          ad_account_id: row.customer_id,
+          date_start: row.date_start,
+          date_end: row.date_end,
+          campaign_name: row.campaign_name,
+          campaign_id: row.campaign_id,
+          adset_name: row.ad_group_name,
+          adset_id: row.ad_group_id,
+          ad_name: row.ad_name,
+          ad_id: row.ad_id,
+          impressions: row.impressions,
+          clicks: row.clicks,
+          spend: parseFloat(row.spend),
+          purchases: row.conversions || 0,
+          revenue: parseFloat(row.conversions_value) || 0,
+          results: row.results || 0,
+          result_value: row.result_value ?? null,
+          result_type: row.result_type ?? null,
+          status: row.ad_status,
+          adset_status: row.ad_group_status,
+          campaign_status: row.campaign_status,
+          campaign_daily_budget: row.campaign_budget,
+          campaign_lifetime_budget: null,
+          adset_daily_budget: null,
+          adset_lifetime_budget: null,
+          _platform: 'google' as const,
+        }))
+        rows = [...rows, ...googleRows]
+      }
+    }
+
+    setData(rows)
+
+    // Cache the relevant subset
+    const cacheKey = getCacheKey(accountId, wsAccountIds)
+    let cacheData: CSVRow[]
+
+    if (wsAccountIds.length > 0) {
+      cacheData = rows.filter(row => wsAccountIds.includes(row.ad_account_id || ''))
+    } else if (accountId) {
+      cacheData = rows.filter(row => row.ad_account_id === accountId)
+    } else {
+      cacheData = rows
+    }
+
+    dataCache.set(cacheKey, {
+      data: cacheData,
+      datePreset,
+      customStartDate,
+      customEndDate,
+      fetchedAt: Date.now()
+    })
+    console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
+
+    return rows
   }
 
   const loadRules = async (accountId?: string | null) => {
@@ -663,30 +760,43 @@ export default function DashboardPage() {
     setIsSyncing(true)
 
     try {
-      // Note: The API handles deletion, no need to delete here
-      // Use the selected date preset from the date picker
-      const response = await fetch('/api/meta/sync', {
+      // Determine sync endpoint based on account type
+      const isGoogle = isGoogleAccount(accountId)
+      const syncEndpoint = isGoogle ? '/api/google/sync' : '/api/meta/sync'
+
+      // Build request body - Google uses different field names
+      const requestBody = isGoogle
+        ? {
+            userId: user.id,
+            customerId: accountId,
+            dateStart: datePreset === 'custom' ? customStartDate : undefined,
+            dateEnd: datePreset === 'custom' ? customEndDate : undefined,
+          }
+        : {
+            userId: user.id,
+            adAccountId: accountId,
+            datePreset: datePreset,
+            ...(datePreset === 'custom' && customStartDate && customEndDate ? {
+              customStartDate,
+              customEndDate,
+            } : {}),
+          }
+
+      const response = await fetch(syncEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: accountId,
-          datePreset: datePreset,
-          ...(datePreset === 'custom' && customStartDate && customEndDate ? {
-            customStartDate,
-            customEndDate,
-          } : {}),
-        }),
+        body: JSON.stringify(requestBody),
       })
-      
+
       const result = await response.json()
-      
+
       if (response.ok) {
         // Silent refresh - don't show loading spinner, preserves table state
         const newData = await loadDataAndCache(accountId)
         setLastSyncTime(new Date())
 
         // After sync, ensure ABO adsets are selected (they may have been missed on initial load)
+        // Google is always CBO so this mainly affects Meta accounts
         if (newData && newData.length > 0) {
           setSelectedCampaigns(prev => {
             const updated = new Set(prev)
@@ -737,19 +847,32 @@ export default function DashboardPage() {
 
     try {
       // Sync each account in the workspace sequentially
+      // Route to appropriate endpoint based on account type
       for (const accountId of workspaceAccountIds) {
-        const response = await fetch('/api/meta/sync', {
+        const isGoogle = isGoogleAccount(accountId)
+        const syncEndpoint = isGoogle ? '/api/google/sync' : '/api/meta/sync'
+
+        const requestBody = isGoogle
+          ? {
+              userId: user.id,
+              customerId: accountId,
+              dateStart: datePreset === 'custom' ? customStartDate : undefined,
+              dateEnd: datePreset === 'custom' ? customEndDate : undefined,
+            }
+          : {
+              userId: user.id,
+              adAccountId: accountId,
+              datePreset: datePreset,
+              ...(datePreset === 'custom' && customStartDate && customEndDate ? {
+                customStartDate,
+                customEndDate,
+              } : {}),
+            }
+
+        const response = await fetch(syncEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: accountId,
-            datePreset: datePreset,
-            ...(datePreset === 'custom' && customStartDate && customEndDate ? {
-              customStartDate,
-              customEndDate,
-            } : {}),
-          }),
+          body: JSON.stringify(requestBody),
         })
 
         if (!response.ok) {

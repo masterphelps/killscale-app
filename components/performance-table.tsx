@@ -7,6 +7,7 @@ import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
 import { Rules, calculateVerdict, Verdict, isEntityActive } from '@/lib/supabase'
 import { usePrivacyMode } from '@/lib/privacy-mode'
+import { FEATURES } from '@/lib/feature-flags'
 
 // Simple performance indicator for ads (shows arrow based on verdict without text)
 const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
@@ -39,6 +40,32 @@ const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
   )
 }
 
+// Platform badge for distinguishing Meta vs Google accounts
+const PlatformBadge = ({ platform }: { platform?: 'meta' | 'google' }) => {
+  if (!FEATURES.GOOGLE_ADS_INTEGRATION || !platform) return null
+
+  if (platform === 'google') {
+    return (
+      <span
+        className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30"
+        title="Google Ads"
+      >
+        Google
+      </span>
+    )
+  }
+
+  // Meta - show subtle blue badge (or don't show if all accounts are Meta)
+  return (
+    <span
+      className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30"
+      title="Meta Ads"
+    >
+      Meta
+    </span>
+  )
+}
+
 type AdRow = {
   campaign_name: string
   campaign_id?: string | null
@@ -64,6 +91,8 @@ type AdRow = {
   campaign_lifetime_budget?: number | null
   adset_daily_budget?: number | null
   adset_lifetime_budget?: number | null
+  // Platform indicator (for Google Ads integration)
+  _platform?: 'meta' | 'google'
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -141,6 +170,8 @@ type HierarchyNode = {
   budgetType?: BudgetType  // CBO for campaign-level, ABO for ad set-level
   dailyBudget?: number | null
   lifetimeBudget?: number | null
+  // Platform (for Google Ads integration)
+  platform?: 'meta' | 'google'
 }
 
 const formatPercent = (value: number) => {
@@ -203,6 +234,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   // Track budget info
   const campaignBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
   const adsetBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
+  // Track platform info (Google Ads integration)
+  const campaignPlatforms: Record<string, 'meta' | 'google' | undefined> = {}
 
   data.forEach(row => {
     // Capture statuses and IDs from the first row we see for each entity
@@ -224,6 +257,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         daily: row.campaign_daily_budget ?? null,
         lifetime: row.campaign_lifetime_budget ?? null,
       }
+    }
+    // Capture platform info from the first row we see for each campaign
+    if (!campaignPlatforms[row.campaign_name] && row._platform) {
+      campaignPlatforms[row.campaign_name] = row._platform
     }
     if (!adsetBudgets[row.adset_name]) {
       adsetBudgets[row.adset_name] = {
@@ -250,7 +287,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         cpa: 0,
         convRate: 0,
         verdict: 'learn',
-        children: []
+        children: [],
+        platform: row._platform,  // Google Ads integration
       }
     }
     const campaign = campaigns[row.campaign_name]
@@ -934,9 +972,11 @@ export function PerformanceTable({
         >
           {/* Row 1: Name */}
           <div className={cn('truncate text-sm', textClass)} title={nameToShow}>{nameToShow}</div>
-          {/* Row 2: Type label + status badges + CBO/ABO badge */}
+          {/* Row 2: Type label + platform badge + status badges + CBO/ABO badge */}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className="text-xs text-zinc-500">{typeLabels[level]}</span>
+            {/* Platform badge - only show at campaign level */}
+            {level === 'campaign' && <PlatformBadge platform={node.platform} />}
             {/* Paused indicator - only show when includePaused is true */}
             {includePaused && node.status && node.status !== 'ACTIVE' && (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5">
