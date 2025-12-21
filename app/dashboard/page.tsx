@@ -156,6 +156,7 @@ export default function DashboardPage() {
   const isFirstSessionLoad = useRef(typeof window !== 'undefined' && !sessionStorage.getItem('ks_session_synced')) // Fresh login detection
   const userManuallyDeselected = useRef(false) // Track if user manually deselected all
   const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
+  const [pendingWorkspaceSync, setPendingWorkspaceSync] = useState(false) // Workspace sync on first load
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
@@ -266,9 +267,6 @@ export default function DashboardPage() {
       // Check if we should trigger initial sync (only once per page load)
       if (hasTriggeredInitialSync.current) return
 
-      const accountToSync = currentAccountId || accounts[0]?.id
-      if (!accountToSync || accounts.length === 0) return
-
       // Check cache validity for current account/workspace
       const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
       const cached = dataCache.get(cacheKey)
@@ -279,9 +277,20 @@ export default function DashboardPage() {
       if (isFirstSessionLoad.current || !hasFreshCache) {
         hasTriggeredInitialSync.current = true
         sessionStorage.setItem('ks_session_synced', 'true')
-        console.log('[Dashboard] Syncing - fresh login:', isFirstSessionLoad.current, 'no cache:', !hasFreshCache)
         setDatePreset('last_30d')
-        setPendingInitialSync(accountToSync)
+
+        // Workspace mode: sync all workspace accounts
+        if (workspaceAccountIds.length > 0) {
+          console.log('[Dashboard] Syncing workspace -', workspaceAccountIds.length, 'accounts')
+          setPendingWorkspaceSync(true)
+        } else {
+          // Single account mode (existing logic)
+          const accountToSync = currentAccountId || accounts[0]?.id
+          if (accountToSync && accounts.length > 0) {
+            console.log('[Dashboard] Syncing single account:', accountToSync)
+            setPendingInitialSync(accountToSync)
+          }
+        }
       } else {
         console.log('[Dashboard] Using cached data, no sync needed')
       }
@@ -298,6 +307,15 @@ export default function DashboardPage() {
       handleSyncAccount(pendingInitialSync)
     }
   }, [pendingInitialSync, datePreset, isSyncing])
+
+  // Execute pending workspace sync (separate effect for workspace mode)
+  useEffect(() => {
+    if (pendingWorkspaceSync && datePreset === 'last_30d' && !isSyncing && workspaceAccountIds.length > 0) {
+      console.log('[Dashboard] Executing initial workspace sync for', workspaceAccountIds.length, 'accounts')
+      setPendingWorkspaceSync(false) // Clear before executing to prevent loops
+      handleSyncWorkspace()
+    }
+  }, [pendingWorkspaceSync, datePreset, isSyncing, workspaceAccountIds])
 
   // Check cache when switching accounts/workspaces
   useEffect(() => {
