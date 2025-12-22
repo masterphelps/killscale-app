@@ -1358,32 +1358,77 @@ export default function DashboardPage() {
     [accountFilteredData]
   )
 
-  // Auto-select all campaigns and ABO adsets when selection is empty but we have data
-  // This runs on initial load and after account switches (when we reset selection)
+  // Auto-select all campaigns and ABO adsets when data first loads or when switching accounts
+  // Only runs on data changes, NOT on selection changes (to avoid re-checking unchecked items)
   // Skip if user manually deselected all
+  const prevDataLengthRef = useRef(0)
   useEffect(() => {
-    if (selectedCampaigns.size === 0 && accountFilteredData.length > 0 && !userManuallyDeselected.current) {
-      const selection = new Set<string>()
-      const seenAdsets = new Set<string>()
+    if (accountFilteredData.length === 0) return
+    if (userManuallyDeselected.current) return
 
-      accountFilteredData.forEach(r => {
-        // Add campaign
-        selection.add(r.campaign_name)
+    // Only run if data actually changed (new data loaded)
+    // This prevents re-running when user toggles selection
+    const dataChanged = accountFilteredData.length !== prevDataLengthRef.current
+    prevDataLengthRef.current = accountFilteredData.length
 
-        // Add ABO adsets (adset has budget, campaign doesn't)
-        const adsetKey = `${r.campaign_name}::${r.adset_name}`
-        if (!seenAdsets.has(adsetKey)) {
-          seenAdsets.add(adsetKey)
-          const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
-                        !(r.campaign_daily_budget || r.campaign_lifetime_budget)
-          if (isAbo) {
-            selection.add(adsetKey)
-          }
+    // Build the full selection set from current data
+    const fullSelection = new Set<string>()
+    const seenAdsets = new Set<string>()
+
+    accountFilteredData.forEach(r => {
+      // Add campaign
+      fullSelection.add(r.campaign_name)
+
+      // Add ABO adsets (adset has budget, campaign doesn't)
+      const adsetKey = `${r.campaign_name}::${r.adset_name}`
+      if (!seenAdsets.has(adsetKey)) {
+        seenAdsets.add(adsetKey)
+        const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                      !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+        if (isAbo) {
+          fullSelection.add(adsetKey)
         }
-      })
-      setSelectedCampaigns(selection)
+      }
+    })
+
+    // If selection is empty, select all (initial load)
+    if (selectedCampaigns.size === 0) {
+      setSelectedCampaigns(fullSelection)
+      return
     }
-  }, [accountFilteredData, selectedCampaigns.size])
+
+    // Only check for new campaigns if data actually changed
+    if (!dataChanged) return
+
+    // Check if there are new campaigns not in current selection
+    // (e.g., Google campaigns loaded after Meta was already selected)
+    const currentCampaignNames = new Set(
+      Array.from(selectedCampaigns).filter(k => !k.includes('::'))
+    )
+    const newCampaigns = Array.from(fullSelection)
+      .filter(k => !k.includes('::'))
+      .filter(k => !currentCampaignNames.has(k))
+
+    if (newCampaigns.length > 0) {
+      // Add new campaigns and their ABO adsets to existing selection
+      const updated = new Set(selectedCampaigns)
+      newCampaigns.forEach(campaignName => {
+        updated.add(campaignName)
+        // Also add ABO adsets for this campaign
+        accountFilteredData.forEach(r => {
+          if (r.campaign_name === campaignName) {
+            const adsetKey = `${r.campaign_name}::${r.adset_name}`
+            const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                          !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+            if (isAbo) {
+              updated.add(adsetKey)
+            }
+          }
+        })
+      })
+      setSelectedCampaigns(updated)
+    }
+  }, [accountFilteredData]) // Only depend on data, NOT selection
 
   const totalCampaigns = allCampaigns.length
   // All plans now have unlimited campaigns
@@ -1569,22 +1614,57 @@ export default function DashboardPage() {
       }
     }
 
+    // If user manually unchecked everything, prevent auto-reselect
+    if (newSelected.size === 0) {
+      userManuallyDeselected.current = true
+    } else {
+      // User is making selections, allow future auto-select if needed
+      userManuallyDeselected.current = false
+    }
+
     setSelectedCampaigns(newSelected)
   }
 
   const handleSelectAll = () => {
-    const allCampaignsSelected = visibleCampaigns.every(c => selectedCampaigns.has(c))
+    // Check if ALL campaigns AND their ABO adsets are selected
+    const allFullySelected = visibleCampaigns.every(campaignName => {
+      if (!selectedCampaigns.has(campaignName)) return false
+      // For ABO campaigns, also check all adsets are selected
+      const aboAdsets = campaignAboAdsets.get(campaignName)
+      if (aboAdsets && aboAdsets.size > 0) {
+        return Array.from(aboAdsets).every(k => selectedCampaigns.has(k))
+      }
+      return true
+    })
 
-    if (allCampaignsSelected) {
+    if (allFullySelected) {
       userManuallyDeselected.current = true
       setSelectedCampaigns(new Set())
     } else {
       userManuallyDeselected.current = false
-      setSelectedCampaigns(new Set(visibleCampaigns))
+      // Select all campaigns AND their ABO adsets
+      const newSelection = new Set<string>()
+      visibleCampaigns.forEach(campaignName => {
+        newSelection.add(campaignName)
+        // Also add ABO adsets for this campaign
+        const aboAdsets = campaignAboAdsets.get(campaignName)
+        if (aboAdsets) {
+          aboAdsets.forEach(adsetKey => newSelection.add(adsetKey))
+        }
+      })
+      setSelectedCampaigns(newSelection)
     }
   }
 
-  const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(c => selectedCampaigns.has(c))
+  // Check if all campaigns are fully selected (including their ABO adsets)
+  const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(campaignName => {
+    if (!selectedCampaigns.has(campaignName)) return false
+    const aboAdsets = campaignAboAdsets.get(campaignName)
+    if (aboAdsets && aboAdsets.size > 0) {
+      return Array.from(aboAdsets).every(k => selectedCampaigns.has(k))
+    }
+    return true
+  })
   const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c)) && !allSelected
   
   // Count entities - must be before early returns (hooks must be unconditional)
@@ -1597,7 +1677,7 @@ export default function DashboardPage() {
     return { accounts: accounts.length, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
   }, [filteredData, accounts])
 
-  // Calculate total daily budgets (CBO + ABO) - only count active (non-paused) items
+  // Calculate total daily budgets (CBO + ABO) - respects includePaused toggle
   // CBO = budget at campaign level, ABO = budget at adset level
   // A campaign is CBO if it has campaign_daily_budget but adsets DON'T have their own budgets
   // A campaign is ABO if adsets have their own budgets (adset_daily_budget)
@@ -1609,9 +1689,20 @@ export default function DashboardPage() {
     const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean; selected: boolean }>()
     const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string; campaignStatus: string | null | undefined }>()
 
-    // Process ALL data to build budget maps, then filter by selection
-    // Use ad_account_id in keys to avoid conflicts when Meta and Google have same campaign names
-    data.forEach(row => {
+    // Filter to current account/workspace first to avoid counting budgets from other accounts
+    const currentAccountData = data.filter(row => {
+      if (workspaceAccountIds.length > 0) {
+        return workspaceAccountIds.includes(row.ad_account_id || '')
+      }
+      if (selectedAccountId) {
+        return row.ad_account_id === selectedAccountId
+      }
+      return true
+    })
+
+    // Process filtered data
+    // Use ad_account_id in keys to avoid conflicts when accounts have same campaign names
+    currentAccountData.forEach(row => {
       // Determine if this is CBO or ABO based on where budget lives
       // CBO: campaign has budget, adset does NOT have budget
       // ABO: adset has budget (regardless of campaign budget field)
@@ -1659,18 +1750,20 @@ export default function DashboardPage() {
       }
     })
 
-    // Sum CBO budgets (only selected and non-paused)
+    // Sum CBO budgets (only selected, respect includePaused toggle)
     campaignBudgets.forEach(({ budget, status, isCBO, selected }) => {
-      if (isCBO && selected && status?.toUpperCase() !== 'PAUSED') {
+      if (!isCBO || !selected) return
+      const isPaused = status?.toUpperCase() === 'PAUSED'
+      if (includePaused || !isPaused) {
         cboBudget += budget
       }
     })
 
-    // Sum ABO budgets (only selected and non-paused, check parent campaign too)
+    // Sum ABO budgets (only selected, respect includePaused toggle)
     adsetBudgets.forEach(({ budget, status, selected, campaignStatus }) => {
       if (!selected) return
-
-      if (status?.toUpperCase() !== 'PAUSED' && campaignStatus?.toUpperCase() !== 'PAUSED') {
+      const isPaused = status?.toUpperCase() === 'PAUSED' || campaignStatus?.toUpperCase() === 'PAUSED'
+      if (includePaused || !isPaused) {
         aboBudget += budget
       }
     })
@@ -1680,7 +1773,7 @@ export default function DashboardPage() {
       abo: aboBudget,
       total: cboBudget + aboBudget
     }
-  }, [data, selectedCampaigns])
+  }, [data, selectedCampaigns, includePaused, selectedAccountId, workspaceAccountIds])
   
   if (isLoading && !hasLoadedOnce) {
     return (
