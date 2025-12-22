@@ -6,7 +6,8 @@
       "Bash(find:*)",
       "WebSearch",
       "WebFetch(domain:developers.google.com)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:ads-developers.googleblog.com)"
     ]
   }
 }

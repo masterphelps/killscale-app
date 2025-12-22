@@ -9,56 +9,33 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// GAQL query to fetch ad STRUCTURE (all entities, no date filter)
-// This returns ALL campaigns/ad_groups/ads including paused ones
+// GAQL query to fetch ALL campaigns (structure only, no date filter)
+// This returns ALL campaigns including paused ones
 const STRUCTURE_QUERY = `
 SELECT
   campaign.id,
   campaign.name,
   campaign.status,
   campaign.advertising_channel_type,
-  ad_group.id,
-  ad_group.name,
-  ad_group.status,
-  ad_group.type,
-  ad_group_ad.ad.id,
-  ad_group_ad.ad.name,
-  ad_group_ad.status,
-  ad_group_ad.ad.type
-FROM ad_group_ad
-WHERE campaign.status != 'REMOVED'
-  AND ad_group.status != 'REMOVED'
-  AND ad_group_ad.status != 'REMOVED'
-`
-
-// GAQL query to fetch METRICS (with date filter)
-// Only returns entities with activity in the date range
-const buildMetricsQuery = (startDate: string, endDate: string) => `
-SELECT
-  campaign.id,
-  ad_group.id,
-  ad_group_ad.ad.id,
-  metrics.impressions,
-  metrics.clicks,
-  metrics.cost_micros,
-  metrics.conversions,
-  metrics.conversions_value,
-  segments.date
-FROM ad_group_ad
-WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-  AND campaign.status != 'REMOVED'
-`
-
-// GAQL query to fetch CAMPAIGN BUDGETS
-// campaign_budget is only available from campaign resource, not ad_group_ad
-// Include resource_name for budget mutations
-const BUDGET_QUERY = `
-SELECT
-  campaign.id,
   campaign_budget.amount_micros,
   campaign_budget.resource_name
 FROM campaign
 WHERE campaign.status != 'REMOVED'
+`
+
+// GAQL query to fetch campaign METRICS (with date filter)
+// Only returns campaigns with activity in the date range
+const buildMetricsQuery = (startDate: string, endDate: string) => `
+SELECT
+  campaign.id,
+  metrics.impressions,
+  metrics.clicks,
+  metrics.cost_micros,
+  metrics.conversions,
+  metrics.conversions_value
+FROM campaign
+WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+  AND campaign.status != 'REMOVED'
 `
 
 // Normalize Google status to match our display conventions
@@ -83,45 +60,21 @@ interface StructureRow {
     status: string
     advertisingChannelType: string
   }
-  adGroup: {
-    id: string
-    name: string
-    status: string
-    type: string
-  }
-  adGroupAd: {
-    ad: {
-      id: string
-      name: string
-      type: string
-    }
-    status: string
+  campaignBudget?: {
+    amountMicros: string
+    resourceName: string
   }
 }
 
-// Metrics row - from buildMetricsQuery (with date segment)
+// Metrics row - from buildMetricsQuery (aggregated by campaign)
 interface MetricsRow {
   campaign: { id: string }
-  adGroup: { id: string }
-  adGroupAd: { ad: { id: string } }
   metrics: {
     impressions: string
     clicks: string
     costMicros: string
     conversions: string
     conversionsValue: string
-  }
-  segments: {
-    date: string
-  }
-}
-
-// Budget row - from BUDGET_QUERY
-interface BudgetRow {
-  campaign: { id: string }
-  campaignBudget: {
-    amountMicros: string
-    resourceName: string  // e.g., "customers/123/campaignBudgets/456"
   }
 }
 
@@ -190,13 +143,13 @@ export async function POST(request: NextRequest) {
     const normalizedCustomerId = normalizeCustomerId(customerId)
 
     // ============================================
-    // TWO-STEP APPROACH (mirrors Meta sync)
-    // 1. Fetch STRUCTURE - all entities including paused
-    // 2. Fetch METRICS - only entities with activity in date range
-    // 3. Merge - combine structure with metrics
+    // CAMPAIGN-LEVEL SYNC (simplified)
+    // 1. Fetch all campaigns (structure + budget)
+    // 2. Fetch campaign metrics for date range
+    // 3. Merge and save
     // ============================================
 
-    console.log('Google sync: Fetching structure (all entities)...')
+    console.log('Google sync: Fetching campaigns...')
     const structureResult = await executeGaqlQuery<StructureRow>(
       STRUCTURE_QUERY,
       accessToken,
@@ -205,19 +158,19 @@ export async function POST(request: NextRequest) {
 
     if (structureResult.error) {
       return NextResponse.json(
-        { error: 'Failed to fetch structure from Google Ads', details: structureResult.error },
+        { error: 'Failed to fetch campaigns from Google Ads', details: structureResult.error },
         { status: 500 }
       )
     }
 
-    console.log(`Google sync: Found ${structureResult.data.length} ad entities`)
+    console.log(`Google sync: Found ${structureResult.data.length} campaigns`)
 
     if (structureResult.data.length === 0) {
-      // No ads in account at all
+      // No campaigns in account at all
       await updateLastSyncAt(userId)
       return NextResponse.json({
         success: true,
-        message: 'No ads found in this account',
+        message: 'No campaigns found in this account',
         rowsProcessed: 0,
       })
     }
@@ -231,38 +184,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`Google sync: Found ${metricsResult.data.length} metric rows`)
 
-    // Step 3: Fetch campaign budgets
-    console.log('Google sync: Fetching campaign budgets...')
-    const budgetResult = await executeGaqlQuery<BudgetRow>(
-      BUDGET_QUERY,
-      accessToken,
-      normalizedCustomerId
-    )
-    console.log(`Google sync: Found ${budgetResult.data.length} budget rows`)
-
-    // Build budget map keyed by campaign_id (stores amount and resource name)
-    const budgetMap = new Map<string, { amount: number; resourceName: string | null }>()
-    for (const row of budgetResult.data) {
-      const campaignId = row.campaign.id
-      // Google returns amount in micros (1/1,000,000)
-      const budgetAmount = parseInt(row.campaignBudget?.amountMicros || '0', 10) / 1_000_000
-      const resourceName = row.campaignBudget?.resourceName || null
-      budgetMap.set(campaignId, { amount: budgetAmount, resourceName })
-    }
-
-    // Build structure map keyed by ad_id
-    // This gives us campaign/ad_group/ad info for ALL entities
+    // Build structure map keyed by campaign_id
     const structureMap = new Map<string, StructureRow>()
     for (const row of structureResult.data) {
-      const adId = row.adGroupAd.ad.id
-      // Keep the first occurrence (dedupe)
-      if (!structureMap.has(adId)) {
-        structureMap.set(adId, row)
+      const campaignId = row.campaign.id
+      if (!structureMap.has(campaignId)) {
+        structureMap.set(campaignId, row)
       }
     }
 
-    // Aggregate metrics by ad_id (sum across all dates in range)
-    // We store one row per ad with aggregated metrics for the date range
+    // Aggregate metrics by campaign_id (sum across all dates in range)
     const metricsMap = new Map<string, {
       impressions: number
       clicks: number
@@ -272,8 +203,8 @@ export async function POST(request: NextRequest) {
     }>()
 
     for (const row of metricsResult.data) {
-      const adId = row.adGroupAd.ad.id
-      const existing = metricsMap.get(adId) || {
+      const campaignId = row.campaign.id
+      const existing = metricsMap.get(campaignId) || {
         impressions: 0,
         clicks: 0,
         spend: 0,
@@ -281,7 +212,7 @@ export async function POST(request: NextRequest) {
         conversionsValue: 0,
       }
 
-      metricsMap.set(adId, {
+      metricsMap.set(campaignId, {
         impressions: existing.impressions + parseInt(row.metrics.impressions || '0', 10),
         clicks: existing.clicks + parseInt(row.metrics.clicks || '0', 10),
         spend: existing.spend + (parseInt(row.metrics.costMicros || '0', 10) / 1_000_000),
@@ -291,12 +222,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Merge structure + metrics into final rows
-    // Every ad in structureMap gets a row, with 0 metrics if not in metricsMap
+    // Every campaign in structureMap gets a row, with 0 metrics if not in metricsMap
     const transformedRows: Array<Record<string, unknown>> = []
-    const adsWithMetrics = new Set<string>()
+    const campaignsWithMetrics = new Set<string>()
 
-    for (const [adId, structure] of Array.from(structureMap.entries())) {
-      const metrics = metricsMap.get(adId) || {
+    for (const [campaignId, structure] of Array.from(structureMap.entries())) {
+      const metrics = metricsMap.get(campaignId) || {
         impressions: 0,
         clicks: 0,
         spend: 0,
@@ -304,8 +235,8 @@ export async function POST(request: NextRequest) {
         conversionsValue: 0,
       }
 
-      if (metricsMap.has(adId)) {
-        adsWithMetrics.add(adId)
+      if (metricsMap.has(campaignId)) {
+        campaignsWithMetrics.add(campaignId)
       }
 
       // Calculate derived metrics
@@ -314,33 +245,26 @@ export async function POST(request: NextRequest) {
       const cpm = metrics.impressions > 0 ? (metrics.spend / metrics.impressions) * 1000 : 0
       const ctr = metrics.impressions > 0 ? metrics.clicks / metrics.impressions : 0
 
+      // Budget from structure
+      const budgetMicros = structure.campaignBudget?.amountMicros || '0'
+      const budgetAmount = parseInt(budgetMicros, 10) / 1_000_000
+      const budgetResourceName = structure.campaignBudget?.resourceName || null
+
       transformedRows.push({
         user_id: userId,
         customer_id: customerId, // Store with hyphens for display
         date_start: start,
         date_end: end,
 
-        // Campaign
+        // Campaign (this is now the only level)
         campaign_name: structure.campaign.name,
-        campaign_id: structure.campaign.id,
+        campaign_id: campaignId,
         campaign_status: normalizeStatus(structure.campaign.status),
         campaign_type: structure.campaign.advertisingChannelType,
-        campaign_budget: budgetMap.get(structure.campaign.id)?.amount || 0,
-        campaign_budget_resource_name: budgetMap.get(structure.campaign.id)?.resourceName || null,
+        campaign_budget: budgetAmount,
+        campaign_budget_resource_name: budgetResourceName,
 
-        // Ad Group
-        ad_group_name: structure.adGroup.name,
-        ad_group_id: structure.adGroup.id,
-        ad_group_status: normalizeStatus(structure.adGroup.status),
-        ad_group_type: structure.adGroup.type,
-
-        // Ad
-        ad_name: structure.adGroupAd.ad.name || `Ad ${adId}`,
-        ad_id: adId,
-        ad_status: normalizeStatus(structure.adGroupAd.status),
-        ad_type: structure.adGroupAd.ad.type,
-
-        // Metrics
+        // Metrics (rolled up to campaign level)
         impressions: metrics.impressions,
         clicks: metrics.clicks,
         spend: parseFloat(metrics.spend.toFixed(2)),
@@ -362,7 +286,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log(`Google sync: ${transformedRows.length} total ads, ${adsWithMetrics.size} with activity`)
+    console.log(`Google sync: ${transformedRows.length} campaigns, ${campaignsWithMetrics.size} with activity`)
 
     // Delete existing data for this customer and date range
     await supabase
@@ -373,11 +297,11 @@ export async function POST(request: NextRequest) {
       .gte('date_start', start)
       .lte('date_end', end)
 
-    // Upsert all rows
+    // Upsert all rows (campaign-level unique constraint)
     const { error: upsertError } = await supabase
       .from('google_ad_data')
       .upsert(transformedRows, {
-        onConflict: 'user_id,customer_id,date_start,campaign_id,ad_group_id,ad_id',
+        onConflict: 'user_id,customer_id,date_start,campaign_id',
       })
 
     if (upsertError) {
@@ -394,8 +318,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       rowsProcessed: transformedRows.length,
-      adsWithActivity: adsWithMetrics.size,
-      adsWithoutActivity: transformedRows.length - adsWithMetrics.size,
+      campaignsWithActivity: campaignsWithMetrics.size,
+      campaignsWithoutActivity: transformedRows.length - campaignsWithMetrics.size,
       dateRange: { start, end },
     })
 

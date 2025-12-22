@@ -328,6 +328,20 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     // Ensure we have the ID even if first row didn't have it
     if (row.campaign_id && !campaign.id) campaign.id = row.campaign_id
     
+    // For Google data, we only have campaign-level data (no adsets/ads)
+    // Skip creating children for Google campaigns
+    if (row._platform === 'google') {
+      // Aggregate metrics directly on campaign for Google
+      campaign.impressions += row.impressions
+      campaign.clicks += row.clicks
+      campaign.spend += row.spend
+      campaign.purchases += row.purchases
+      campaign.revenue += row.revenue
+      campaign.results += row.results || 0
+      if (row.campaign_status) campaign.status = row.campaign_status
+      return  // Skip adset/ad creation for Google
+    }
+
     let adset = campaign.children?.find(c => c.name === row.adset_name)
     if (!adset) {
       adset = {
@@ -355,7 +369,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     // Ensure we have the ID even if first row didn't have it
     if (row.adset_id && !adset.id) adset.id = row.adset_id
-    
+
     // Check if ad already exists - aggregate instead of duplicating
     let ad = adset.children?.find(a => a.name === row.ad_name)
     if (!ad) {
@@ -1583,7 +1597,7 @@ export function PerformanceTable({
                       node={campaign}
                       level="campaign"
                       isExpanded={expandedCampaigns.has(campaign.name)}
-                      onToggle={() => toggleCampaign(campaign.name)}
+                      onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name)}
                       isSelected={isSelected}
                       rowKey={campaign.name}
                       displayName={maskName(campaign.name, 'campaign', campaignIndex)}
@@ -1655,7 +1669,7 @@ export function PerformanceTable({
                 node={campaign}
                 level="campaign"
                 isExpanded={expandedCampaigns.has(campaign.name)}
-                onToggle={() => toggleCampaign(campaign.name)}
+                onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name)}
                 displayName={maskName(campaign.name, 'campaign', campaignIndex)}
               />
 

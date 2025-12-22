@@ -9,11 +9,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Map our entity types to Google terminology
-// KillScale: campaign, adset, ad
-// Google: campaign, ad_group, ad_group_ad
-type EntityType = 'campaign' | 'adset' | 'ad'
-
 // Google status values: ENABLED, PAUSED, REMOVED
 // We map ACTIVE -> ENABLED, PAUSED -> PAUSED
 function mapToGoogleStatus(status: 'ACTIVE' | 'PAUSED'): string {
@@ -22,20 +17,15 @@ function mapToGoogleStatus(status: 'ACTIVE' | 'PAUSED'): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, customerId, entityId, entityType, status } = await request.json() as {
+    const { userId, customerId, campaignId, status } = await request.json() as {
       userId: string
       customerId: string
-      entityId: string
-      entityType: EntityType
+      campaignId: string
       status: 'ACTIVE' | 'PAUSED'
     }
 
-    if (!userId || !customerId || !entityId || !entityType || !status) {
+    if (!userId || !customerId || !campaignId || !status) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
-
-    if (!['campaign', 'adset', 'ad'].includes(entityType)) {
-      return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 })
     }
 
     if (!['ACTIVE', 'PAUSED'].includes(status)) {
@@ -54,53 +44,16 @@ export async function POST(request: NextRequest) {
     const normalizedCustomerId = normalizeCustomerId(customerId)
     const googleStatus = mapToGoogleStatus(status)
 
-    // Build the mutate operation based on entity type
-    let mutateOperation: Record<string, unknown>
-    let resourceName: string
-
-    switch (entityType) {
-      case 'campaign':
-        resourceName = `customers/${normalizedCustomerId}/campaigns/${entityId}`
-        mutateOperation = {
-          campaignOperation: {
-            update: {
-              resourceName,
-              status: googleStatus,
-            },
-            updateMask: 'status',
-          },
-        }
-        break
-
-      case 'adset':
-        // In Google Ads, adset = ad_group
-        resourceName = `customers/${normalizedCustomerId}/adGroups/${entityId}`
-        mutateOperation = {
-          adGroupOperation: {
-            update: {
-              resourceName,
-              status: googleStatus,
-            },
-            updateMask: 'status',
-          },
-        }
-        break
-
-      case 'ad':
-        // In Google Ads, ads are ad_group_ads
-        // The entityId format should be "adGroupId~adId" or we need both IDs
-        // For now, assume entityId is the ad_group_ad resource name suffix
-        resourceName = `customers/${normalizedCustomerId}/adGroupAds/${entityId}`
-        mutateOperation = {
-          adGroupAdOperation: {
-            update: {
-              resourceName,
-              status: googleStatus,
-            },
-            updateMask: 'status',
-          },
-        }
-        break
+    // Build the campaign mutate operation
+    const resourceName = `customers/${normalizedCustomerId}/campaigns/${campaignId}`
+    const mutateOperation = {
+      campaignOperation: {
+        update: {
+          resourceName,
+          status: googleStatus,
+        },
+        updateMask: 'status',
+      },
     }
 
     // Call Google Ads API v22 mutate endpoint
@@ -128,31 +81,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Update local database to reflect the change
-    let updateColumn: string
-    let idColumn: string
-
-    switch (entityType) {
-      case 'campaign':
-        updateColumn = 'campaign_status'
-        idColumn = 'campaign_id'
-        break
-      case 'adset':
-        updateColumn = 'ad_group_status'
-        idColumn = 'ad_group_id'
-        break
-      case 'ad':
-        updateColumn = 'ad_status'
-        idColumn = 'ad_id'
-        break
-    }
-
-    // Update the status in google_ad_data table
     const { error: updateError } = await supabase
       .from('google_ad_data')
-      .update({ [updateColumn]: status })
+      .update({ campaign_status: status })
       .eq('user_id', userId)
       .eq('customer_id', customerId)
-      .eq(idColumn, entityId)
+      .eq('campaign_id', campaignId)
 
     if (updateError) {
       console.error('Database update error:', updateError)
@@ -161,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `${entityType} ${status === 'PAUSED' ? 'paused' : 'activated'} successfully`,
+      message: `Campaign ${status === 'PAUSED' ? 'paused' : 'activated'} successfully`,
     })
 
   } catch (err) {
