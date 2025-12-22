@@ -1677,10 +1677,11 @@ export default function DashboardPage() {
     return { accounts: accounts.length, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
   }, [filteredData, accounts])
 
-  // Calculate total daily budgets (CBO + ABO) - respects includePaused toggle
+  // Calculate total daily budgets (CBO + ABO) - only count ACTIVE (non-paused) items
   // CBO = budget at campaign level, ABO = budget at adset level
   // A campaign is CBO if it has campaign_daily_budget but adsets DON'T have their own budgets
   // A campaign is ABO if adsets have their own budgets (adset_daily_budget)
+  // NOTE: Paused campaigns are ALWAYS excluded from budget totals (regardless of includePaused toggle)
   const budgetTotals = useMemo(() => {
     let cboBudget = 0
     let aboBudget = 0
@@ -1750,20 +1751,17 @@ export default function DashboardPage() {
       }
     })
 
-    // Sum CBO budgets (only selected, respect includePaused toggle)
+    // Sum CBO budgets (only selected and non-paused)
     campaignBudgets.forEach(({ budget, status, isCBO, selected }) => {
-      if (!isCBO || !selected) return
-      const isPaused = status?.toUpperCase() === 'PAUSED'
-      if (includePaused || !isPaused) {
+      if (isCBO && selected && status?.toUpperCase() !== 'PAUSED') {
         cboBudget += budget
       }
     })
 
-    // Sum ABO budgets (only selected, respect includePaused toggle)
+    // Sum ABO budgets (only selected and non-paused, check parent campaign too)
     adsetBudgets.forEach(({ budget, status, selected, campaignStatus }) => {
       if (!selected) return
-      const isPaused = status?.toUpperCase() === 'PAUSED' || campaignStatus?.toUpperCase() === 'PAUSED'
-      if (includePaused || !isPaused) {
+      if (status?.toUpperCase() !== 'PAUSED' && campaignStatus?.toUpperCase() !== 'PAUSED') {
         aboBudget += budget
       }
     })
@@ -1773,7 +1771,7 @@ export default function DashboardPage() {
       abo: aboBudget,
       total: cboBudget + aboBudget
     }
-  }, [data, selectedCampaigns, includePaused, selectedAccountId, workspaceAccountIds])
+  }, [data, selectedCampaigns, selectedAccountId, workspaceAccountIds])
   
   if (isLoading && !hasLoadedOnce) {
     return (
