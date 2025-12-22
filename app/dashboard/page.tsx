@@ -1615,16 +1615,20 @@ export default function DashboardPage() {
       // Determine if this is CBO or ABO based on where budget lives
       // CBO: campaign has budget, adset does NOT have budget
       // ABO: adset has budget (regardless of campaign budget field)
-      const isCBO = !!(row.campaign_daily_budget || row.campaign_lifetime_budget) &&
-                    !(row.adset_daily_budget || row.adset_lifetime_budget)
+      // Google is ALWAYS CBO (no ABO option for Google Ads campaigns)
+      const isCBO = row._platform === 'google' ||
+                    (!!(row.campaign_daily_budget || row.campaign_lifetime_budget) &&
+                    !(row.adset_daily_budget || row.adset_lifetime_budget))
 
       // Use account-qualified keys to handle same campaign names across platforms
       const campaignKey = `${row.ad_account_id || ''}|${row.campaign_name}`
 
       // Track campaign-level budget (only for true CBO campaigns)
-      if (isCBO && row.campaign_daily_budget && !campaignBudgets.has(campaignKey)) {
+      // For Google, always track if budget exists (even if $0, though we only count non-zero in totals)
+      const campaignBudget = row.campaign_daily_budget
+      if (isCBO && campaignBudget != null && campaignBudget > 0 && !campaignBudgets.has(campaignKey)) {
         campaignBudgets.set(campaignKey, {
-          budget: row.campaign_daily_budget,
+          budget: campaignBudget,
           status: row.campaign_status,
           isCBO: true,
           selected: selectedCampaigns.has(row.campaign_name)

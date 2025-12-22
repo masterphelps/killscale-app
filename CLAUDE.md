@@ -26,7 +26,24 @@ Started: December 2025
 **What's on this branch:**
 - `lib/feature-flags.ts` - Feature flag system
 - `lib/google/gclid.ts` - gclid capture utilities
+- `lib/google/auth.ts` - Token management and refresh
+- `app/api/auth/google/route.ts` - Google OAuth initiation
+- `app/api/auth/google/callback/route.ts` - Google OAuth callback
+- `app/api/google/sync/route.ts` - Sync campaigns from Google Ads API
+- `app/api/google/update-status/route.ts` - Pause/resume Google campaigns
+- `app/api/google/update-budget/route.ts` - Edit Google campaign budgets
 - `app/api/google/offline/route.ts` - Google Offline Conversions API (placeholder)
+- `supabase/migrations/025_google_budget_resource_name.sql` - Budget mutation support
+- `supabase/migrations/026_google_campaign_only.sql` - Simplified campaign-only model
+
+**Architecture Decisions (December 2025):**
+
+| Decision | Rationale |
+|----------|-----------|
+| **Campaign-level only** | Google Ads campaign types (PMax, Search, Display, etc.) have inconsistent child structures. Ad Groups and Ads vary wildly by type. We only track campaigns. |
+| **No campaign creation** | Unlike Meta, Google campaign setup is complex with many variations. We focus on monitoring + budget/status control instead. |
+| **Stars are Meta-only** | Star/bookmark system is for collecting winning creatives to build new campaigns. Since we don't create Google campaigns, stars don't apply. |
+| **Always CBO** | Google budgets live at campaign level only. No ABO equivalent for Google. |
 
 **Feature Flag:**
 ```typescript
@@ -168,8 +185,14 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `components/launch-wizard.tsx` - Campaign creation wizard
 
 **Google Ads Integration (feature branch only):**
+- `lib/google/auth.ts` - Token management, refresh, and customer ID normalization
 - `lib/google/gclid.ts` - gclid capture and validation
-- `app/api/google/offline/route.ts` - Google Offline Conversions API
+- `app/api/auth/google/route.ts` - OAuth initiation
+- `app/api/auth/google/callback/route.ts` - OAuth callback, fetches customer accounts
+- `app/api/google/sync/route.ts` - Campaign-level sync from Google Ads API
+- `app/api/google/update-status/route.ts` - Pause/resume campaigns
+- `app/api/google/update-budget/route.ts` - Edit campaign budgets
+- `app/api/google/offline/route.ts` - Google Offline Conversions API (placeholder)
 
 ## Verdict Logic
 
