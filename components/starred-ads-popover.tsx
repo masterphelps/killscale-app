@@ -179,7 +179,7 @@ export function StarredAdsPopover({ starredAds, starCountMap, onBuildPerformance
           </div>
 
           {/* Content */}
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto overscroll-contain">
             {viewMode === 'creative' ? (
               <>
                 {/* Universal Performers Section */}
