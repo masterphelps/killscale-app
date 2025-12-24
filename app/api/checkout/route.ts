@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       subscription_data: {
         trial_period_days: 7,
       },
+      allow_promotion_codes: true,
     })
 
     return NextResponse.json({ url: session.url })
