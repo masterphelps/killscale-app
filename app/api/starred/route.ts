@@ -7,16 +7,36 @@ const supabase = createClient(
 )
 
 // GET - List starred ads for an account
+// Use ?groupByCreative=true to get star counts per creative (for universal performer detection)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const adAccountId = searchParams.get('adAccountId')
+    const groupByCreative = searchParams.get('groupByCreative') === 'true'
 
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
     }
 
+    // Return aggregated star counts per creative
+    if (groupByCreative) {
+      const { data, error } = await supabase
+        .from('creative_star_counts')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .order('star_count', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching creative star counts:', error)
+        return NextResponse.json({ error: 'Failed to fetch creative star counts' }, { status: 500 })
+      }
+
+      return NextResponse.json({ creatives: data || [] })
+    }
+
+    // Default: return all starred ads
     const { data, error } = await supabase
       .from('starred_ads')
       .select('*')
@@ -29,7 +49,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch starred ads' }, { status: 500 })
     }
 
-    return NextResponse.json({ starred: data || [] })
+    // Also build a map of creative_id -> star_count for the UI
+    const starCountMap: Record<string, number> = {}
+    ;(data || []).forEach((ad: { creative_id?: string }) => {
+      if (ad.creative_id) {
+        starCountMap[ad.creative_id] = (starCountMap[ad.creative_id] || 0) + 1
+      }
+    })
+
+    return NextResponse.json({ starred: data || [], starCountMap })
   } catch (err) {
     console.error('Starred ads GET error:', err)
     return NextResponse.json({ error: 'Failed to fetch starred ads' }, { status: 500 })
@@ -37,6 +65,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST - Star an ad
+// Now allows starring same creative in multiple ad sets (for universal performer tracking)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -59,46 +88,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Check if this creative is already starred (by a different ad)
-    // Also check by ad name as a fallback (same creative may have different IDs)
+    // Check how many times this creative is already starred (for star count tracking)
+    let existingStarCount = 0
+    let isNewAudience = false
+
     if (creativeId) {
-      const { data: existingCreative } = await supabase
+      const { data: existingStars, count } = await supabase
         .from('starred_ads')
-        .select('ad_id, ad_name')
+        .select('adset_id', { count: 'exact' })
         .eq('user_id', userId)
         .eq('ad_account_id', adAccountId)
         .eq('creative_id', creativeId)
-        .neq('ad_id', adId)
-        .single()
 
-      if (existingCreative) {
-        return NextResponse.json({
-          error: 'This creative is already starred',
-          duplicateAdId: existingCreative.ad_id,
-          duplicateAdName: existingCreative.ad_name
-        }, { status: 409 })
+      existingStarCount = count || 0
+
+      // Check if this is a new audience (different ad set)
+      if (existingStars && adsetId) {
+        const existingAdsetIds = new Set(existingStars.map(s => s.adset_id))
+        isNewAudience = !existingAdsetIds.has(adsetId)
       }
     }
 
-    // Also check for duplicate ad names (same creative content, different ad IDs)
-    if (adName) {
-      const { data: existingName } = await supabase
-        .from('starred_ads')
-        .select('ad_id, ad_name')
-        .eq('user_id', userId)
-        .eq('ad_account_id', adAccountId)
-        .eq('ad_name', adName)
-        .neq('ad_id', adId)
-        .single()
-
-      if (existingName) {
-        return NextResponse.json({
-          error: 'An ad with this name is already starred',
-          duplicateAdId: existingName.ad_id,
-          duplicateAdName: existingName.ad_name
-        }, { status: 409 })
-      }
-    }
+    const newStarCount = existingStarCount + 1
 
     // Upsert to handle re-starring (updates metrics if already starred)
     const { data, error } = await supabase
@@ -116,6 +127,7 @@ export async function POST(request: NextRequest) {
         spend: spend || 0,
         revenue: revenue || 0,
         roas: roas || 0,
+        star_instance: newStarCount,
         starred_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,ad_account_id,ad_id'
@@ -128,7 +140,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to star ad' }, { status: 500 })
     }
 
-    return NextResponse.json({ starred: data })
+    // Return star count info for UI feedback
+    return NextResponse.json({
+      starred: data,
+      starCount: newStarCount,
+      isNewAudience,
+      isUniversal: newStarCount >= 3,
+      message: isNewAudience && existingStarCount > 0
+        ? `Creative starred in ${newStarCount} audiences!`
+        : undefined
+    })
   } catch (err) {
     console.error('Starred ads POST error:', err)
     return NextResponse.json({ error: 'Failed to star ad' }, { status: 500 })

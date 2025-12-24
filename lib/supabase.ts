@@ -69,11 +69,27 @@ export type StarredAd = {
   adset_name: string
   campaign_id: string
   campaign_name: string
-  creative_id: string | null  // For deduplication - prevent starring same creative twice
+  creative_id: string | null  // For tracking same creative across audiences
+  star_instance?: number  // Which instance of this creative being starred (1st, 2nd, etc.)
   spend: number
   revenue: number
   roas: number
   starred_at: string
+}
+
+// Creative star counts from the creative_star_counts view
+// Used to identify "universal performers" (creatives that work across multiple audiences)
+export type CreativeStarCount = {
+  user_id: string
+  ad_account_id: string
+  creative_id: string
+  star_count: number
+  unique_audiences: number
+  audience_names: string[]
+  best_roas: number
+  avg_roas: number
+  total_spend: number
+  total_revenue: number
 }
 
 export type AdData = {

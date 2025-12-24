@@ -210,6 +210,7 @@ export default function DashboardPage() {
   } | null>(null)
   const [showWalkinModal, setShowWalkinModal] = useState(false)
   const [starredAds, setStarredAds] = useState<StarredAd[]>([])
+  const [starCountMap, setStarCountMap] = useState<Record<string, number>>({})
   const [showLaunchWizard, setShowLaunchWizard] = useState(false)
   const [launchWizardEntityType, setLaunchWizardEntityType] = useState<'campaign' | 'adset' | 'ad' | 'performance-set'>('campaign')
   const [showClearStarsPrompt, setShowClearStarsPrompt] = useState(false)
@@ -269,6 +270,11 @@ export default function DashboardPage() {
     return new Set(starredAds.filter(ad => ad.creative_id).map(ad => ad.creative_id!))
   }, [starredAds])
 
+  // Compute star counts per creative for universal performer detection
+  const starredCreativeCounts = useMemo(() => {
+    return new Map(Object.entries(starCountMap))
+  }, [starCountMap])
+
   // Load starred ads when account changes
   const loadStarredAds = async (accountId: string) => {
     if (!user?.id) return
@@ -277,6 +283,7 @@ export default function DashboardPage() {
       if (response.ok) {
         const data = await response.json()
         setStarredAds(data.starred || [])
+        setStarCountMap(data.starCountMap || {})
       }
     } catch (error) {
       console.error('Failed to load starred ads:', error)
@@ -291,7 +298,7 @@ export default function DashboardPage() {
     adsetName: string
     campaignId: string
     campaignName: string
-    creativeId?: string  // Optional - for deduplication
+    creativeId?: string  // Optional - for tracking across audiences
     spend: number
     revenue: number
     roas: number
@@ -319,10 +326,14 @@ export default function DashboardPage() {
       if (response.ok) {
         const data = await response.json()
         setStarredAds(prev => [...prev, data.starred])
-      } else if (response.status === 409) {
-        // Creative already starred by another ad
-        const data = await response.json()
-        alert(`This creative is already starred from "${data.duplicateAdName}". Each creative can only be starred once.`)
+
+        // Update star count if creative is tracked
+        if (ad.creativeId && data.starCount) {
+          setStarCountMap(prev => ({
+            ...prev,
+            [ad.creativeId!]: data.starCount
+          }))
+        }
       }
     } catch (error) {
       console.error('Failed to star ad:', error)
@@ -2255,6 +2266,7 @@ export default function DashboardPage() {
             externalSortDirection={sortDirection}
             starredAdIds={starredAdIds}
             starredCreativeIds={starredCreativeIds}
+            starredCreativeCounts={starredCreativeCounts}
             onStarAd={handleStarAd}
             onUnstarAd={handleUnstarAd}
           />
@@ -2295,6 +2307,11 @@ export default function DashboardPage() {
           workspaceAccountIds.length > 0
             ? `${workspaceAccountIds.length} accounts`
             : accounts.find(a => a.id === currentAccountId)?.name || currentAccountId || undefined
+        }
+        platform={
+          workspaceAccountIds.length > 0
+            ? 'meta'  // Default to Meta for workspace sync (most common)
+            : isGoogleAccount(currentAccountId) ? 'google' : 'meta'
         }
       />
 

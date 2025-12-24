@@ -151,6 +151,7 @@ type PerformanceTableProps = {
   // Starred ads for Performance Set
   starredAdIds?: Set<string>
   starredCreativeIds?: Set<string>  // For showing if a creative is already starred
+  starredCreativeCounts?: Map<string, number>  // Track star counts per creative for universal performer detection
   onStarAd?: (ad: {
     adId: string
     adName: string
@@ -582,6 +583,7 @@ export function PerformanceTable({
   externalSortDirection,
   starredAdIds,
   starredCreativeIds,
+  starredCreativeCounts,
   onStarAd,
   onUnstarAd
 }: PerformanceTableProps) {
@@ -967,6 +969,7 @@ export function PerformanceTable({
           <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32 }}>
             <StarButton
               isStarred={starredAdIds?.has(node.id) ?? false}
+              starCount={node.creativeId ? starredCreativeCounts?.get(node.creativeId) : undefined}
               onToggle={async () => {
                 const isCurrentlyStarred = starredAdIds?.has(node.id!) ?? false
                 if (isCurrentlyStarred) {
@@ -1375,6 +1378,7 @@ export function PerformanceTable({
             <div className="flex-shrink-0 mr-3">
               <StarButton
                 isStarred={starredAdIds?.has(node.id) ?? false}
+                starCount={node.creativeId ? starredCreativeCounts?.get(node.creativeId) : undefined}
                 onToggle={async () => {
                   const isCurrentlyStarred = starredAdIds?.has(node.id!) ?? false
                   if (isCurrentlyStarred) {
@@ -1387,6 +1391,7 @@ export function PerformanceTable({
                       adsetName: node.adsetName || '',
                       campaignId: node.campaignId || '',
                       campaignName: node.campaignName || '',
+                      creativeId: node.creativeId || undefined,
                       spend: node.spend,
                       revenue: node.revenue,
                       roas: node.roas
