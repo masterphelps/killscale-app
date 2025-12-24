@@ -524,9 +524,15 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
 
 function sortNodes(nodes: HierarchyNode[], field: SortField, direction: SortDirection): HierarchyNode[] {
   const sorted = [...nodes].sort((a, b) => {
+    // First: sort by status (ACTIVE items first, paused items last)
+    const aActive = a.status === 'ACTIVE' ? 0 : 1
+    const bActive = b.status === 'ACTIVE' ? 0 : 1
+    if (aActive !== bActive) return aActive - bActive
+
+    // Second: sort by the requested field within each group
     let aVal: number | string
     let bVal: number | string
-    
+
     if (field === 'name') {
       aVal = a.name.toLowerCase()
       bVal = b.name.toLowerCase()
