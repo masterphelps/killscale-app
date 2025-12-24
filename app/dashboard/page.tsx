@@ -325,7 +325,18 @@ export default function DashboardPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setStarredAds(prev => [...prev, data.starred])
+        // Check if this ad already exists (upsert case) - replace instead of add
+        setStarredAds(prev => {
+          const existingIndex = prev.findIndex(s => s.ad_id === ad.adId)
+          if (existingIndex >= 0) {
+            // Replace existing entry
+            const updated = [...prev]
+            updated[existingIndex] = data.starred
+            return updated
+          }
+          // New entry
+          return [...prev, data.starred]
+        })
 
         // Update star count if creative is tracked
         if (ad.creativeId && data.starCount) {
