@@ -29,48 +29,64 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // First try workspace_pixels (new system), fall back to pixels (legacy)
     let attributionModel: AttributionModel = 'last_touch'
     let timeDecayHalfLife = 7
-    let metaAccountId: string | null = null
+    let isAuthorized = false
 
+    // If workspaceId provided, verify ownership via workspace or membership
     if (workspaceId) {
-      const { data: wsPixel } = await supabase
-        .from('workspace_pixels')
-        .select('pixel_id, attribution_model, time_decay_half_life')
-        .eq('pixel_id', pixelId)
-        .eq('workspace_id', workspaceId)
+      // Check if user is the workspace owner
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('id', workspaceId)
+        .eq('user_id', userId)
         .single()
 
-      if (wsPixel) {
-        attributionModel = (wsPixel.attribution_model as AttributionModel) || 'last_touch'
-        timeDecayHalfLife = wsPixel.time_decay_half_life || 7
+      // Or check if user is a member of this workspace
+      const { data: membership } = await supabase
+        .from('workspace_members')
+        .select('role')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .single()
+
+      if (workspace || membership) {
+        // User has access, now get the pixel config
+        const { data: wsPixel } = await supabase
+          .from('workspace_pixels')
+          .select('pixel_id, attribution_model, time_decay_half_life')
+          .eq('pixel_id', pixelId)
+          .eq('workspace_id', workspaceId)
+          .single()
+
+        if (wsPixel) {
+          attributionModel = (wsPixel.attribution_model as AttributionModel) || 'last_touch'
+          timeDecayHalfLife = wsPixel.time_decay_half_life || 7
+          isAuthorized = true
+        }
       }
     }
 
-    // Verify pixel ownership via legacy pixels table
-    const { data: pixel, error: pixelError } = await supabase
-      .from('pixels')
-      .select('pixel_id, meta_account_id')
-      .eq('pixel_id', pixelId)
-      .eq('user_id', userId)
-      .single()
+    // Fall back to legacy pixels table if not authorized via workspace
+    if (!isAuthorized) {
+      const { data: pixel, error: pixelError } = await supabase
+        .from('pixels')
+        .select('pixel_id, meta_account_id')
+        .eq('pixel_id', pixelId)
+        .eq('user_id', userId)
+        .single()
 
-    if (pixelError || !pixel) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      if (pixelError || !pixel) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      isAuthorized = true
     }
 
-    metaAccountId = pixel.meta_account_id
-
     // Load configured event values from rules
-    const { data: rules } = await supabase
-      .from('rules')
-      .select('event_values')
-      .eq('ad_account_id', metaAccountId)
-      .eq('user_id', userId)
-      .single()
-
-    const eventValues: Record<string, number> = rules?.event_values || {}
+    // For workspace-based queries, we skip rules since they're per-account
+    // Event values will come from the events themselves
+    const eventValues: Record<string, number> = {}
 
     // Normalize event type for matching (CompleteRegistration -> complete_registration)
     const normalizeEventType = (type: string): string => {

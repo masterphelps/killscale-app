@@ -1234,6 +1234,67 @@ export default function DashboardPage() {
   )
   
   const totals = useMemo(() => {
+    // When KillScale is active, calculate from attribution data directly
+    // This is necessary because row data has daily granularity but attribution is per-ad totals
+    if (isKillScaleActive && Object.keys(multiTouchAttribution).length > 0) {
+      // Get unique ad_ids in the current selection
+      const adsInSelection = new Set(
+        selectedData.map(row => row.ad_id).filter((id): id is string => !!id)
+      )
+
+      let ksPurchases = 0
+      let ksRevenue = 0
+      let ksSpend = 0
+      const attributedAds = new Set<string>()
+
+      // For each ad with attribution that's in the selection, add it ONCE
+      Object.entries(multiTouchAttribution).forEach(([adId, data]) => {
+        if (adsInSelection.has(adId)) {
+          ksPurchases += data.conversions || 0
+          ksRevenue += data.revenue || 0
+          attributedAds.add(adId)
+        }
+      })
+
+      // Calculate spend only for attributed ads (user preference)
+      selectedData.forEach(row => {
+        if (row.ad_id && attributedAds.has(row.ad_id)) {
+          ksSpend += row.spend
+        }
+      })
+
+      // Calculate other metrics from all selected data (impressions, clicks)
+      const impressions = selectedData.reduce((sum, row) => sum + row.impressions, 0)
+      const clicks = selectedData.reduce((sum, row) => sum + row.clicks, 0)
+
+      const t = {
+        spend: ksSpend,
+        revenue: ksRevenue,
+        purchases: ksPurchases,
+        results: ksPurchases,
+        impressions,
+        clicks,
+        roas: 0,
+        cpm: 0,
+        cpc: 0,
+        ctr: 0,
+        cpa: 0,
+        cpr: 0,
+        aov: 0,
+        convRate: 0
+      }
+      t.roas = t.spend > 0 ? t.revenue / t.spend : 0
+      t.cpm = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : 0
+      t.cpc = t.clicks > 0 ? t.spend / t.clicks : 0
+      t.ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0
+      t.cpa = t.purchases > 0 ? t.spend / t.purchases : 0
+      t.cpr = t.results > 0 ? t.spend / t.results : 0
+      t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
+      t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
+      return t
+    }
+
+    // Non-KillScale mode: use Meta data as before
     const t = {
       spend: selectedData.reduce((sum, row) => sum + row.spend, 0),
       revenue: selectedData.reduce((sum, row) => sum + row.revenue, 0),
@@ -1259,7 +1320,7 @@ export default function DashboardPage() {
     t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
     t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
     return t
-  }, [selectedData])
+  }, [selectedData, isKillScaleActive, multiTouchAttribution])
   
   const dateRange = {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],

@@ -15,6 +15,7 @@ export type AttributionSource = 'meta' | 'killscale'
 
 type PixelConfig = {
   pixel_id: string
+  workspace_id: string
   attribution_source: AttributionSource
   attribution_window: number
   attribution_model?: AttributionModel
@@ -31,6 +32,7 @@ type AttributionContextType = {
   // Current state
   source: AttributionSource
   pixelId: string | null
+  workspaceId: string | null
   pixelConfig: PixelConfig | null
   attributionModel: AttributionModel
   // Legacy - for backwards compatibility (same as multiTouchAttribution)
@@ -46,13 +48,14 @@ type AttributionContextType = {
   isMultiTouchModel: boolean
 
   // Actions
-  setSource: (source: AttributionSource) => Promise<void>
   refreshAttribution: (dateStart: string, dateEnd: string) => Promise<void>
+  reloadConfig: () => void
 }
 
 const AttributionContext = createContext<AttributionContextType>({
   source: 'meta',
   pixelId: null,
+  workspaceId: null,
   pixelConfig: null,
   attributionModel: 'last_touch',
   attributionData: {},
@@ -61,13 +64,13 @@ const AttributionContext = createContext<AttributionContextType>({
   loading: true,
   isKillScaleActive: false,
   isMultiTouchModel: false,
-  setSource: async () => {},
   refreshAttribution: async () => {},
+  reloadConfig: () => {},
 })
 
 export function AttributionProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  const { currentAccountId } = useAccount()
+  const { currentWorkspaceId } = useAccount()
 
   const [pixelConfig, setPixelConfig] = useState<PixelConfig | null>(null)
   const [attributionData, setAttributionData] = useState<AttributionData>({})
@@ -75,17 +78,29 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
   const [multiTouchAttribution, setMultiTouchAttribution] = useState<AttributionData>({})
   const [attributionModel, setAttributionModel] = useState<AttributionModel>('last_touch')
   const [loading, setLoading] = useState(true)
+  const [configVersion, setConfigVersion] = useState(0)
 
   const userId = user?.id
 
-  // Load pixel config when account changes
+  // Force reload of pixel config (call this after changing settings)
+  const reloadConfig = useCallback(() => {
+    console.log('[Attribution] reloadConfig called - incrementing version')
+    setConfigVersion(v => v + 1)
+  }, [])
+
+  // Load pixel config when workspace changes or when reloadConfig is called
+  // Pixel attribution is only available when viewing a workspace (not individual accounts)
   useEffect(() => {
-    if (!userId || !currentAccountId) {
-      setPixelConfig(null)
-      setAttributionData({})
-      setLastTouchAttribution({})
-      setMultiTouchAttribution({})
-      setAttributionModel('last_touch')
+    // IMMEDIATELY clear all state to prevent stale/mixed data
+    setPixelConfig(null)
+    setAttributionData({})
+    setLastTouchAttribution({})
+    setMultiTouchAttribution({})
+    setAttributionModel('last_touch')
+
+    if (!userId || !currentWorkspaceId) {
+      // No workspace = no pixel attribution available
+      // Individual account views use native API data only
       setLoading(false)
       return
     }
@@ -93,21 +108,40 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     const loadPixelConfig = async () => {
       setLoading(true)
       try {
-        const { data: pixels, error } = await supabase
-          .from('pixels')
-          .select('pixel_id, attribution_source, attribution_window')
-          .eq('meta_account_id', currentAccountId)
-          .eq('user_id', userId)
-          .limit(1)
+        // Query workspace_pixels for this workspace's pixel config
+        const { data: wsPixel, error } = await supabase
+          .from('workspace_pixels')
+          .select('pixel_id, attribution_source, attribution_window, attribution_model, time_decay_half_life')
+          .eq('workspace_id', currentWorkspaceId)
+          .single()
 
-        if (error) {
-          console.error('Failed to load pixel config:', error)
+        if (error || !wsPixel) {
+          console.log('[Attribution] No workspace pixel found for workspace:', currentWorkspaceId)
           setPixelConfig(null)
-        } else if (pixels && pixels.length > 0) {
-          setPixelConfig(pixels[0] as PixelConfig)
-        } else {
-          setPixelConfig(null)
+          setLoading(false)
+          return
         }
+
+        // Map workspace_pixels values ('native'/'pixel') to internal values ('meta'/'killscale')
+        const mappedSource: AttributionSource = wsPixel.attribution_source === 'pixel' ? 'killscale' : 'meta'
+
+        console.log('[Attribution] Loaded workspace pixel config:', {
+          workspaceId: currentWorkspaceId,
+          pixelId: wsPixel.pixel_id,
+          rawSource: wsPixel.attribution_source,
+          mappedSource,
+          model: wsPixel.attribution_model,
+          configVersion
+        })
+
+        setPixelConfig({
+          pixel_id: wsPixel.pixel_id,
+          workspace_id: currentWorkspaceId,
+          attribution_source: mappedSource,
+          attribution_window: wsPixel.attribution_window || 7,
+          attribution_model: wsPixel.attribution_model || 'last_touch',
+          time_decay_half_life: wsPixel.time_decay_half_life || 7,
+        })
       } catch (err) {
         console.error('Error loading pixel config:', err)
         setPixelConfig(null)
@@ -117,7 +151,7 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     }
 
     loadPixelConfig()
-  }, [userId, currentAccountId])
+  }, [userId, currentWorkspaceId, configVersion])
 
   // Refresh attribution data from KillScale pixel
   const refreshAttribution = useCallback(async (dateStart: string, dateEnd: string) => {
@@ -147,7 +181,8 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const url = `/api/pixel/attribution?pixelId=${pixelConfig.pixel_id}&userId=${userId}&dateStart=${dateStart}&dateEnd=${dateEnd}`
+      const workspaceId = pixelConfig.workspace_id
+      const url = `/api/pixel/attribution?pixelId=${pixelConfig.pixel_id}&userId=${userId}&workspaceId=${workspaceId}&dateStart=${dateStart}&dateEnd=${dateEnd}`
       console.log('[Attribution] Fetching:', url)
       const res = await fetch(url)
       const data = await res.json()
@@ -180,48 +215,19 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
       setLastTouchAttribution({})
       setMultiTouchAttribution({})
     }
-  }, [pixelConfig?.pixel_id, pixelConfig?.attribution_source, userId])
-
-  // Set attribution source (toggle between Meta and KillScale)
-  const setSource = useCallback(async (source: AttributionSource) => {
-    if (!userId || !currentAccountId || !pixelConfig?.pixel_id) return
-
-    try {
-      const { error } = await supabase
-        .from('pixels')
-        .update({ attribution_source: source })
-        .eq('pixel_id', pixelConfig.pixel_id)
-        .eq('user_id', userId)
-
-      if (error) {
-        console.error('Failed to update attribution source:', error)
-        return
-      }
-
-      // Update local state
-      setPixelConfig(prev => prev ? { ...prev, attribution_source: source } : null)
-
-      // Clear attribution data when switching away from KillScale
-      if (source !== 'killscale') {
-        setAttributionData({})
-        setLastTouchAttribution({})
-        setMultiTouchAttribution({})
-        setAttributionModel('last_touch')
-      }
-    } catch (err) {
-      console.error('Error setting attribution source:', err)
-    }
-  }, [userId, currentAccountId, pixelConfig?.pixel_id])
+  }, [pixelConfig?.pixel_id, pixelConfig?.workspace_id, pixelConfig?.attribution_source, userId])
 
   // Computed values
   const isKillScaleActive = pixelConfig?.attribution_source === 'killscale'
   const isMultiTouchModel = attributionModel !== 'last_touch'
   const source = pixelConfig?.attribution_source || 'meta'
   const pixelId = pixelConfig?.pixel_id || null
+  const workspaceId = pixelConfig?.workspace_id || null
 
   const contextValue = useMemo(() => ({
     source,
     pixelId,
+    workspaceId,
     pixelConfig,
     attributionModel,
     attributionData,
@@ -230,9 +236,9 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     loading,
     isKillScaleActive,
     isMultiTouchModel,
-    setSource,
     refreshAttribution,
-  }), [source, pixelId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, setSource, refreshAttribution])
+    reloadConfig,
+  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, refreshAttribution, reloadConfig])
 
   return (
     <AttributionContext.Provider value={contextValue}>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Loader2, Copy, Check, Activity, RefreshCw, Download, ExternalLink, Lock, Sparkles, ChevronDown, ChevronRight, Layers, Plus, Smartphone, Eye, EyeOff, Info } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { useAttribution } from '@/lib/attribution'
 import { cn } from '@/lib/utils'
 import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'
 
@@ -54,6 +55,7 @@ type PixelEvent = {
 export default function PixelPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
+  const { reloadConfig } = useAttribution()
 
   // Check if user is Scale+ (can access Pixel)
   const isProPlus = plan === 'Scale' || plan === 'Pro'
@@ -240,6 +242,8 @@ export default function PixelPage() {
             ? { ...wp, attribution_source: newSource }
             : wp
         ))
+        // Trigger attribution context to reload config
+        reloadConfig()
       } else {
         console.error('Failed to update attribution source:', error)
       }
