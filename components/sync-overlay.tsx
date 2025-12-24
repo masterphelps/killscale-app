@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from 'react'
 
-export type SyncStep =
-  | 'connecting'
-  | 'campaigns'
-  | 'adsets'
-  | 'ads'
-  | 'insights'
-  | 'saving'
-  | 'complete'
+// Platform types
+export type Platform = 'meta' | 'google'
 
-const STEP_CONFIG: Record<SyncStep, { label: string; percent: number }> = {
+// Platform-specific step types
+export type MetaSyncStep = 'connecting' | 'campaigns' | 'adsets' | 'ads' | 'insights' | 'saving' | 'complete'
+export type GoogleSyncStep = 'connecting' | 'campaigns' | 'metrics' | 'saving' | 'complete'
+export type SyncStep = MetaSyncStep | GoogleSyncStep
+
+// Meta step config (6 steps - full hierarchy)
+const META_STEPS: Record<MetaSyncStep, { label: string; percent: number }> = {
   connecting: { label: 'Connecting to Meta...', percent: 5 },
   campaigns: { label: 'Fetching campaigns...', percent: 20 },
   adsets: { label: 'Fetching ad sets...', percent: 40 },
@@ -21,12 +21,43 @@ const STEP_CONFIG: Record<SyncStep, { label: string; percent: number }> = {
   complete: { label: 'Complete!', percent: 100 },
 }
 
-const STEP_ORDER: SyncStep[] = ['connecting', 'campaigns', 'adsets', 'ads', 'insights', 'saving', 'complete']
+// Google step config (4 steps - campaigns only)
+const GOOGLE_STEPS: Record<GoogleSyncStep, { label: string; percent: number }> = {
+  connecting: { label: 'Connecting to Google Ads...', percent: 10 },
+  campaigns: { label: 'Fetching campaigns...', percent: 40 },
+  metrics: { label: 'Processing metrics...', percent: 75 },
+  saving: { label: 'Saving data...', percent: 95 },
+  complete: { label: 'Complete!', percent: 100 },
+}
+
+const META_STEP_ORDER: MetaSyncStep[] = ['connecting', 'campaigns', 'adsets', 'ads', 'insights', 'saving', 'complete']
+const GOOGLE_STEP_ORDER: GoogleSyncStep[] = ['connecting', 'campaigns', 'metrics', 'saving', 'complete']
+
+// Timing for auto-advance (milliseconds per step)
+const META_TIMINGS: Record<MetaSyncStep, number> = {
+  connecting: 800,
+  campaigns: 2000,
+  adsets: 3000,
+  ads: 4000,
+  insights: 6000,
+  saving: 2000,
+  complete: 0,
+}
+
+const GOOGLE_TIMINGS: Record<GoogleSyncStep, number> = {
+  connecting: 600,
+  campaigns: 3000,
+  metrics: 4000,
+  saving: 1500,
+  complete: 0,
+}
 
 interface SyncOverlayProps {
   isVisible: boolean
   currentStep?: SyncStep
   accountName?: string
+  /** Platform to show sync steps for. Defaults to 'meta' */
+  platform?: Platform
   /** If true, auto-advance through steps (for single API call syncs) */
   autoAdvance?: boolean
 }
@@ -35,10 +66,16 @@ export function SyncOverlay({
   isVisible,
   currentStep = 'connecting',
   accountName,
+  platform = 'meta',
   autoAdvance = true
 }: SyncOverlayProps) {
   const [animatedStep, setAnimatedStep] = useState<SyncStep>('connecting')
   const [isExiting, setIsExiting] = useState(false)
+
+  // Select platform-specific configs
+  const stepConfig = platform === 'google' ? GOOGLE_STEPS : META_STEPS
+  const stepOrder = platform === 'google' ? GOOGLE_STEP_ORDER : META_STEP_ORDER
+  const timings = platform === 'google' ? GOOGLE_TIMINGS : META_TIMINGS
 
   // Auto-advance through steps when autoAdvance is true
   useEffect(() => {
@@ -51,34 +88,15 @@ export function SyncOverlay({
     setAnimatedStep('connecting')
     setIsExiting(false)
 
-    // Advance through steps with realistic timing
-    const timings: Record<SyncStep, number> = {
-      connecting: 800,
-      campaigns: 2000,
-      adsets: 3000,
-      ads: 4000,
-      insights: 6000,
-      saving: 2000,
-      complete: 0,
-    }
-
-    let currentIndex = 0
-    const advanceStep = () => {
-      if (currentIndex < STEP_ORDER.length - 1) {
-        currentIndex++
-        setAnimatedStep(STEP_ORDER[currentIndex])
-      }
-    }
-
     // Schedule step advances
     let cumulativeDelay = 0
     const timeouts: NodeJS.Timeout[] = []
 
-    STEP_ORDER.slice(0, -1).forEach((step, index) => {
-      cumulativeDelay += timings[step]
+    stepOrder.slice(0, -1).forEach((step, index) => {
+      cumulativeDelay += timings[step as keyof typeof timings]
       const timeout = setTimeout(() => {
-        if (index < STEP_ORDER.length - 2) {
-          setAnimatedStep(STEP_ORDER[index + 1])
+        if (index < stepOrder.length - 2) {
+          setAnimatedStep(stepOrder[index + 1])
         }
       }, cumulativeDelay)
       timeouts.push(timeout)
@@ -87,12 +105,12 @@ export function SyncOverlay({
     return () => {
       timeouts.forEach(t => clearTimeout(t))
     }
-  }, [isVisible, autoAdvance])
+  }, [isVisible, autoAdvance, platform, stepOrder, timings])
 
   // Use provided step if not auto-advancing
   const displayStep = autoAdvance ? animatedStep : currentStep
-  const stepConfig = STEP_CONFIG[displayStep]
-  const currentStepIndex = STEP_ORDER.indexOf(displayStep)
+  const currentStepConfig = stepConfig[displayStep as keyof typeof stepConfig]
+  const currentStepIndex = stepOrder.indexOf(displayStep as never)
 
   if (!isVisible) return null
 
@@ -134,7 +152,7 @@ export function SyncOverlay({
                 stroke="url(#purpleGradient)"
                 strokeWidth="6"
                 strokeLinecap="round"
-                strokeDasharray={`${stepConfig.percent * 2.83} 283`}
+                strokeDasharray={`${currentStepConfig.percent * 2.83} 283`}
                 transform="rotate(-90 50 50)"
                 className="transition-all duration-500 ease-out"
               />
@@ -160,7 +178,7 @@ export function SyncOverlay({
             {/* Center percentage */}
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-2xl font-bold text-white">
-                {stepConfig.percent}%
+                {currentStepConfig.percent}%
               </span>
             </div>
           </div>
@@ -175,11 +193,10 @@ export function SyncOverlay({
 
         {/* Steps list */}
         <div className="flex flex-col gap-2 min-w-[280px]">
-          {STEP_ORDER.slice(0, -1).map((step, index) => {
-            const config = STEP_CONFIG[step]
+          {stepOrder.slice(0, -1).map((step, index) => {
+            const config = stepConfig[step as keyof typeof stepConfig]
             const isCompleted = index < currentStepIndex
             const isCurrent = index === currentStepIndex
-            const isPending = index > currentStepIndex
 
             return (
               <div
