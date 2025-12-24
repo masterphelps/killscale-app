@@ -54,6 +54,11 @@ async function fetchAllPages<T>(initialUrl: string, maxPages = 25, retries = 1):
         nextUrl = result.paging?.next || null
         pageCount++
         success = true
+
+        // Add delay between pages to avoid rate limits
+        if (nextUrl) {
+          await new Promise(r => setTimeout(r, 500)) // 500ms between pages
+        }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           lastError = `Request timed out after ${timeoutMs}ms`
