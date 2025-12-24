@@ -1878,27 +1878,26 @@ export default function DashboardPage() {
     <>
       {/* Header row - title left, buttons right, same max-width as cards */}
       <div className="max-w-[1400px] mb-6">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
-              <p className="text-zinc-500 text-sm lg:text-base">Your Meta Ads performance at a glance</p>
-            </div>
-
-            {/* Entity counts next to Dashboard - desktop only */}
-            {data.length > 0 && (
-              <div className="hidden xl:flex items-center gap-3 px-3 py-1.5 bg-bg-card border border-border rounded-lg text-xs">
+        {/* Row 1: Title with entity counts as subtitle */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+            {/* Entity counts as subtitle */}
+            {data.length > 0 ? (
+              <div className="flex items-center gap-3 text-sm text-zinc-500">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
-                  <span className="text-zinc-400">{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
+                  <span>{entityCounts.accounts} account{entityCounts.accounts !== 1 ? 's' : ''}</span>
                 </div>
-                <div className="w-px h-3 bg-border" />
-                <span className="text-zinc-400">{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
-                <div className="w-px h-3 bg-border" />
-                <span className="text-zinc-400">{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
-                <div className="w-px h-3 bg-border" />
-                <span className="text-zinc-400">{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
+                <span className="text-zinc-600">·</span>
+                <span>{entityCounts.campaigns} campaign{entityCounts.campaigns !== 1 ? 's' : ''}</span>
+                <span className="text-zinc-600">·</span>
+                <span>{entityCounts.adsets} ad set{entityCounts.adsets !== 1 ? 's' : ''}</span>
+                <span className="text-zinc-600">·</span>
+                <span>{entityCounts.ads} ad{entityCounts.ads !== 1 ? 's' : ''}</span>
               </div>
+            ) : (
+              <p className="text-zinc-500 text-sm">Your Meta Ads performance at a glance</p>
             )}
           </div>
 
