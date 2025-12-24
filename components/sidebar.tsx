@@ -21,7 +21,6 @@ import {
   Rocket,
   SlidersHorizontal,
   Scale,
-  Radio,
   Users,
   Layers,
   Building2
@@ -50,7 +49,6 @@ const navItems = [
 const settingsItems = [
   { href: '/dashboard/settings', label: 'General', icon: SlidersHorizontal },
   { href: '/dashboard/settings/rules', label: 'Rules', icon: Scale },
-  { href: '/dashboard/settings/pixel', label: 'Pixel', icon: Radio, proOnly: true },
   { href: '/dashboard/settings/accounts', label: 'Accounts', icon: Users },
   { href: '/dashboard/settings/workspaces', label: 'Workspaces', icon: Layers, proOnly: true },
 ]

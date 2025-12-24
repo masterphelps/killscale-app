@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink, Radio, Download, RefreshCw, Activity, Smartphone, Eye, EyeOff, Info } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
+import { useAttribution } from '@/lib/attribution'
+import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'
+import { ManualEventModal } from '@/components/manual-event-modal'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
@@ -42,6 +45,32 @@ type WorkspaceInvite = {
   expiresAt: string
 }
 
+type WorkspacePixel = {
+  workspace_id: string
+  pixel_id: string
+  pixel_secret: string
+  attribution_source: 'native' | 'pixel'
+  attribution_model: AttributionModel
+  time_decay_half_life: number
+}
+
+type KioskSettings = {
+  enabled: boolean
+  slug: string | null
+  hasPin: boolean
+}
+
+type PixelEvent = {
+  id: string
+  event_type: string
+  event_value: number | null
+  event_currency: string
+  utm_source: string | null
+  utm_content: string | null
+  page_url: string | null
+  event_time: string
+}
+
 // Workspace limits per tier
 // Launch: Hidden default workspace only (no visible workspaces)
 // Scale: 2 workspaces, Pro: unlimited
@@ -55,6 +84,7 @@ export default function WorkspacesPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
   const { accounts } = useAccount()
+  const { reloadConfig } = useAttribution()
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspaceAccounts, setWorkspaceAccounts] = useState<Record<string, WorkspaceAccount[]>>({})
@@ -84,6 +114,28 @@ export default function WorkspacesPage() {
   const [portalPin, setPortalPin] = useState('')
   const [savingPortal, setSavingPortal] = useState(false)
   const [copiedPortalUrl, setCopiedPortalUrl] = useState<string | null>(null)
+
+  // Pixel state
+  const [expandedPixel, setExpandedPixel] = useState<string | null>(null)
+  const [workspacePixels, setWorkspacePixels] = useState<Record<string, WorkspacePixel>>({})
+  const [pixelEvents, setPixelEvents] = useState<Record<string, PixelEvent[]>>({})
+  const [lastEventTimes, setLastEventTimes] = useState<Record<string, string | null>>({})
+  const [loadingEvents, setLoadingEvents] = useState<string | null>(null)
+  const [copiedPixelId, setCopiedPixelId] = useState<string | null>(null)
+  const [updatingAttribution, setUpdatingAttribution] = useState<string | null>(null)
+  const [updatingModel, setUpdatingModel] = useState<string | null>(null)
+
+  // Kiosk settings state
+  const [kioskSettings, setKioskSettings] = useState<Record<string, KioskSettings>>({})
+  const [kioskSlugInput, setKioskSlugInput] = useState<Record<string, string>>({})
+  const [kioskPinInput, setKioskPinInput] = useState<Record<string, string>>({})
+  const [showKioskPin, setShowKioskPin] = useState<Record<string, boolean>>({})
+  const [updatingKiosk, setUpdatingKiosk] = useState<string | null>(null)
+  const [copiedKioskUrl, setCopiedKioskUrl] = useState<string | null>(null)
+  const [kioskError, setKioskError] = useState<Record<string, string | null>>({})
+
+  // Manual Event Modal
+  const [showManualEventModal, setShowManualEventModal] = useState<string | null>(null)
 
   const workspaceLimit = WORKSPACE_LIMITS[plan] || 0
   const canCreateWorkspace = workspaces.length < workspaceLimit
@@ -487,6 +539,281 @@ export default function WorkspacesPage() {
     }
   }, [expandedPortal])
 
+  // ===== PIXEL FUNCTIONS =====
+
+  // Load or create pixel for a workspace
+  const loadPixelData = useCallback(async (workspaceId: string, workspaceName: string) => {
+    if (!user?.id) return
+
+    // Check if pixel exists
+    let { data: existingPixel } = await supabase
+      .from('workspace_pixels')
+      .select('pixel_id, pixel_secret, attribution_source, attribution_model, time_decay_half_life')
+      .eq('workspace_id', workspaceId)
+      .single()
+
+    if (!existingPixel) {
+      // Create pixel for this workspace
+      const workspacePrefix = workspaceName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X')
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+      const newPixelId = `KS-${workspacePrefix}-${randomSuffix}`
+
+      const { data: newPixel, error: createError } = await supabase
+        .from('workspace_pixels')
+        .insert({
+          workspace_id: workspaceId,
+          pixel_id: newPixelId,
+          pixel_secret: crypto.randomUUID().replace(/-/g, ''),
+          attribution_source: 'native',
+          attribution_model: 'last_touch',
+          time_decay_half_life: 7,
+        })
+        .select('pixel_id, pixel_secret, attribution_source, attribution_model, time_decay_half_life')
+        .single()
+
+      if (!createError && newPixel) {
+        existingPixel = newPixel
+      }
+    }
+
+    if (existingPixel) {
+      setWorkspacePixels(prev => ({
+        ...prev,
+        [workspaceId]: {
+          workspace_id: workspaceId,
+          pixel_id: existingPixel.pixel_id,
+          pixel_secret: existingPixel.pixel_secret,
+          attribution_source: existingPixel.attribution_source,
+          attribution_model: existingPixel.attribution_model || 'last_touch',
+          time_decay_half_life: existingPixel.time_decay_half_life || 7,
+        }
+      }))
+
+      // Load last event time for active indicator
+      try {
+        const res = await fetch(`/api/pixel/events?pixelId=${existingPixel.pixel_id}&userId=${user.id}&limit=1`)
+        const data = await res.json()
+        setLastEventTimes(prev => ({ ...prev, [workspaceId]: data.lastEventTime || null }))
+      } catch (err) {
+        console.error('Failed to load pixel status:', err)
+      }
+    }
+
+    // Load kiosk settings
+    loadKioskSettings(workspaceId)
+  }, [user?.id])
+
+  // Load pixel data when expanding
+  useEffect(() => {
+    if (expandedPixel && !workspacePixels[expandedPixel]) {
+      const workspace = workspaces.find(w => w.id === expandedPixel)
+      if (workspace) {
+        loadPixelData(expandedPixel, workspace.name)
+      }
+    }
+  }, [expandedPixel, workspacePixels, workspaces, loadPixelData])
+
+  // Load events for a specific pixel
+  const loadPixelEvents = useCallback(async (pixelId: string, workspaceId: string) => {
+    if (!user?.id) return
+
+    setLoadingEvents(workspaceId)
+    try {
+      const res = await fetch(`/api/pixel/events?pixelId=${pixelId}&userId=${user.id}&limit=50`)
+      const data = await res.json()
+      if (data.events) {
+        setPixelEvents(prev => ({ ...prev, [workspaceId]: data.events }))
+      }
+      setLastEventTimes(prev => ({ ...prev, [workspaceId]: data.lastEventTime || null }))
+    } catch (err) {
+      console.error('Failed to load pixel events:', err)
+    } finally {
+      setLoadingEvents(null)
+    }
+  }, [user?.id])
+
+  // Update attribution source for a workspace
+  const updateAttributionSource = async (workspaceId: string, newSource: 'native' | 'pixel') => {
+    setUpdatingAttribution(workspaceId)
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({ attribution_source: newSource })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixels(prev => ({
+          ...prev,
+          [workspaceId]: { ...prev[workspaceId], attribution_source: newSource }
+        }))
+        reloadConfig()
+      } else {
+        console.error('Failed to update attribution source:', error)
+      }
+    } catch (err) {
+      console.error('Failed to update attribution source:', err)
+    } finally {
+      setUpdatingAttribution(null)
+    }
+  }
+
+  // Update attribution model for a workspace
+  const updateAttributionModel = async (workspaceId: string, newModel: AttributionModel, halfLife?: number) => {
+    setUpdatingModel(workspaceId)
+    try {
+      const updates: { attribution_model: AttributionModel; time_decay_half_life?: number } = {
+        attribution_model: newModel
+      }
+      if (halfLife !== undefined) {
+        updates.time_decay_half_life = halfLife
+      }
+
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update(updates)
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixels(prev => ({
+          ...prev,
+          [workspaceId]: {
+            ...prev[workspaceId],
+            attribution_model: newModel,
+            ...(halfLife !== undefined && { time_decay_half_life: halfLife })
+          }
+        }))
+      } else {
+        console.error('Failed to update attribution model:', error)
+      }
+    } catch (err) {
+      console.error('Failed to update attribution model:', err)
+    } finally {
+      setUpdatingModel(null)
+    }
+  }
+
+  // Load kiosk settings for a workspace
+  const loadKioskSettings = async (workspaceId: string) => {
+    if (!user?.id) return
+    try {
+      const res = await fetch(`/api/kiosk/settings?workspaceId=${workspaceId}&userId=${user.id}`)
+      const data = await res.json()
+      if (res.ok) {
+        setKioskSettings(prev => ({
+          ...prev,
+          [workspaceId]: {
+            enabled: data.kioskEnabled,
+            slug: data.kioskSlug,
+            hasPin: data.hasPin
+          }
+        }))
+        setKioskSlugInput(prev => ({ ...prev, [workspaceId]: data.kioskSlug || '' }))
+      }
+    } catch (err) {
+      console.error('Failed to load kiosk settings:', err)
+    }
+  }
+
+  // Update kiosk settings
+  const updateKioskSettings = async (workspaceId: string, updates: { enabled?: boolean; slug?: string; pin?: string }) => {
+    if (!user?.id) return
+    setUpdatingKiosk(workspaceId)
+    setKioskError(prev => ({ ...prev, [workspaceId]: null }))
+
+    try {
+      const res = await fetch('/api/kiosk/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          userId: user.id,
+          ...updates
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setKioskError(prev => ({ ...prev, [workspaceId]: data.error }))
+        return
+      }
+
+      await loadKioskSettings(workspaceId)
+
+      if (updates.pin) {
+        setKioskPinInput(prev => ({ ...prev, [workspaceId]: '' }))
+      }
+    } catch (err) {
+      setKioskError(prev => ({ ...prev, [workspaceId]: 'Failed to update settings' }))
+    } finally {
+      setUpdatingKiosk(null)
+    }
+  }
+
+  const copyKioskUrl = async (slug: string, workspaceId: string) => {
+    const url = `https://kiosk.killscale.com/${slug}`
+    await navigator.clipboard.writeText(url)
+    setCopiedKioskUrl(workspaceId)
+    setTimeout(() => setCopiedKioskUrl(null), 2000)
+  }
+
+  const getPixelSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Pixel -->
+<script>
+!function(k,s,p,i,x,e,l){if(k.ks)return;x=k.ks=function(){x.q.push(arguments)};
+x.q=[];e=s.createElement(p);l=s.getElementsByTagName(p)[0];
+e.async=1;e.src='https://pixel.killscale.com/ks.js';l.parentNode.insertBefore(e,l)
+}(window,document,'script');
+
+ks('init', '${pixelId}', { secret: '${pixelSecret}' });
+ks('pageview');
+</script>
+<!-- End KillScale Pixel -->`
+
+  const copyPixelSnippet = async (pixelId: string, pixelSecret: string, workspaceId: string) => {
+    await navigator.clipboard.writeText(getPixelSnippet(pixelId, pixelSecret))
+    setCopiedPixelId(workspaceId)
+    setTimeout(() => setCopiedPixelId(null), 2000)
+  }
+
+  const downloadPixelFile = (pixelId: string, pixelSecret: string, workspaceName: string) => {
+    const snippet = getPixelSnippet(pixelId, pixelSecret)
+    const blob = new Blob([snippet], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `killscale-pixel-${workspaceName.toLowerCase().replace(/\s+/g, '-')}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const formatTimeAgo = (dateString: string | null) => {
+    if (!dateString) return 'Never'
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
+  }
+
+  // Check if pixel is "active" (received event in last 24 hours)
+  const isPixelActive = (workspaceId: string) => {
+    const lastEvent = lastEventTimes[workspaceId]
+    if (!lastEvent) return false
+    const lastEventDate = new Date(lastEvent)
+    const now = new Date()
+    const diffMs = now.getTime() - lastEventDate.getTime()
+    const diffHours = diffMs / 3600000
+    return diffHours < 24
+  }
+
   const isAgency = plan === 'Pro'
 
   if (loading) {
@@ -641,6 +968,9 @@ export default function WorkspacesPage() {
           {workspaces.map((workspace) => {
             const wsAccounts = workspaceAccounts[workspace.id] || []
             const availableAccounts = getAvailableAccounts(workspace.id)
+            const wp = workspacePixels[workspace.id]
+            const events = pixelEvents[workspace.id] || []
+            const isLoadingEvents = loadingEvents === workspace.id
 
             return (
               <div
@@ -779,6 +1109,434 @@ export default function WorkspacesPage() {
                     <p className="text-xs text-zinc-600 text-center">
                       All connected accounts are in this workspace
                     </p>
+                  )}
+                </div>
+
+                {/* Pixel & Attribution */}
+                <div className="border-t border-border">
+                  <button
+                    onClick={() => setExpandedPixel(expandedPixel === workspace.id ? null : workspace.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-bg-hover/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-green-400" />
+                      <span className="text-sm font-medium">Pixel & Attribution</span>
+                      {isPixelActive(workspace.id) && (
+                        <span className="px-2 py-0.5 text-xs rounded bg-green-500/20 text-green-400">Active</span>
+                      )}
+                    </div>
+                    {expandedPixel === workspace.id ? (
+                      <ChevronUp className="w-4 h-4 text-zinc-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </button>
+
+                  {expandedPixel === workspace.id && (
+                    <div className="p-4 pt-0 space-y-6">
+                      {!wp ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+                        </div>
+                      ) : (
+                        <>
+                          {/* Install Code */}
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <h3 className="font-medium text-sm">Install Code</h3>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => downloadPixelFile(wp.pixel_id, wp.pixel_secret, workspace.name)}
+                                  className="flex items-center gap-1.5 px-2.5 py-1 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  Download
+                                </button>
+                                <button
+                                  onClick={() => copyPixelSnippet(wp.pixel_id, wp.pixel_secret, workspace.id)}
+                                  className="flex items-center gap-1.5 px-2.5 py-1 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors"
+                                >
+                                  {copiedPixelId === workspace.id ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      Copied!
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5" />
+                                      Copy
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-bg-dark rounded-lg">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-xs text-zinc-500">Pixel ID:</span>
+                                <code className="text-xs font-mono text-white">{wp.pixel_id}</code>
+                              </div>
+                              <pre className="text-xs text-zinc-400 overflow-x-auto font-mono whitespace-pre-wrap">
+                                {getPixelSnippet(wp.pixel_id, wp.pixel_secret)}
+                              </pre>
+                            </div>
+
+                            <p className="text-xs text-zinc-600 mt-2">
+                              Add to your website's <code className="bg-zinc-800 px-1 rounded">&lt;head&gt;</code> section.
+                            </p>
+                          </div>
+
+                          {/* Attribution Source Toggle */}
+                          <div>
+                            <h3 className="font-medium text-sm mb-3">Attribution Source</h3>
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => updateAttributionSource(workspace.id, 'native')}
+                                disabled={updatingAttribution === workspace.id}
+                                className={cn(
+                                  "flex-1 p-3 rounded-lg border-2 transition-all text-left",
+                                  wp.attribution_source === 'native'
+                                    ? "border-accent bg-accent/10"
+                                    : "border-border hover:border-zinc-600"
+                                )}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className={cn(
+                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                    wp.attribution_source === 'native' ? "border-accent" : "border-zinc-600"
+                                  )}>
+                                    {wp.attribution_source === 'native' && (
+                                      <div className="w-2 h-2 rounded-full bg-accent" />
+                                    )}
+                                  </div>
+                                  <span className="font-medium text-sm">Native (Meta)</span>
+                                </div>
+                                <p className="text-xs text-zinc-500 ml-6">
+                                  Use Meta's built-in conversion tracking
+                                </p>
+                              </button>
+
+                              <button
+                                onClick={() => updateAttributionSource(workspace.id, 'pixel')}
+                                disabled={updatingAttribution === workspace.id}
+                                className={cn(
+                                  "flex-1 p-3 rounded-lg border-2 transition-all text-left",
+                                  wp.attribution_source === 'pixel'
+                                    ? "border-purple-500 bg-purple-500/10"
+                                    : "border-border hover:border-zinc-600"
+                                )}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className={cn(
+                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                    wp.attribution_source === 'pixel' ? "border-purple-500" : "border-zinc-600"
+                                  )}>
+                                    {wp.attribution_source === 'pixel' && (
+                                      <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                    )}
+                                  </div>
+                                  <span className="font-medium text-sm">KillScale Pixel</span>
+                                </div>
+                                <p className="text-xs text-zinc-500 ml-6">
+                                  Use first-party tracking for better accuracy
+                                </p>
+                              </button>
+                            </div>
+                            {updatingAttribution === workspace.id && (
+                              <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Updating...
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Attribution Model - Only show when KillScale Pixel is selected */}
+                          {wp.attribution_source === 'pixel' && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-3">
+                                <h3 className="font-medium text-sm">Attribution Model</h3>
+                                <div className="group relative">
+                                  <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+                                    Choose how credit is distributed when a customer interacts with multiple ads before converting.
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                {(Object.keys(ATTRIBUTION_MODEL_INFO) as AttributionModel[]).map((model) => (
+                                  <button
+                                    key={model}
+                                    onClick={() => updateAttributionModel(workspace.id, model)}
+                                    disabled={updatingModel === workspace.id}
+                                    className={cn(
+                                      "w-full p-3 rounded-lg border-2 transition-all text-left",
+                                      wp.attribution_model === model
+                                        ? "border-purple-500 bg-purple-500/10"
+                                        : "border-border hover:border-zinc-600"
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <div className={cn(
+                                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                        wp.attribution_model === model ? "border-purple-500" : "border-zinc-600"
+                                      )}>
+                                        {wp.attribution_model === model && (
+                                          <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                        )}
+                                      </div>
+                                      <span className="font-medium text-sm">{ATTRIBUTION_MODEL_INFO[model].label}</span>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 ml-6">
+                                      {ATTRIBUTION_MODEL_INFO[model].description}
+                                    </p>
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Time Decay Half-Life Slider */}
+                              {wp.attribution_model === 'time_decay' && (
+                                <div className="mt-4 p-3 bg-bg-dark rounded-lg">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <label className="text-sm text-zinc-400">Half-Life</label>
+                                    <span className="text-sm font-medium text-white">{wp.time_decay_half_life} days</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="1"
+                                    max="28"
+                                    value={wp.time_decay_half_life}
+                                    onChange={(e) => updateAttributionModel(workspace.id, 'time_decay', parseInt(e.target.value))}
+                                    className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                  />
+                                  <div className="flex justify-between text-xs text-zinc-600 mt-1">
+                                    <span>1 day</span>
+                                    <span>28 days</span>
+                                  </div>
+                                  <p className="text-xs text-zinc-500 mt-2">
+                                    Touchpoints lose 50% of their credit every {wp.time_decay_half_life} days before conversion.
+                                  </p>
+                                </div>
+                              )}
+
+                              {updatingModel === workspace.id && (
+                                <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Updating...
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Sales Kiosk */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Smartphone className="w-4 h-4 text-zinc-400" />
+                              <h3 className="font-medium text-sm">Sales Kiosk</h3>
+                            </div>
+                            <p className="text-xs text-zinc-500 mb-4">
+                              A simplified view for staff to log walk-in sales without full dashboard access.
+                            </p>
+
+                            {kioskError[workspace.id] && (
+                              <div className="mb-3 p-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                                {kioskError[workspace.id]}
+                              </div>
+                            )}
+
+                            {/* Enable toggle */}
+                            <div className="flex items-center justify-between p-3 bg-bg-dark rounded-lg mb-3">
+                              <span className="text-sm">Enable Sales Kiosk</span>
+                              <button
+                                onClick={() => updateKioskSettings(workspace.id, { enabled: !kioskSettings[workspace.id]?.enabled })}
+                                disabled={updatingKiosk === workspace.id}
+                                className={cn(
+                                  "w-10 h-6 rounded-full transition-colors relative",
+                                  kioskSettings[workspace.id]?.enabled ? "bg-accent" : "bg-zinc-700"
+                                )}
+                              >
+                                <div className={cn(
+                                  "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                                  kioskSettings[workspace.id]?.enabled ? "left-5" : "left-1"
+                                )} />
+                              </button>
+                            </div>
+
+                            {kioskSettings[workspace.id]?.enabled && (
+                              <>
+                                {/* Kiosk URL */}
+                                <div className="mb-3">
+                                  <label className="block text-xs text-zinc-500 mb-1">Kiosk URL</label>
+                                  <div className="flex gap-2">
+                                    <div className="flex-1 flex items-center bg-bg-dark border border-border rounded-lg overflow-hidden">
+                                      <span className="px-2 text-xs text-zinc-600 border-r border-border">kiosk.killscale.com/</span>
+                                      <input
+                                        type="text"
+                                        value={kioskSlugInput[workspace.id] || ''}
+                                        onChange={(e) => setKioskSlugInput(prev => ({ ...prev, [workspace.id]: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                                        placeholder="your-business"
+                                        className="flex-1 px-2 py-2 bg-transparent text-sm text-white focus:outline-none"
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() => updateKioskSettings(workspace.id, { slug: kioskSlugInput[workspace.id] })}
+                                      disabled={updatingKiosk === workspace.id || kioskSlugInput[workspace.id] === kioskSettings[workspace.id]?.slug}
+                                      className="px-3 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs rounded-lg transition-colors"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Copy URL button */}
+                                {kioskSettings[workspace.id]?.slug && (
+                                  <button
+                                    onClick={() => copyKioskUrl(kioskSettings[workspace.id].slug!, workspace.id)}
+                                    className="w-full mb-3 flex items-center justify-center gap-2 p-2 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+                                  >
+                                    {copiedKioskUrl === workspace.id ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5 text-verdict-scale" />
+                                        Copied!
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="w-3.5 h-3.5" />
+                                        Copy Kiosk URL
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+
+                                {/* PIN Code */}
+                                <div>
+                                  <label className="block text-xs text-zinc-500 mb-1">
+                                    PIN Code {kioskSettings[workspace.id]?.hasPin && <span className="text-verdict-scale">(set)</span>}
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <div className="flex-1 relative">
+                                      <input
+                                        type={showKioskPin[workspace.id] ? 'text' : 'password'}
+                                        value={kioskPinInput[workspace.id] || ''}
+                                        onChange={(e) => setKioskPinInput(prev => ({ ...prev, [workspace.id]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                                        placeholder={kioskSettings[workspace.id]?.hasPin ? '••••' : 'Enter 4-6 digits'}
+                                        maxLength={6}
+                                        className="w-full px-3 py-2 bg-bg-dark border border-border rounded-lg text-sm text-white focus:outline-none focus:border-accent"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowKioskPin(prev => ({ ...prev, [workspace.id]: !prev[workspace.id] }))}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                                      >
+                                        {showKioskPin[workspace.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                      </button>
+                                    </div>
+                                    <button
+                                      onClick={() => updateKioskSettings(workspace.id, { pin: kioskPinInput[workspace.id] })}
+                                      disabled={updatingKiosk === workspace.id || !kioskPinInput[workspace.id] || kioskPinInput[workspace.id].length < 4}
+                                      className="px-3 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs rounded-lg transition-colors"
+                                    >
+                                      {kioskSettings[workspace.id]?.hasPin ? 'Change' : 'Set'}
+                                    </button>
+                                  </div>
+                                  <p className="text-xs text-zinc-600 mt-1">Staff will enter this PIN to access the kiosk.</p>
+                                </div>
+                              </>
+                            )}
+
+                            {updatingKiosk === workspace.id && (
+                              <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Updating...
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Manual Event Logging */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Plus className="w-4 h-4 text-zinc-400" />
+                              <h3 className="font-medium text-sm">Manual Event Logging</h3>
+                            </div>
+                            <p className="text-xs text-zinc-500 mb-4">
+                              Manually log walk-ins, phone orders, signups, or other offline conversions.
+                            </p>
+                            <button
+                              onClick={() => setShowManualEventModal(workspace.id)}
+                              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                            >
+                              <Plus className="w-4 h-4" />
+                              Log Manual Event
+                            </button>
+                          </div>
+
+                          {/* Event Viewer */}
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Activity className="w-4 h-4 text-zinc-400" />
+                                <h3 className="font-medium text-sm">Recent Events</h3>
+                              </div>
+                              <button
+                                onClick={() => loadPixelEvents(wp.pixel_id, workspace.id)}
+                                disabled={isLoadingEvents}
+                                className="flex items-center gap-1.5 px-2.5 py-1 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-50"
+                              >
+                                <RefreshCw className={cn("w-3.5 h-3.5", isLoadingEvents && "animate-spin")} />
+                                Refresh
+                              </button>
+                            </div>
+
+                            {isLoadingEvents && events.length === 0 ? (
+                              <div className="flex items-center justify-center py-8">
+                                <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+                              </div>
+                            ) : events.length === 0 ? (
+                              <div className="text-center py-8 bg-bg-dark rounded-lg">
+                                <Activity className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+                                <p className="text-sm text-zinc-500">No events received yet</p>
+                                <p className="text-xs text-zinc-600 mt-1">Install the pixel and events will appear here</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                                {events.slice(0, 10).map((event) => (
+                                  <div
+                                    key={event.id}
+                                    className="flex items-center justify-between p-2.5 bg-bg-dark rounded-lg text-sm"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className={cn(
+                                        "px-1.5 py-0.5 rounded text-xs font-medium",
+                                        event.event_type === 'purchase' ? 'bg-verdict-scale/20 text-verdict-scale' :
+                                        event.event_type === 'pageview' ? 'bg-zinc-700 text-zinc-400' :
+                                        'bg-accent/20 text-accent'
+                                      )}>
+                                        {event.event_type}
+                                      </span>
+                                      {event.event_value && (
+                                        <span className="text-zinc-400">${event.event_value.toFixed(2)}</span>
+                                      )}
+                                      {event.utm_content && (
+                                        <span className="text-xs text-zinc-600 font-mono truncate max-w-[100px]" title={event.utm_content}>
+                                          {event.utm_content}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-xs text-zinc-600 flex-shrink-0">
+                                      {formatTimeAgo(event.event_time)}
+                                    </span>
+                                  </div>
+                                ))}
+                                {events.length > 10 && (
+                                  <p className="text-xs text-zinc-600 text-center pt-2">
+                                    +{events.length - 10} more events
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -1042,6 +1800,21 @@ export default function WorkspacesPage() {
         <p><strong>Workspaces</strong> let you combine metrics from multiple ad accounts into a single view.</p>
         <p>Select a workspace from the sidebar dropdown to see aggregated performance across all accounts in that workspace.</p>
       </div>
+
+      {/* Manual Event Modal */}
+      {showManualEventModal && (
+        <ManualEventModal
+          workspaceId={showManualEventModal}
+          onClose={() => setShowManualEventModal(null)}
+          onSuccess={() => {
+            // Reload events for this workspace
+            const wp = workspacePixels[showManualEventModal]
+            if (wp) {
+              loadPixelEvents(wp.pixel_id, showManualEventModal)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
