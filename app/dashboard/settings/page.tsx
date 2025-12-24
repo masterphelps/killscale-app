@@ -58,6 +58,7 @@ export default function GeneralSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [billingLoading, setBillingLoading] = useState(false)
 
   // Load user preferences
   useEffect(() => {
@@ -109,6 +110,29 @@ export default function GeneralSettingsPage() {
   const handleChange = (field: keyof UserPreferences, value: string | boolean) => {
     setPreferences(prev => ({ ...prev, [field]: value }))
     setSaved(false)
+  }
+
+  const handleOpenBillingPortal = async () => {
+    if (!user) return
+    setBillingLoading(true)
+    try {
+      const response = await fetch('/api/billing/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      })
+      const data = await response.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        alert(data.error || 'Unable to open billing portal')
+      }
+    } catch (error) {
+      console.error('Error opening billing portal:', error)
+      alert('Failed to open billing portal')
+    } finally {
+      setBillingLoading(false)
+    }
   }
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
@@ -186,16 +210,19 @@ export default function GeneralSettingsPage() {
                   Upgrade
                 </Link>
               )}
-              {subscription?.status === 'active' && (
-                <a
-                  href="https://billing.stripe.com/p/login/test_123"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 px-3 py-1.5 bg-bg-hover text-zinc-400 hover:text-white text-sm rounded-lg transition-colors"
+              {(subscription?.status === 'active' || subscription?.status === 'trialing') && (
+                <button
+                  onClick={handleOpenBillingPortal}
+                  disabled={billingLoading}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-bg-hover text-zinc-400 hover:text-white text-sm rounded-lg transition-colors disabled:opacity-50"
                 >
+                  {billingLoading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ExternalLink className="w-3 h-3" />
+                  )}
                   Manage
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                </button>
               )}
             </div>
           </div>
