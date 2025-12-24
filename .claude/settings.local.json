@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:developers.google.com)",
+      "Bash(grep:*)",
+      "WebFetch(domain:ads-developers.googleblog.com)"
+    ]
+  }
+}

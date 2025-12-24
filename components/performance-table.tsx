@@ -8,6 +8,7 @@ import { BudgetEditModal } from './budget-edit-modal'
 import { StarButton } from './star-button'
 import { Rules, calculateVerdict, Verdict, isEntityActive, StarredAd } from '@/lib/supabase'
 import { usePrivacyMode } from '@/lib/privacy-mode'
+import { FEATURES } from '@/lib/feature-flags'
 
 // Simple performance indicator for ads (shows arrow based on verdict without text)
 const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
@@ -40,7 +41,35 @@ const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
   )
 }
 
+// Platform badge for distinguishing Meta vs Google accounts
+// Compact M/G icons with brand colors
+const PlatformBadge = ({ platform }: { platform?: 'meta' | 'google' }) => {
+  if (!FEATURES.GOOGLE_ADS_INTEGRATION || !platform) return null
+
+  if (platform === 'google') {
+    return (
+      <span
+        className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold bg-[#EA4335] text-white"
+        title="Google Ads"
+      >
+        G
+      </span>
+    )
+  }
+
+  // Meta - blue brand color
+  return (
+    <span
+      className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold bg-[#0866FF] text-white"
+      title="Meta Ads"
+    >
+      M
+    </span>
+  )
+}
+
 type AdRow = {
+  ad_account_id?: string | null  // Meta ad_account_id or Google customer_id
   campaign_name: string
   campaign_id?: string | null
   adset_name: string
@@ -66,6 +95,10 @@ type AdRow = {
   campaign_lifetime_budget?: number | null
   adset_daily_budget?: number | null
   adset_lifetime_budget?: number | null
+  // Platform indicator (for Google Ads integration)
+  _platform?: 'meta' | 'google'
+  // Google budget resource name for mutations
+  campaign_budget_resource_name?: string | null
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -91,9 +124,9 @@ type PerformanceTableProps = {
   onSelectAll?: () => void
   allSelected?: boolean
   someSelected?: boolean
-  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED') => void
+  onStatusChange?: (entityId: string, entityType: 'campaign' | 'adset' | 'ad', entityName: string, newStatus: 'ACTIVE' | 'PAUSED', platform?: 'meta' | 'google', accountId?: string | null) => void
   canManageAds?: boolean
-  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number) => Promise<void>
+  onBudgetChange?: (entityId: string, entityType: 'campaign' | 'adset', newBudget: number, budgetType: 'daily' | 'lifetime', oldBudget?: number, platform?: 'meta' | 'google', accountId?: string | null, budgetResourceName?: string) => Promise<void>
   // For deep-linking from alerts
   highlightEntity?: {
     type: 'campaign' | 'adset' | 'ad'
@@ -159,6 +192,10 @@ type HierarchyNode = {
   budgetType?: BudgetType  // CBO for campaign-level, ABO for ad set-level
   dailyBudget?: number | null
   lifetimeBudget?: number | null
+  // Platform (for Google Ads integration)
+  platform?: 'meta' | 'google'
+  accountId?: string | null  // Meta ad_account_id or Google customer_id
+  budgetResourceName?: string  // Google budget resource name for mutations
   // Parent info (for ads - needed for starring)
   adsetId?: string | null
   adsetName?: string
@@ -228,6 +265,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   // Track budget info
   const campaignBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
   const adsetBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
+  // Track platform info (Google Ads integration)
+  const campaignPlatforms: Record<string, 'meta' | 'google' | undefined> = {}
 
   data.forEach(row => {
     // Capture statuses and IDs from the first row we see for each entity
@@ -249,6 +288,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         daily: row.campaign_daily_budget ?? null,
         lifetime: row.campaign_lifetime_budget ?? null,
       }
+    }
+    // Capture platform info from the first row we see for each campaign
+    if (!campaignPlatforms[row.campaign_name] && row._platform) {
+      campaignPlatforms[row.campaign_name] = row._platform
     }
     if (!adsetBudgets[row.adset_name]) {
       adsetBudgets[row.adset_name] = {
@@ -275,13 +318,30 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         cpa: 0,
         convRate: 0,
         verdict: 'learn',
-        children: []
+        children: [],
+        platform: row._platform,  // Google Ads integration
+        accountId: row.ad_account_id,  // Meta ad_account_id or Google customer_id
+        budgetResourceName: row.campaign_budget_resource_name || undefined,  // Google budget resource name
       }
     }
     const campaign = campaigns[row.campaign_name]
     // Ensure we have the ID even if first row didn't have it
     if (row.campaign_id && !campaign.id) campaign.id = row.campaign_id
     
+    // For Google data, we only have campaign-level data (no adsets/ads)
+    // Skip creating children for Google campaigns
+    if (row._platform === 'google') {
+      // Aggregate metrics directly on campaign for Google
+      campaign.impressions += row.impressions
+      campaign.clicks += row.clicks
+      campaign.spend += row.spend
+      campaign.purchases += row.purchases
+      campaign.revenue += row.revenue
+      campaign.results += row.results || 0
+      if (row.campaign_status) campaign.status = row.campaign_status
+      return  // Skip adset/ad creation for Google
+    }
+
     let adset = campaign.children?.find(c => c.name === row.adset_name)
     if (!adset) {
       adset = {
@@ -301,13 +361,15 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         cpa: 0,
         convRate: 0,
         verdict: 'learn',
-        children: []
+        children: [],
+        platform: row._platform,  // Inherit platform from row
+        accountId: row.ad_account_id,  // Inherit accountId from row
       }
       campaign.children?.push(adset)
     }
     // Ensure we have the ID even if first row didn't have it
     if (row.adset_id && !adset.id) adset.id = row.adset_id
-    
+
     // Check if ad already exists - aggregate instead of duplicating
     let ad = adset.children?.find(a => a.name === row.ad_name)
     if (!ad) {
@@ -329,6 +391,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         convRate: 0,
         status: row.status,
         verdict: 'learn',
+        platform: row._platform,  // Inherit platform from row
+        accountId: row.ad_account_id,  // Inherit accountId from row
         // Parent info for starring
         adsetId: adset.id,
         adsetName: adset.name,
@@ -545,6 +609,9 @@ export function PerformanceTable({
     entityType: 'campaign' | 'adset'
     currentBudget: number
     currentBudgetType: 'daily' | 'lifetime'
+    platform?: 'meta' | 'google'
+    accountId?: string | null
+    budgetResourceName?: string  // Google budget resource name
   } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
@@ -996,9 +1063,11 @@ export function PerformanceTable({
         >
           {/* Row 1: Name */}
           <div className={cn('truncate text-sm', textClass)} title={nameToShow}>{nameToShow}</div>
-          {/* Row 2: Type label + status badges + CBO/ABO badge */}
+          {/* Row 2: Type label + platform badge + status badges + CBO/ABO badge */}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className="text-xs text-zinc-500">{typeLabels[level]}</span>
+            {/* Platform badge - only show at campaign level */}
+            {level === 'campaign' && <PlatformBadge platform={node.platform} />}
             {/* Paused indicator - only show when includePaused is true */}
             {includePaused && node.status && node.status !== 'ACTIVE' && (
               <span className="flex-shrink-0 inline-flex items-center gap-0.5 text-zinc-500 bg-zinc-800/50 border border-zinc-700/50 rounded text-[9px] px-1.5 py-0.5">
@@ -1076,6 +1145,9 @@ export function PerformanceTable({
                         entityType: level,
                         currentBudget,
                         currentBudgetType: budgetType,
+                        platform: node.platform,
+                        accountId: node.accountId,
+                        budgetResourceName: node.budgetResourceName,
                       })
                     }
                   }}
@@ -1143,7 +1215,7 @@ export function PerformanceTable({
               e.stopPropagation()
               const isPaused = node.status && node.status !== 'ACTIVE'
               const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
-              onStatusChange(node.id!, level, node.name, newStatus)
+              onStatusChange(node.id!, level, node.name, newStatus, node.platform, node.accountId)
             }}
             className={cn(
               'w-8 h-8 flex items-center justify-center rounded-lg border transition-all flex-shrink-0',
@@ -1362,7 +1434,7 @@ export function PerformanceTable({
                 onClick={(e) => {
                   e.stopPropagation()
                   const newStatus = isPaused ? 'ACTIVE' : 'PAUSED'
-                  onStatusChange(node.id!, level, node.name, newStatus)
+                  onStatusChange(node.id!, level, node.name, newStatus, node.platform, node.accountId)
                 }}
                 className={cn(
                   'w-8 h-8 flex items-center justify-center rounded-lg border transition-all',
@@ -1413,6 +1485,9 @@ export function PerformanceTable({
                   entityType: level,
                   currentBudget,
                   currentBudgetType: budgetType,
+                  platform: node.platform,
+                  accountId: node.accountId,
+                  budgetResourceName: node.budgetResourceName,
                 })
               }
             }}
@@ -1522,7 +1597,7 @@ export function PerformanceTable({
                       node={campaign}
                       level="campaign"
                       isExpanded={expandedCampaigns.has(campaign.name)}
-                      onToggle={() => toggleCampaign(campaign.name)}
+                      onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name)}
                       isSelected={isSelected}
                       rowKey={campaign.name}
                       displayName={maskName(campaign.name, 'campaign', campaignIndex)}
@@ -1594,7 +1669,7 @@ export function PerformanceTable({
                 node={campaign}
                 level="campaign"
                 isExpanded={expandedCampaigns.has(campaign.name)}
-                onToggle={() => toggleCampaign(campaign.name)}
+                onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name)}
                 displayName={maskName(campaign.name, 'campaign', campaignIndex)}
               />
 
@@ -1636,7 +1711,10 @@ export function PerformanceTable({
                 budgetEditModal.entityType,
                 newBudget,
                 budgetType,
-                budgetEditModal.currentBudget
+                budgetEditModal.currentBudget,
+                budgetEditModal.platform,
+                budgetEditModal.accountId,
+                budgetEditModal.budgetResourceName
               )
             }
           }}

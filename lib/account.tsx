@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useAuth } from './auth'
+import { FEATURES } from './feature-flags'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,6 +16,7 @@ type AdAccount = {
   account_status: number
   currency: string
   in_dashboard?: boolean
+  platform: 'meta' | 'google'
 }
 
 type Workspace = {
@@ -133,8 +135,29 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId)
         .single()
 
-      if (error || !connection) {
-        // No Meta connection - check for CSV data
+      // Get Google connection if feature enabled
+      let googleAccounts: AdAccount[] = []
+      if (FEATURES.GOOGLE_ADS_INTEGRATION) {
+        const { data: googleConnection } = await supabase
+          .from('google_connections')
+          .select('customer_ids, selected_customer_id')
+          .eq('user_id', userId)
+          .single()
+
+        if (googleConnection?.customer_ids) {
+          googleAccounts = googleConnection.customer_ids.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            account_status: 1, // Google doesn't have same status concept
+            currency: c.currency || 'USD',
+            in_dashboard: true, // Google accounts are always in dashboard for now
+            platform: 'google' as const,
+          }))
+        }
+      }
+
+      if ((error || !connection) && googleAccounts.length === 0) {
+        // No Meta or Google connection - check for CSV data
         const { data: csvData } = await supabase
           .from('ad_data')
           .select('id')
@@ -156,7 +179,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const allAccounts: AdAccount[] = connection.ad_accounts || []
+      // Combine Meta and Google accounts
+      const metaAccounts: AdAccount[] = (connection?.ad_accounts || []).map((a: any) => ({
+        ...a,
+        platform: 'meta' as const,
+      }))
+
+      const allAccounts: AdAccount[] = [...metaAccounts, ...googleAccounts]
 
       // Filter to dashboard accounts, or use all if none marked
       const dashboardAccounts = allAccounts.filter(a => a.in_dashboard)
@@ -166,19 +195,27 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
       // Only set account if no workspace is selected
       if (!profile?.selected_workspace_id) {
-        // Determine current account
-        let selectedId = connection.selected_account_id
+        // Determine current account - prefer Meta selection, fall back to first available
+        let selectedId = connection?.selected_account_id || null
 
         // If no selection or selection not in display accounts, pick first
         if (!selectedId || !displayAccounts.find(a => a.id === selectedId)) {
           selectedId = displayAccounts[0]?.id || null
 
-          // Save this selection
+          // Save this selection to the appropriate connection table
           if (selectedId) {
-            await supabase
-              .from('meta_connections')
-              .update({ selected_account_id: selectedId })
-              .eq('user_id', userId)
+            const selectedAccount = displayAccounts.find(a => a.id === selectedId)
+            if (selectedAccount?.platform === 'google') {
+              await supabase
+                .from('google_connections')
+                .update({ selected_customer_id: selectedId })
+                .eq('user_id', userId)
+            } else {
+              await supabase
+                .from('meta_connections')
+                .update({ selected_account_id: selectedId })
+                .eq('user_id', userId)
+            }
           }
         }
 
@@ -211,11 +248,22 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         .update({ selected_workspace_id: null })
         .eq('id', userId)
 
-      // Update selected account in meta_connections
-      await supabase
-        .from('meta_connections')
-        .update({ selected_account_id: accountId })
-        .eq('user_id', userId)
+      // Determine if this is a Meta or Google account
+      const isGoogleAccount = !accountId.startsWith('act_')
+
+      if (isGoogleAccount && FEATURES.GOOGLE_ADS_INTEGRATION) {
+        // Update selected customer in google_connections
+        await supabase
+          .from('google_connections')
+          .update({ selected_customer_id: accountId })
+          .eq('user_id', userId)
+      } else {
+        // Update selected account in meta_connections
+        await supabase
+          .from('meta_connections')
+          .update({ selected_account_id: accountId })
+          .eq('user_id', userId)
+      }
 
       // Update local state immediately
       setCurrentAccountId(accountId)

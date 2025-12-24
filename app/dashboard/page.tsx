@@ -20,6 +20,7 @@ import { useAccount } from '@/lib/account'
 import { useAttribution } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
+import { FEATURES } from '@/lib/feature-flags'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -109,6 +110,13 @@ type CacheEntry = {
 const dataCache = new Map<string, CacheEntry>()
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
+// Helper to detect Google vs Meta accounts
+// Meta accounts start with 'act_', Google customer IDs don't
+const isGoogleAccount = (accountId: string | null): boolean => {
+  if (!accountId) return false
+  return FEATURES.GOOGLE_ADS_INTEGRATION && !accountId.startsWith('act_')
+}
+
 // Helper to get cache key
 const getCacheKey = (accountId: string | null, workspaceAccountIds: string[]): string => {
   if (workspaceAccountIds.length > 0) {
@@ -148,6 +156,8 @@ export default function DashboardPage() {
   const isFirstSessionLoad = useRef(typeof window !== 'undefined' && !sessionStorage.getItem('ks_session_synced')) // Fresh login detection
   const userManuallyDeselected = useRef(false) // Track if user manually deselected all
   const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
+  const [pendingWorkspaceSync, setPendingWorkspaceSync] = useState(false) // Workspace sync on first load
+  const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
   const [includePaused, setIncludePaused] = useState(true)
@@ -188,6 +198,8 @@ export default function DashboardPage() {
     entityType: 'campaign' | 'adset' | 'ad'
     entityName: string
     action: 'pause' | 'resume'
+    platform?: 'meta' | 'google'
+    accountId?: string | null  // Meta ad_account_id or Google customer_id
   } | null>(null)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const [highlightEntity, setHighlightEntity] = useState<{
@@ -382,9 +394,6 @@ export default function DashboardPage() {
       // Check if we should trigger initial sync (only once per page load)
       if (hasTriggeredInitialSync.current) return
 
-      const accountToSync = currentAccountId || accounts[0]?.id
-      if (!accountToSync || accounts.length === 0) return
-
       // Check cache validity for current account/workspace
       const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
       const cached = dataCache.get(cacheKey)
@@ -398,7 +407,19 @@ export default function DashboardPage() {
         sessionStorage.setItem('ks_session_synced', 'true')
         console.log('[Dashboard] Fresh session - triggering initial sync')
         setDatePreset('last_30d')
-        setPendingInitialSync(accountToSync)
+
+        // Workspace mode: sync all workspace accounts
+        if (workspaceAccountIds.length > 0) {
+          console.log('[Dashboard] Syncing workspace -', workspaceAccountIds.length, 'accounts')
+          setPendingWorkspaceSync(true)
+        } else {
+          // Single account mode (existing logic)
+          const accountToSync = currentAccountId || accounts[0]?.id
+          if (accountToSync && accounts.length > 0) {
+            console.log('[Dashboard] Syncing single account:', accountToSync)
+            setPendingInitialSync(accountToSync)
+          }
+        }
       } else {
         console.log('[Dashboard] Already synced this session - loading from Supabase only')
       }
@@ -423,6 +444,15 @@ export default function DashboardPage() {
       }, 2000)
     }
   }, [pendingInitialSync, datePreset, isSyncing])
+
+  // Execute pending workspace sync (separate effect for workspace mode)
+  useEffect(() => {
+    if (pendingWorkspaceSync && datePreset === 'last_30d' && !isSyncing && workspaceAccountIds.length > 0) {
+      console.log('[Dashboard] Executing initial workspace sync for', workspaceAccountIds.length, 'accounts')
+      setPendingWorkspaceSync(false) // Clear before executing to prevent loops
+      handleSyncWorkspace()
+    }
+  }, [pendingWorkspaceSync, datePreset, isSyncing, workspaceAccountIds])
 
   // Check cache when switching accounts/workspaces
   useEffect(() => {
@@ -593,20 +623,23 @@ export default function DashboardPage() {
 
   const loadData = async (showLoading = true) => {
     if (!user) return
-    
+
     // Only show loading spinner on very first load (never loaded before)
     if (showLoading && !hasLoadedOnce) {
       setIsLoading(true)
     }
-    
+
+    // Load Meta ad data
     const { data: adData, error } = await supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: false })
 
+    let rows: CSVRow[] = []
+
     if (adData && !error) {
-      const rows = adData.map(row => ({
+      rows = adData.map(row => ({
         ad_account_id: row.ad_account_id, // Include for account filtering
         date_start: row.date_start,
         date_end: row.date_end,
@@ -634,12 +667,59 @@ export default function DashboardPage() {
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
+        // Platform marker for display
+        _platform: 'meta' as const,
       }))
-      setData(rows)
-
-      // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
-      // This ensures selection is always for the currently selected account
     }
+
+    // Load Google ad data if feature enabled
+    if (FEATURES.GOOGLE_ADS_INTEGRATION) {
+      const { data: googleData, error: googleError } = await supabase
+        .from('google_ad_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date_start', { ascending: false })
+
+      if (googleData && !googleError) {
+        const googleRows = googleData.map(row => ({
+          ad_account_id: row.customer_id, // Google uses customer_id
+          date_start: row.date_start,
+          date_end: row.date_end,
+          campaign_name: row.campaign_name,
+          campaign_id: row.campaign_id,
+          // Map Google ad_group to adset fields for unified display
+          adset_name: row.ad_group_name,
+          adset_id: row.ad_group_id,
+          ad_name: row.ad_name,
+          ad_id: row.ad_id,
+          impressions: row.impressions,
+          clicks: row.clicks,
+          spend: parseFloat(row.spend),
+          purchases: row.conversions || 0,
+          revenue: parseFloat(row.conversions_value) || 0,
+          results: row.results || 0,
+          result_value: row.result_value ?? null,
+          result_type: row.result_type ?? null,
+          status: row.ad_status,
+          adset_status: row.ad_group_status,
+          campaign_status: row.campaign_status,
+          // Google is always CBO - budget at campaign level only
+          campaign_daily_budget: row.campaign_budget,
+          campaign_lifetime_budget: null,
+          adset_daily_budget: null,
+          adset_lifetime_budget: null,
+          // Platform marker for display
+          _platform: 'google' as const,
+          // Google budget resource name for mutations
+          campaign_budget_resource_name: row.campaign_budget_resource_name,
+        }))
+        rows = [...rows, ...googleRows]
+      }
+    }
+
+    setData(rows)
+    // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
+    // This ensures selection is always for the currently selected account
     setHasLoadedOnce(true)
     setIsLoading(false)
   }
@@ -648,14 +728,17 @@ export default function DashboardPage() {
   const loadDataAndCache = async (accountId: string | null, wsAccountIds: string[] = []) => {
     if (!user) return
 
+    // Load Meta ad data
     const { data: adData, error } = await supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
       .order('date_start', { ascending: false })
 
+    let rows: CSVRow[] = []
+
     if (adData && !error) {
-      const rows = adData.map(row => ({
+      rows = adData.map(row => ({
         ad_account_id: row.ad_account_id,
         date_start: row.date_start,
         date_end: row.date_end,
@@ -680,33 +763,76 @@ export default function DashboardPage() {
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
+        // Platform marker for display
+        _platform: 'meta' as const,
       }))
-
-      setData(rows)
-
-      // Cache the relevant subset
-      const cacheKey = getCacheKey(accountId, wsAccountIds)
-      let cacheData: CSVRow[]
-
-      if (wsAccountIds.length > 0) {
-        cacheData = rows.filter(row => wsAccountIds.includes(row.ad_account_id || ''))
-      } else if (accountId) {
-        cacheData = rows.filter(row => row.ad_account_id === accountId)
-      } else {
-        cacheData = rows
-      }
-
-      dataCache.set(cacheKey, {
-        data: cacheData,
-        datePreset,
-        customStartDate,
-        customEndDate,
-        fetchedAt: Date.now()
-      })
-      console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
-
-      return rows
     }
+
+    // Load Google ad data if feature enabled
+    if (FEATURES.GOOGLE_ADS_INTEGRATION) {
+      const { data: googleData, error: googleError } = await supabase
+        .from('google_ad_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date_start', { ascending: false })
+
+      if (googleData && !googleError) {
+        const googleRows = googleData.map(row => ({
+          ad_account_id: row.customer_id,
+          date_start: row.date_start,
+          date_end: row.date_end,
+          campaign_name: row.campaign_name,
+          campaign_id: row.campaign_id,
+          adset_name: row.ad_group_name,
+          adset_id: row.ad_group_id,
+          ad_name: row.ad_name,
+          ad_id: row.ad_id,
+          impressions: row.impressions,
+          clicks: row.clicks,
+          spend: parseFloat(row.spend),
+          purchases: row.conversions || 0,
+          revenue: parseFloat(row.conversions_value) || 0,
+          results: row.results || 0,
+          result_value: row.result_value ?? null,
+          result_type: row.result_type ?? null,
+          status: row.ad_status,
+          adset_status: row.ad_group_status,
+          campaign_status: row.campaign_status,
+          campaign_daily_budget: row.campaign_budget,
+          campaign_lifetime_budget: null,
+          adset_daily_budget: null,
+          adset_lifetime_budget: null,
+          _platform: 'google' as const,
+          campaign_budget_resource_name: row.campaign_budget_resource_name,
+        }))
+        rows = [...rows, ...googleRows]
+      }
+    }
+
+    setData(rows)
+
+    // Cache the relevant subset
+    const cacheKey = getCacheKey(accountId, wsAccountIds)
+    let cacheData: CSVRow[]
+
+    if (wsAccountIds.length > 0) {
+      cacheData = rows.filter(row => wsAccountIds.includes(row.ad_account_id || ''))
+    } else if (accountId) {
+      cacheData = rows.filter(row => row.ad_account_id === accountId)
+    } else {
+      cacheData = rows
+    }
+
+    dataCache.set(cacheKey, {
+      data: cacheData,
+      datePreset,
+      customStartDate,
+      customEndDate,
+      fetchedAt: Date.now()
+    })
+    console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
+
+    return rows
   }
 
   const loadRules = async (accountId?: string | null) => {
@@ -785,30 +911,43 @@ export default function DashboardPage() {
     setIsSyncing(true)
 
     try {
-      // Note: The API handles deletion, no need to delete here
-      // Use the selected date preset from the date picker
-      const response = await fetch('/api/meta/sync', {
+      // Determine sync endpoint based on account type
+      const isGoogle = isGoogleAccount(accountId)
+      const syncEndpoint = isGoogle ? '/api/google/sync' : '/api/meta/sync'
+
+      // Build request body - Google uses different field names
+      const requestBody = isGoogle
+        ? {
+            userId: user.id,
+            customerId: accountId,
+            dateStart: datePreset === 'custom' ? customStartDate : undefined,
+            dateEnd: datePreset === 'custom' ? customEndDate : undefined,
+          }
+        : {
+            userId: user.id,
+            adAccountId: accountId,
+            datePreset: datePreset,
+            ...(datePreset === 'custom' && customStartDate && customEndDate ? {
+              customStartDate,
+              customEndDate,
+            } : {}),
+          }
+
+      const response = await fetch(syncEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: accountId,
-          datePreset: datePreset,
-          ...(datePreset === 'custom' && customStartDate && customEndDate ? {
-            customStartDate,
-            customEndDate,
-          } : {}),
-        }),
+        body: JSON.stringify(requestBody),
       })
-      
+
       const result = await response.json()
-      
+
       if (response.ok) {
         // Silent refresh - don't show loading spinner, preserves table state
         const newData = await loadDataAndCache(accountId)
         setLastSyncTime(new Date())
 
         // After sync, ensure ABO adsets are selected (they may have been missed on initial load)
+        // Google is always CBO so this mainly affects Meta accounts
         if (newData && newData.length > 0) {
           setSelectedCampaigns(prev => {
             const updated = new Set(prev)
@@ -867,19 +1006,32 @@ export default function DashboardPage() {
 
     try {
       // Sync each account in the workspace sequentially
+      // Route to appropriate endpoint based on account type
       for (const accountId of workspaceAccountIds) {
-        const response = await fetch('/api/meta/sync', {
+        const isGoogle = isGoogleAccount(accountId)
+        const syncEndpoint = isGoogle ? '/api/google/sync' : '/api/meta/sync'
+
+        const requestBody = isGoogle
+          ? {
+              userId: user.id,
+              customerId: accountId,
+              dateStart: datePreset === 'custom' ? customStartDate : undefined,
+              dateEnd: datePreset === 'custom' ? customEndDate : undefined,
+            }
+          : {
+              userId: user.id,
+              adAccountId: accountId,
+              datePreset: datePreset,
+              ...(datePreset === 'custom' && customStartDate && customEndDate ? {
+                customStartDate,
+                customEndDate,
+              } : {}),
+            }
+
+        const response = await fetch(syncEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: accountId,
-            datePreset: datePreset,
-            ...(datePreset === 'custom' && customStartDate && customEndDate ? {
-              customStartDate,
-              customEndDate,
-            } : {}),
-          }),
+          body: JSON.stringify(requestBody),
         })
 
         if (!response.ok) {
@@ -914,37 +1066,62 @@ export default function DashboardPage() {
     entityId: string,
     entityType: 'campaign' | 'adset' | 'ad',
     entityName: string,
-    newStatus: 'ACTIVE' | 'PAUSED'
+    newStatus: 'ACTIVE' | 'PAUSED',
+    platform?: 'meta' | 'google',
+    accountId?: string | null
   ) => {
     setStatusChangeModal({
       isOpen: true,
       entityId,
       entityType,
       entityName,
-      action: newStatus === 'PAUSED' ? 'pause' : 'resume'
+      action: newStatus === 'PAUSED' ? 'pause' : 'resume',
+      platform,
+      accountId,
     })
   }
 
   // Confirm and execute status change
   const handleStatusChangeConfirm = async () => {
     if (!statusChangeModal || !user) return
-    
+
     setIsUpdatingStatus(true)
-    
+
     try {
-      const response = await fetch('/api/meta/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          entityId: statusChangeModal.entityId,
-          entityType: statusChangeModal.entityType,
-          status: statusChangeModal.action === 'pause' ? 'PAUSED' : 'ACTIVE'
-        }),
-      })
-      
+      const newStatus = statusChangeModal.action === 'pause' ? 'PAUSED' : 'ACTIVE'
+      const isGoogle = statusChangeModal.platform === 'google'
+
+      let response: Response
+
+      if (isGoogle) {
+        // Google Ads API
+        response = await fetch('/api/google/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            customerId: statusChangeModal.accountId,
+            entityId: statusChangeModal.entityId,
+            entityType: statusChangeModal.entityType,
+            status: newStatus,
+          }),
+        })
+      } else {
+        // Meta API (default)
+        response = await fetch('/api/meta/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            entityId: statusChangeModal.entityId,
+            entityType: statusChangeModal.entityType,
+            status: newStatus,
+          }),
+        })
+      }
+
       const result = await response.json()
-      
+
       if (response.ok) {
         // Refresh data to reflect the change
         await loadData()
@@ -955,7 +1132,7 @@ export default function DashboardPage() {
     } catch (err) {
       alert('Failed to update status. Please try again.')
     }
-    
+
     setIsUpdatingStatus(false)
   }
 
@@ -965,23 +1142,48 @@ export default function DashboardPage() {
     entityType: 'campaign' | 'adset',
     newBudget: number,
     budgetType: 'daily' | 'lifetime',
-    oldBudget?: number
+    oldBudget?: number,
+    platform?: 'meta' | 'google',
+    accountId?: string | null,
+    budgetResourceName?: string
   ) => {
     if (!user) throw new Error('Not authenticated')
 
-    const response = await fetch('/api/meta/update-budget', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: user.id,
-        entityId,
-        entityType,
-        budget: newBudget,
-        budgetType,
-        oldBudget,
-        adAccountId: selectedAccountId
-      }),
-    })
+    let response: Response
+
+    if (platform === 'google') {
+      // Google Ads API - only supports campaign-level budgets
+      if (!budgetResourceName) {
+        throw new Error('Budget resource name required for Google Ads')
+      }
+      response = await fetch('/api/google/update-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          customerId: accountId,
+          campaignId: entityId,
+          budgetResourceName,
+          budget: newBudget,
+          oldBudget,
+        }),
+      })
+    } else {
+      // Meta API (default)
+      response = await fetch('/api/meta/update-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entityId,
+          entityType,
+          budget: newBudget,
+          budgetType,
+          oldBudget,
+          adAccountId: accountId || selectedAccountId,
+        }),
+      })
+    }
 
     const result = await response.json()
 
@@ -1156,32 +1358,77 @@ export default function DashboardPage() {
     [accountFilteredData]
   )
 
-  // Auto-select all campaigns and ABO adsets when selection is empty but we have data
-  // This runs on initial load and after account switches (when we reset selection)
+  // Auto-select all campaigns and ABO adsets when data first loads or when switching accounts
+  // Only runs on data changes, NOT on selection changes (to avoid re-checking unchecked items)
   // Skip if user manually deselected all
+  const prevDataLengthRef = useRef(0)
   useEffect(() => {
-    if (selectedCampaigns.size === 0 && accountFilteredData.length > 0 && !userManuallyDeselected.current) {
-      const selection = new Set<string>()
-      const seenAdsets = new Set<string>()
+    if (accountFilteredData.length === 0) return
+    if (userManuallyDeselected.current) return
 
-      accountFilteredData.forEach(r => {
-        // Add campaign
-        selection.add(r.campaign_name)
+    // Only run if data actually changed (new data loaded)
+    // This prevents re-running when user toggles selection
+    const dataChanged = accountFilteredData.length !== prevDataLengthRef.current
+    prevDataLengthRef.current = accountFilteredData.length
 
-        // Add ABO adsets (adset has budget, campaign doesn't)
-        const adsetKey = `${r.campaign_name}::${r.adset_name}`
-        if (!seenAdsets.has(adsetKey)) {
-          seenAdsets.add(adsetKey)
-          const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
-                        !(r.campaign_daily_budget || r.campaign_lifetime_budget)
-          if (isAbo) {
-            selection.add(adsetKey)
-          }
+    // Build the full selection set from current data
+    const fullSelection = new Set<string>()
+    const seenAdsets = new Set<string>()
+
+    accountFilteredData.forEach(r => {
+      // Add campaign
+      fullSelection.add(r.campaign_name)
+
+      // Add ABO adsets (adset has budget, campaign doesn't)
+      const adsetKey = `${r.campaign_name}::${r.adset_name}`
+      if (!seenAdsets.has(adsetKey)) {
+        seenAdsets.add(adsetKey)
+        const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                      !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+        if (isAbo) {
+          fullSelection.add(adsetKey)
         }
-      })
-      setSelectedCampaigns(selection)
+      }
+    })
+
+    // If selection is empty, select all (initial load)
+    if (selectedCampaigns.size === 0) {
+      setSelectedCampaigns(fullSelection)
+      return
     }
-  }, [accountFilteredData, selectedCampaigns.size])
+
+    // Only check for new campaigns if data actually changed
+    if (!dataChanged) return
+
+    // Check if there are new campaigns not in current selection
+    // (e.g., Google campaigns loaded after Meta was already selected)
+    const currentCampaignNames = new Set(
+      Array.from(selectedCampaigns).filter(k => !k.includes('::'))
+    )
+    const newCampaigns = Array.from(fullSelection)
+      .filter(k => !k.includes('::'))
+      .filter(k => !currentCampaignNames.has(k))
+
+    if (newCampaigns.length > 0) {
+      // Add new campaigns and their ABO adsets to existing selection
+      const updated = new Set(selectedCampaigns)
+      newCampaigns.forEach(campaignName => {
+        updated.add(campaignName)
+        // Also add ABO adsets for this campaign
+        accountFilteredData.forEach(r => {
+          if (r.campaign_name === campaignName) {
+            const adsetKey = `${r.campaign_name}::${r.adset_name}`
+            const isAbo = (r.adset_daily_budget || r.adset_lifetime_budget) &&
+                          !(r.campaign_daily_budget || r.campaign_lifetime_budget)
+            if (isAbo) {
+              updated.add(adsetKey)
+            }
+          }
+        })
+      })
+      setSelectedCampaigns(updated)
+    }
+  }, [accountFilteredData]) // Only depend on data, NOT selection
 
   const totalCampaigns = allCampaigns.length
   // All plans now have unlimited campaigns
@@ -1352,6 +1599,10 @@ export default function DashboardPage() {
     campaign_lifetime_budget: row.campaign_lifetime_budget,
     adset_daily_budget: row.adset_daily_budget,
     adset_lifetime_budget: row.adset_lifetime_budget,
+    // Platform and account info for Google Ads integration
+    _platform: row._platform,
+    ad_account_id: row.ad_account_id,
+    campaign_budget_resource_name: row.campaign_budget_resource_name,
   }))
 
   // Build a map of campaign -> ABO adsets for selection cascading
@@ -1424,22 +1675,57 @@ export default function DashboardPage() {
       }
     }
 
+    // If user manually unchecked everything, prevent auto-reselect
+    if (newSelected.size === 0) {
+      userManuallyDeselected.current = true
+    } else {
+      // User is making selections, allow future auto-select if needed
+      userManuallyDeselected.current = false
+    }
+
     setSelectedCampaigns(newSelected)
   }
 
   const handleSelectAll = () => {
-    const allCampaignsSelected = visibleCampaigns.every(c => selectedCampaigns.has(c))
+    // Check if ALL campaigns AND their ABO adsets are selected
+    const allFullySelected = visibleCampaigns.every(campaignName => {
+      if (!selectedCampaigns.has(campaignName)) return false
+      // For ABO campaigns, also check all adsets are selected
+      const aboAdsets = campaignAboAdsets.get(campaignName)
+      if (aboAdsets && aboAdsets.size > 0) {
+        return Array.from(aboAdsets).every(k => selectedCampaigns.has(k))
+      }
+      return true
+    })
 
-    if (allCampaignsSelected) {
+    if (allFullySelected) {
       userManuallyDeselected.current = true
       setSelectedCampaigns(new Set())
     } else {
       userManuallyDeselected.current = false
-      setSelectedCampaigns(new Set(visibleCampaigns))
+      // Select all campaigns AND their ABO adsets
+      const newSelection = new Set<string>()
+      visibleCampaigns.forEach(campaignName => {
+        newSelection.add(campaignName)
+        // Also add ABO adsets for this campaign
+        const aboAdsets = campaignAboAdsets.get(campaignName)
+        if (aboAdsets) {
+          aboAdsets.forEach(adsetKey => newSelection.add(adsetKey))
+        }
+      })
+      setSelectedCampaigns(newSelection)
     }
   }
 
-  const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(c => selectedCampaigns.has(c))
+  // Check if all campaigns are fully selected (including their ABO adsets)
+  const allSelected = visibleCampaigns.length > 0 && visibleCampaigns.every(campaignName => {
+    if (!selectedCampaigns.has(campaignName)) return false
+    const aboAdsets = campaignAboAdsets.get(campaignName)
+    if (aboAdsets && aboAdsets.size > 0) {
+      return Array.from(aboAdsets).every(k => selectedCampaigns.has(k))
+    }
+    return true
+  })
   const someSelected = visibleCampaigns.some(c => selectedCampaigns.has(c)) && !allSelected
   
   // Count entities - must be before early returns (hooks must be unconditional)
@@ -1452,10 +1738,11 @@ export default function DashboardPage() {
     return { accounts: accounts.length, campaigns: campaigns.size, adsets: adsets.size, ads: ads.size }
   }, [filteredData, accounts])
 
-  // Calculate total daily budgets (CBO + ABO) - only count active (non-paused) items
+  // Calculate total daily budgets (CBO + ABO) - only count ACTIVE (non-paused) items
   // CBO = budget at campaign level, ABO = budget at adset level
   // A campaign is CBO if it has campaign_daily_budget but adsets DON'T have their own budgets
   // A campaign is ABO if adsets have their own budgets (adset_daily_budget)
+  // NOTE: Paused campaigns are ALWAYS excluded from budget totals (regardless of includePaused toggle)
   const budgetTotals = useMemo(() => {
     let cboBudget = 0
     let aboBudget = 0
@@ -1464,18 +1751,37 @@ export default function DashboardPage() {
     const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean; selected: boolean }>()
     const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string; campaignStatus: string | null | undefined }>()
 
-    // Process ALL data to build budget maps, then filter by selection
-    data.forEach(row => {
+    // Filter to current account/workspace first to avoid counting budgets from other accounts
+    const currentAccountData = data.filter(row => {
+      if (workspaceAccountIds.length > 0) {
+        return workspaceAccountIds.includes(row.ad_account_id || '')
+      }
+      if (selectedAccountId) {
+        return row.ad_account_id === selectedAccountId
+      }
+      return true
+    })
+
+    // Process filtered data
+    // Use ad_account_id in keys to avoid conflicts when accounts have same campaign names
+    currentAccountData.forEach(row => {
       // Determine if this is CBO or ABO based on where budget lives
       // CBO: campaign has budget, adset does NOT have budget
       // ABO: adset has budget (regardless of campaign budget field)
-      const isCBO = !!(row.campaign_daily_budget || row.campaign_lifetime_budget) &&
-                    !(row.adset_daily_budget || row.adset_lifetime_budget)
+      // Google is ALWAYS CBO (no ABO option for Google Ads campaigns)
+      const isCBO = row._platform === 'google' ||
+                    (!!(row.campaign_daily_budget || row.campaign_lifetime_budget) &&
+                    !(row.adset_daily_budget || row.adset_lifetime_budget))
+
+      // Use account-qualified keys to handle same campaign names across platforms
+      const campaignKey = `${row.ad_account_id || ''}|${row.campaign_name}`
 
       // Track campaign-level budget (only for true CBO campaigns)
-      if (isCBO && row.campaign_daily_budget && !campaignBudgets.has(row.campaign_name)) {
-        campaignBudgets.set(row.campaign_name, {
-          budget: row.campaign_daily_budget,
+      // For Google, always track if budget exists (even if $0, though we only count non-zero in totals)
+      const campaignBudget = row.campaign_daily_budget
+      if (isCBO && campaignBudget != null && campaignBudget > 0 && !campaignBudgets.has(campaignKey)) {
+        campaignBudgets.set(campaignKey, {
+          budget: campaignBudget,
           status: row.campaign_status,
           isCBO: true,
           selected: selectedCampaigns.has(row.campaign_name)
@@ -1483,7 +1789,7 @@ export default function DashboardPage() {
       }
 
       // Track adset-level budgets (ABO)
-      const adsetKey = `${row.campaign_name}|${row.adset_name}`
+      const adsetKey = `${row.ad_account_id || ''}|${row.campaign_name}|${row.adset_name}`
       const adsetSelectionKey = `${row.campaign_name}::${row.adset_name}`
       if (row.adset_daily_budget && !adsetBudgets.has(adsetKey)) {
         adsetBudgets.set(adsetKey, {
@@ -1495,8 +1801,8 @@ export default function DashboardPage() {
         })
 
         // Also track that this campaign is ABO (for status checking)
-        if (!campaignBudgets.has(row.campaign_name)) {
-          campaignBudgets.set(row.campaign_name, {
+        if (!campaignBudgets.has(campaignKey)) {
+          campaignBudgets.set(campaignKey, {
             budget: 0,
             status: row.campaign_status,
             isCBO: false,
@@ -1516,7 +1822,6 @@ export default function DashboardPage() {
     // Sum ABO budgets (only selected and non-paused, check parent campaign too)
     adsetBudgets.forEach(({ budget, status, selected, campaignStatus }) => {
       if (!selected) return
-
       if (status?.toUpperCase() !== 'PAUSED' && campaignStatus?.toUpperCase() !== 'PAUSED') {
         aboBudget += budget
       }
@@ -1527,7 +1832,7 @@ export default function DashboardPage() {
       abo: aboBudget,
       total: cboBudget + aboBudget
     }
-  }, [data, selectedCampaigns])
+  }, [data, selectedCampaigns, selectedAccountId, workspaceAccountIds])
   
   if (isLoading && !hasLoadedOnce) {
     return (
