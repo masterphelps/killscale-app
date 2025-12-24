@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
       console.log('[Sync] Delta sync - checking for existing data')
       const { data: existingData } = await supabase
         .from('ad_data')
-        .select('campaign_id, campaign_name, campaign_status, campaign_daily_budget, campaign_lifetime_budget, adset_id, adset_name, adset_status, adset_daily_budget, adset_lifetime_budget, ad_id, ad_name, status')
+        .select('campaign_id, campaign_name, campaign_status, campaign_daily_budget, campaign_lifetime_budget, adset_id, adset_name, adset_status, adset_daily_budget, adset_lifetime_budget, ad_id, ad_name, status, creative_id')
         .eq('user_id', userId)
         .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
         .limit(1000)
@@ -399,7 +399,8 @@ export async function POST(request: NextRequest) {
               id: row.ad_id,
               name: row.ad_name,
               adset_id: row.adset_id,
-              effective_status: row.status || 'ACTIVE'
+              effective_status: row.status || 'ACTIVE',
+              creative: row.creative_id ? { id: row.creative_id } : undefined
             })
           }
         }

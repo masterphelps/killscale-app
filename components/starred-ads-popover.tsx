@@ -59,7 +59,8 @@ export function StarredAdsPopover({ starredAds, starCountMap, onBuildPerformance
     const groups: Record<string, CreativeGroup> = {}
 
     starredAds.forEach(ad => {
-      const key = ad.creative_id || ad.ad_id  // Fall back to ad_id if no creative_id
+      // Group by creative_id if available, otherwise by ad_name (copied ads often keep same name)
+      const key = ad.creative_id || ad.ad_name || ad.ad_id
 
       if (!groups[key]) {
         groups[key] = {
