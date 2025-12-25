@@ -287,6 +287,7 @@ export interface StarredAdForWizard {
   spend: number
   revenue: number
   roas: number
+  star_count?: number  // How many times this creative was starred (for universal performer badge)
 }
 
 interface PerformanceSetResult {
@@ -1550,7 +1551,19 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                             {isSelected && <Check className="w-3 h-3 text-black" />}
                           </div>
                           <div>
-                            <span className="font-medium">{ad.ad_name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{ad.ad_name}</span>
+                              {ad.star_count && ad.star_count > 1 && (
+                                <span className={cn(
+                                  'text-xs font-bold px-1.5 py-0.5 rounded',
+                                  ad.star_count >= 3
+                                    ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-yellow-500/20 text-yellow-500'
+                                )}>
+                                  ⭐×{ad.star_count}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-zinc-500">
                               {ad.campaign_name} → {ad.adset_name}
                             </p>

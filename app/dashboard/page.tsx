@@ -2343,17 +2343,27 @@ export default function DashboardPage() {
               }}
               onCancel={() => setShowLaunchWizard(false)}
               initialEntityType={launchWizardEntityType}
-              starredAds={starredAds.map(ad => ({
-                ad_id: ad.ad_id,
-                ad_name: ad.ad_name,
-                adset_id: ad.adset_id,
-                adset_name: ad.adset_name,
-                campaign_id: ad.campaign_id,
-                campaign_name: ad.campaign_name,
-                spend: ad.spend,
-                revenue: ad.revenue,
-                roas: ad.roas
-              }))}
+              starredAds={(() => {
+                // Calculate star counts by creative_id
+                const starCountsByCreative = starredAds.reduce((acc, ad) => {
+                  const key = ad.creative_id || ad.ad_name  // Fallback to ad_name if no creative_id
+                  acc[key] = (acc[key] || 0) + 1
+                  return acc
+                }, {} as Record<string, number>)
+
+                return starredAds.map(ad => ({
+                  ad_id: ad.ad_id,
+                  ad_name: ad.ad_name,
+                  adset_id: ad.adset_id,
+                  adset_name: ad.adset_name,
+                  campaign_id: ad.campaign_id,
+                  campaign_name: ad.campaign_name,
+                  spend: ad.spend,
+                  revenue: ad.revenue,
+                  roas: ad.roas,
+                  star_count: starCountsByCreative[ad.creative_id || ad.ad_name] || 1
+                }))
+              })()}
             />
           </div>
         </div>
