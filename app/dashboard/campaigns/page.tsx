@@ -278,10 +278,12 @@ export default function LaunchPage() {
         killScaleData: ksMap.get(mc.id)
       }))
 
-      // Sort: KillScale-created first, then by name
+      // Sort: ACTIVE first, then PAUSED, alphabetically within each group
       combined.sort((a, b) => {
-        if (a.isKillScaleCreated && !b.isKillScaleCreated) return -1
-        if (!a.isKillScaleCreated && b.isKillScaleCreated) return 1
+        // Active campaigns come first
+        if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1
+        if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1
+        // Within same status, sort alphabetically
         return a.name.localeCompare(b.name)
       })
 
