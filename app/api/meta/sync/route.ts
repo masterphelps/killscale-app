@@ -55,9 +55,9 @@ async function fetchAllPages<T>(initialUrl: string, maxPages = 25, retries = 1):
         pageCount++
         success = true
 
-        // Add delay between pages to avoid rate limits
+        // Delay between pages to avoid rate limits
         if (nextUrl) {
-          await new Promise(r => setTimeout(r, 500)) // 500ms between pages
+          await new Promise(r => setTimeout(r, 1000)) // 1s between pages
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -375,11 +375,11 @@ export async function POST(request: NextRequest) {
     // This ensures newly created campaigns/adsets/ads are picked up
     // The delta optimization only applies to insights data, not entity data
     // Increased delays to avoid rate limits (creative{id} field adds overhead)
-    await delay(2000)
+    await delay(3000)
     campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
-    await delay(2000)
+    await delay(3000)
     adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
-    await delay(2000)
+    await delay(3000)
     adsResult = await fetchAllPages<AdData>(adsUrl.toString())
 
     allCampaigns = campaignsResult.data
