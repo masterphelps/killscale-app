@@ -2351,18 +2351,21 @@ export default function DashboardPage() {
                   return acc
                 }, {} as Record<string, number>)
 
-                return starredAds.map(ad => ({
-                  ad_id: ad.ad_id,
-                  ad_name: ad.ad_name,
-                  adset_id: ad.adset_id,
-                  adset_name: ad.adset_name,
-                  campaign_id: ad.campaign_id,
-                  campaign_name: ad.campaign_name,
-                  spend: ad.spend,
-                  revenue: ad.revenue,
-                  roas: ad.roas,
-                  star_count: starCountsByCreative[ad.creative_id || ad.ad_name] || 1
-                }))
+                return starredAds
+                  .map(ad => ({
+                    ad_id: ad.ad_id,
+                    ad_name: ad.ad_name,
+                    adset_id: ad.adset_id,
+                    adset_name: ad.adset_name,
+                    campaign_id: ad.campaign_id,
+                    campaign_name: ad.campaign_name,
+                    spend: ad.spend,
+                    revenue: ad.revenue,
+                    roas: ad.roas,
+                    star_count: starCountsByCreative[ad.creative_id || ad.ad_name] || 1
+                  }))
+                  // Sort by star count (universal performers first), then by ROAS
+                  .sort((a, b) => b.star_count - a.star_count || b.roas - a.roas)
               })()}
             />
           </div>
