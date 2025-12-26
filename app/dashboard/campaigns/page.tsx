@@ -289,25 +289,68 @@ export default function LaunchPage() {
 
       setCampaigns(combined)
 
-      // Always check UTM cache first - avoid expensive API calls
-      // Skip if we already have UTM data in state for this account
-      if (Object.keys(utmStatus).length === 0 || utmFetchedForAccount.current !== currentAccountId) {
-        const cachedUtm = getUtmFromCache(currentAccountId)
-        if (cachedUtm && Object.keys(cachedUtm).length > 0) {
-          console.log('[UTM] Using cached UTM status for', currentAccountId, '- skipping API calls')
-          setUtmStatus(cachedUtm)
-          utmFetchedForAccount.current = currentAccountId
-        } else if (utmFetchedForAccount.current !== currentAccountId) {
-          // Only fetch if no cache AND we haven't already fetched for this account
-          console.log('[UTM] No cache found, fetching from API')
-          utmFetchedForAccount.current = currentAccountId
-          loadAllAdsForUtmStatus(combined.map(c => c.id))
-        }
+      // Always fetch adsets/ads data for display (needed for UTM counts)
+      // But use cached UTM status to avoid the expensive sync API call
+      const cachedUtm = getUtmFromCache(currentAccountId)
+      if (cachedUtm && Object.keys(cachedUtm).length > 0) {
+        console.log('[UTM] Using cached UTM status for', currentAccountId)
+        setUtmStatus(cachedUtm)
+        utmFetchedForAccount.current = currentAccountId
+        // Still need to fetch adsets/ads for display - just skip the UTM sync call
+        loadAdSetsAndAdsOnly(combined.map(c => c.id))
+      } else if (utmFetchedForAccount.current !== currentAccountId) {
+        // No cache - fetch everything including UTM status
+        console.log('[UTM] No cache found, fetching from API')
+        utmFetchedForAccount.current = currentAccountId
+        loadAllAdsForUtmStatus(combined.map(c => c.id))
       }
     } catch (err) {
       console.error('Failed to load campaigns:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Load adsets/ads only (when UTM cache exists) - skips the expensive UTM sync call
+  const loadAdSetsAndAdsOnly = async (campaignIds: string[]) => {
+    if (!user || !currentAccountId || campaignIds.length === 0) return
+
+    try {
+      // Fetch all adsets for all campaigns in parallel
+      const adsetPromises = campaignIds.map(async (campaignId) => {
+        const res = await fetch(`/api/meta/adsets?userId=${user.id}&campaignId=${campaignId}`)
+        const data = await res.json()
+        return { campaignId, adsets: data.adsets || [] }
+      })
+
+      const adsetResults = await Promise.all(adsetPromises)
+
+      // Store adsets data
+      const newAdSetsData: Record<string, AdSet[]> = {}
+      const allAdSetIds: string[] = []
+      for (const result of adsetResults) {
+        newAdSetsData[result.campaignId] = result.adsets
+        allAdSetIds.push(...result.adsets.map((as: AdSet) => as.id))
+      }
+      setAdSetsData(prev => ({ ...prev, ...newAdSetsData }))
+
+      // Fetch all ads for all adsets in parallel
+      const adPromises = allAdSetIds.map(async (adSetId) => {
+        const res = await fetch(`/api/meta/ads?userId=${user.id}&adsetId=${adSetId}`)
+        const data = await res.json()
+        return { adSetId, ads: data.ads || [] }
+      })
+
+      const adResults = await Promise.all(adPromises)
+
+      // Store ads data
+      const newAdsData: Record<string, Ad[]> = {}
+      for (const result of adResults) {
+        newAdsData[result.adSetId] = result.ads
+      }
+      setAdsData(prev => ({ ...prev, ...newAdsData }))
+    } catch (err) {
+      console.error('Failed to load adsets/ads:', err)
     }
   }
 
