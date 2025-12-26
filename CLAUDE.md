@@ -2,77 +2,9 @@
 
 ## Project Overview
 
-KillScale is a SaaS app for Meta Ads advertisers. Users connect via Meta API (or upload CSV exports) and get instant verdicts (Scale/Watch/Kill/Learn) based on ROAS thresholds.
+KillScale is a SaaS app for Meta and Google Ads advertisers. Users connect via Meta/Google APIs (or upload CSV exports) and get instant verdicts (Scale/Watch/Kill/Learn) based on ROAS thresholds.
 
 **Live URLs:** Landing at killscale.com, App at app.killscale.com
-
----
-
-## ⚠️ ACTIVE FEATURE BRANCHES - READ THIS FIRST ⚠️
-
-### Google Ads Integration (Long-Running)
-
-```
-Branch: feature/google-ads-integration
-Status: IN PROGRESS - DO NOT MERGE TO MAIN UNTIL COMPLETE
-Started: December 2025
-```
-
-**STOP! Before doing ANY Google-related work:**
-1. Switch to the feature branch: `git checkout feature/google-ads-integration`
-2. All Google Ads code lives there, NOT in main
-3. Keep main clean for bug fixes and other features
-
-**What's on this branch:**
-- `lib/feature-flags.ts` - Feature flag system
-- `lib/google/gclid.ts` - gclid capture utilities
-- `lib/google/auth.ts` - Token management and refresh
-- `app/api/auth/google/route.ts` - Google OAuth initiation
-- `app/api/auth/google/callback/route.ts` - Google OAuth callback
-- `app/api/google/sync/route.ts` - Sync campaigns from Google Ads API
-- `app/api/google/update-status/route.ts` - Pause/resume Google campaigns
-- `app/api/google/update-budget/route.ts` - Edit Google campaign budgets
-- `app/api/google/offline/route.ts` - Google Offline Conversions API (placeholder)
-- `supabase/migrations/025_google_budget_resource_name.sql` - Budget mutation support
-- `supabase/migrations/026_google_campaign_only.sql` - Simplified campaign-only model
-
-**Architecture Decisions (December 2025):**
-
-| Decision | Rationale |
-|----------|-----------|
-| **Campaign-level only** | Google Ads campaign types (PMax, Search, Display, etc.) have inconsistent child structures. Ad Groups and Ads vary wildly by type. We only track campaigns. |
-| **No campaign creation** | Unlike Meta, Google campaign setup is complex with many variations. We focus on monitoring + budget/status control instead. |
-| **Stars are Meta-only** | Star/bookmark system is for collecting winning creatives to build new campaigns. Since we don't create Google campaigns, stars don't apply. |
-| **Always CBO** | Google budgets live at campaign level only. No ABO equivalent for Google. |
-
-**Feature Flag:**
-```typescript
-// Google integration is OFF by default
-// Set NEXT_PUBLIC_FF_GOOGLE_ADS=true to enable
-import { FEATURES } from '@/lib/feature-flags'
-if (FEATURES.GOOGLE_ADS_INTEGRATION) { ... }
-```
-
-**Workflow:**
-| Task | Which Branch? |
-|------|---------------|
-| Bug fixes, small features | `main` |
-| Google Ads integration | `feature/google-ads-integration` |
-
-**Keeping the branch current:**
-```bash
-git checkout feature/google-ads-integration
-git fetch origin
-git merge origin/main
-```
-
-**When Google integration is ready to ship:**
-1. Merge `feature/google-ads-integration` → `main`
-2. Deploy with `NEXT_PUBLIC_FF_GOOGLE_ADS=false` (flag OFF)
-3. Test in production with flag ON for test accounts
-4. Flip flag to `true` for everyone when confident
-
-**Plan file:** `~/.claude/plans/snug-roaming-seal.md` (Phase 3: Google Ads, Phase 5: Google Offline Conversions)
 
 ---
 
@@ -97,7 +29,6 @@ npm run lint    # Run Next.js linter
 ## Key Conventions
 
 - Ask before performing git commits
-- **CHECK THE BRANCH** before working - see "Active Feature Branches" section above
 - **Use feature flags** for new integrations (`lib/feature-flags.ts`)
 - Rules and alerts are scoped per ad account (not global per user)
 - Mobile-first responsive design using Tailwind's `lg:` breakpoint
@@ -181,10 +112,11 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `lib/supabase.ts` - DB clients + TypeScript types + verdict calculation
 - `lib/auth.tsx` - AuthContext & useAuth hook
 - `lib/subscription.tsx` - SubscriptionContext & useSubscription hook
+- `lib/account.tsx` - AccountContext for account/workspace switching
 - `lib/feature-flags.ts` - Feature flags for gating new integrations
 - `components/launch-wizard.tsx` - Campaign creation wizard
 
-**Google Ads Integration (feature branch only):**
+**API Routes - Google Ads:**
 - `lib/google/auth.ts` - Token management, refresh, and customer ID normalization
 - `lib/google/gclid.ts` - gclid capture and validation
 - `app/api/auth/google/route.ts` - OAuth initiation
@@ -220,7 +152,8 @@ Supabase PostgreSQL. Key tables:
 **Core:**
 - `profiles` - User profiles, linked to auth.users
 - `subscriptions` - User subscription status (plan, Stripe IDs)
-- `meta_connections` - OAuth tokens and ad account list
+- `meta_connections` - Meta OAuth tokens and ad account list (JSONB `ad_accounts`)
+- `google_connections` - Google OAuth tokens and customer IDs (JSONB `customer_ids`)
 
 **Workspaces (multi-tenant):**
 - `workspaces` - Virtual containers for businesses (each user gets default "My Business")
@@ -231,7 +164,8 @@ Supabase PostgreSQL. Key tables:
 - `workspace_invites` - Pending invitations with tokens
 
 **Performance:**
-- `ad_data` - Raw ad performance data with status and budget fields
+- `ad_data` - Meta ad performance data with status and budget fields
+- `google_ad_data` - Google Ads campaign performance data
 - `pixel_events` - Events tracked by KillScale pixel (purchases, leads, manual events)
 
 **Legacy (being migrated to workspace-scoped):**
@@ -253,12 +187,13 @@ META_APP_SECRET=...
 NEXT_PUBLIC_META_APP_ID=...
 
 # Feature Flags (see lib/feature-flags.ts)
-NEXT_PUBLIC_FF_GOOGLE_ADS=false  # Google Ads integration - DO NOT enable until ready
+NEXT_PUBLIC_FF_GOOGLE_ADS=true  # Google Ads integration - ENABLED
 
-# Google Ads API (only needed when NEXT_PUBLIC_FF_GOOGLE_ADS=true)
-# GOOGLE_ADS_DEVELOPER_TOKEN=...
-# GOOGLE_ADS_CLIENT_ID=...
-# GOOGLE_ADS_CLIENT_SECRET=...
+# Google Ads API
+GOOGLE_ADS_DEVELOPER_TOKEN=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 ```
 
 ## Pricing Tiers
@@ -410,6 +345,34 @@ Static landing page with outcome-focused messaging.
 
 **Files:**
 - `killscale-landing/index.html` - Main landing page
+
+### Google Ads Integration
+
+Full Google Ads support alongside Meta Ads. Users can connect Google Ads accounts, sync campaigns, and manage budgets/status.
+
+**Architecture Decisions (December 2025):**
+
+| Decision | Rationale |
+|----------|-----------|
+| **Campaign-level only** | Google Ads campaign types (PMax, Search, Display, etc.) have inconsistent child structures. Ad Groups and Ads vary wildly by type. We only track campaigns. |
+| **No campaign creation** | Unlike Meta, Google campaign setup is complex with many variations. We focus on monitoring + budget/status control instead. |
+| **Stars are Meta-only** | Star/bookmark system is for collecting winning creatives to build new campaigns. Since we don't create Google campaigns, stars don't apply. |
+| **Always CBO** | Google budgets live at campaign level only. No ABO equivalent for Google. |
+
+**Key concepts:**
+- Google accounts stored in `google_connections` table (parallel to `meta_connections`)
+- Campaign data stored in `google_ad_data` table (separate from Meta's `ad_data`)
+- Account dropdown shows both Meta (`act_*`) and Google (numeric) accounts
+- Workspaces can contain both Meta and Google accounts via `workspace_accounts.platform`
+
+**Files:**
+- `app/api/auth/google/route.ts` - OAuth initiation
+- `app/api/auth/google/callback/route.ts` - OAuth callback
+- `app/api/google/sync/route.ts` - Campaign sync
+- `app/api/google/update-status/route.ts` - Pause/resume
+- `app/api/google/update-budget/route.ts` - Budget editing
+- `lib/google/auth.ts` - Token management
+- `lib/account.tsx` - Unified account context for Meta + Google
 
 ---
 

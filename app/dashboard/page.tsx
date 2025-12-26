@@ -2051,21 +2051,6 @@ export default function DashboardPage() {
             </div>
           )}
           
-          {/* Campaign Selection Indicator */}
-          {selectedCampaigns.size < visibleCampaigns.length && selectedCampaigns.size > 0 && (
-            <div className="mb-4 px-4 py-2 bg-accent/10 border border-accent/30 rounded-lg flex items-center justify-between">
-              <div className="text-sm text-accent">
-                Showing stats for {selectedCampaigns.size} of {visibleCampaigns.length} campaigns
-              </div>
-              <button 
-                onClick={() => setSelectedCampaigns(new Set(visibleCampaigns))}
-                className="text-xs text-accent hover:text-white transition-colors"
-              >
-                Select All
-              </button>
-            </div>
-          )}
-
           {/* KillScale Attribution Indicator */}
           {isKillScaleActive && (
             <div className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 rounded-lg">
@@ -2173,6 +2158,13 @@ export default function DashboardPage() {
             >
               {tableExpanded ? '⊞ Collapse All' : '⊟ Expand All'}
             </button>
+
+            {/* Budget Selection Indicator */}
+            {selectedCampaigns.size < visibleCampaigns.length && selectedCampaigns.size > 0 && (
+              <span className="text-xs text-accent">
+                Showing stats for {selectedCampaigns.size} of {visibleCampaigns.length} budgets
+              </span>
+            )}
 
             {/* Right side controls */}
             <div className="ml-auto flex items-center gap-4">
