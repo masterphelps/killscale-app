@@ -139,7 +139,7 @@ export function StarredAdsPopover({ starredAds, starCountMap, onBuildPerformance
       {isOpen && count > 0 && (
         <div
           ref={popoverRef}
-          className="absolute right-0 top-full mt-2 w-[420px] bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden"
+          className="fixed lg:absolute right-2 lg:right-0 left-2 lg:left-auto top-16 lg:top-full mt-0 lg:mt-2 lg:w-[420px] bg-bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-dark">
