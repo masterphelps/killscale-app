@@ -374,17 +374,118 @@ export async function POST(request: NextRequest) {
     // Always fetch entities from Meta API (even for delta sync)
     // This ensures newly created campaigns/adsets/ads are picked up
     // The delta optimization only applies to insights data, not entity data
-    // Increased delays to avoid rate limits (creative{id} field adds overhead)
-    await delay(3000)
-    campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
-    await delay(3000)
-    adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
-    await delay(3000)
-    adsResult = await fetchAllPages<AdData>(adsUrl.toString())
 
-    allCampaigns = campaignsResult.data
-    allAdsets = adsetsResult.data
-    allAdsData = adsResult.data
+    // Use Meta's Batch API to combine all 3 entity requests into one HTTP call
+    // This significantly reduces rate limit pressure vs 3 sequential calls with pagination
+    // See: https://developers.facebook.com/docs/marketing-api/asyncrequests/
+    const batchUrl = `https://graph.facebook.com/v18.0/?batch=${encodeURIComponent(JSON.stringify([
+      { method: 'GET', relative_url: `${adAccountId}/campaigns?fields=id,name,effective_status,daily_budget,lifetime_budget&limit=500` },
+      { method: 'GET', relative_url: `${adAccountId}/adsets?fields=id,name,campaign_id,effective_status,daily_budget,lifetime_budget&limit=500` },
+      { method: 'GET', relative_url: `${adAccountId}/ads?fields=id,name,adset_id,effective_status,creative{id}&limit=500` }
+    ]))}&access_token=${accessToken}&include_headers=false`
+
+    try {
+      const batchResponse = await fetch(batchUrl, { method: 'POST' })
+      const batchResults = await batchResponse.json()
+
+      // Check for batch-level errors
+      if (batchResults.error) {
+        console.error('Batch API error:', batchResults.error)
+        // Fall back to sequential fetches if batch fails
+        console.log('[Sync] Batch API failed, falling back to sequential fetches')
+        await delay(3000)
+        campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+        await delay(3000)
+        adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
+        await delay(3000)
+        adsResult = await fetchAllPages<AdData>(adsUrl.toString())
+      } else if (Array.isArray(batchResults) && batchResults.length === 3) {
+        // Parse each batch result
+        for (let i = 0; i < 3; i++) {
+          const result = batchResults[i]
+          if (result.code !== 200) {
+            console.error(`Batch request ${i} failed with code ${result.code}:`, result.body)
+          }
+        }
+
+        // Parse campaigns from batch
+        const campaignsBody = JSON.parse(batchResults[0].body || '{}')
+        if (campaignsBody.data) {
+          allCampaigns = campaignsBody.data
+          campaignsResult = { data: allCampaigns, success: true }
+
+          // Handle pagination for campaigns if needed
+          if (campaignsBody.paging?.next) {
+            await delay(1000)
+            const morePages = await fetchAllPages<CampaignData>(campaignsBody.paging.next)
+            allCampaigns = [...allCampaigns, ...morePages.data]
+            campaignsResult = { data: allCampaigns, success: morePages.success }
+          }
+        } else if (campaignsBody.error) {
+          campaignsResult = { data: [], success: false, error: campaignsBody.error.message }
+        }
+
+        // Parse adsets from batch
+        const adsetsBody = JSON.parse(batchResults[1].body || '{}')
+        if (adsetsBody.data) {
+          allAdsets = adsetsBody.data
+          adsetsResult = { data: allAdsets, success: true }
+
+          // Handle pagination for adsets if needed
+          if (adsetsBody.paging?.next) {
+            await delay(1000)
+            const morePages = await fetchAllPages<AdsetData>(adsetsBody.paging.next)
+            allAdsets = [...allAdsets, ...morePages.data]
+            adsetsResult = { data: allAdsets, success: morePages.success }
+          }
+        } else if (adsetsBody.error) {
+          adsetsResult = { data: [], success: false, error: adsetsBody.error.message }
+        }
+
+        // Parse ads from batch
+        const adsBody = JSON.parse(batchResults[2].body || '{}')
+        if (adsBody.data) {
+          allAdsData = adsBody.data
+          adsResult = { data: allAdsData, success: true }
+
+          // Handle pagination for ads if needed
+          if (adsBody.paging?.next) {
+            await delay(1000)
+            const morePages = await fetchAllPages<AdData>(adsBody.paging.next)
+            allAdsData = [...allAdsData, ...morePages.data]
+            adsResult = { data: allAdsData, success: morePages.success }
+          }
+        } else if (adsBody.error) {
+          adsResult = { data: [], success: false, error: adsBody.error.message }
+        }
+      } else {
+        console.error('Unexpected batch response format:', batchResults)
+        // Fall back to sequential fetches
+        await delay(3000)
+        campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+        await delay(3000)
+        adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
+        await delay(3000)
+        adsResult = await fetchAllPages<AdData>(adsUrl.toString())
+
+        allCampaigns = campaignsResult.data
+        allAdsets = adsetsResult.data
+        allAdsData = adsResult.data
+      }
+    } catch (batchErr) {
+      console.error('Batch API exception:', batchErr)
+      // Fall back to sequential fetches
+      await delay(3000)
+      campaignsResult = await fetchAllPages<CampaignData>(campaignsUrl.toString())
+      await delay(3000)
+      adsetsResult = await fetchAllPages<AdsetData>(adsetsUrl.toString())
+      await delay(3000)
+      adsResult = await fetchAllPages<AdData>(adsUrl.toString())
+
+      allCampaigns = campaignsResult.data
+      allAdsets = adsetsResult.data
+      allAdsData = adsResult.data
+    }
 
     // Log fetch results for debugging
     console.log('Meta sync fetch results:', {
