@@ -309,9 +309,15 @@ export async function POST(request: NextRequest) {
     // Add budget at ad set level for ABO
     if (budgetType === 'abo') {
       adsetPayload.daily_budget = budgetCents
-      // Meta requires this field for ABO - set to false to keep budgets independent
+    }
+
+    // Meta requires this field when not using campaign budget (ABO or when campaign has no budget)
+    // Always set it to false when there's no CBO budget to be safe
+    if (budgetType === 'abo' || !adsetPayload.daily_spend_cap) {
       adsetPayload.is_adset_budget_sharing_enabled = false
     }
+
+    console.log('[create-campaign v2] Creating adset with payload:', JSON.stringify(adsetPayload, null, 2))
 
     const adsetResponse = await fetch(
       `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adsets`,
