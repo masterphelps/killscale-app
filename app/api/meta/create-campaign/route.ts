@@ -54,6 +54,8 @@ interface CreateCampaignRequest {
   targetingMode?: 'broad' | 'custom'
   selectedInterests?: TargetingOption[]
   selectedBehaviors?: TargetingOption[]
+  ageMin?: number
+  ageMax?: number
   // Performance Set specific fields
   isPerformanceSet?: boolean
   existingCreativeIds?: { adId: string; adName: string; creativeId: string }[]
@@ -101,6 +103,8 @@ export async function POST(request: NextRequest) {
       targetingMode,
       selectedInterests,
       selectedBehaviors,
+      ageMin,
+      ageMax,
       isPerformanceSet,
       existingCreativeIds
     } = body
@@ -241,7 +245,10 @@ export async function POST(request: NextRequest) {
           }
         : {
             countries: locationTarget.countries || ['US']
-          }
+          },
+      // Age targeting (Meta supports 18-65, where 65 means 65+)
+      age_min: ageMin || 18,
+      age_max: ageMax || 65
     }
 
     // Add detailed targeting (flexible_spec) if custom mode
@@ -317,8 +324,10 @@ export async function POST(request: NextRequest) {
 
     if (adsetResult.error) {
       console.error('Ad set creation error:', adsetResult.error)
+      console.error('Ad set payload was:', JSON.stringify(adsetPayload, null, 2))
       return NextResponse.json({
-        error: adsetResult.error.message || 'Failed to create ad set'
+        error: adsetResult.error.message || 'Failed to create ad set',
+        details: adsetResult.error.error_user_msg || adsetResult.error.error_subcode
       }, { status: 400 })
     }
 
@@ -499,8 +508,12 @@ export async function POST(request: NextRequest) {
 
       if (creativeResult.error) {
         console.error('Creative creation error:', creativeResult.error)
-        // Continue with other creatives even if one fails
-        continue
+        console.error('Creative payload was:', JSON.stringify(creativePayload, null, 2))
+        // Return error instead of silently continuing
+        return NextResponse.json({
+          error: creativeResult.error.message || 'Failed to create creative',
+          details: creativeResult.error.error_user_msg || creativeResult.error.error_subcode
+        }, { status: 400 })
       }
 
       // Create ad using this creative
