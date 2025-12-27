@@ -375,6 +375,9 @@ export async function POST(request: NextRequest) {
     // This ensures newly created campaigns/adsets/ads are picked up
     // The delta optimization only applies to insights data, not entity data
 
+    // Add delay after insights fetch to avoid rate limits
+    await delay(3000)
+
     // Use Meta's Batch API to combine all 3 entity requests into one HTTP call
     // This significantly reduces rate limit pressure vs 3 sequential calls with pagination
     // See: https://developers.facebook.com/docs/marketing-api/asyncrequests/
@@ -416,7 +419,7 @@ export async function POST(request: NextRequest) {
 
           // Handle pagination for campaigns if needed
           if (campaignsBody.paging?.next) {
-            await delay(1000)
+            await delay(1500)
             const morePages = await fetchAllPages<CampaignData>(campaignsBody.paging.next)
             allCampaigns = [...allCampaigns, ...morePages.data]
             campaignsResult = { data: allCampaigns, success: morePages.success }
@@ -433,7 +436,7 @@ export async function POST(request: NextRequest) {
 
           // Handle pagination for adsets if needed
           if (adsetsBody.paging?.next) {
-            await delay(1000)
+            await delay(1500)
             const morePages = await fetchAllPages<AdsetData>(adsetsBody.paging.next)
             allAdsets = [...allAdsets, ...morePages.data]
             adsetsResult = { data: allAdsets, success: morePages.success }
@@ -450,7 +453,7 @@ export async function POST(request: NextRequest) {
 
           // Handle pagination for ads if needed
           if (adsBody.paging?.next) {
-            await delay(1000)
+            await delay(1500)
             const morePages = await fetchAllPages<AdData>(adsBody.paging.next)
             allAdsData = [...allAdsData, ...morePages.data]
             adsResult = { data: allAdsData, success: morePages.success }
