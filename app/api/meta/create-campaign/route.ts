@@ -210,6 +210,9 @@ export async function POST(request: NextRequest) {
       if (budgetType === 'cbo') {
         campaignPayload.daily_budget = budgetCents
         campaignPayload.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'
+      } else {
+        // ABO campaigns require this field at campaign level
+        campaignPayload.is_adset_budget_sharing_enabled = false
       }
 
       const campaignResponse = await fetch(
