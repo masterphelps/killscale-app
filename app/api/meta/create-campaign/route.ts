@@ -309,6 +309,8 @@ export async function POST(request: NextRequest) {
     // Add budget at ad set level for ABO
     if (budgetType === 'abo') {
       adsetPayload.daily_budget = budgetCents
+      // Meta requires this field for ABO - set to false to keep budgets independent
+      adsetPayload.is_adset_budget_sharing_enabled = false
     }
 
     const adsetResponse = await fetch(

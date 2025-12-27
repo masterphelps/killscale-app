@@ -10,15 +10,34 @@ async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+interface TargetingOption {
+  id: string
+  name: string
+}
+
+interface CustomTargeting {
+  locationType: 'city' | 'country'
+  locationKey?: string
+  locationName?: string
+  locationRadius?: number
+  countries?: string[]
+  ageMin: number
+  ageMax: number
+  targetingMode: 'broad' | 'custom'
+  interests?: TargetingOption[]
+  behaviors?: TargetingOption[]
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, sourceAdsetId, targetCampaignId, newName, copyStatus = 'PAUSED' } = await request.json() as {
+    const { userId, adAccountId, sourceAdsetId, targetCampaignId, newName, copyStatus = 'PAUSED', customTargeting } = await request.json() as {
       userId: string
       adAccountId: string
       sourceAdsetId: string
       targetCampaignId?: string // If not provided, use same campaign
       newName?: string
       copyStatus?: 'PAUSED' | 'ACTIVE'
+      customTargeting?: CustomTargeting
     }
 
     if (!userId || !adAccountId || !sourceAdsetId) {
@@ -58,21 +77,68 @@ export async function POST(request: NextRequest) {
     const adsetName = newName || `${adsetData.name} - Copy`
     const campaignId = targetCampaignId || adsetData.campaign_id
 
+    // Build targeting - use custom targeting if provided, otherwise copy from source
+    let targeting = adsetData.targeting
+    if (customTargeting) {
+      targeting = {
+        geo_locations: customTargeting.locationType === 'city' && customTargeting.locationKey
+          ? {
+              cities: [{
+                key: customTargeting.locationKey,
+                radius: customTargeting.locationRadius || 25,
+                distance_unit: 'mile'
+              }]
+            }
+          : {
+              countries: customTargeting.countries || ['US']
+            },
+        age_min: customTargeting.ageMin || 18,
+        age_max: customTargeting.ageMax || 65
+      }
+
+      // Add detailed targeting if custom mode
+      if (customTargeting.targetingMode === 'custom') {
+        const flexibleSpecEntry: Record<string, unknown> = {}
+
+        if (customTargeting.interests && customTargeting.interests.length > 0) {
+          flexibleSpecEntry.interests = customTargeting.interests.map(i => ({
+            id: i.id,
+            name: i.name
+          }))
+        }
+
+        if (customTargeting.behaviors && customTargeting.behaviors.length > 0) {
+          flexibleSpecEntry.behaviors = customTargeting.behaviors.map(b => ({
+            id: b.id,
+            name: b.name
+          }))
+        }
+
+        if (Object.keys(flexibleSpecEntry).length > 0) {
+          targeting.flexible_spec = [flexibleSpecEntry]
+        }
+      }
+    }
+
     const createAdsetBody: Record<string, any> = {
       campaign_id: campaignId,
       name: adsetName,
       optimization_goal: adsetData.optimization_goal,
       billing_event: adsetData.billing_event,
-      targeting: adsetData.targeting,
+      targeting,
       status: copyStatus,
       access_token: accessToken
     }
 
     if (adsetData.daily_budget) {
       createAdsetBody.daily_budget = adsetData.daily_budget
+      // Meta requires this field for ABO ad sets
+      createAdsetBody.is_adset_budget_sharing_enabled = false
     }
     if (adsetData.lifetime_budget) {
       createAdsetBody.lifetime_budget = adsetData.lifetime_budget
+      // Meta requires this field for ABO ad sets
+      createAdsetBody.is_adset_budget_sharing_enabled = false
     }
     if (adsetData.promoted_object) {
       createAdsetBody.promoted_object = adsetData.promoted_object

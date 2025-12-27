@@ -187,6 +187,8 @@ interface WizardState {
   targetingMode: 'broad' | 'custom'
   selectedInterests: TargetingOption[]
   selectedBehaviors: TargetingOption[]
+  ageMin: number
+  ageMax: number
   creatives: Creative[]
   creativeEnhancements: boolean
   primaryText: string
@@ -370,6 +372,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     targetingMode: 'broad',
     selectedInterests: [],
     selectedBehaviors: [],
+    ageMin: 18,
+    ageMax: 65,
     creatives: [],
     creativeEnhancements: false,
     primaryText: '',
@@ -911,7 +915,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             creativeEnhancements: state.creativeEnhancements,
             targetingMode: state.targetingMode,
             selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
-            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined,
+            ageMin: state.ageMin,
+            ageMax: state.ageMax
           })
         })
 
@@ -972,7 +978,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             creativeEnhancements: state.creativeEnhancements,
             targetingMode: state.targetingMode,
             selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
-            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined,
+            ageMin: state.ageMin,
+            ageMax: state.ageMax
           })
         })
 
@@ -1019,7 +1027,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             creativeEnhancements: state.creativeEnhancements,
             targetingMode: state.targetingMode,
             selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
-            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined
+            selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined,
+            ageMin: state.ageMin,
+            ageMax: state.ageMax
           })
         })
       }
@@ -2158,6 +2168,51 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
 
               <p className="text-xs text-zinc-500 mt-3">
                 Great for local service businesses like pressure washing, roofing, landscaping.
+              </p>
+            </div>
+
+            {/* Age Range */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Age Range</label>
+              <div className="flex items-center gap-3">
+                <select
+                  value={state.ageMin}
+                  onChange={(e) => {
+                    const newMin = parseInt(e.target.value)
+                    setState(s => ({
+                      ...s,
+                      ageMin: newMin,
+                      // Ensure max is always >= min
+                      ageMax: Math.max(s.ageMax, newMin)
+                    }))
+                  }}
+                  className="bg-bg-dark border border-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-accent"
+                >
+                  {[18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65].map(age => (
+                    <option key={age} value={age}>{age}</option>
+                  ))}
+                </select>
+                <span className="text-zinc-400">to</span>
+                <select
+                  value={state.ageMax}
+                  onChange={(e) => {
+                    const newMax = parseInt(e.target.value)
+                    setState(s => ({
+                      ...s,
+                      ageMax: newMax,
+                      // Ensure min is always <= max
+                      ageMin: Math.min(s.ageMin, newMax)
+                    }))
+                  }}
+                  className="bg-bg-dark border border-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-accent"
+                >
+                  {[18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65].map(age => (
+                    <option key={age} value={age}>{age === 65 ? '65+' : age}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">
+                Meta supports ages 18-65+ for targeting
               </p>
             </div>
 

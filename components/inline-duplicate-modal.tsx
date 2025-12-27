@@ -1,8 +1,25 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, Loader2, ChevronDown, ChevronRight, Copy, Layers, FileText } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, Loader2, ChevronDown, ChevronRight, Copy, Layers, FileText, Search, MapPin, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+interface LocationResult {
+  key: string
+  name: string
+  region: string
+  countryName: string
+}
+
+interface TargetingOption {
+  id: string
+  name: string
+  type: 'interest' | 'behavior'
+  audience_size?: number
+  path?: string[]
+}
+
+const RADIUS_OPTIONS = [10, 15, 25, 35, 50]
 
 interface Campaign {
   id: string
@@ -50,6 +67,24 @@ export function InlineDuplicateModal({
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(parentCampaignId || null)
   const [selectedAdsetId, setSelectedAdsetId] = useState<string | null>(parentAdsetId || null)
 
+  // Targeting state (for adset duplication)
+  const [editTargeting, setEditTargeting] = useState(false)
+  const [locationType, setLocationType] = useState<'city' | 'country'>('country')
+  const [locationKey, setLocationKey] = useState('')
+  const [locationName, setLocationName] = useState('')
+  const [locationRadius, setLocationRadius] = useState(25)
+  const [locationQuery, setLocationQuery] = useState('')
+  const [locationResults, setLocationResults] = useState<LocationResult[]>([])
+  const [searchingLocations, setSearchingLocations] = useState(false)
+  const [ageMin, setAgeMin] = useState(18)
+  const [ageMax, setAgeMax] = useState(65)
+  const [targetingMode, setTargetingMode] = useState<'broad' | 'custom'>('broad')
+  const [selectedInterests, setSelectedInterests] = useState<TargetingOption[]>([])
+  const [selectedBehaviors, setSelectedBehaviors] = useState<TargetingOption[]>([])
+  const [targetingQuery, setTargetingQuery] = useState('')
+  const [targetingResults, setTargetingResults] = useState<TargetingOption[]>([])
+  const [searchingTargeting, setSearchingTargeting] = useState(false)
+
   // Data for pickers
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [adsets, setAdsets] = useState<AdSet[]>([])
@@ -67,6 +102,22 @@ export function InlineDuplicateModal({
       setSelectedAdsetId(parentAdsetId || null)
       setError(null)
       setExpandedCampaign(null)
+
+      // Reset targeting state
+      setEditTargeting(false)
+      setLocationType('country')
+      setLocationKey('')
+      setLocationName('')
+      setLocationRadius(25)
+      setLocationQuery('')
+      setLocationResults([])
+      setAgeMin(18)
+      setAgeMax(65)
+      setTargetingMode('broad')
+      setSelectedInterests([])
+      setSelectedBehaviors([])
+      setTargetingQuery('')
+      setTargetingResults([])
 
       // Load campaigns if needed for adset or ad duplication
       if (itemType === 'adset' || itemType === 'ad') {
@@ -108,6 +159,52 @@ export function InlineDuplicateModal({
     }
   }
 
+  // Debounced location search
+  useEffect(() => {
+    if (!locationQuery || locationQuery.length < 2) {
+      setLocationResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingLocations(true)
+      try {
+        const res = await fetch(`/api/meta/locations?userId=${userId}&query=${encodeURIComponent(locationQuery)}`)
+        const data = await res.json()
+        setLocationResults(data.locations || [])
+      } catch (err) {
+        console.error('Location search failed:', err)
+      } finally {
+        setSearchingLocations(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [locationQuery, userId])
+
+  // Debounced targeting search
+  useEffect(() => {
+    if (!targetingQuery || targetingQuery.length < 2) {
+      setTargetingResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingTargeting(true)
+      try {
+        const res = await fetch(`/api/meta/targeting?userId=${userId}&type=interest&q=${encodeURIComponent(targetingQuery)}`)
+        const data = await res.json()
+        setTargetingResults(data.options || [])
+      } catch (err) {
+        console.error('Targeting search failed:', err)
+      } finally {
+        setSearchingTargeting(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [targetingQuery, userId])
+
   const handleSubmit = async () => {
     if (!newName.trim()) {
       setError('Please enter a name')
@@ -137,17 +234,36 @@ export function InlineDuplicateModal({
           break
 
         case 'adset':
+          // Build request body with optional custom targeting
+          const adsetBody: Record<string, unknown> = {
+            userId,
+            adAccountId,
+            sourceAdsetId: itemId,
+            targetCampaignId: destinationType === 'different' ? selectedCampaignId : parentCampaignId,
+            newName: newName.trim(),
+            copyStatus
+          }
+
+          // Add custom targeting if edit targeting is enabled
+          if (editTargeting) {
+            adsetBody.customTargeting = {
+              locationType,
+              locationKey: locationType === 'city' ? locationKey : undefined,
+              locationName: locationType === 'city' ? locationName : undefined,
+              locationRadius: locationType === 'city' ? locationRadius : undefined,
+              countries: locationType === 'country' ? ['US'] : undefined,
+              ageMin,
+              ageMax,
+              targetingMode,
+              interests: targetingMode === 'custom' ? selectedInterests : undefined,
+              behaviors: targetingMode === 'custom' ? selectedBehaviors : undefined
+            }
+          }
+
           response = await fetch('/api/meta/duplicate-adset', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId,
-              adAccountId,
-              sourceAdsetId: itemId,
-              targetCampaignId: destinationType === 'different' ? selectedCampaignId : parentCampaignId,
-              newName: newName.trim(),
-              copyStatus
-            })
+            body: JSON.stringify(adsetBody)
           })
           break
 
@@ -399,6 +515,237 @@ export function InlineDuplicateModal({
                       )}
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Targeting Editor for Ad Set Duplication */}
+          {itemType === 'adset' && (
+            <div className="border border-border rounded-lg overflow-hidden">
+              {/* Edit Targeting Toggle */}
+              <button
+                onClick={() => setEditTargeting(!editTargeting)}
+                className="w-full flex items-center justify-between p-3 hover:bg-bg-hover transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-accent" />
+                  <span className="text-sm font-medium">Edit Audience Targeting</span>
+                </div>
+                <ChevronDown className={cn("w-4 h-4 text-zinc-400 transition-transform", editTargeting && "rotate-180")} />
+              </button>
+
+              {editTargeting && (
+                <div className="p-3 border-t border-border space-y-4 bg-bg-dark/50">
+                  {/* Location Type */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Location</label>
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        onClick={() => setLocationType('country')}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+                          locationType === 'country'
+                            ? "bg-accent/20 border-accent text-accent"
+                            : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                        )}
+                      >
+                        United States
+                      </button>
+                      <button
+                        onClick={() => setLocationType('city')}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+                          locationType === 'city'
+                            ? "bg-accent/20 border-accent text-accent"
+                            : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                        )}
+                      >
+                        City + Radius
+                      </button>
+                    </div>
+
+                    {locationType === 'city' && (
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                          <input
+                            type="text"
+                            value={locationName || locationQuery}
+                            onChange={(e) => {
+                              setLocationQuery(e.target.value)
+                              setLocationName('')
+                              setLocationKey('')
+                            }}
+                            placeholder="Search city..."
+                            className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-accent"
+                          />
+                          {searchingLocations && (
+                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
+                          )}
+                        </div>
+
+                        {locationResults.length > 0 && !locationKey && (
+                          <div className="border border-border rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+                            {locationResults.slice(0, 5).map((loc) => (
+                              <button
+                                key={loc.key}
+                                onClick={() => {
+                                  setLocationKey(loc.key)
+                                  setLocationName(`${loc.name}, ${loc.region}`)
+                                  setLocationQuery('')
+                                  setLocationResults([])
+                                }}
+                                className="w-full px-3 py-2 text-left text-xs hover:bg-bg-hover border-b border-border last:border-0"
+                              >
+                                {loc.name}, {loc.region}, {loc.countryName}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {locationKey && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-zinc-400">Radius:</span>
+                            <select
+                              value={locationRadius}
+                              onChange={(e) => setLocationRadius(parseInt(e.target.value))}
+                              className="bg-bg-dark border border-border rounded-lg px-2 py-1 text-xs"
+                            >
+                              {RADIUS_OPTIONS.map(r => (
+                                <option key={r} value={r}>{r} miles</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Age Range */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Age Range</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={ageMin}
+                        onChange={(e) => {
+                          const newMin = parseInt(e.target.value)
+                          setAgeMin(newMin)
+                          setAgeMax(Math.max(ageMax, newMin))
+                        }}
+                        className="bg-bg-dark border border-border rounded-lg px-2 py-1.5 text-sm"
+                      >
+                        {[18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65].map(age => (
+                          <option key={age} value={age}>{age}</option>
+                        ))}
+                      </select>
+                      <span className="text-xs text-zinc-400">to</span>
+                      <select
+                        value={ageMax}
+                        onChange={(e) => {
+                          const newMax = parseInt(e.target.value)
+                          setAgeMax(newMax)
+                          setAgeMin(Math.min(ageMin, newMax))
+                        }}
+                        className="bg-bg-dark border border-border rounded-lg px-2 py-1.5 text-sm"
+                      >
+                        {[18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65].map(age => (
+                          <option key={age} value={age}>{age === 65 ? '65+' : age}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Targeting Mode */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Audience Targeting</label>
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        onClick={() => {
+                          setTargetingMode('broad')
+                          setSelectedInterests([])
+                          setSelectedBehaviors([])
+                        }}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+                          targetingMode === 'broad'
+                            ? "bg-accent/20 border-accent text-accent"
+                            : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                        )}
+                      >
+                        Broad Audience
+                      </button>
+                      <button
+                        onClick={() => setTargetingMode('custom')}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+                          targetingMode === 'custom'
+                            ? "bg-accent/20 border-accent text-accent"
+                            : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                        )}
+                      >
+                        Custom Interests
+                      </button>
+                    </div>
+
+                    {targetingMode === 'custom' && (
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                          <input
+                            type="text"
+                            value={targetingQuery}
+                            onChange={(e) => setTargetingQuery(e.target.value)}
+                            placeholder="Search interests..."
+                            className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-accent"
+                          />
+                          {searchingTargeting && (
+                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
+                          )}
+                        </div>
+
+                        {targetingResults.length > 0 && (
+                          <div className="border border-border rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+                            {targetingResults.slice(0, 5).map((opt) => (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  if (!selectedInterests.find(i => i.id === opt.id)) {
+                                    setSelectedInterests([...selectedInterests, opt])
+                                  }
+                                  setTargetingQuery('')
+                                  setTargetingResults([])
+                                }}
+                                className="w-full px-3 py-2 text-left text-xs hover:bg-bg-hover border-b border-border last:border-0"
+                              >
+                                <div className="font-medium">{opt.name}</div>
+                                {opt.path && <div className="text-zinc-500 text-xs">{opt.path.join(' > ')}</div>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {selectedInterests.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {selectedInterests.map((interest) => (
+                              <span
+                                key={interest.id}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-accent/20 border border-accent/30 rounded-full text-xs text-accent"
+                              >
+                                {interest.name}
+                                <button
+                                  onClick={() => setSelectedInterests(selectedInterests.filter(i => i.id !== interest.id))}
+                                  className="hover:text-white"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

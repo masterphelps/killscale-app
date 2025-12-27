@@ -54,6 +54,8 @@ interface CreateAdsetRequest {
   targetingMode?: 'broad' | 'custom'
   selectedInterests?: TargetingOption[]
   selectedBehaviors?: TargetingOption[]
+  ageMin?: number
+  ageMax?: number
 }
 
 const OPTIMIZATION_GOAL_MAP = {
@@ -90,7 +92,9 @@ export async function POST(request: NextRequest) {
       creativeEnhancements,
       targetingMode,
       selectedInterests,
-      selectedBehaviors
+      selectedBehaviors,
+      ageMin,
+      ageMax
     } = body
 
     // Validate required fields
@@ -170,7 +174,10 @@ export async function POST(request: NextRequest) {
           }
         : {
             countries: locationTarget.countries || ['US']
-          }
+          },
+      // Age targeting (Meta supports 18-65, where 65 means 65+)
+      age_min: ageMin || 18,
+      age_max: ageMax || 65
     }
 
     // Add detailed targeting if custom mode
