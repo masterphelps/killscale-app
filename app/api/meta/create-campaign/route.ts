@@ -312,6 +312,8 @@ export async function POST(request: NextRequest) {
     // Add budget at ad set level for ABO
     if (budgetType === 'abo') {
       adsetPayload.daily_budget = budgetCents
+      // ABO adsets need a bid strategy - use lowest cost (highest volume)
+      adsetPayload.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'
     }
 
     // Meta requires this field when not using campaign budget (ABO or when campaign has no budget)

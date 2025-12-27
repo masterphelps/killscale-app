@@ -235,6 +235,8 @@ export async function POST(request: NextRequest) {
       adsetPayload.daily_budget = Math.round(dailyBudget * 100)
       // Meta requires this field for ABO ad sets
       adsetPayload.is_adset_budget_sharing_enabled = false
+      // ABO adsets need a bid strategy - use lowest cost (highest volume)
+      adsetPayload.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'
     } else if (isCBO && hasSpendCap && dailyBudget) {
       // CBO with spend cap
       adsetPayload.daily_spend_cap = Math.round(dailyBudget * 100)
