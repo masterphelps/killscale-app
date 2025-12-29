@@ -13,20 +13,31 @@ type FetchResult<T> = {
   error?: string
 }
 
-// Helper function to fetch all pages from Meta API with timeout and retry
-async function fetchAllPages<T>(initialUrl: string, maxPages = 25, retries = 1): Promise<FetchResult<T>> {
+// Meta rate limit error codes:
+// - HTTP 429: Too Many Requests
+// - Error code 4: API Too Many Calls
+// - Error code 17: User request limit reached
+// - Error code 32: Page request limit reached
+function isRateLimitError(status: number, errorCode?: number): boolean {
+  return status === 429 || errorCode === 4 || errorCode === 17 || errorCode === 32
+}
+
+// Helper function to fetch all pages from Meta API with timeout, retry, and rate limit handling
+async function fetchAllPages<T>(initialUrl: string, maxPages = 25, retries = 2): Promise<FetchResult<T>> {
   const allData: T[] = []
   let nextUrl: string | null = initialUrl
   let pageCount = 0
   const timeoutMs = 20000 // 20 second timeout per request
   let lastError: string | undefined
+  const maxRateLimitRetries = 3 // More retries for rate limits since we wait longer
 
   while (nextUrl && pageCount < maxPages) {
     let success = false
     let attempts = 0
+    let rateLimitAttempts = 0
     const currentUrl = nextUrl // Capture current URL for this iteration
 
-    while (!success && attempts <= retries) {
+    while (!success && (attempts <= retries || rateLimitAttempts < maxRateLimitRetries)) {
       try {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -34,7 +45,25 @@ async function fetchAllPages<T>(initialUrl: string, maxPages = 25, retries = 1):
         const res: Response = await fetch(currentUrl, { signal: controller.signal })
         clearTimeout(timeoutId)
 
-        const result: { data?: T[], error?: { message?: string }, paging?: { next?: string } } = await res.json()
+        const result: { data?: T[], error?: { message?: string; code?: number }, paging?: { next?: string } } = await res.json()
+
+        // Check for rate limiting first
+        if (isRateLimitError(res.status, result.error?.code)) {
+          rateLimitAttempts++
+          // Parse Retry-After header (seconds) or use exponential backoff
+          const retryAfterHeader = res.headers.get('Retry-After')
+          const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : (30 * rateLimitAttempts) // 30s, 60s, 90s
+          console.log(`[Sync] Rate limited (code: ${result.error?.code || res.status}) - waiting ${retryAfterSeconds}s before retry (attempt ${rateLimitAttempts}/${maxRateLimitRetries})`)
+
+          if (rateLimitAttempts < maxRateLimitRetries) {
+            await new Promise(r => setTimeout(r, retryAfterSeconds * 1000))
+            continue
+          } else {
+            lastError = `Rate limit exceeded after ${maxRateLimitRetries} retries`
+            console.error(lastError)
+            return { data: allData, success: false, error: lastError }
+          }
+        }
 
         if (result.error) {
           lastError = result.error.message || 'Meta API error'
@@ -388,12 +417,34 @@ export async function POST(request: NextRequest) {
     ]))}&access_token=${accessToken}&include_headers=false`
 
     try {
-      const batchResponse = await fetch(batchUrl, { method: 'POST' })
-      const batchResults = await batchResponse.json()
+      // Batch API call with rate limit retry
+      let batchResults: unknown = null
+      let batchAttempts = 0
+      const maxBatchRetries = 3
 
-      // Check for batch-level errors
-      if (batchResults.error) {
-        console.error('Batch API error:', batchResults.error)
+      while (!batchResults && batchAttempts < maxBatchRetries) {
+        const batchResponse = await fetch(batchUrl, { method: 'POST' })
+        const batchBody = await batchResponse.json()
+
+        // Check for rate limiting on batch call
+        if (isRateLimitError(batchResponse.status, batchBody.error?.code)) {
+          batchAttempts++
+          const retryAfterHeader = batchResponse.headers.get('Retry-After')
+          const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : (30 * batchAttempts)
+          console.log(`[Sync] Batch API rate limited - waiting ${retryAfterSeconds}s (attempt ${batchAttempts}/${maxBatchRetries})`)
+
+          if (batchAttempts < maxBatchRetries) {
+            await new Promise(r => setTimeout(r, retryAfterSeconds * 1000))
+            continue
+          }
+        }
+
+        batchResults = batchBody
+      }
+
+      // Check for batch-level errors (non-rate-limit)
+      if (!batchResults || (batchResults as { error?: unknown }).error) {
+        console.error('Batch API error:', (batchResults as { error?: unknown })?.error || 'No results')
         // Fall back to sequential fetches if batch fails
         console.log('[Sync] Batch API failed, falling back to sequential fetches')
         await delay(3000)
