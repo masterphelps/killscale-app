@@ -52,30 +52,66 @@ export async function GET(request: NextRequest) {
     let mediaType: 'image' | 'video' | 'unknown' = 'unknown'
 
     let videoSource: string | undefined
+    let videoId: string | undefined
 
-    if (result.video_id) {
-      mediaType = 'video'
-
-      // Fetch video source and high-quality thumbnails
+    // Helper function to fetch video source and thumbnails
+    const fetchVideoDetails = async (vId: string) => {
       try {
-        const videoUrl = `https://graph.facebook.com/v18.0/${result.video_id}?fields=source,thumbnails&access_token=${accessToken}`
+        // Include picture field as fallback for thumbnails
+        const videoUrl = `https://graph.facebook.com/v18.0/${vId}?fields=source,thumbnails,picture&access_token=${accessToken}`
+        console.log('[Creative] Fetching video details for:', vId)
         const videoResponse = await fetch(videoUrl)
         const videoData = await videoResponse.json()
-        if (videoData.source) {
-          videoSource = videoData.source
+
+        // Check for Meta API error
+        if (videoData.error) {
+          console.error('[Creative] Meta API error for video:', videoData.error)
+          return { source: undefined, thumbnail: undefined }
         }
-        // Pick the largest thumbnail for high-quality preview
+
+        console.log('[Creative] Video data received:', {
+          hasSource: !!videoData.source,
+          hasThumbnails: !!(videoData.thumbnails?.data?.length),
+          hasPicture: !!videoData.picture
+        })
+
+        // Get source (playable video URL)
+        const source = videoData.source || undefined
+
+        // Get best thumbnail
+        let thumbnail: string | undefined
         const thumbnails = videoData.thumbnails?.data || []
         if (thumbnails.length > 0) {
           const bestThumb = thumbnails.sort((a: { width?: number }, b: { width?: number }) =>
             (b.width || 0) - (a.width || 0)
           )[0]
-          if (bestThumb?.uri) {
-            previewUrl = bestThumb.uri
-          }
+          thumbnail = bestThumb?.uri
+          console.log('[Creative] Best thumbnail:', { width: bestThumb?.width, hasUri: !!bestThumb?.uri })
         }
+
+        // Fallback to picture field
+        if (!thumbnail && videoData.picture) {
+          thumbnail = videoData.picture
+        }
+
+        return { source, thumbnail }
       } catch (videoErr) {
-        console.error('Failed to fetch video source:', videoErr)
+        console.error('[Creative] Failed to fetch video details:', videoErr)
+        return { source: undefined, thumbnail: undefined }
+      }
+    }
+
+    if (result.video_id) {
+      mediaType = 'video'
+      videoId = result.video_id
+      console.log('[Creative] Detected video_id from result:', result.video_id)
+
+      const { source, thumbnail } = await fetchVideoDetails(result.video_id)
+      if (source) {
+        videoSource = source
+      }
+      if (thumbnail) {
+        previewUrl = thumbnail
       }
 
       // Fallback to thumbnail_url if no high-quality thumbnail found
@@ -92,28 +128,18 @@ export async function GET(request: NextRequest) {
     if (storySpec) {
       if (storySpec.video_data?.video_id) {
         mediaType = 'video'
+        const storyVideoId = storySpec.video_data.video_id
+        console.log('[Creative] Detected video_id from story spec:', storyVideoId)
 
         // Fetch video source and high-quality thumbnails if not already fetched
         if (!videoSource) {
-          try {
-            const videoUrl = `https://graph.facebook.com/v18.0/${storySpec.video_data.video_id}?fields=source,thumbnails&access_token=${accessToken}`
-            const videoResponse = await fetch(videoUrl)
-            const videoData = await videoResponse.json()
-            if (videoData.source) {
-              videoSource = videoData.source
-            }
-            // Pick the largest thumbnail for high-quality preview
-            const thumbnails = videoData.thumbnails?.data || []
-            if (thumbnails.length > 0) {
-              const bestThumb = thumbnails.sort((a: { width?: number }, b: { width?: number }) =>
-                (b.width || 0) - (a.width || 0)
-              )[0]
-              if (bestThumb?.uri) {
-                previewUrl = bestThumb.uri
-              }
-            }
-          } catch (videoErr) {
-            console.error('Failed to fetch video source from story spec:', videoErr)
+          videoId = storyVideoId
+          const { source, thumbnail } = await fetchVideoDetails(storyVideoId)
+          if (source) {
+            videoSource = source
+          }
+          if (thumbnail) {
+            previewUrl = thumbnail
           }
         }
 
@@ -129,6 +155,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Log final result for debugging
+    console.log('[Creative] Final result:', {
+      id: result.id,
+      mediaType,
+      hasVideoSource: !!videoSource,
+      hasPreviewUrl: !!previewUrl,
+      videoId: videoId || result.video_id
+    })
+
     return NextResponse.json({
       success: true,
       creative: {
@@ -138,7 +173,7 @@ export async function GET(request: NextRequest) {
         imageUrl: result.image_url,
         previewUrl,
         mediaType,
-        videoId: result.video_id,
+        videoId: videoId || result.video_id,
         videoSource,
         imageHash: result.image_hash
       }

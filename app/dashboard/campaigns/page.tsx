@@ -115,8 +115,11 @@ export default function LaunchPage() {
   const [previewModal, setPreviewModal] = useState<{
     isOpen: boolean
     previewUrl: string
+    videoSource?: string  // Playable video URL (may be undefined even for video type)
+    thumbnailUrl?: string // Static thumbnail for fallback
     mediaType: 'image' | 'video' | 'unknown'
     name: string
+    adId?: string // For "Open in Ads Manager" link
   } | null>(null)
 
   // Edit modal state
@@ -1834,15 +1837,17 @@ export default function LaunchPage() {
                                             mediaType={creative?.mediaType}
                                             alt={maskedAdName}
                                             onFullPreview={() => {
-                                              const playbackUrl = creative?.mediaType === 'video' && creative?.videoSource
-                                                ? creative.videoSource
-                                                : previewUrl
-                                              if (playbackUrl) {
+                                              // For videos, pass both source (if available) and thumbnail
+                                              // For images, just use previewUrl
+                                              if (previewUrl || creative?.videoSource) {
                                                 setPreviewModal({
                                                   isOpen: true,
-                                                  previewUrl: playbackUrl,
+                                                  previewUrl: previewUrl || '',
+                                                  videoSource: creative?.videoSource,
+                                                  thumbnailUrl: previewUrl,
                                                   mediaType: creative?.mediaType || 'unknown',
-                                                  name: maskedAdName
+                                                  name: maskedAdName,
+                                                  adId: ad.id
                                                 })
                                               }
                                             }}
@@ -2009,18 +2014,58 @@ export default function LaunchPage() {
 
           {/* Media preview */}
           <div className="max-w-[90vw] sm:max-w-4xl max-h-[80vh] relative" onClick={(e) => e.stopPropagation()}>
-            {previewModal.mediaType === 'video' ? (
+            {previewModal.mediaType === 'video' && previewModal.videoSource ? (
+              // Video with playable source
               <video
-                src={previewModal.previewUrl}
+                src={previewModal.videoSource}
                 controls
                 autoPlay
                 muted
                 playsInline
+                poster={previewModal.thumbnailUrl}
                 className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
               >
                 Your browser does not support video playback.
               </video>
+            ) : previewModal.mediaType === 'video' ? (
+              // Video without playable source - show thumbnail with message
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  {previewModal.thumbnailUrl ? (
+                    <img
+                      src={previewModal.thumbnailUrl}
+                      alt={previewModal.name}
+                      className="max-w-full max-h-[60vh] rounded-lg shadow-2xl object-contain"
+                    />
+                  ) : (
+                    <div className="w-80 h-48 bg-zinc-800 rounded-lg flex items-center justify-center">
+                      <Video className="w-16 h-16 text-zinc-600" />
+                    </div>
+                  )}
+                  {/* Video icon overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center">
+                      <Video className="w-8 h-8 text-white" />
+                    </div>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-zinc-400 text-sm mb-2">Video preview not available</p>
+                  {previewModal.adId && currentAccountId && (
+                    <a
+                      href={`https://business.facebook.com/adsmanager/manage/ads?act=${currentAccountId.replace('act_', '')}&selected_ad_ids=${previewModal.adId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-accent hover:text-accent-hover text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      View in Ads Manager
+                    </a>
+                  )}
+                </div>
+              </div>
             ) : (
+              // Image preview
               <img
                 src={previewModal.previewUrl}
                 alt={previewModal.name}
