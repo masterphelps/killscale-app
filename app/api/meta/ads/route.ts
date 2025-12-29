@@ -89,33 +89,121 @@ export async function GET(request: NextRequest) {
 
     const ads = result.data || []
 
+    // Type for ad from Meta API
+    type MetaAd = {
+      id: string
+      name: string
+      status: string
+      effective_status: string
+      creative?: {
+        id: string
+        name?: string
+        thumbnail_url?: string
+        image_url?: string
+        object_story_spec?: {
+          video_data?: {
+            video_id?: string
+            image_url?: string
+          }
+          link_data?: {
+            image_url?: string
+            picture?: string
+          }
+          photo_data?: {
+            url?: string
+          }
+        }
+      }
+    }
+
+    // Collect video IDs that need high-quality thumbnails
+    const videoAds: { adId: string; videoId: string }[] = []
+    for (const ad of ads as MetaAd[]) {
+      const videoId = ad.creative?.object_story_spec?.video_data?.video_id
+      if (videoId) {
+        videoAds.push({ adId: ad.id, videoId })
+      }
+    }
+
+    // Fetch all video thumbnails in parallel for performance
+    const videoThumbnailMap = new Map<string, string>()
+    if (videoAds.length > 0) {
+      try {
+        const thumbnailResults = await Promise.all(
+          videoAds.map(async ({ adId, videoId }) => {
+            try {
+              const videoUrl = `https://graph.facebook.com/v18.0/${videoId}?fields=thumbnails&access_token=${accessToken}`
+              const videoRes = await fetch(videoUrl)
+              const videoData = await videoRes.json()
+              const thumbnails = videoData.thumbnails?.data || []
+              if (thumbnails.length > 0) {
+                // Pick the largest thumbnail (highest width)
+                const best = thumbnails.sort((a: { width?: number }, b: { width?: number }) =>
+                  (b.width || 0) - (a.width || 0)
+                )[0]
+                return { adId, uri: best.uri }
+              }
+              return { adId, uri: null }
+            } catch {
+              return { adId, uri: null }
+            }
+          })
+        )
+        for (const { adId, uri } of thumbnailResults) {
+          if (uri) videoThumbnailMap.set(adId, uri)
+        }
+      } catch (err) {
+        console.error('Failed to fetch video thumbnails:', err)
+      }
+    }
+
+    // Build response with high-quality thumbnails
     return NextResponse.json({
       success: true,
-      ads: ads.map((ad: {
-        id: string
-        name: string
-        status: string
-        effective_status: string
-        creative?: {
-          id: string
-          name?: string
-          thumbnail_url?: string
-          image_url?: string
-          object_story_spec?: unknown
+      ads: (ads as MetaAd[]).map((ad) => {
+        // Determine high-quality thumbnail URL
+        let highQualityThumbnail: string | null = null
+
+        // Priority 1: Video thumbnail (fetched from video endpoint - highest quality)
+        if (videoThumbnailMap.has(ad.id)) {
+          highQualityThumbnail = videoThumbnailMap.get(ad.id) || null
         }
-      }) => ({
-        id: ad.id,
-        name: ad.name,
-        status: ad.status,
-        effectiveStatus: ad.effective_status,
-        creative: ad.creative ? {
-          id: ad.creative.id,
-          name: ad.creative.name,
-          thumbnailUrl: ad.creative.thumbnail_url,
-          imageUrl: ad.creative.image_url,
-          hasCreative: true
-        } : null
-      }))
+        // Priority 2: Video data image_url (good quality fallback for videos)
+        else if (ad.creative?.object_story_spec?.video_data?.image_url) {
+          highQualityThumbnail = ad.creative.object_story_spec.video_data.image_url
+        }
+        // Priority 3: Link data image_url (high quality for link ads)
+        else if (ad.creative?.object_story_spec?.link_data?.image_url) {
+          highQualityThumbnail = ad.creative.object_story_spec.link_data.image_url
+        }
+        // Priority 4: Link data picture (alternative for link ads)
+        else if (ad.creative?.object_story_spec?.link_data?.picture) {
+          highQualityThumbnail = ad.creative.object_story_spec.link_data.picture
+        }
+        // Priority 5: Photo data url (for photo ads)
+        else if (ad.creative?.object_story_spec?.photo_data?.url) {
+          highQualityThumbnail = ad.creative.object_story_spec.photo_data.url
+        }
+        // Priority 6: Creative image_url (better than thumbnail_url)
+        else if (ad.creative?.image_url) {
+          highQualityThumbnail = ad.creative.image_url
+        }
+
+        return {
+          id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          effectiveStatus: ad.effective_status,
+          creative: ad.creative ? {
+            id: ad.creative.id,
+            name: ad.creative.name,
+            thumbnailUrl: ad.creative.thumbnail_url,  // Keep for fallback (low quality)
+            imageUrl: ad.creative.image_url,
+            highQualityThumbnail,  // NEW: High quality image/video thumbnail
+            hasCreative: true
+          } : null
+        }
+      })
     })
 
   } catch (err) {
