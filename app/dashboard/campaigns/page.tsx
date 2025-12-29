@@ -346,10 +346,16 @@ export default function LaunchPage() {
 
       const adResults = await Promise.all(adPromises)
 
-      // Store ads data
+      // Store ads data and load creatives
       const newAdsData: Record<string, Ad[]> = {}
       for (const result of adResults) {
         newAdsData[result.adSetId] = result.ads
+        // Load creatives for ads that have them
+        for (const ad of result.ads) {
+          if (ad.creative?.id && !loadedCreativesRef.current.has(ad.creative.id)) {
+            loadCreative(ad.creative.id)
+          }
+        }
       }
       setAdsData(prev => ({ ...prev, ...newAdsData }))
     } catch (err) {
