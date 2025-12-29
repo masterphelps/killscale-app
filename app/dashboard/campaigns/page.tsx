@@ -632,6 +632,13 @@ export default function LaunchPage() {
       // Load ads if not already loaded
       if (!adsData[adSetId]) {
         await loadAds(adSetId)
+      } else {
+        // Ads already cached (from UTM preload) - load creatives for THIS adset only
+        for (const ad of adsData[adSetId]) {
+          if (ad.creative?.id && !loadedCreativesRef.current.has(ad.creative.id)) {
+            loadCreative(ad.creative.id)
+          }
+        }
       }
     }
     setExpandedAdSets(newExpanded)
