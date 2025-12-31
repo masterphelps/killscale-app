@@ -412,6 +412,41 @@ Some items from `~/.claude/plans/iterative-wandering-finch.md` may still need at
 
 ---
 
+## FRAGILE CODE - DO NOT MODIFY WITHOUT APPROVAL
+
+The following code sections are critical and have been carefully tuned to avoid Meta API rate limits.
+**DO NOT modify without explicit user approval and testing with large accounts (100+ ads).**
+
+### 1. UTM Status Sync (`app/api/meta/sync-utm-status/route.ts`)
+- Uses Meta Batch API to combine 50 ad requests into ONE HTTP call
+- **Why fragile:** Individual fetch() calls will hit rate limits. Previous versions caused production rate limit errors.
+- **If you must modify:** Keep batch size at 50, keep 1s delay between batches
+
+### 2. UTM Cache (`app/dashboard/campaigns/page.tsx`)
+- Lines 153-185: Cache get/set functions with 24-hour TTL
+- Lines 429-446: `handleManualUtmSync()` - manual refresh button handler
+- **Why fragile:** Reducing cache TTL or removing cache = rate limits on page navigation
+- **If you must modify:** Never reduce TTL below 1 hour
+
+### 3. Creative Loading (`app/dashboard/campaigns/page.tsx`)
+- Lines ~650-670: `toggleAdSet()` - on-demand creative loading per adset
+- Lines ~720-750: `loadCreative()` - uses ref to prevent stale closures
+- **Why fragile:** Fixed in commit 3b3fef7. Uses refs for closure safety. Bulk loading = rate limits.
+- **If you must modify:** Never load creatives for ALL ads at once
+
+### 4. Main Sync Process (`app/api/meta/sync/route.ts`)
+- Lines 413-542: Meta Batch API entity fetch (campaigns + adsets + ads in ONE call)
+- Lines 358-401: Insights pagination with rate limiting
+- **Why fragile:** Carefully tuned delays (3s before batch, 1s between pages) for Meta API limits
+- **If you must modify:** Never remove delays, never increase batch sizes beyond 50
+
+### Signs You Broke Something
+- "Error code 17" or "Rate limit exceeded" from Meta
+- Sync takes 5+ minutes
+- Campaign manager page hangs or shows spinner indefinitely
+
+---
+
 ## Future Enhancements
 
 ### Live Ad Preview in Launch Wizard (Priority: High)

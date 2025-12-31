@@ -1,8 +1,26 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║  ⚠️  CONTAINS FRAGILE CODE - READ BEFORE MODIFYING  ⚠️                    ║
+ * ╠═══════════════════════════════════════════════════════════════════════════╣
+ * ║  This file contains rate-limit-sensitive code. Some sections are fragile. ║
+ * ║                                                                           ║
+ * ║  FRAGILE SECTIONS (marked with comments):                                 ║
+ * ║  - UTM Cache (lines ~153-185): 24-hour cache prevents API overload       ║
+ * ║  - loadCreative() (lines ~720-750): Uses ref for stale closure safety    ║
+ * ║  - toggleAdSet() (lines ~650-670): On-demand loading, not bulk           ║
+ * ║                                                                           ║
+ * ║  Before modifying these sections:                                        ║
+ * ║  1. Read the "FRAGILE CODE" section in CLAUDE.md                         ║
+ * ║  2. Get explicit user approval                                           ║
+ * ║  3. Test with a large account (100+ ads)                                 ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
+ */
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare, Copy } from 'lucide-react'
+import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare, Copy, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -148,10 +166,14 @@ export default function LaunchPage() {
   // UTM tracking status
   const [utmStatus, setUtmStatus] = useState<Record<string, boolean>>({})
   const [utmLoading, setUtmLoading] = useState(false)
+  const [isUtmSyncing, setIsUtmSyncing] = useState(false) // Manual UTM sync button loading state
   const utmFetchedForAccount = useRef<string | null>(null) // Track which account we've fetched UTM for
 
-  // UTM cache helpers (5 minute TTL)
-  const UTM_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+  // ══════════════════════════════════════════════════════════════════════════
+  // CRITICAL: UTM cache with 24-hour TTL to reduce Meta API calls
+  // Changing this TTL or cache logic can cause rate limit issues
+  // ══════════════════════════════════════════════════════════════════════════
+  const UTM_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
   const getUtmCacheKey = (accountId: string) => `ks_utm_cache_${accountId}`
 
   const getUtmFromCache = (accountId: string): Record<string, boolean> | null => {
@@ -419,6 +441,25 @@ export default function LaunchPage() {
       console.error('Failed to load ads for UTM status:', err)
     } finally {
       setUtmLoading(false)
+    }
+  }
+
+  // Manual UTM sync - clears cache and triggers fresh fetch
+  const handleManualUtmSync = async () => {
+    if (!user || !currentAccountId || campaigns.length === 0) return
+
+    setIsUtmSyncing(true)
+    try {
+      // Clear cache for this account
+      sessionStorage.removeItem(getUtmCacheKey(currentAccountId))
+      // Reset tracking ref
+      utmFetchedForAccount.current = null
+      // Clear existing UTM state
+      setUtmStatus({})
+      // Trigger fresh fetch
+      await loadAllAdsForUtmStatus(campaigns.map(c => c.id))
+    } finally {
+      setIsUtmSyncing(false)
     }
   }
 
@@ -1431,14 +1472,34 @@ export default function LaunchPage() {
             Manage and create campaigns
           </p>
         </div>
-        <button
-          onClick={() => setShowWizard(true)}
-          className="inline-flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Launch New Campaign</span>
-          <span className="sm:hidden">New Campaign</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualUtmSync}
+            disabled={isUtmSyncing || campaigns.length === 0}
+            className="inline-flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg font-medium transition-colors"
+            title="Refresh UTM tracking status for all ads"
+          >
+            {isUtmSyncing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="hidden sm:inline">Syncing UTM...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                <span className="hidden sm:inline">Sync UTM</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => setShowWizard(true)}
+            className="inline-flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Launch New Campaign</span>
+            <span className="sm:hidden">New Campaign</span>
+          </button>
+        </div>
       </div>
 
       {/* Empty state */}

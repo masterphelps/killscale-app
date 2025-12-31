@@ -1,3 +1,22 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║  ⚠️  FRAGILE CODE - DO NOT MODIFY WITHOUT APPROVAL  ⚠️                    ║
+ * ╠═══════════════════════════════════════════════════════════════════════════╣
+ * ║  This file contains carefully tuned logic for Meta API rate limiting.     ║
+ * ║  Changes here have caused production issues in the past.                  ║
+ * ║                                                                           ║
+ * ║  CRITICAL SECTIONS:                                                       ║
+ * ║  - Lines 413-542: Meta Batch API (combines 3 calls into 1 HTTP request)  ║
+ * ║  - Lines 358-401: Insights pagination (1s delay between pages)           ║
+ * ║  - Delay constants: 3s before batch, 1.5s between entity pages           ║
+ * ║                                                                           ║
+ * ║  Before modifying:                                                        ║
+ * ║  1. Read the "FRAGILE CODE" section in CLAUDE.md                         ║
+ * ║  2. Get explicit user approval                                           ║
+ * ║  3. Test with a large account (100+ ads)                                 ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
