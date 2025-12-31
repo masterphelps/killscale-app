@@ -99,6 +99,9 @@ type AdRow = {
   _platform?: 'meta' | 'google'
   // Google budget resource name for mutations
   campaign_budget_resource_name?: string | null
+  // Manual events (from workspace pixel)
+  _manualRevenue?: number
+  _manualCount?: number
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -204,6 +207,9 @@ type HierarchyNode = {
   campaignName?: string
   // Creative info (for star deduplication)
   creativeId?: string | null
+  // Manual events (from workspace pixel)
+  manualRevenue?: number
+  manualCount?: number
 }
 
 const formatPercent = (value: number) => {
@@ -323,6 +329,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         platform: row._platform,  // Google Ads integration
         accountId: row.ad_account_id,  // Meta ad_account_id or Google customer_id
         budgetResourceName: row.campaign_budget_resource_name || undefined,  // Google budget resource name
+        manualRevenue: 0,
+        manualCount: 0,
       }
     }
     const campaign = campaigns[row.campaign_name]
@@ -365,6 +373,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         children: [],
         platform: row._platform,  // Inherit platform from row
         accountId: row.ad_account_id,  // Inherit accountId from row
+        manualRevenue: 0,
+        manualCount: 0,
       }
       campaign.children?.push(adset)
     }
@@ -400,7 +410,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         campaignId: campaign.id,
         campaignName: campaign.name,
         // Creative info for star deduplication
-        creativeId: row.creative_id
+        creativeId: row.creative_id,
+        // Manual events tracking
+        manualRevenue: 0,
+        manualCount: 0
       }
       adset.children?.push(ad)
     }
@@ -414,6 +427,12 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     ad.purchases += row.purchases
     ad.revenue += row.revenue
     ad.results += row.results || 0
+    // Manual events are already at ad level (not per-day), so only capture once
+    // They're on every row for this ad, so we take max to avoid double-counting
+    if (row._manualRevenue !== undefined) {
+      ad.manualRevenue = row._manualRevenue
+      ad.manualCount = row._manualCount || 0
+    }
     // Keep the status from any row (they should all be the same for a given ad)
     if (row.status) ad.status = row.status
 
@@ -434,7 +453,11 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         Object.assign(ad, adMetrics)
         ad.verdict = calculateVerdict(ad.spend, ad.roas, rules)
       })
-      
+
+      // Roll up manual events from ads to adset
+      adset.manualRevenue = adset.children?.reduce((sum, ad) => sum + (ad.manualRevenue || 0), 0) || 0
+      adset.manualCount = adset.children?.reduce((sum, ad) => sum + (ad.manualCount || 0), 0) || 0
+
       adset.roas = adset.spend > 0 ? adset.revenue / adset.spend : 0
       const adsetMetrics = calculateMetrics(adset)
       Object.assign(adset, adsetMetrics)
@@ -481,6 +504,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       campaign.purchases += adset.purchases
       campaign.revenue += adset.revenue
       campaign.results += adset.results
+      // Roll up manual events from adset to campaign
+      campaign.manualRevenue = (campaign.manualRevenue || 0) + (adset.manualRevenue || 0)
+      campaign.manualCount = (campaign.manualCount || 0) + (adset.manualCount || 0)
     })
     
     campaign.roas = campaign.spend > 0 ? campaign.revenue / campaign.spend : 0
@@ -1124,7 +1150,12 @@ export function PerformanceTable({
             </div>
             <div className="text-right w-20">
               <div className="text-zinc-500 text-xs mb-0.5">Revenue</div>
-              <div className="font-mono text-white">{formatCurrency(node.revenue)}</div>
+              <div className="font-mono text-white flex items-center justify-end gap-1">
+                {formatCurrency(node.revenue)}
+                {(node.manualCount ?? 0) > 0 && (
+                  <span className="text-[10px] text-purple-400" title={`Includes ${node.manualCount} manual event${node.manualCount! > 1 ? 's' : ''} (${formatCurrency(node.manualRevenue || 0)})`}>+M</span>
+                )}
+              </div>
             </div>
             <div className="text-right w-16">
               <div className="text-zinc-500 text-xs mb-0.5">Results</div>
@@ -1472,7 +1503,12 @@ export function PerformanceTable({
           </div>
           <div className="bg-bg-dark rounded-lg p-2 text-center">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Revenue</div>
-            <div className="font-mono text-sm font-semibold">{formatCurrency(node.revenue)}</div>
+            <div className="font-mono text-sm font-semibold flex items-center justify-center gap-1">
+              {formatCurrency(node.revenue)}
+              {(node.manualCount ?? 0) > 0 && (
+                <span className="text-[10px] text-purple-400" title={`Includes ${node.manualCount} manual event${node.manualCount! > 1 ? 's' : ''}`}>+M</span>
+              )}
+            </div>
           </div>
           <div className="bg-bg-dark rounded-lg p-2 text-center">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wide">ROAS</div>

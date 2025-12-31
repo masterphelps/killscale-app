@@ -69,6 +69,8 @@ type PixelEvent = {
   utm_content: string | null
   page_url: string | null
   event_time: string
+  source?: string // 'manual', 'pixel', 'kiosk', etc.
+  event_metadata?: { notes?: string }
 }
 
 // Workspace limits per tier
@@ -124,6 +126,11 @@ export default function WorkspacesPage() {
   const [copiedPixelId, setCopiedPixelId] = useState<string | null>(null)
   const [updatingAttribution, setUpdatingAttribution] = useState<string | null>(null)
   const [updatingModel, setUpdatingModel] = useState<string | null>(null)
+
+  // Manual event filter and edit state
+  const [eventSourceFilter, setEventSourceFilter] = useState<'all' | 'manual'>('all')
+  const [editingEvent, setEditingEvent] = useState<PixelEvent | null>(null)
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null)
 
   // Kiosk settings state
   const [kioskSettings, setKioskSettings] = useState<Record<string, KioskSettings>>({})
@@ -634,6 +641,27 @@ export default function WorkspacesPage() {
       setLoadingEvents(null)
     }
   }, [user?.id])
+
+  // Delete a manual event
+  const deleteManualEvent = async (eventId: string, workspaceId: string, pixelId: string) => {
+    setDeletingEventId(eventId)
+    try {
+      const res = await fetch(`/api/pixel/events/${eventId}`, {
+        method: 'DELETE'
+      })
+      if (res.ok) {
+        // Reload events to reflect the deletion
+        await loadPixelEvents(pixelId, workspaceId)
+      } else {
+        const data = await res.json()
+        console.error('Failed to delete event:', data.error)
+      }
+    } catch (err) {
+      console.error('Failed to delete event:', err)
+    } finally {
+      setDeletingEventId(null)
+    }
+  }
 
   // Update attribution source for a workspace
   const updateAttributionSource = async (workspaceId: string, newSource: 'native' | 'pixel') => {
@@ -1477,65 +1505,146 @@ ks('pageview');
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-2">
                                 <Activity className="w-4 h-4 text-zinc-400" />
-                                <h3 className="font-medium text-sm">Recent Events</h3>
+                                <h3 className="font-medium text-sm">Events</h3>
                               </div>
-                              <button
-                                onClick={() => loadPixelEvents(wp.pixel_id, workspace.id)}
-                                disabled={isLoadingEvents}
-                                className="flex items-center gap-1.5 px-2.5 py-1 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-50"
-                              >
-                                <RefreshCw className={cn("w-3.5 h-3.5", isLoadingEvents && "animate-spin")} />
-                                Refresh
-                              </button>
+                              <div className="flex items-center gap-2">
+                                {/* Source filter toggle */}
+                                <div className="flex rounded-lg overflow-hidden border border-border">
+                                  <button
+                                    onClick={() => setEventSourceFilter('all')}
+                                    className={cn(
+                                      "px-2.5 py-1 text-xs transition-colors",
+                                      eventSourceFilter === 'all'
+                                        ? "bg-accent text-white"
+                                        : "bg-bg-dark text-zinc-400 hover:text-white"
+                                    )}
+                                  >
+                                    All
+                                  </button>
+                                  <button
+                                    onClick={() => setEventSourceFilter('manual')}
+                                    className={cn(
+                                      "px-2.5 py-1 text-xs transition-colors",
+                                      eventSourceFilter === 'manual'
+                                        ? "bg-purple-600 text-white"
+                                        : "bg-bg-dark text-zinc-400 hover:text-white"
+                                    )}
+                                  >
+                                    Manual
+                                  </button>
+                                </div>
+                                <button
+                                  onClick={() => loadPixelEvents(wp.pixel_id, workspace.id)}
+                                  disabled={isLoadingEvents}
+                                  className="flex items-center gap-1.5 px-2.5 py-1 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-50"
+                                >
+                                  <RefreshCw className={cn("w-3.5 h-3.5", isLoadingEvents && "animate-spin")} />
+                                  Refresh
+                                </button>
+                              </div>
                             </div>
 
-                            {isLoadingEvents && events.length === 0 ? (
-                              <div className="flex items-center justify-center py-8">
-                                <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
-                              </div>
-                            ) : events.length === 0 ? (
-                              <div className="text-center py-8 bg-bg-dark rounded-lg">
-                                <Activity className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-                                <p className="text-sm text-zinc-500">No events received yet</p>
-                                <p className="text-xs text-zinc-600 mt-1">Install the pixel and events will appear here</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                                {events.slice(0, 10).map((event) => (
-                                  <div
-                                    key={event.id}
-                                    className="flex items-center justify-between p-2.5 bg-bg-dark rounded-lg text-sm"
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className={cn(
-                                        "px-1.5 py-0.5 rounded text-xs font-medium",
-                                        event.event_type === 'purchase' ? 'bg-verdict-scale/20 text-verdict-scale' :
-                                        event.event_type === 'pageview' ? 'bg-zinc-700 text-zinc-400' :
-                                        'bg-accent/20 text-accent'
-                                      )}>
-                                        {event.event_type}
-                                      </span>
-                                      {event.event_value && (
-                                        <span className="text-zinc-400">${event.event_value.toFixed(2)}</span>
-                                      )}
-                                      {event.utm_content && (
-                                        <span className="text-xs text-zinc-600 font-mono truncate max-w-[100px]" title={event.utm_content}>
-                                          {event.utm_content}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-xs text-zinc-600 flex-shrink-0">
-                                      {formatTimeAgo(event.event_time)}
-                                    </span>
+                            {(() => {
+                              // Filter events based on source filter
+                              const filteredEvents = eventSourceFilter === 'manual'
+                                ? events.filter(e => e.source === 'manual')
+                                : events
+
+                              if (isLoadingEvents && events.length === 0) {
+                                return (
+                                  <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
                                   </div>
-                                ))}
-                                {events.length > 10 && (
-                                  <p className="text-xs text-zinc-600 text-center pt-2">
-                                    +{events.length - 10} more events
-                                  </p>
-                                )}
-                              </div>
-                            )}
+                                )
+                              }
+
+                              if (filteredEvents.length === 0) {
+                                return (
+                                  <div className="text-center py-8 bg-bg-dark rounded-lg">
+                                    <Activity className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+                                    <p className="text-sm text-zinc-500">
+                                      {eventSourceFilter === 'manual' ? 'No manual events yet' : 'No events received yet'}
+                                    </p>
+                                    <p className="text-xs text-zinc-600 mt-1">
+                                      {eventSourceFilter === 'manual'
+                                        ? 'Log a manual event to track offline conversions'
+                                        : 'Install the pixel and events will appear here'}
+                                    </p>
+                                  </div>
+                                )
+                              }
+
+                              return (
+                                <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                                  {filteredEvents.slice(0, 50).map((event) => (
+                                    <div
+                                      key={event.id}
+                                      className="flex items-center justify-between p-2.5 bg-bg-dark rounded-lg text-sm group"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        {/* Event type badge */}
+                                        <span className={cn(
+                                          "px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0",
+                                          event.event_type === 'purchase' ? 'bg-verdict-scale/20 text-verdict-scale' :
+                                          event.event_type === 'pageview' ? 'bg-zinc-700 text-zinc-400' :
+                                          'bg-accent/20 text-accent'
+                                        )}>
+                                          {event.event_type}
+                                        </span>
+                                        {/* Manual indicator */}
+                                        {event.source === 'manual' && (
+                                          <span className="px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-400 flex-shrink-0">
+                                            manual
+                                          </span>
+                                        )}
+                                        {/* Value */}
+                                        {event.event_value && (
+                                          <span className="text-zinc-400 flex-shrink-0">${event.event_value.toFixed(2)}</span>
+                                        )}
+                                        {/* Attribution */}
+                                        {event.utm_content && (
+                                          <span className="text-xs text-zinc-600 font-mono truncate max-w-[80px]" title={`Attributed to: ${event.utm_content}`}>
+                                            → {event.utm_content.slice(-8)}
+                                          </span>
+                                        )}
+                                        {/* Notes */}
+                                        {event.event_metadata?.notes && (
+                                          <span className="text-xs text-zinc-500 truncate" title={event.event_metadata.notes}>
+                                            "{event.event_metadata.notes}"
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        {/* Date */}
+                                        <span className="text-xs text-zinc-600" title={new Date(event.event_time).toLocaleString()}>
+                                          {new Date(event.event_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                        </span>
+                                        {/* Delete button for manual events */}
+                                        {event.source === 'manual' && (
+                                          <button
+                                            onClick={() => deleteManualEvent(event.id, workspace.id, wp.pixel_id)}
+                                            disabled={deletingEventId === event.id}
+                                            className="p-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-50"
+                                            title="Delete event"
+                                          >
+                                            {deletingEventId === event.id ? (
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            )}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {filteredEvents.length > 50 && (
+                                    <p className="text-xs text-zinc-600 text-center pt-2">
+                                      +{filteredEvents.length - 50} more events
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                         </>
                       )}

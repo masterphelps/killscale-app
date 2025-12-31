@@ -147,6 +147,70 @@ const isCacheValid = (cache: CacheEntry, datePreset: string, customStart?: strin
   return cachedDays >= requestedDays && requestedDays > 0
 }
 
+// Fetch manual events for a workspace and aggregate by ad_id
+// Returns { [ad_id]: { revenue, count } }
+const fetchManualEvents = async (
+  workspaceId: string,
+  dateStart: string,
+  dateEnd: string
+): Promise<Record<string, { revenue: number; count: number }>> => {
+  try {
+    // First get the workspace's pixel_id
+    const { data: wsPixel, error: pixelError } = await supabase
+      .from('workspace_pixels')
+      .select('pixel_id')
+      .eq('workspace_id', workspaceId)
+      .single()
+
+    if (pixelError || !wsPixel) {
+      console.log('[ManualEvents] No workspace pixel found:', workspaceId)
+      return {}
+    }
+
+    // Fetch manual events in the date range
+    const endDate = new Date(dateEnd)
+    endDate.setDate(endDate.getDate() + 1) // Include the end date
+
+    const { data: events, error } = await supabase
+      .from('pixel_events')
+      .select('utm_content, event_value')
+      .eq('pixel_id', wsPixel.pixel_id)
+      .eq('source', 'manual')
+      .gte('event_time', dateStart)
+      .lt('event_time', endDate.toISOString())
+
+    if (error || !events) {
+      console.log('[ManualEvents] Error fetching events:', error)
+      return {}
+    }
+
+    // Aggregate by ad_id (utm_content)
+    const byAdId: Record<string, { revenue: number; count: number }> = {}
+    events.forEach(event => {
+      const adId = event.utm_content
+      if (!adId) return // Skip unattributed events
+
+      if (!byAdId[adId]) {
+        byAdId[adId] = { revenue: 0, count: 0 }
+      }
+      byAdId[adId].revenue += event.event_value || 0
+      byAdId[adId].count += 1
+    })
+
+    console.log('[ManualEvents] Loaded:', {
+      pixelId: wsPixel.pixel_id,
+      dateRange: { dateStart, dateEnd },
+      totalEvents: events.length,
+      attributedAds: Object.keys(byAdId).length
+    })
+
+    return byAdId
+  } catch (err) {
+    console.error('[ManualEvents] Error:', err)
+    return {}
+  }
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
@@ -215,6 +279,8 @@ export default function DashboardPage() {
   const [launchWizardEntityType, setLaunchWizardEntityType] = useState<'campaign' | 'adset' | 'ad' | 'performance-set'>('campaign')
   const [showClearStarsPrompt, setShowClearStarsPrompt] = useState(false)
   const [performanceSetAdIds, setPerformanceSetAdIds] = useState<string[]>([])
+  // Manual events aggregated by ad_id: { [ad_id]: { revenue, count } }
+  const [manualEventsByAd, setManualEventsByAd] = useState<Record<string, { revenue: number; count: number }>>({})
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
@@ -533,6 +599,39 @@ export default function DashboardPage() {
     console.log('[Dashboard] Calling refreshAttribution with:', { since, until })
     refreshAttribution(since, until)
   }, [isKillScaleActive, datePreset, customStartDate, customEndDate, refreshAttribution])
+
+  // Load manual events when workspace or date range changes
+  // Manual events supplement both Meta and KillScale attribution
+  useEffect(() => {
+    if (!currentWorkspaceId) {
+      setManualEventsByAd({})
+      return
+    }
+
+    // Calculate date range for manual events
+    const today = new Date()
+    const formatDate = (d: Date) => {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    let since: string, until: string
+    if (datePreset === 'custom' && customStartDate && customEndDate) {
+      since = customStartDate
+      until = customEndDate
+    } else {
+      const daysMap: Record<string, number> = {
+        'today': 0, 'yesterday': 1, 'last_7d': 6, 'last_14d': 13,
+        'last_30d': 29, 'last_90d': 89, 'maximum': 365 * 10
+      }
+      const days = daysMap[datePreset] ?? 29
+      const start = new Date(today)
+      start.setDate(start.getDate() - days)
+      since = formatDate(start)
+      until = formatDate(today)
+    }
+
+    fetchManualEvents(currentWorkspaceId, since, until).then(setManualEventsByAd)
+  }, [currentWorkspaceId, datePreset, customStartDate, customEndDate])
 
   // Track which sync param we've already processed (to prevent re-runs)
   const processedSyncRef = useRef<string | null>(null)
@@ -1321,6 +1420,7 @@ export default function DashboardPage() {
   }, [datePreset, customStartDate, customEndDate])
 
   // Filter campaigns by selected account OR workspace accounts, then apply KillScale attribution if enabled
+  // Also merge in manual events data on top of the attribution
   const accountFilteredData = useMemo(() => {
     const filtered = data.filter(row => {
       // Workspace mode: include all accounts in workspace
@@ -1333,6 +1433,22 @@ export default function DashboardPage() {
       }
       return true
     })
+
+    // Helper to augment a row with manual event data
+    const augmentWithManualEvents = (row: CSVRow) => {
+      const manual = row.ad_id ? manualEventsByAd[row.ad_id] : null
+      if (!manual) return row
+      return {
+        ...row,
+        revenue: row.revenue + manual.revenue,
+        purchases: row.purchases + manual.count,
+        results: (row.results || 0) + manual.count,
+        result_value: (row.result_value || 0) + manual.revenue,
+        // Track manual data separately for the indicator
+        _manualRevenue: manual.revenue,
+        _manualCount: manual.count
+      }
+    }
 
     // If KillScale attribution is active, REPLACE all attribution data with KillScale pixel data
     // NO META FALLBACK - if no KillScale data for an ad, show 0 conversions
@@ -1358,7 +1474,7 @@ export default function DashboardPage() {
         const newPurchases = adAttribution?.conversions ?? 0
         const newRoas = row.spend > 0 ? newRevenue / row.spend : 0
 
-        return {
+        const ksRow = {
           ...row,
           purchases: newPurchases,
           revenue: newRevenue,
@@ -1369,11 +1485,14 @@ export default function DashboardPage() {
           _ksRoas: newRoas,
           _ksAttribution: true  // Flag to indicate KillScale attribution is active
         }
+        // Add manual events on top of KillScale data
+        return augmentWithManualEvents(ksRow)
       })
     }
 
-    return filtered
-  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, multiTouchAttribution, isMultiTouchModel])
+    // Non-KillScale mode: use Meta data and add manual events on top
+    return filtered.map(augmentWithManualEvents)
+  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, multiTouchAttribution, isMultiTouchModel, manualEventsByAd])
 
   const allCampaigns = useMemo(() =>
     Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
@@ -1503,14 +1622,24 @@ export default function DashboardPage() {
   )
   
   const totals = useMemo(() => {
+    // Calculate manual event totals from unique ads in selection
+    // We need to do this at the ad level to avoid double-counting across daily rows
+    const adsInSelection = new Set(
+      selectedData.map(row => row.ad_id).filter((id): id is string => !!id)
+    )
+    let manualRevenue = 0
+    let manualCount = 0
+    adsInSelection.forEach(adId => {
+      const manual = manualEventsByAd[adId]
+      if (manual) {
+        manualRevenue += manual.revenue
+        manualCount += manual.count
+      }
+    })
+
     // When KillScale is active, calculate from attribution data directly
     // This is necessary because row data has daily granularity but attribution is per-ad totals
     if (isKillScaleActive && Object.keys(multiTouchAttribution).length > 0) {
-      // Get unique ad_ids in the current selection
-      const adsInSelection = new Set(
-        selectedData.map(row => row.ad_id).filter((id): id is string => !!id)
-      )
-
       let ksPurchases = 0
       let ksRevenue = 0
       let ksSpend = 0
@@ -1536,11 +1665,15 @@ export default function DashboardPage() {
       const impressions = selectedData.reduce((sum, row) => sum + row.impressions, 0)
       const clicks = selectedData.reduce((sum, row) => sum + row.clicks, 0)
 
+      // Add manual events ON TOP of KillScale attribution
+      const totalRevenue = ksRevenue + manualRevenue
+      const totalPurchases = ksPurchases + manualCount
+
       const t = {
         spend: ksSpend,
-        revenue: ksRevenue,
-        purchases: ksPurchases,
-        results: ksPurchases,
+        revenue: totalRevenue,
+        purchases: totalPurchases,
+        results: totalPurchases,
         impressions,
         clicks,
         roas: 0,
@@ -1550,7 +1683,10 @@ export default function DashboardPage() {
         cpa: 0,
         cpr: 0,
         aov: 0,
-        convRate: 0
+        convRate: 0,
+        // Track manual totals for the indicator
+        manualRevenue,
+        manualCount
       }
       t.roas = t.spend > 0 ? t.revenue / t.spend : 0
       t.cpm = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : 0
@@ -1563,7 +1699,7 @@ export default function DashboardPage() {
       return t
     }
 
-    // Non-KillScale mode: use Meta data as before
+    // Non-KillScale mode: use Meta data as before (manual already included in rows)
     const t = {
       spend: selectedData.reduce((sum, row) => sum + row.spend, 0),
       revenue: selectedData.reduce((sum, row) => sum + row.revenue, 0),
@@ -1578,7 +1714,10 @@ export default function DashboardPage() {
       cpa: 0,
       cpr: 0,
       aov: 0,
-      convRate: 0
+      convRate: 0,
+      // Track manual totals for the indicator
+      manualRevenue,
+      manualCount
     }
     t.roas = t.spend > 0 ? t.revenue / t.spend : 0
     t.cpm = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : 0
@@ -1589,7 +1728,7 @@ export default function DashboardPage() {
     t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
     t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
     return t
-  }, [selectedData, isKillScaleActive, multiTouchAttribution])
+  }, [selectedData, isKillScaleActive, multiTouchAttribution, manualEventsByAd])
   
   const dateRange = {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],
@@ -2073,6 +2212,7 @@ export default function DashboardPage() {
             <StatCard
               label="Revenue"
               value={formatCurrency(totals.revenue)}
+              subValue={totals.manualCount > 0 ? `+${totals.manualCount} manual (${formatCurrency(totals.manualRevenue)})` : undefined}
               icon={StatIcons.revenue}
               glow="green"
             />
@@ -2085,6 +2225,7 @@ export default function DashboardPage() {
             <StatCard
               label="Results"
               value={formatNumber(totals.results)}
+              subValue={totals.manualCount > 0 ? `+${totals.manualCount} manual` : undefined}
               icon={StatIcons.results}
               glow="amber"
             />

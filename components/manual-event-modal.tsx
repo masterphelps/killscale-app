@@ -36,6 +36,11 @@ export function ManualEventModal({ workspaceId, onClose, onSuccess }: ManualEven
   const { user } = useAuth()
 
   const [logEventType, setLogEventType] = useState('purchase')
+  const [logEventDate, setLogEventDate] = useState(() => {
+    // Default to today's date in local timezone
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  })
   const [logValue, setLogValue] = useState('100')
   const [logNotes, setLogNotes] = useState('')
   const [logLoading, setLogLoading] = useState(false)
@@ -123,6 +128,9 @@ export function ManualEventModal({ workspaceId, onClose, onSuccess }: ManualEven
     setLogError(null)
 
     try {
+      // Convert date to ISO string (set to noon to avoid timezone issues)
+      const eventDateTime = new Date(logEventDate + 'T12:00:00')
+
       const res = await fetch('/api/pixel/events/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -131,7 +139,8 @@ export function ManualEventModal({ workspaceId, onClose, onSuccess }: ManualEven
           eventType: logEventType,
           eventValue: numValue,
           adId: adIdToUse,
-          notes: logNotes || undefined
+          notes: logNotes || undefined,
+          eventTime: eventDateTime.toISOString()
         })
       })
 
@@ -219,6 +228,19 @@ export function ManualEventModal({ workspaceId, onClose, onSuccess }: ManualEven
                     </>
                   )}
                 </div>
+              </div>
+
+              {/* Event Date */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-400 mb-2">Event Date</label>
+                <input
+                  type="date"
+                  value={logEventDate}
+                  onChange={(e) => setLogEventDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="w-full px-4 py-3 bg-bg-dark border border-border rounded-xl text-white focus:outline-none focus:border-accent [color-scheme:dark]"
+                />
+                <p className="text-xs text-zinc-500 mt-1">When did this event occur?</p>
               </div>
 
               {/* Event Value - only for purchase */}

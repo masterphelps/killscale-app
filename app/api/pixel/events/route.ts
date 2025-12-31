@@ -62,7 +62,9 @@ export async function GET(request: NextRequest) {
         utm_source,
         utm_content,
         page_url,
-        event_time
+        event_time,
+        source,
+        event_metadata
       `)
       .eq('pixel_id', pixelId)
       .order('event_time', { ascending: false })
