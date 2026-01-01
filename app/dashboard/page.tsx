@@ -1452,125 +1452,17 @@ export default function DashboardPage() {
       }
     }
 
-    // If KillScale attribution is active, apply Priority Merge per-row
-    // Challenge: KS attribution is aggregated per-ad, but Meta data is per-date.
-    // Solution: Aggregate Meta per-ad first, do Priority Merge, then distribute back to rows.
+    // If KillScale attribution is active, mark rows and preserve Meta values
+    // Priority Merge is applied at the ad level in performance-table.tsx
+    // This ensures stats cards and performance table use the same algorithm
     if (isKillScaleActive) {
-      console.log('[Priority Merge] Starting with:', {
-        filteredLength: filtered.length,
-        multiTouchAttrKeys: Object.keys(multiTouchAttribution).length,
-        sampleRowPurchases: filtered.slice(0, 3).map(r => ({ campaign: r.campaign_name, purchases: r.purchases }))
-      })
-      // Step 1: Aggregate Meta totals per-ad (across all date rows) and count rows per ad
-      const metaTotalsByAd = new Map<string, { purchases: number; revenue: number; rowCount: number }>()
-      filtered.forEach(row => {
-        if (!row.ad_id) return
-        const existing = metaTotalsByAd.get(row.ad_id) || { purchases: 0, revenue: 0, rowCount: 0 }
-        existing.purchases += row.purchases || 0
-        existing.revenue += row.revenue || 0
-        existing.rowCount += 1
-        metaTotalsByAd.set(row.ad_id, existing)
-      })
-
-      // Step 2: Calculate Priority Merge per-ad and compute scaling factors
-      const mergeResultByAd = new Map<string, {
-        mergedPurchases: number;
-        mergedRevenue: number;
-        metaTotalPurchases: number;
-        metaTotalRevenue: number;
-      }>()
-
-      metaTotalsByAd.forEach((metaTotal, adId) => {
-        const ksData = multiTouchAttribution[adId]
-        const ksCount = ksData?.conversions || 0
-        const ksRev = ksData?.revenue || 0
-        const metaCount = metaTotal.purchases
-        const metaRev = metaTotal.revenue
-
-        // Priority Merge at ad level
-        const verified = Math.min(ksCount, metaCount)
-        const ksOnly = Math.max(0, ksCount - metaCount)
-        const metaOnly = Math.max(0, metaCount - ksCount)
-
-        const verifiedRev = metaCount > 0 ? (verified / metaCount) * metaRev : 0
-        const ksOnlyRev = ksCount > 0 ? (ksOnly / ksCount) * ksRev : 0
-        const metaOnlyRev = metaCount > 0 ? (metaOnly / metaCount) * metaRev : 0
-
-        mergeResultByAd.set(adId, {
-          mergedPurchases: verified + ksOnly + metaOnly,
-          mergedRevenue: verifiedRev + ksOnlyRev + metaOnlyRev,
-          metaTotalPurchases: metaCount,
-          metaTotalRevenue: metaRev
-        })
-      })
-
-      // Also add any ads that only have KS data (no Meta rows)
-      Object.entries(multiTouchAttribution).forEach(([adId, ksData]) => {
-        if (!mergeResultByAd.has(adId)) {
-          mergeResultByAd.set(adId, {
-            mergedPurchases: ksData.conversions || 0,
-            mergedRevenue: ksData.revenue || 0,
-            metaTotalPurchases: 0,
-            metaTotalRevenue: 0
-          })
-        }
-      })
-
-      // Step 3: Track which ads have had KS-only results added (to add only once)
-      const ksOnlyAddedForAd = new Set<string>()
-
-      // Step 4: Apply merged values to rows
-      // Last-touch = whole numbers only. No fractional distribution.
       return filtered.map(row => {
-        const adId = row.ad_id
-        const mergeResult = adId ? mergeResultByAd.get(adId) : null
-
-        if (!mergeResult) {
-          // No merge data for this ad - keep original Meta values
-          return augmentWithManualEvents({
-            ...row,
-            _ksAttribution: true,
-            _metaPurchases: row.purchases || 0,
-            _metaRevenue: row.revenue || 0,
-          })
-        }
-
-        const rowMetaPurchases = row.purchases || 0
-        const rowMetaRevenue = row.revenue || 0
-
-        // Calculate KS-only excess (results KS saw that Meta didn't)
-        const ksOnlyPurchases = Math.max(0, mergeResult.mergedPurchases - mergeResult.metaTotalPurchases)
-        const ksOnlyRevenue = Math.max(0, mergeResult.mergedRevenue - mergeResult.metaTotalRevenue)
-
-        // For last-touch: keep Meta's daily breakdown (already whole numbers)
-        // Add KS-only excess to the FIRST row we encounter for this ad (add once only)
-        let rowMergedPurchases = rowMetaPurchases
-        let rowMergedRevenue = rowMetaRevenue
-
-        if (adId && ksOnlyPurchases > 0 && !ksOnlyAddedForAd.has(adId)) {
-          // First row for this ad - add KS-only results here
-          ksOnlyAddedForAd.add(adId)
-          rowMergedPurchases += ksOnlyPurchases
-          rowMergedRevenue += ksOnlyRevenue
-        }
-
-        // Ensure whole numbers for results
-        rowMergedPurchases = Math.round(rowMergedPurchases)
-
-        const mergedRoas = row.spend > 0 ? rowMergedRevenue / row.spend : 0
-
-        const ksRow = {
+        return augmentWithManualEvents({
           ...row,
-          purchases: rowMergedPurchases,
-          revenue: rowMergedRevenue,
-          results: rowMergedPurchases,
-          result_value: rowMergedRevenue,
-          _ksRoas: mergedRoas,
           _ksAttribution: true,
-          _metaPurchases: rowMetaPurchases,
-          _metaRevenue: rowMetaRevenue,
-        }
-        return augmentWithManualEvents(ksRow)
+          _metaPurchases: row.purchases || 0,
+          _metaRevenue: row.revenue || 0,
+        })
       })
     }
 

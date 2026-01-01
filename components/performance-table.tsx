@@ -657,8 +657,7 @@ export function PerformanceTable({
     const baseHierarchy = buildHierarchy(data, rules)
 
     // If we have lastTouchAttribution (KillScale mode with Priority Merge),
-    // re-aggregate all metrics from ads → adsets → campaigns.
-    // The ads already have correct Priority Merge values from buildHierarchy.
+    // apply Priority Merge per-ad, then re-aggregate to adsets → campaigns.
     if (lastTouchAttribution && Object.keys(lastTouchAttribution).length > 0) {
       return baseHierarchy.map(campaign => {
         // Aggregate all metrics from adsets (which aggregate from ads)
@@ -678,8 +677,55 @@ export function PerformanceTable({
           let adsetRevenue = 0
           let adsetResults = 0
 
-          adset.children?.forEach(ad => {
-            // Use ad's values - they already have Priority Merge applied
+          // First, apply Priority Merge to each ad
+          const updatedAds = adset.children?.map(ad => {
+            const ksData = ad.id ? lastTouchAttribution[ad.id] : null
+
+            if (ksData) {
+              // Priority Merge algorithm: combine KS + Meta data
+              const metaCount = ad.purchases || 0
+              const metaRev = ad.revenue || 0
+              const ksCount = ksData.conversions || 0
+              const ksRev = ksData.revenue || 0
+
+              // Verified = both sources saw (MIN)
+              const verified = Math.min(ksCount, metaCount)
+              // KS-only = KS tracked extra that Meta missed
+              const ksOnly = Math.max(0, ksCount - metaCount)
+              // Meta-only = Meta reported extra that KS missed
+              const metaOnly = Math.max(0, metaCount - ksCount)
+
+              // Calculate merged values
+              const mergedPurchases = verified + ksOnly + metaOnly
+
+              // Revenue: proportional from each source
+              const verifiedRev = metaCount > 0 ? (verified / metaCount) * metaRev : 0
+              const ksOnlyRev = ksCount > 0 ? (ksOnly / ksCount) * ksRev : 0
+              const metaOnlyRev = metaCount > 0 ? (metaOnly / metaCount) * metaRev : 0
+              const mergedRevenue = verifiedRev + ksOnlyRev + metaOnlyRev
+
+              // Calculate ad-level metrics with merged values
+              const adRoas = ad.spend > 0 ? mergedRevenue / ad.spend : 0
+
+              return {
+                ...ad,
+                purchases: mergedPurchases,
+                revenue: mergedRevenue,
+                results: mergedPurchases,
+                roas: adRoas,
+                cpr: mergedPurchases > 0 ? ad.spend / mergedPurchases : 0,
+                cpa: mergedPurchases > 0 ? ad.spend / mergedPurchases : 0,
+                convRate: ad.clicks > 0 ? (mergedPurchases / ad.clicks) * 100 : 0,
+                verdict: calculateVerdict(ad.spend, adRoas, rules)
+              }
+            }
+
+            // No KS data - keep Meta values as-is
+            return ad
+          }) || []
+
+          // Now aggregate from updated ads
+          updatedAds.forEach(ad => {
             adsetImpressions += ad.impressions || 0
             adsetClicks += ad.clicks || 0
             adsetSpend += ad.spend || 0
@@ -712,7 +758,8 @@ export function PerformanceTable({
             cpr: adsetPurchases > 0 ? adsetSpend / adsetPurchases : 0,
             cpa: adsetPurchases > 0 ? adsetSpend / adsetPurchases : 0,
             convRate: adsetClicks > 0 ? (adsetPurchases / adsetClicks) * 100 : 0,
-            verdict: calculateVerdict(adsetSpend, adsetRoas, rules)
+            verdict: calculateVerdict(adsetSpend, adsetRoas, rules),
+            children: updatedAds
           }
         })
 
