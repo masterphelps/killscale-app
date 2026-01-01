@@ -1461,13 +1461,14 @@ export default function DashboardPage() {
         multiTouchAttrKeys: Object.keys(multiTouchAttribution).length,
         sampleRowPurchases: filtered.slice(0, 3).map(r => ({ campaign: r.campaign_name, purchases: r.purchases }))
       })
-      // Step 1: Aggregate Meta totals per-ad (across all date rows)
-      const metaTotalsByAd = new Map<string, { purchases: number; revenue: number }>()
+      // Step 1: Aggregate Meta totals per-ad (across all date rows) and count rows per ad
+      const metaTotalsByAd = new Map<string, { purchases: number; revenue: number; rowCount: number }>()
       filtered.forEach(row => {
         if (!row.ad_id) return
-        const existing = metaTotalsByAd.get(row.ad_id) || { purchases: 0, revenue: 0 }
+        const existing = metaTotalsByAd.get(row.ad_id) || { purchases: 0, revenue: 0, rowCount: 0 }
         existing.purchases += row.purchases || 0
         existing.revenue += row.revenue || 0
+        existing.rowCount += 1
         metaTotalsByAd.set(row.ad_id, existing)
       })
 
@@ -1477,6 +1478,7 @@ export default function DashboardPage() {
         mergedRevenue: number;
         metaTotalPurchases: number;
         metaTotalRevenue: number;
+        rowCount: number;
       }>()
 
       metaTotalsByAd.forEach((metaTotal, adId) => {
@@ -1515,7 +1517,18 @@ export default function DashboardPage() {
         }
       })
 
-      // Step 3: Distribute merged values back to daily rows proportionally
+      // Step 3: Find the most recent row for each ad (for KS-only results)
+      const mostRecentRowByAd = new Map<string, string>() // adId -> date_start
+      filtered.forEach(row => {
+        if (!row.ad_id) return
+        const existing = mostRecentRowByAd.get(row.ad_id)
+        if (!existing || row.date_start > existing) {
+          mostRecentRowByAd.set(row.ad_id, row.date_start)
+        }
+      })
+
+      // Step 4: Apply merged values to rows
+      // Last-touch = whole numbers only. No fractional distribution.
       return filtered.map(row => {
         const adId = row.ad_id
         const mergeResult = adId ? mergeResultByAd.get(adId) : null
@@ -1530,30 +1543,27 @@ export default function DashboardPage() {
           })
         }
 
-        // Calculate this row's proportion of the ad's Meta total
         const rowMetaPurchases = row.purchases || 0
         const rowMetaRevenue = row.revenue || 0
+        const isMostRecentRow = row.date_start === mostRecentRowByAd.get(adId)
 
-        // Distribute merged values proportionally based on Meta's daily split
-        // If Meta total is 0, distribute evenly (but this row is also 0)
-        let rowMergedPurchases: number
-        let rowMergedRevenue: number
+        // Calculate KS-only excess (results KS saw that Meta didn't)
+        const ksOnlyPurchases = Math.max(0, mergeResult.mergedPurchases - mergeResult.metaTotalPurchases)
+        const ksOnlyRevenue = Math.max(0, mergeResult.mergedRevenue - mergeResult.metaTotalRevenue)
 
-        if (mergeResult.metaTotalPurchases > 0) {
-          const purchaseRatio = rowMetaPurchases / mergeResult.metaTotalPurchases
-          rowMergedPurchases = mergeResult.mergedPurchases * purchaseRatio
-        } else {
-          // Meta had 0 purchases - all merged purchases are "KS Only"
-          // Can't distribute to specific dates, so show 0 per row (totals will be correct)
-          rowMergedPurchases = 0
+        // For last-touch: keep Meta's daily breakdown (already whole numbers)
+        // Add KS-only excess to the MOST RECENT row only
+        let rowMergedPurchases = rowMetaPurchases
+        let rowMergedRevenue = rowMetaRevenue
+
+        if (isMostRecentRow && ksOnlyPurchases > 0) {
+          // This is the most recent row - add KS-only results here
+          rowMergedPurchases += ksOnlyPurchases
+          rowMergedRevenue += ksOnlyRevenue
         }
 
-        if (mergeResult.metaTotalRevenue > 0) {
-          const revenueRatio = rowMetaRevenue / mergeResult.metaTotalRevenue
-          rowMergedRevenue = mergeResult.mergedRevenue * revenueRatio
-        } else {
-          rowMergedRevenue = 0
-        }
+        // Ensure whole numbers for results
+        rowMergedPurchases = Math.round(rowMergedPurchases)
 
         const mergedRoas = row.spend > 0 ? rowMergedRevenue / row.spend : 0
 

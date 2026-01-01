@@ -7,7 +7,8 @@
       "WebSearch",
       "WebFetch(domain:developers.google.com)",
       "Bash(grep:*)",
-      "WebFetch(domain:ads-developers.googleblog.com)"
+      "WebFetch(domain:ads-developers.googleblog.com)",
+      "Bash(npm run build:*)"
     ]
   }
 }
