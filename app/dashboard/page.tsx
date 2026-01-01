@@ -1544,7 +1544,7 @@ export default function DashboardPage() {
 
         const rowMetaPurchases = row.purchases || 0
         const rowMetaRevenue = row.revenue || 0
-        const isMostRecentRow = row.date_start === mostRecentRowByAd.get(adId)
+        const isMostRecentRow = adId ? row.date_start === mostRecentRowByAd.get(adId) : false
 
         // Calculate KS-only excess (results KS saw that Meta didn't)
         const ksOnlyPurchases = Math.max(0, mergeResult.mergedPurchases - mergeResult.metaTotalPurchases)
