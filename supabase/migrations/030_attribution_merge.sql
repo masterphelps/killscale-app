@@ -59,3 +59,7 @@ CREATE POLICY "Users can view own merged attribution" ON merged_attribution
 DROP POLICY IF EXISTS "Service role full access merged attribution" ON merged_attribution;
 CREATE POLICY "Service role full access merged attribution" ON merged_attribution
   FOR ALL USING (auth.role() = 'service_role');
+
+-- 3. Add last sync date range to workspace_pixels
+ALTER TABLE workspace_pixels ADD COLUMN IF NOT EXISTS last_sync_start DATE;
+ALTER TABLE workspace_pixels ADD COLUMN IF NOT EXISTS last_sync_end DATE;

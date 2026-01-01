@@ -140,6 +140,15 @@ export async function POST(request: NextRequest) {
 
     console.log('[Merge] Complete:', { workspace_id, dates_processed: results.length })
 
+    // Update workspace_pixels with the sync date range
+    await supabaseAdmin
+      .from('workspace_pixels')
+      .update({
+        last_sync_start: date_start,
+        last_sync_end: date_end
+      })
+      .eq('workspace_id', workspace_id)
+
     return NextResponse.json({
       success: true,
       workspace_id,

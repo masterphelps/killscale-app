@@ -679,7 +679,7 @@ export default function WorkspacesPage() {
     if (!user) return
     setIsLoadingBreakdown(true)
     try {
-      const res = await fetch(`/api/attribution/breakdown?workspace_id=${workspaceId}&userId=${user.id}&days=7`)
+      const res = await fetch(`/api/attribution/breakdown?workspace_id=${workspaceId}&userId=${user.id}`)
       if (res.ok) {
         const data = await res.json()
         if (data.success) {

@@ -13,19 +13,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const workspaceId = searchParams.get('workspace_id')
     const userId = searchParams.get('userId')
-    const days = parseInt(searchParams.get('days') || '7')
+    let dateStart = searchParams.get('date_start')
+    let dateEnd = searchParams.get('date_end')
 
     if (!workspaceId || !userId) {
       return NextResponse.json(
         { error: 'workspace_id and userId required' },
-        { status: 400 }
-      )
-    }
-
-    // Validate days parameter
-    if (isNaN(days) || days < 1 || days > 365) {
-      return NextResponse.json(
-        { error: 'days must be between 1 and 365' },
         { status: 400 }
       )
     }
@@ -65,7 +58,28 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Query ALL merged_attribution data for this workspace (shows last sync results)
+    // If no date range provided, get from workspace_pixels last sync
+    if (!dateStart || !dateEnd) {
+      const { data: pixel } = await supabase
+        .from('workspace_pixels')
+        .select('last_sync_start, last_sync_end')
+        .eq('workspace_id', workspaceId)
+        .single()
+
+      if (pixel?.last_sync_start && pixel?.last_sync_end) {
+        dateStart = pixel.last_sync_start
+        dateEnd = pixel.last_sync_end
+      } else {
+        // Default to last 7 days if no sync recorded
+        const end = new Date()
+        const start = new Date()
+        start.setDate(start.getDate() - 7)
+        dateStart = start.toISOString().split('T')[0]
+        dateEnd = end.toISOString().split('T')[0]
+      }
+    }
+
+    // Query merged_attribution data for the specified date range
     const { data: breakdown, error: breakdownError } = await supabase
       .from('merged_attribution')
       .select(`
@@ -83,6 +97,8 @@ export async function GET(request: NextRequest) {
         computed_at
       `)
       .eq('workspace_id', workspaceId)
+      .gte('date', dateStart)
+      .lte('date', dateEnd)
       .order('date', { ascending: true })
 
     if (breakdownError) {
