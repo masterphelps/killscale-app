@@ -1478,7 +1478,6 @@ export default function DashboardPage() {
         mergedRevenue: number;
         metaTotalPurchases: number;
         metaTotalRevenue: number;
-        rowCount: number;
       }>()
 
       metaTotalsByAd.forEach((metaTotal, adId) => {
