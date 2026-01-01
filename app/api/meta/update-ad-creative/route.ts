@@ -113,14 +113,36 @@ async function updateAdCreative(
 
   if (objectStorySpec.link_data) {
     // IMAGE ADS: Update link_data fields
+    // Handle UTM params by embedding directly in CTA link (same as video ads)
+    let ctaLink = objectStorySpec.link_data.call_to_action?.value?.link || objectStorySpec.link_data.link
+    if (urlTags !== undefined && ctaLink) {
+      // Strip existing query params and add new UTMs
+      try {
+        const urlObj = new URL(ctaLink)
+        ctaLink = `${urlObj.origin}${urlObj.pathname}`
+      } catch {
+        // Keep original if URL parsing fails
+      }
+      ctaLink = urlTags ? `${ctaLink}?${urlTags}` : ctaLink
+    }
+
     objectStorySpec.link_data = {
       ...objectStorySpec.link_data,
-      // Update url_tags if provided, otherwise keep existing
-      url_tags: urlTags !== undefined ? urlTags : objectStorySpec.link_data.url_tags,
       // Update copy fields if provided, otherwise keep existing
       message: primaryText !== undefined ? primaryText : objectStorySpec.link_data.message,
       name: headline !== undefined ? headline : objectStorySpec.link_data.name,
       description: description !== undefined ? description : objectStorySpec.link_data.description,
+    }
+
+    // Update CTA link with UTM if we modified it
+    if (urlTags !== undefined && ctaLink) {
+      objectStorySpec.link_data.call_to_action = {
+        ...objectStorySpec.link_data.call_to_action,
+        value: {
+          ...objectStorySpec.link_data.call_to_action?.value,
+          link: ctaLink
+        }
+      }
     }
   } else if (objectStorySpec.video_data) {
     // VIDEO ADS: Update video_data fields

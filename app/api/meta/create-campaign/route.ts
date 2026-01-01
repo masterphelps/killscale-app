@@ -416,18 +416,10 @@ export async function POST(request: NextRequest) {
             value: { lead_gen_form_id: formId }
           }
         } else {
+          // Don't embed UTM here - will be added via post-creation update with actual ad ID
           videoData.call_to_action = {
             type: ctaType,
             value: { link: websiteUrl }
-          }
-          // For non-lead video ads, url_tags is not supported in video_data
-          // Instead, append UTM params directly to the CTA link
-          if (urlTags) {
-            const separator = websiteUrl.includes('?') ? '&' : '?'
-            videoData.call_to_action = {
-              type: ctaType,
-              value: { link: `${websiteUrl}${separator}${urlTags}` }
-            }
           }
         }
 
@@ -458,16 +450,10 @@ export async function POST(request: NextRequest) {
             value: { lead_gen_form_id: formId }
           }
         } else {
-          // For non-lead image ads, append UTM params to CTA link (same as video)
-          // This ensures UTMs are detectable since url_tags is write-only
-          let ctaLink = websiteUrl
-          if (urlTags) {
-            const separator = websiteUrl.includes('?') ? '&' : '?'
-            ctaLink = `${websiteUrl}${separator}${urlTags}`
-          }
+          // Don't embed UTM here - will be added via post-creation update with actual ad ID
           linkData.call_to_action = {
             type: ctaType,
-            value: { link: ctaLink }
+            value: { link: websiteUrl }
           }
         }
 
@@ -555,6 +541,95 @@ export async function POST(request: NextRequest) {
       }
 
       adIds.push(adResult.id)
+
+      // ========== Post-creation: Update ad with correct UTM using actual ad ID ==========
+      if (urlTags && adResult.id) {
+        try {
+          // Replace template variables with actual values
+          const actualUrlTags = urlTags
+            .replace('{{ad.id}}', adResult.id)
+            .replace('{{campaign.name}}', campaignName.replace(/\s+/g, '_'))
+
+          console.log(`[create-campaign] Updating ad ${adResult.id} with UTM: ${actualUrlTags}`)
+
+          // Fetch the creative we just created to get its full spec
+          const creativeUrl = `https://graph.facebook.com/v18.0/${creativeResult.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
+          const creativeResponse = await fetch(creativeUrl)
+          const creativeData = await creativeResponse.json()
+
+          if (creativeData.error || !creativeData.object_story_spec) {
+            console.error('[create-campaign] Failed to fetch creative for UTM update:', creativeData.error)
+          } else {
+            // Build new creative with UTM in the CTA link
+            const newObjectStorySpec = { ...creativeData.object_story_spec }
+
+            if (newObjectStorySpec.link_data) {
+              // IMAGE ADS: Update CTA link with UTM
+              const baseLink = newObjectStorySpec.link_data.call_to_action?.value?.link || websiteUrl
+              const cleanBaseLink = baseLink.split('?')[0]
+              newObjectStorySpec.link_data.call_to_action = {
+                ...newObjectStorySpec.link_data.call_to_action,
+                value: { link: `${cleanBaseLink}?${actualUrlTags}` }
+              }
+            } else if (newObjectStorySpec.video_data) {
+              // VIDEO ADS: Update CTA link with UTM
+              const baseLink = newObjectStorySpec.video_data.call_to_action?.value?.link || websiteUrl
+              const cleanBaseLink = baseLink.split('?')[0]
+              newObjectStorySpec.video_data.call_to_action = {
+                ...newObjectStorySpec.video_data.call_to_action,
+                value: { link: `${cleanBaseLink}?${actualUrlTags}` }
+              }
+              // Remove duplicate image fields
+              if (newObjectStorySpec.video_data.image_url && newObjectStorySpec.video_data.image_hash) {
+                delete newObjectStorySpec.video_data.image_url
+              }
+            }
+
+            // Create new creative with UTM
+            const newCreativeResponse = await fetch(
+              `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: `${campaignName} - Creative ${i + 1} (with UTM)`,
+                  object_story_spec: newObjectStorySpec,
+                  access_token: accessToken
+                })
+              }
+            )
+
+            const newCreativeResult = await newCreativeResponse.json()
+
+            if (newCreativeResult.error) {
+              console.error('[create-campaign] Failed to create UTM creative:', newCreativeResult.error)
+            } else {
+              // Update ad to use new creative with UTM
+              const updateAdResponse = await fetch(
+                `https://graph.facebook.com/v18.0/${adResult.id}`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    creative: { creative_id: newCreativeResult.id },
+                    access_token: accessToken
+                  })
+                }
+              )
+
+              const updateAdResult = await updateAdResponse.json()
+              if (updateAdResult.error) {
+                console.error('[create-campaign] Failed to update ad with UTM creative:', updateAdResult.error)
+              } else {
+                console.log(`[create-campaign] Successfully updated ad ${adResult.id} with UTM tracking`)
+              }
+            }
+          }
+        } catch (utmError) {
+          console.error('[create-campaign] Error updating UTM:', utmError)
+          // Don't fail the whole operation - ad was created, just UTM update failed
+        }
+      }
       }
     } // End of else block (regular creative creation)
 

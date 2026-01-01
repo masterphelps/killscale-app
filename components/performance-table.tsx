@@ -265,10 +265,11 @@ const typeLabels = {
 
 function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaigns: Record<string, HierarchyNode & { _status?: string | null }> = {}
-  const adsetStatuses: Record<string, string | null> = {}  // Track adset statuses by name
-  const campaignStatuses: Record<string, string | null> = {}  // Track campaign statuses by name
-  const campaignIds: Record<string, string | null> = {}  // Track campaign IDs by name
-  const adsetIds: Record<string, string | null> = {}  // Track adset IDs by name
+  // Use account-qualified keys to prevent collisions in workspace view (multiple accounts)
+  const adsetStatuses: Record<string, string | null> = {}  // Track adset statuses by account::name
+  const campaignStatuses: Record<string, string | null> = {}  // Track campaign statuses by account::name
+  const campaignIds: Record<string, string | null> = {}  // Track campaign IDs by account::name
+  const adsetIds: Record<string, string | null> = {}  // Track adset IDs by account::name
   // Track budget info
   const campaignBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
   const adsetBudgets: Record<string, { daily: number | null; lifetime: number | null }> = {}
@@ -276,39 +277,43 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   const campaignPlatforms: Record<string, 'meta' | 'google' | undefined> = {}
 
   data.forEach(row => {
+    // Use account-qualified keys to prevent collisions across accounts in workspace view
+    const campaignKey = `${row.ad_account_id}::${row.campaign_name}`
+    const adsetKey = `${row.ad_account_id}::${row.adset_name}`
+
     // Capture statuses and IDs from the first row we see for each entity
-    if (row.campaign_status && !campaignStatuses[row.campaign_name]) {
-      campaignStatuses[row.campaign_name] = row.campaign_status
+    if (row.campaign_status && !campaignStatuses[campaignKey]) {
+      campaignStatuses[campaignKey] = row.campaign_status
     }
-    if (row.campaign_id && !campaignIds[row.campaign_name]) {
-      campaignIds[row.campaign_name] = row.campaign_id
+    if (row.campaign_id && !campaignIds[campaignKey]) {
+      campaignIds[campaignKey] = row.campaign_id
     }
-    if (row.adset_status && !adsetStatuses[row.adset_name]) {
-      adsetStatuses[row.adset_name] = row.adset_status
+    if (row.adset_status && !adsetStatuses[adsetKey]) {
+      adsetStatuses[adsetKey] = row.adset_status
     }
-    if (row.adset_id && !adsetIds[row.adset_name]) {
-      adsetIds[row.adset_name] = row.adset_id
+    if (row.adset_id && !adsetIds[adsetKey]) {
+      adsetIds[adsetKey] = row.adset_id
     }
     // Capture budget info from the first row we see for each entity
-    if (!campaignBudgets[row.campaign_name]) {
-      campaignBudgets[row.campaign_name] = {
+    if (!campaignBudgets[campaignKey]) {
+      campaignBudgets[campaignKey] = {
         daily: row.campaign_daily_budget ?? null,
         lifetime: row.campaign_lifetime_budget ?? null,
       }
     }
     // Capture platform info from the first row we see for each campaign
-    if (!campaignPlatforms[row.campaign_name] && row._platform) {
-      campaignPlatforms[row.campaign_name] = row._platform
+    if (!campaignPlatforms[campaignKey] && row._platform) {
+      campaignPlatforms[campaignKey] = row._platform
     }
-    if (!adsetBudgets[row.adset_name]) {
-      adsetBudgets[row.adset_name] = {
+    if (!adsetBudgets[adsetKey]) {
+      adsetBudgets[adsetKey] = {
         daily: row.adset_daily_budget ?? null,
         lifetime: row.adset_lifetime_budget ?? null,
       }
     }
-    
-    if (!campaigns[row.campaign_name]) {
-      campaigns[row.campaign_name] = {
+
+    if (!campaigns[campaignKey]) {
+      campaigns[campaignKey] = {
         name: row.campaign_name,
         id: row.campaign_id,
         type: 'campaign',
@@ -333,7 +338,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         manualCount: 0,
       }
     }
-    const campaign = campaigns[row.campaign_name]
+    const campaign = campaigns[campaignKey]
     // Ensure we have the ID even if first row didn't have it
     if (row.campaign_id && !campaign.id) campaign.id = row.campaign_id
     
@@ -351,7 +356,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       return  // Skip adset/ad creation for Google
     }
 
-    let adset = campaign.children?.find(c => c.name === row.adset_name)
+    // Find adset by name AND accountId to prevent collisions in workspace view
+    let adset = campaign.children?.find(c => c.name === row.adset_name && c.accountId === row.ad_account_id)
     if (!adset) {
       adset = {
         name: row.adset_name,
@@ -381,8 +387,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     // Ensure we have the ID even if first row didn't have it
     if (row.adset_id && !adset.id) adset.id = row.adset_id
 
-    // Check if ad already exists - aggregate instead of duplicating
-    let ad = adset.children?.find(a => a.name === row.ad_name)
+    // Find ad by name AND accountId to prevent collisions in workspace view
+    let ad = adset.children?.find(a => a.name === row.ad_name && a.accountId === row.ad_account_id)
     if (!ad) {
       ad = {
         name: row.ad_name,
@@ -464,7 +470,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       
       // Use the direct adset_status from Meta API if available
       // This is the adset's OWN status, not derived from children
-      const directStatus = adsetStatuses[adset.name]
+      const adsetLookupKey = `${adset.accountId}::${adset.name}`
+      const directStatus = adsetStatuses[adsetLookupKey]
       if (directStatus) {
         adset.status = directStatus
       } else {
@@ -484,9 +491,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
 
-      // Set budget info on adset
-      const adsetBudget = adsetBudgets[adset.name]
-      const campaignBudget = campaignBudgets[campaign.name]
+      // Set budget info on adset (use account-qualified keys)
+      const adsetBudget = adsetBudgets[adsetLookupKey]
+      const campaignLookupKey = `${campaign.accountId}::${campaign.name}`
+      const campaignBudget = campaignBudgets[campaignLookupKey]
 
       // ABO if adset has budget OR if campaign has no budget (budget must be at adset level)
       const isABO = (adsetBudget && (adsetBudget.daily || adsetBudget.lifetime)) ||
@@ -512,9 +520,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     campaign.roas = campaign.spend > 0 ? campaign.revenue / campaign.spend : 0
     const campaignMetrics = calculateMetrics(campaign)
     Object.assign(campaign, campaignMetrics)
-    
-    // Use the direct campaign_status from Meta API if available
-    const directStatus = campaignStatuses[campaign.name]
+
+    // Use the direct campaign_status from Meta API if available (use account-qualified key)
+    const campaignLookupKey = `${campaign.accountId}::${campaign.name}`
+    const directStatus = campaignStatuses[campaignLookupKey]
     if (directStatus) {
       campaign.status = directStatus
     } else {
@@ -537,8 +546,8 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
 
     campaign.verdict = calculateVerdict(campaign.spend, campaign.roas, rules)
 
-    // Set budget info on campaign
-    const campBudget = campaignBudgets[campaign.name]
+    // Set budget info on campaign (use account-qualified key)
+    const campBudget = campaignBudgets[campaignLookupKey]
     if (campBudget && (campBudget.daily || campBudget.lifetime)) {
       campaign.budgetType = 'CBO'
       campaign.dailyBudget = campBudget.daily
@@ -679,7 +688,10 @@ export function PerformanceTable({
 
           // First, apply Priority Merge to each ad
           const updatedAds = adset.children?.map(ad => {
-            const ksData = ad.id ? lastTouchAttribution[ad.id] : null
+            // Only match if ad.id is a valid Meta ad ID (not null, undefined, or string versions)
+            const adId = ad.id
+            const isValidAdId = adId && typeof adId === 'string' && adId.length > 0 && adId !== 'null' && adId !== 'undefined'
+            const ksData = isValidAdId ? lastTouchAttribution[adId] : null
 
             if (ksData) {
               // Priority Merge algorithm: combine KS + Meta data
@@ -794,42 +806,49 @@ export function PerformanceTable({
 
     const { type, name, campaignName, adsetName } = highlightEntity
 
-    // Find the entity in the hierarchy
-    let foundCampaign: string | null = null
-    let foundAdset: string | null = null
+    // Find the entity in the hierarchy and get its account-qualified key
+    let foundCampaignKey: string | null = null
+    let foundAdsetKey: string | null = null
 
     if (type === 'campaign') {
-      foundCampaign = hierarchy.find(c => c.name === name)?.name || null
+      const campaign = hierarchy.find(c => c.name === name)
+      foundCampaignKey = campaign ? `${campaign.accountId}::${campaign.name}` : null
     } else if (type === 'adset' && campaignName) {
-      foundCampaign = campaignName
       const campaign = hierarchy.find(c => c.name === campaignName)
-      foundAdset = campaign?.children?.find(a => a.name === name)?.name || null
+      if (campaign) {
+        foundCampaignKey = `${campaign.accountId}::${campaign.name}`
+        const adset = campaign.children?.find(a => a.name === name)
+        foundAdsetKey = adset ? `${foundCampaignKey}::${adset.name}` : null
+      }
     } else if (type === 'ad' && campaignName && adsetName) {
-      foundCampaign = campaignName
-      foundAdset = adsetName
+      const campaign = hierarchy.find(c => c.name === campaignName)
+      if (campaign) {
+        foundCampaignKey = `${campaign.accountId}::${campaign.name}`
+        foundAdsetKey = `${foundCampaignKey}::${adsetName}`
+      }
     }
 
     // Expand to show the entity
-    if (foundCampaign) {
+    if (foundCampaignKey) {
       setExpandedCampaigns(prev => {
         const newSet = new Set(prev)
-        newSet.add(foundCampaign!)
+        newSet.add(foundCampaignKey!)
         return newSet
       })
     }
-    if (foundAdset && foundCampaign) {
+    if (foundAdsetKey) {
       setExpandedAdsets(prev => {
         const newSet = new Set(prev)
-        newSet.add(`${foundCampaign}::${foundAdset}`)
+        newSet.add(foundAdsetKey!)
         return newSet
       })
     }
 
-    // Set the highlight
-    const rowKey = type === 'campaign' ? name
-      : type === 'adset' ? `${campaignName}::${name}`
-      : `${campaignName}::${adsetName}::${name}`
-    setHighlightedRow(rowKey)
+    // Set the highlight (use account-qualified keys)
+    const rowKey = type === 'campaign' ? foundCampaignKey
+      : type === 'adset' ? foundAdsetKey
+      : foundAdsetKey ? `${foundAdsetKey}::${name}` : null
+    if (rowKey) setHighlightedRow(rowKey)
 
     // Scroll to the highlighted row after a short delay
     setTimeout(() => {
@@ -926,23 +945,29 @@ export function PerformanceTable({
     }
   }
   
-  const toggleCampaign = (name: string) => {
+  // Use account-qualified keys for expand state to prevent collisions in workspace view
+  const toggleCampaign = (campaignName: string, accountId?: string | null) => {
+    // Create account-qualified key for expanded state
+    const key = accountId ? `${accountId}::${campaignName}` : campaignName
     const newSet = new Set(expandedCampaigns)
-    if (newSet.has(name)) {
-      newSet.delete(name)
+    if (newSet.has(key)) {
+      newSet.delete(key)
+      // Also collapse all adsets under this campaign
       const newAdsets = new Set(expandedAdsets)
-      hierarchy.find(c => c.name === name)?.children?.forEach(adset => {
-        newAdsets.delete(`${name}::${adset.name}`)
+      hierarchy.find(c => `${c.accountId}::${c.name}` === key)?.children?.forEach(adset => {
+        newAdsets.delete(`${key}::${adset.name}`)
       })
       setExpandedAdsets(newAdsets)
     } else {
-      newSet.add(name)
+      newSet.add(key)
     }
     setExpandedCampaigns(newSet)
   }
-  
-  const toggleAdset = (campaignName: string, adsetName: string) => {
-    const key = `${campaignName}::${adsetName}`
+
+  const toggleAdset = (campaignKey: string, adsetName: string, accountId?: string | null) => {
+    // Create account-qualified key for expanded state
+    const campKey = accountId ? `${accountId}::${campaignKey}` : campaignKey
+    const key = `${campKey}::${adsetName}`
     const newSet = new Set(expandedAdsets)
     if (newSet.has(key)) {
       newSet.delete(key)
@@ -957,11 +982,13 @@ export function PerformanceTable({
       setExpandedCampaigns(new Set())
       setExpandedAdsets(new Set())
     } else {
-      const campaigns = new Set(sortedHierarchy.map(c => c.name))
+      // Use account-qualified keys for expand state
+      const campaigns = new Set(sortedHierarchy.map(c => `${c.accountId}::${c.name}`))
       const adsets = new Set<string>()
       sortedHierarchy.forEach(c => {
+        const campaignKey = `${c.accountId}::${c.name}`
         c.children?.forEach(a => {
-          adsets.add(`${c.name}::${a.name}`)
+          adsets.add(`${campaignKey}::${a.name}`)
         })
       })
       setExpandedCampaigns(campaigns)
@@ -1709,44 +1736,49 @@ export function PerformanceTable({
             ) : (
               sortedHierarchy.map((campaign, campaignIndex) => {
                 const isSelected = selectedCampaigns?.has(campaign.name) ?? true
+                // Use account-qualified key for React keys and expanded state
+                const campaignKey = `${campaign.accountId}::${campaign.name}`
 
                 return (
-                  <div key={campaign.name}>
+                  <div key={campaignKey}>
                     <DataRow
                       node={campaign}
                       level="campaign"
-                      isExpanded={expandedCampaigns.has(campaign.name)}
-                      onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name)}
+                      isExpanded={expandedCampaigns.has(campaignKey)}
+                      onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name, campaign.accountId)}
                       isSelected={isSelected}
-                      rowKey={campaign.name}
+                      rowKey={campaignKey}
                       displayName={maskName(campaign.name, 'campaign', campaignIndex)}
                     />
 
-                    {expandedCampaigns.has(campaign.name) && campaign.children?.map((adset, adsetIndex) => (
-                      <div key={`${campaign.name}::${adset.name}`}>
-                        <DataRow
-                          node={adset}
-                          level="adset"
-                          isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
-                          onToggle={() => toggleAdset(campaign.name, adset.name)}
-                          rowKey={`${campaign.name}::${adset.name}`}
-                          campaignName={campaign.name}
-                          displayName={maskName(adset.name, 'adset', adsetIndex)}
-                        />
-
-                        {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map((ad, adIndex) => (
+                    {expandedCampaigns.has(campaignKey) && campaign.children?.map((adset, adsetIndex) => {
+                      const adsetKey = `${campaignKey}::${adset.name}`
+                      return (
+                        <div key={adsetKey}>
                           <DataRow
-                            key={`${campaign.name}::${adset.name}::${ad.name}`}
-                            node={ad}
-                            level="ad"
-                            rowKey={`${campaign.name}::${adset.name}::${ad.name}`}
+                            node={adset}
+                            level="adset"
+                            isExpanded={expandedAdsets.has(adsetKey)}
+                            onToggle={() => toggleAdset(campaign.name, adset.name, campaign.accountId)}
+                            rowKey={adsetKey}
                             campaignName={campaign.name}
-                            adsetName={adset.name}
-                            displayName={maskName(ad.name, 'ad', adIndex)}
+                            displayName={maskName(adset.name, 'adset', adsetIndex)}
                           />
-                        ))}
-                      </div>
-                    ))}
+
+                          {expandedAdsets.has(adsetKey) && adset.children?.map((ad, adIndex) => (
+                            <DataRow
+                              key={`${adsetKey}::${ad.name}`}
+                              node={ad}
+                              level="ad"
+                              rowKey={`${adsetKey}::${ad.name}`}
+                              campaignName={campaign.name}
+                              adsetName={adset.name}
+                              displayName={maskName(ad.name, 'ad', adIndex)}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 )
               })
@@ -1782,39 +1814,46 @@ export function PerformanceTable({
             No ads match the selected filter
           </div>
         ) : (
-          sortedHierarchy.map((campaign, campaignIndex) => (
-            <div key={campaign.name}>
-              <MobileCard
-                node={campaign}
-                level="campaign"
-                isExpanded={expandedCampaigns.has(campaign.name)}
-                onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name)}
-                displayName={maskName(campaign.name, 'campaign', campaignIndex)}
-              />
+          sortedHierarchy.map((campaign, campaignIndex) => {
+            // Use account-qualified key for React keys and expanded state
+            const campaignKey = `${campaign.accountId}::${campaign.name}`
+            return (
+              <div key={campaignKey}>
+                <MobileCard
+                  node={campaign}
+                  level="campaign"
+                  isExpanded={expandedCampaigns.has(campaignKey)}
+                  onToggle={campaign.platform === 'google' ? undefined : () => toggleCampaign(campaign.name, campaign.accountId)}
+                  displayName={maskName(campaign.name, 'campaign', campaignIndex)}
+                />
 
-              {expandedCampaigns.has(campaign.name) && campaign.children?.map((adset, adsetIndex) => (
-                <div key={`${campaign.name}::${adset.name}`} className="ml-3">
-                  <MobileCard
-                    node={adset}
-                    level="adset"
-                    isExpanded={expandedAdsets.has(`${campaign.name}::${adset.name}`)}
-                    onToggle={() => toggleAdset(campaign.name, adset.name)}
-                    displayName={maskName(adset.name, 'adset', adsetIndex)}
-                  />
-
-                  {expandedAdsets.has(`${campaign.name}::${adset.name}`) && adset.children?.map((ad, adIndex) => (
-                    <div key={`${campaign.name}::${adset.name}::${ad.name}`} className="ml-3">
+                {expandedCampaigns.has(campaignKey) && campaign.children?.map((adset, adsetIndex) => {
+                  const adsetKey = `${campaignKey}::${adset.name}`
+                  return (
+                    <div key={adsetKey} className="ml-3">
                       <MobileCard
-                        node={ad}
-                        level="ad"
-                        displayName={maskName(ad.name, 'ad', adIndex)}
+                        node={adset}
+                        level="adset"
+                        isExpanded={expandedAdsets.has(adsetKey)}
+                        onToggle={() => toggleAdset(campaign.name, adset.name, campaign.accountId)}
+                        displayName={maskName(adset.name, 'adset', adsetIndex)}
                       />
+
+                      {expandedAdsets.has(adsetKey) && adset.children?.map((ad, adIndex) => (
+                        <div key={`${adsetKey}::${ad.name}`} className="ml-3">
+                          <MobileCard
+                            node={ad}
+                            level="ad"
+                            displayName={maskName(ad.name, 'ad', adIndex)}
+                          />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          ))
+                  )
+                })}
+              </div>
+            )
+          })
         )}
       </div>
 
