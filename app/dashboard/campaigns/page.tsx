@@ -20,7 +20,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare, Copy, RefreshCw } from 'lucide-react'
+import { Rocket, Plus, Play, Pause, ExternalLink, Loader2, Sparkles, ChevronRight, ChevronDown, Image as ImageIcon, Video, Trash2, X, Pencil, Square, CheckSquare, Copy, RefreshCw, Info } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -38,6 +38,7 @@ import { BulkBudgetModal } from '@/components/bulk-budget-modal'
 import { DuplicateModal } from '@/components/duplicate-modal'
 import { CopyAdsModal } from '@/components/copy-ads-modal'
 import { InlineDuplicateModal } from '@/components/inline-duplicate-modal'
+import { EntityInfoModal } from '@/components/entity-info-modal'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -149,6 +150,14 @@ export default function LaunchPage() {
     campaignName?: string
     adsetId?: string
     adAccountId?: string
+  } | null>(null)
+
+  // Info modal state (shows targeting, placements, creative details)
+  const [infoModal, setInfoModal] = useState<{
+    isOpen: boolean
+    entityType: 'adset' | 'ad'
+    entityId: string
+    entityName: string
   } | null>(null)
 
   // Explorer state
@@ -1830,6 +1839,18 @@ export default function LaunchPage() {
                                     <Pencil className="w-4 h-4" />
                                   </button>
                                   <button
+                                    onClick={() => setInfoModal({
+                                      isOpen: true,
+                                      entityType: 'adset',
+                                      entityId: adSet.id,
+                                      entityName: adSet.name
+                                    })}
+                                    className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                    title="View targeting & placements"
+                                  >
+                                    <Info className="w-4 h-4" />
+                                  </button>
+                                  <button
                                     onClick={() => openInlineDuplicateModal('adset', adSet.id, adSet.name, campaign.id)}
                                     className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
                                     title="Duplicate ad set"
@@ -2001,6 +2022,18 @@ export default function LaunchPage() {
                                                 <Pencil className="w-4 h-4" />
                                               </button>
                                               <button
+                                                onClick={() => setInfoModal({
+                                                  isOpen: true,
+                                                  entityType: 'ad',
+                                                  entityId: ad.id,
+                                                  entityName: ad.name
+                                                })}
+                                                className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                                title="View creative details"
+                                              >
+                                                <Info className="w-4 h-4" />
+                                              </button>
+                                              <button
                                                 onClick={() => openInlineDuplicateModal('ad', ad.id, ad.name, campaign.id, adSet.id)}
                                                 className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
                                                 title="Duplicate ad"
@@ -2064,6 +2097,16 @@ export default function LaunchPage() {
         adAccountId={editModal?.adAccountId}
         userId={user?.id || ''}
         onUpdate={loadCampaigns}
+      />
+
+      {/* Entity Info Modal (targeting, placements, creative details) */}
+      <EntityInfoModal
+        isOpen={infoModal?.isOpen || false}
+        onClose={() => setInfoModal(null)}
+        entityType={infoModal?.entityType || 'adset'}
+        entityId={infoModal?.entityId || ''}
+        entityName={infoModal?.entityName || ''}
+        userId={user?.id || ''}
       />
 
       {/* Creative Full Preview Modal */}
