@@ -1516,15 +1516,8 @@ export default function DashboardPage() {
         }
       })
 
-      // Step 3: Find the most recent row for each ad (for KS-only results)
-      const mostRecentRowByAd = new Map<string, string>() // adId -> date_start
-      filtered.forEach(row => {
-        if (!row.ad_id) return
-        const existing = mostRecentRowByAd.get(row.ad_id)
-        if (!existing || row.date_start > existing) {
-          mostRecentRowByAd.set(row.ad_id, row.date_start)
-        }
-      })
+      // Step 3: Track which ads have had KS-only results added (to add only once)
+      const ksOnlyAddedForAd = new Set<string>()
 
       // Step 4: Apply merged values to rows
       // Last-touch = whole numbers only. No fractional distribution.
@@ -1544,19 +1537,19 @@ export default function DashboardPage() {
 
         const rowMetaPurchases = row.purchases || 0
         const rowMetaRevenue = row.revenue || 0
-        const isMostRecentRow = adId ? row.date_start === mostRecentRowByAd.get(adId) : false
 
         // Calculate KS-only excess (results KS saw that Meta didn't)
         const ksOnlyPurchases = Math.max(0, mergeResult.mergedPurchases - mergeResult.metaTotalPurchases)
         const ksOnlyRevenue = Math.max(0, mergeResult.mergedRevenue - mergeResult.metaTotalRevenue)
 
         // For last-touch: keep Meta's daily breakdown (already whole numbers)
-        // Add KS-only excess to the MOST RECENT row only
+        // Add KS-only excess to the FIRST row we encounter for this ad (add once only)
         let rowMergedPurchases = rowMetaPurchases
         let rowMergedRevenue = rowMetaRevenue
 
-        if (isMostRecentRow && ksOnlyPurchases > 0) {
-          // This is the most recent row - add KS-only results here
+        if (adId && ksOnlyPurchases > 0 && !ksOnlyAddedForAd.has(adId)) {
+          // First row for this ad - add KS-only results here
+          ksOnlyAddedForAd.add(adId)
           rowMergedPurchases += ksOnlyPurchases
           rowMergedRevenue += ksOnlyRevenue
         }
