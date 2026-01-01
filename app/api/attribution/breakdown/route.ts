@@ -148,10 +148,10 @@ export async function GET(request: NextRequest) {
       aggregated.last_computed = timestamps[0] || null
     }
 
-    // Get actual date range from data
+    // Get actual date range from returned data
     const dates = breakdown?.map(row => row.date).filter(Boolean).sort() || []
-    const dateStart = dates[0] || null
-    const dateEnd = dates[dates.length - 1] || null
+    const actualDateStart = dates[0] || dateStart
+    const actualDateEnd = dates[dates.length - 1] || dateEnd
 
     return NextResponse.json({
       success: true,
@@ -176,8 +176,8 @@ export async function GET(request: NextRequest) {
           conversions: aggregated.total_conversions,
           revenue: parseFloat(aggregated.total_revenue.toFixed(2))
         },
-        date_start: dateStart,
-        date_end: dateEnd,
+        date_start: actualDateStart,
+        date_end: actualDateEnd,
         days_count: dates.length,
         last_computed: aggregated.last_computed
       }
