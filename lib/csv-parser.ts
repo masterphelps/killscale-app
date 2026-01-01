@@ -33,6 +33,12 @@ export type CSVRow = {
   _platform?: 'meta' | 'google'
   // Google budget resource name for mutations
   campaign_budget_resource_name?: string | null
+  // Internal tracking for Priority Merge attribution
+  _ksAttribution?: boolean
+  _metaPurchases?: number
+  _metaRevenue?: number
+  _manualRevenue?: number
+  _manualCount?: number
 }
 
 const COLUMN_MAP: Record<string, string> = {
