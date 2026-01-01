@@ -977,7 +977,48 @@ export async function POST(request: NextRequest) {
       console.error('Failed to trigger alerts:', alertErr)
       // Don't fail the sync if alert generation fails
     }
-    
+
+    // Trigger attribution merge for workspaces that include this ad account
+    try {
+      // Find workspace(s) containing this ad account
+      // Try both with and without act_ prefix since storage format may vary
+      const { data: workspaceAccounts, error: waError } = await supabase
+        .from('workspace_accounts')
+        .select('workspace_id')
+        .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
+        .eq('platform', 'meta')
+
+      console.log('[Sync] Merge lookup:', { normalizedAccountId, cleanAccountId, found: workspaceAccounts?.length || 0, error: waError?.message })
+
+      if (workspaceAccounts && workspaceAccounts.length > 0) {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+        // Use the actual sync date range (matches dashboard selection)
+        const mergeStart = isDeltaSync ? deltaStartDate : requestedRange.since
+        const mergeEnd = isDeltaSync ? deltaEndDate : requestedRange.until
+
+        // Trigger merge for each workspace (fire and forget)
+        for (const wa of workspaceAccounts) {
+          fetch(`${baseUrl}/api/attribution/merge`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${userId}`
+            },
+            body: JSON.stringify({
+              workspace_id: wa.workspace_id,
+              date_start: mergeStart,
+              date_end: mergeEnd
+            })
+          }).catch(err => console.error('[Sync] Attribution merge failed:', err))
+        }
+        console.log(`[Sync] Triggered attribution merge for ${workspaceAccounts.length} workspace(s), range: ${mergeStart} to ${mergeEnd}`)
+      }
+    } catch (mergeErr) {
+      console.error('[Sync] Failed to trigger attribution merge:', mergeErr)
+      // Don't fail the sync if merge fails
+    }
+
     return NextResponse.json({
       message: isDeltaSync ? 'Delta sync complete (today + yesterday only)' : 'Full sync complete',
       count: allAdData.length,

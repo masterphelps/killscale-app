@@ -656,58 +656,83 @@ export function PerformanceTable({
   const hierarchy = useMemo(() => {
     const baseHierarchy = buildHierarchy(data, rules)
 
-    // If we have lastTouchAttribution (hybrid multi-touch mode), recalculate
-    // campaign/adset metrics using whole-number last-touch data instead of
-    // fractional multi-touch data
+    // If we have lastTouchAttribution (KillScale mode with Priority Merge),
+    // re-aggregate all metrics from ads → adsets → campaigns.
+    // The ads already have correct Priority Merge values from buildHierarchy.
     if (lastTouchAttribution && Object.keys(lastTouchAttribution).length > 0) {
       return baseHierarchy.map(campaign => {
-        // Sum last-touch attribution for all ads in this campaign
+        // Aggregate all metrics from adsets (which aggregate from ads)
+        let campaignImpressions = 0
+        let campaignClicks = 0
+        let campaignSpend = 0
         let campaignPurchases = 0
         let campaignRevenue = 0
+        let campaignResults = 0
 
         const updatedAdsets = campaign.children?.map(adset => {
-          // Sum last-touch attribution for all ads in this adset
+          // Aggregate all metrics from child ads
+          let adsetImpressions = 0
+          let adsetClicks = 0
+          let adsetSpend = 0
           let adsetPurchases = 0
           let adsetRevenue = 0
+          let adsetResults = 0
 
           adset.children?.forEach(ad => {
-            const adId = ad.id
-            if (adId && lastTouchAttribution[adId]) {
-              adsetPurchases += lastTouchAttribution[adId].conversions
-              adsetRevenue += lastTouchAttribution[adId].revenue
-            }
+            // Use ad's values - they already have Priority Merge applied
+            adsetImpressions += ad.impressions || 0
+            adsetClicks += ad.clicks || 0
+            adsetSpend += ad.spend || 0
+            adsetPurchases += ad.purchases || 0
+            adsetRevenue += ad.revenue || 0
+            adsetResults += ad.results || ad.purchases || 0
           })
 
+          // Roll up to campaign
+          campaignImpressions += adsetImpressions
+          campaignClicks += adsetClicks
+          campaignSpend += adsetSpend
           campaignPurchases += adsetPurchases
           campaignRevenue += adsetRevenue
+          campaignResults += adsetResults
 
-          // Update adset with last-touch totals (whole numbers)
-          const adsetRoas = adset.spend > 0 ? adsetRevenue / adset.spend : 0
+          // Calculate derived metrics for adset
+          const adsetRoas = adsetSpend > 0 ? adsetRevenue / adsetSpend : 0
+          const adsetCtr = adsetImpressions > 0 ? (adsetClicks / adsetImpressions) * 100 : 0
           return {
             ...adset,
+            impressions: adsetImpressions,
+            clicks: adsetClicks,
+            spend: adsetSpend,
             purchases: adsetPurchases,
             revenue: adsetRevenue,
-            results: adsetPurchases,
+            results: adsetResults,
             roas: adsetRoas,
-            cpr: adsetPurchases > 0 ? adset.spend / adsetPurchases : 0,
-            cpa: adsetPurchases > 0 ? adset.spend / adsetPurchases : 0,
-            convRate: adset.clicks > 0 ? (adsetPurchases / adset.clicks) * 100 : 0,
-            verdict: calculateVerdict(adset.spend, adsetRoas, rules)
+            ctr: adsetCtr,
+            cpr: adsetPurchases > 0 ? adsetSpend / adsetPurchases : 0,
+            cpa: adsetPurchases > 0 ? adsetSpend / adsetPurchases : 0,
+            convRate: adsetClicks > 0 ? (adsetPurchases / adsetClicks) * 100 : 0,
+            verdict: calculateVerdict(adsetSpend, adsetRoas, rules)
           }
         })
 
-        // Update campaign with last-touch totals (whole numbers)
-        const campaignRoas = campaign.spend > 0 ? campaignRevenue / campaign.spend : 0
+        // Calculate derived metrics for campaign
+        const campaignRoas = campaignSpend > 0 ? campaignRevenue / campaignSpend : 0
+        const campaignCtr = campaignImpressions > 0 ? (campaignClicks / campaignImpressions) * 100 : 0
         return {
           ...campaign,
+          impressions: campaignImpressions,
+          clicks: campaignClicks,
+          spend: campaignSpend,
           purchases: campaignPurchases,
           revenue: campaignRevenue,
-          results: campaignPurchases,
+          results: campaignResults,
           roas: campaignRoas,
-          cpr: campaignPurchases > 0 ? campaign.spend / campaignPurchases : 0,
-          cpa: campaignPurchases > 0 ? campaign.spend / campaignPurchases : 0,
-          convRate: campaign.clicks > 0 ? (campaignPurchases / campaign.clicks) * 100 : 0,
-          verdict: calculateVerdict(campaign.spend, campaignRoas, rules),
+          ctr: campaignCtr,
+          cpr: campaignPurchases > 0 ? campaignSpend / campaignPurchases : 0,
+          cpa: campaignPurchases > 0 ? campaignSpend / campaignPurchases : 0,
+          convRate: campaignClicks > 0 ? (campaignPurchases / campaignClicks) * 100 : 0,
+          verdict: calculateVerdict(campaignSpend, campaignRoas, rules),
           children: updatedAdsets
         }
       })

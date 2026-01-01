@@ -124,8 +124,18 @@ export default function WorkspacesPage() {
   const [lastEventTimes, setLastEventTimes] = useState<Record<string, string | null>>({})
   const [loadingEvents, setLoadingEvents] = useState<string | null>(null)
   const [copiedPixelId, setCopiedPixelId] = useState<string | null>(null)
-  const [updatingAttribution, setUpdatingAttribution] = useState<string | null>(null)
   const [updatingModel, setUpdatingModel] = useState<string | null>(null)
+  const [sourceBreakdown, setSourceBreakdown] = useState<Record<string, {
+    verified: { conversions: number; revenue: number };
+    ks_only: { conversions: number; revenue: number };
+    meta_only: { conversions: number; revenue: number };
+    manual: { conversions: number; revenue: number };
+    total: { conversions: number; revenue: number };
+    date_start: string | null;
+    date_end: string | null;
+    days_count: number;
+  } | null>>({})
+  const [isLoadingBreakdown, setIsLoadingBreakdown] = useState(false)
 
   // Manual event filter and edit state
   const [eventSourceFilter, setEventSourceFilter] = useState<'all' | 'manual'>('all')
@@ -619,6 +629,7 @@ export default function WorkspacesPage() {
       const workspace = workspaces.find(w => w.id === expandedPixel)
       if (workspace) {
         loadPixelData(expandedPixel, workspace.name)
+        loadSourceBreakdown(expandedPixel)
       }
     }
   }, [expandedPixel, workspacePixels, workspaces, loadPixelData])
@@ -663,28 +674,22 @@ export default function WorkspacesPage() {
     }
   }
 
-  // Update attribution source for a workspace
-  const updateAttributionSource = async (workspaceId: string, newSource: 'native' | 'pixel') => {
-    setUpdatingAttribution(workspaceId)
+  // Load source breakdown for a workspace
+  const loadSourceBreakdown = async (workspaceId: string) => {
+    if (!user) return
+    setIsLoadingBreakdown(true)
     try {
-      const { error } = await supabase
-        .from('workspace_pixels')
-        .update({ attribution_source: newSource })
-        .eq('workspace_id', workspaceId)
-
-      if (!error) {
-        setWorkspacePixels(prev => ({
-          ...prev,
-          [workspaceId]: { ...prev[workspaceId], attribution_source: newSource }
-        }))
-        reloadConfig()
-      } else {
-        console.error('Failed to update attribution source:', error)
+      const res = await fetch(`/api/attribution/breakdown?workspace_id=${workspaceId}&userId=${user.id}&days=7`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setSourceBreakdown(prev => ({ ...prev, [workspaceId]: data.data }))
+        }
       }
-    } catch (err) {
-      console.error('Failed to update attribution source:', err)
+    } catch (error) {
+      console.error('Failed to load source breakdown:', error)
     } finally {
-      setUpdatingAttribution(null)
+      setIsLoadingBreakdown(false)
     }
   }
 
@@ -1217,82 +1222,151 @@ ks('pageview');
                             </p>
                           </div>
 
-                          {/* Attribution Source Toggle */}
+                          {/* Attribution Insights - REPLACES the toggle */}
                           <div>
-                            <h3 className="font-medium text-sm mb-3">Attribution Source</h3>
-                            <div className="flex gap-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <h3 className="font-medium text-sm">Attribution Insights</h3>
                               <button
-                                onClick={() => updateAttributionSource(workspace.id, 'native')}
-                                disabled={updatingAttribution === workspace.id}
-                                className={cn(
-                                  "flex-1 p-3 rounded-lg border-2 transition-all text-left",
-                                  wp.attribution_source === 'native'
-                                    ? "border-accent bg-accent/10"
-                                    : "border-border hover:border-zinc-600"
-                                )}
+                                onClick={() => loadSourceBreakdown(workspace.id)}
+                                disabled={isLoadingBreakdown}
+                                className="flex items-center gap-1.5 px-2.5 py-1 bg-bg-dark border border-border rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-50"
                               >
-                                <div className="flex items-center gap-2 mb-1">
-                                  <div className={cn(
-                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                                    wp.attribution_source === 'native' ? "border-accent" : "border-zinc-600"
-                                  )}>
-                                    {wp.attribution_source === 'native' && (
-                                      <div className="w-2 h-2 rounded-full bg-accent" />
-                                    )}
-                                  </div>
-                                  <span className="font-medium text-sm">Native (Meta)</span>
-                                </div>
-                                <p className="text-xs text-zinc-500 ml-6">
-                                  Use Meta's built-in conversion tracking
-                                </p>
-                              </button>
-
-                              <button
-                                onClick={() => updateAttributionSource(workspace.id, 'pixel')}
-                                disabled={updatingAttribution === workspace.id}
-                                className={cn(
-                                  "flex-1 p-3 rounded-lg border-2 transition-all text-left",
-                                  wp.attribution_source === 'pixel'
-                                    ? "border-purple-500 bg-purple-500/10"
-                                    : "border-border hover:border-zinc-600"
-                                )}
-                              >
-                                <div className="flex items-center gap-2 mb-1">
-                                  <div className={cn(
-                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                                    wp.attribution_source === 'pixel' ? "border-purple-500" : "border-zinc-600"
-                                  )}>
-                                    {wp.attribution_source === 'pixel' && (
-                                      <div className="w-2 h-2 rounded-full bg-purple-500" />
-                                    )}
-                                  </div>
-                                  <span className="font-medium text-sm">KillScale Pixel</span>
-                                </div>
-                                <p className="text-xs text-zinc-500 ml-6">
-                                  Use first-party tracking for better accuracy
-                                </p>
+                                <RefreshCw className={cn("w-3.5 h-3.5", isLoadingBreakdown && "animate-spin")} />
+                                Refresh
                               </button>
                             </div>
-                            {updatingAttribution === workspace.id && (
-                              <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                Updating...
-                              </div>
-                            )}
+
+                            <div className="p-4 bg-bg-dark rounded-lg">
+                              <p className="text-xs text-zinc-500 mb-4">
+                                KillScale merges your pixel data with Meta API for the most complete picture.
+                              </p>
+
+                              {(() => {
+                                const breakdown = sourceBreakdown[workspace.id]
+                                if (!breakdown) {
+                                  return (
+                                    <div className="text-center py-4">
+                                      <p className="text-sm text-zinc-500">No attribution data yet</p>
+                                      <p className="text-xs text-zinc-600 mt-1">Data will appear after your first sync</p>
+                                    </div>
+                                  )
+                                }
+
+                                return (
+                                  <>
+                                    {/* Source Breakdown Bar */}
+                                    <div className="mb-4">
+                                      <div className="h-3 rounded-full overflow-hidden flex bg-zinc-800">
+                                        {breakdown.total.conversions > 0 && (
+                                          <>
+                                            <div
+                                              style={{width: `${(breakdown.verified.conversions / breakdown.total.conversions) * 100}%`}}
+                                              className="bg-verdict-scale"
+                                              title="Verified"
+                                            />
+                                            <div
+                                              style={{width: `${(breakdown.ks_only.conversions / breakdown.total.conversions) * 100}%`}}
+                                              className="bg-purple-500"
+                                              title="KS Only"
+                                            />
+                                            <div
+                                              style={{width: `${(breakdown.meta_only.conversions / breakdown.total.conversions) * 100}%`}}
+                                              className="bg-zinc-500"
+                                              title="Meta Only"
+                                            />
+                                            <div
+                                              style={{width: `${(breakdown.manual.conversions / breakdown.total.conversions) * 100}%`}}
+                                              className="bg-amber-500"
+                                              title="Manual"
+                                            />
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Legend with counts */}
+                                    <div className="space-y-2 text-xs">
+                                      <div className="flex justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-verdict-scale" />
+                                          Verified (KS + Meta)
+                                        </span>
+                                        <span className="text-zinc-400">
+                                          {breakdown.verified.conversions}
+                                          ({breakdown.total.conversions > 0
+                                            ? Math.round((breakdown.verified.conversions / breakdown.total.conversions) * 100)
+                                            : 0}%)
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-purple-500" />
+                                          KS Only
+                                        </span>
+                                        <span className="text-zinc-400">
+                                          {breakdown.ks_only.conversions}
+                                          ({breakdown.total.conversions > 0
+                                            ? Math.round((breakdown.ks_only.conversions / breakdown.total.conversions) * 100)
+                                            : 0}%)
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-zinc-500" />
+                                          Meta Only
+                                        </span>
+                                        <span className="text-zinc-400">
+                                          {breakdown.meta_only.conversions}
+                                          ({breakdown.total.conversions > 0
+                                            ? Math.round((breakdown.meta_only.conversions / breakdown.total.conversions) * 100)
+                                            : 0}%)
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                          Manual
+                                        </span>
+                                        <span className="text-zinc-400">
+                                          {breakdown.manual.conversions}
+                                          ({breakdown.total.conversions > 0
+                                            ? Math.round((breakdown.manual.conversions / breakdown.total.conversions) * 100)
+                                            : 0}%)
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 pt-3 border-t border-border text-xs text-zinc-500">
+                                      Total: {breakdown.total.conversions} conversions
+                                      (${breakdown.total.revenue.toLocaleString()})
+                                      <span className="ml-2 text-zinc-600">
+                                        • {breakdown.date_start && breakdown.date_end
+                                          ? breakdown.date_start === breakdown.date_end
+                                            ? new Date(breakdown.date_start + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                            : `${new Date(breakdown.date_start + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(breakdown.date_end + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                                          : 'Last sync'}
+                                      </span>
+                                    </div>
+                                  </>
+                                )
+                              })()}
+                            </div>
                           </div>
 
-                          {/* Attribution Model - Only show when KillScale Pixel is selected */}
-                          {wp.attribution_source === 'pixel' && (
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <h3 className="font-medium text-sm">Attribution Model</h3>
-                                <div className="group relative">
-                                  <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
-                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
-                                    Choose how credit is distributed when a customer interacts with multiple ads before converting.
-                                  </div>
+                          {/* Attribution Model */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <h3 className="font-medium text-sm">Attribution Model</h3>
+                              <div className="group relative">
+                                <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+                                  Choose how credit is distributed when a customer interacts with multiple ads before converting.
                                 </div>
                               </div>
+                            </div>
+                            <p className="text-xs text-zinc-500 mb-3">
+                              Applied to conversions tracked by KillScale pixel. Meta-only conversions use Meta's native attribution.
+                            </p>
                               <div className="space-y-2">
                                 {(Object.keys(ATTRIBUTION_MODEL_INFO) as AttributionModel[]).map((model) => (
                                   <button
@@ -1355,8 +1429,7 @@ ks('pageview');
                                   Updating...
                                 </div>
                               )}
-                            </div>
-                          )}
+                          </div>
 
                           {/* Sales Kiosk */}
                           <div>
