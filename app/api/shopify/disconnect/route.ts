@@ -31,27 +31,29 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    // Verify user is a member of this workspace with permission to disconnect
-    const { data: membership, error: memberError } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', workspaceId)
+    // Verify user has access to this workspace (owner or admin member)
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('id', workspaceId)
       .eq('user_id', userId)
       .single()
 
-    if (memberError || !membership) {
-      return NextResponse.json(
-        { error: 'Not a member of this workspace' },
-        { status: 403 }
-      )
-    }
+    if (!workspace) {
+      // Not the owner, check if they're an admin member
+      const { data: membership } = await supabase
+        .from('workspace_members')
+        .select('role')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .single()
 
-    // Only owner and admin can disconnect
-    if (!['owner', 'admin'].includes(membership.role)) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions to disconnect Shopify' },
-        { status: 403 }
-      )
+      if (!membership || membership.role !== 'admin') {
+        return NextResponse.json(
+          { error: 'Only workspace owner or admin can disconnect Shopify' },
+          { status: 403 }
+        )
+      }
     }
 
     // Delete Shopify connection for this workspace
