@@ -18,7 +18,7 @@ const ORDERS_QUERY = `
           totalPriceSet { shopMoney { amount currencyCode } }
           subtotalPriceSet { shopMoney { amount currencyCode } }
           createdAt
-          financialStatus
+          displayFinancialStatus
           customerJourneySummary {
             firstVisit {
               utmParameters {
@@ -56,7 +56,7 @@ interface ShopifyOrder {
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } }
   subtotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } }
   createdAt: string
-  financialStatus: string
+  displayFinancialStatus: string
   customerJourneySummary?: {
     firstVisit?: {
       utmParameters?: {
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
           ? parseFloat(order.subtotalPriceSet.shopMoney.amount)
           : parseFloat(order.totalPriceSet.shopMoney.amount),
         currency: order.totalPriceSet.shopMoney.currencyCode,
-        financial_status: order.financialStatus,
+        financial_status: order.displayFinancialStatus,
         order_created_at: order.createdAt,
 
         // Last visit UTM params (last-touch attribution)
