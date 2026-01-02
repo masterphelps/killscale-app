@@ -21,6 +21,13 @@ export const FEATURES = {
    * - Sends offline conversions to Google Ads API
    */
   GOOGLE_ADS_INTEGRATION: process.env.NEXT_PUBLIC_FF_GOOGLE_ADS === 'true',
+  /**
+   * Shopify Integration
+   * - First-party tracking pixel for Shopify stores
+   * - Attribution independent of Meta's pixel
+   * - Server-side event tracking
+   */
+  SHOPIFY: process.env.NEXT_PUBLIC_FF_SHOPIFY === 'true',
 } as const
 
 /**

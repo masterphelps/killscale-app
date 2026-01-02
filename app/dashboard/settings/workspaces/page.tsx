@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink, Radio, Download, RefreshCw, Activity, Smartphone, Eye, EyeOff, Info } from 'lucide-react'
+import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink, Radio, Download, RefreshCw, Activity, Smartphone, Eye, EyeOff, Info, ShoppingBag, Unlink } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
@@ -136,6 +136,20 @@ export default function WorkspacesPage() {
     days_count: number;
   } | null>>({})
   const [isLoadingBreakdown, setIsLoadingBreakdown] = useState(false)
+
+  // Shopify state
+  const [expandedShopify, setExpandedShopify] = useState<string | null>(null)
+  const [shopifyConnections, setShopifyConnections] = useState<Record<string, {
+    shop_domain: string
+    shop_name?: string
+    created_at: string
+    last_sync_at?: string | null
+    order_count?: number
+  } | null>>({})
+  const [shopifyDomainInput, setShopifyDomainInput] = useState<Record<string, string>>({})
+  const [connectingShopify, setConnectingShopify] = useState<string | null>(null)
+  const [syncingShopify, setSyncingShopify] = useState<string | null>(null)
+  const [disconnectingShopify, setDisconnectingShopify] = useState<string | null>(null)
 
   // Manual event filter and edit state
   const [eventSourceFilter, setEventSourceFilter] = useState<'all' | 'manual'>('all')
@@ -558,6 +572,49 @@ export default function WorkspacesPage() {
       loadPortalSettings(expandedPortal)
     }
   }, [expandedPortal])
+
+  // Load Shopify connection data for a workspace
+  const loadShopifyData = async (workspaceId: string) => {
+    if (!user?.id) return
+
+    try {
+      const { data, error } = await supabase
+        .from('shopify_connections')
+        .select('shop_domain, shop_name, created_at, last_sync_at')
+        .eq('workspace_id', workspaceId)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Failed to load Shopify connection:', error)
+        setShopifyConnections(prev => ({ ...prev, [workspaceId]: null }))
+        return
+      }
+
+      // Get order count from shopify_orders table
+      let orderCount = 0
+      if (data) {
+        const { count } = await supabase
+          .from('shopify_orders')
+          .select('*', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceId)
+        orderCount = count || 0
+      }
+
+      setShopifyConnections(prev => ({
+        ...prev,
+        [workspaceId]: data ? { ...data, order_count: orderCount } : null
+      }))
+    } catch (err) {
+      console.error('Failed to load Shopify connection:', err)
+    }
+  }
+
+  // Load Shopify data when expanding
+  useEffect(() => {
+    if (expandedShopify && shopifyConnections[expandedShopify] === undefined) {
+      loadShopifyData(expandedShopify)
+    }
+  }, [expandedShopify])
 
   // ===== PIXEL FUNCTIONS =====
 
@@ -1093,6 +1150,9 @@ ks('pageview');
                             }`}>
                               {account.platform === 'meta' ? 'Meta' : 'Google'}
                             </span>
+                            {account.platform === 'google' && (
+                              <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">Beta</span>
+                            )}
                             <span className="text-sm">{account.ad_account_name}</span>
                           </div>
                           <button
@@ -1122,7 +1182,7 @@ ks('pageview');
                         <option value="" disabled>Select an account...</option>
                         {availableAccounts.map((account) => (
                           <option key={account.id} value={account.id}>
-                            [{account.platform === 'google' ? 'Google' : 'Meta'}] {account.name}
+                            [{account.platform === 'google' ? 'Google (Beta)' : 'Meta'}] {account.name}
                           </option>
                         ))}
                       </select>
@@ -1718,6 +1778,192 @@ ks('pageview');
                                 </div>
                               )
                             })()}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Shopify Store */}
+                <div className="border-t border-border">
+                  <button
+                    onClick={() => setExpandedShopify(expandedShopify === workspace.id ? null : workspace.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-bg-hover/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4 text-green-400" />
+                      <span className="text-sm font-medium">Shopify Store</span>
+                      <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">Beta</span>
+                      {shopifyConnections[workspace.id] && (
+                        <span className="px-2 py-0.5 text-xs rounded bg-green-500/20 text-green-400">Connected</span>
+                      )}
+                    </div>
+                    {expandedShopify === workspace.id ? (
+                      <ChevronUp className="w-4 h-4 text-zinc-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-zinc-500" />
+                    )}
+                  </button>
+
+                  {expandedShopify === workspace.id && (
+                    <div className="p-4 pt-0 space-y-4">
+                      {shopifyConnections[workspace.id] === undefined ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+                        </div>
+                      ) : shopifyConnections[workspace.id] ? (
+                        <>
+                          {/* Store Info Box */}
+                          <div className="p-4 rounded-lg bg-bg-dark border border-border">
+                            <div className="flex items-start gap-3">
+                              <Check className="w-5 h-5 text-verdict-scale flex-shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-white">
+                                  {shopifyConnections[workspace.id]!.shop_name || shopifyConnections[workspace.id]!.shop_domain.replace('.myshopify.com', '')}
+                                </div>
+                                <div className="text-sm text-zinc-500">
+                                  {shopifyConnections[workspace.id]!.shop_domain}
+                                </div>
+                                <div className="text-xs text-zinc-600 mt-1">
+                                  Connected {new Date(shopifyConnections[workspace.id]!.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Order Sync Box */}
+                          <div className="p-4 rounded-lg bg-bg-dark border border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm text-zinc-400">Order Sync</span>
+                              {shopifyConnections[workspace.id]!.last_sync_at && (
+                                <span className="text-xs text-zinc-500">
+                                  Last sync: {(() => {
+                                    const date = new Date(shopifyConnections[workspace.id]!.last_sync_at!)
+                                    const now = new Date()
+                                    const diffMs = now.getTime() - date.getTime()
+                                    const diffMins = Math.floor(diffMs / 60000)
+                                    const diffHours = Math.floor(diffMins / 60)
+                                    const diffDays = Math.floor(diffHours / 24)
+
+                                    if (diffMins < 1) return 'Just now'
+                                    if (diffMins < 60) return `${diffMins} min ago`
+                                    if (diffHours < 24) return `${diffHours}h ago`
+                                    return `${diffDays}d ago`
+                                  })()}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-2xl font-mono text-white">
+                                  {(shopifyConnections[workspace.id]?.order_count ?? 0).toLocaleString()}
+                                </span>
+                                <span className="text-sm text-zinc-500 ml-2">orders</span>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (!user) return
+                                  setSyncingShopify(workspace.id)
+                                  try {
+                                    const response = await fetch('/api/shopify/sync', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ workspaceId: workspace.id, userId: user.id }),
+                                    })
+                                    if (response.ok) {
+                                      loadShopifyData(workspace.id)
+                                    }
+                                  } catch (err) {
+                                    console.error('Shopify sync error:', err)
+                                  } finally {
+                                    setSyncingShopify(null)
+                                  }
+                                }}
+                                disabled={syncingShopify === workspace.id}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                              >
+                                <RefreshCw className={`w-4 h-4 ${syncingShopify === workspace.id ? 'animate-spin' : ''}`} />
+                                {syncingShopify === workspace.id ? 'Syncing...' : 'Sync Now'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Disconnect */}
+                          <div className="pt-3 border-t border-border">
+                            <button
+                              onClick={async () => {
+                                if (!user) return
+                                if (!confirm('Disconnect your Shopify store? This will stop tracking orders from this store.')) return
+                                setDisconnectingShopify(workspace.id)
+                                try {
+                                  const response = await fetch('/api/shopify/disconnect', {
+                                    method: 'DELETE',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ workspaceId: workspace.id, userId: user.id }),
+                                  })
+                                  if (response.ok) {
+                                    setShopifyConnections(prev => ({ ...prev, [workspace.id]: null }))
+                                  }
+                                } catch (err) {
+                                  console.error('Shopify disconnect error:', err)
+                                } finally {
+                                  setDisconnectingShopify(null)
+                                }
+                              }}
+                              disabled={disconnectingShopify === workspace.id}
+                              className="flex items-center gap-2 text-sm text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-50"
+                            >
+                              <Unlink className="w-4 h-4" />
+                              {disconnectingShopify === workspace.id ? 'Disconnecting...' : 'Disconnect Shopify Store'}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Not Connected State */}
+                          <p className="text-sm text-zinc-500 mb-4">
+                            Connect your Shopify store to track purchases and attribute them to your Meta and Google ads.
+                          </p>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-sm font-medium mb-2">Shop Domain</label>
+                              <div className="flex gap-2">
+                                <div className="flex-1 relative">
+                                  <input
+                                    type="text"
+                                    value={shopifyDomainInput[workspace.id] || ''}
+                                    onChange={(e) => setShopifyDomainInput(prev => ({
+                                      ...prev,
+                                      [workspace.id]: e.target.value
+                                    }))}
+                                    placeholder="mystore"
+                                    disabled={connectingShopify === workspace.id}
+                                    className="w-full px-3 py-2 pr-32 bg-bg-dark border border-border rounded-lg text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 disabled:opacity-50"
+                                  />
+                                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500 pointer-events-none">
+                                    .myshopify.com
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const shop = shopifyDomainInput[workspace.id]?.trim()
+                                    if (!shop || !user) return
+                                    setConnectingShopify(workspace.id)
+                                    const normalizedDomain = shop.replace('.myshopify.com', '')
+                                    window.location.href = `/api/auth/shopify?user_id=${user.id}&workspace_id=${workspace.id}&shop=${normalizedDomain}`
+                                  }}
+                                  disabled={connectingShopify === workspace.id || !shopifyDomainInput[workspace.id]?.trim()}
+                                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <ShoppingBag className="w-4 h-4" />
+                                  {connectingShopify === workspace.id ? 'Connecting...' : 'Connect'}
+                                </button>
+                              </div>
+                              <p className="text-xs text-zinc-500 mt-2">
+                                Enter your store name (e.g., "mystore" for mystore.myshopify.com)
+                              </p>
+                            </div>
                           </div>
                         </>
                       )}

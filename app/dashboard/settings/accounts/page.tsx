@@ -54,7 +54,7 @@ const ACCOUNT_LIMITS: Record<string, number> = {
 export default function AccountsPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
-  const { refetch: refetchAccounts } = useAccount()
+  const { refetch: refetchAccounts, currentWorkspaceId } = useAccount()
   const searchParams = useSearchParams()
 
   const [metaConnection, setMetaConnection] = useState<MetaConnection | null>(null)
@@ -77,10 +77,10 @@ export default function AccountsPage() {
   const totalDashboardCount = metaAccountCount + googleAccountCount
 
   useEffect(() => {
-    if (user) {
+    if (user && currentWorkspaceId) {
       loadConnections()
     }
-  }, [user])
+  }, [user, currentWorkspaceId])
 
   useEffect(() => {
     const success = searchParams.get('success')
@@ -504,7 +504,7 @@ export default function AccountsPage() {
       </div>
 
       {/* Google Ads Section */}
-      <div className="bg-bg-card border border-border rounded-xl mb-6 overflow-hidden">
+      <div className="bg-bg-card border border-border rounded-xl mb-4 overflow-hidden">
         <button
           onClick={() => setGoogleExpanded(!googleExpanded)}
           className="w-full p-4 flex items-center justify-between hover:bg-bg-hover transition-colors"
