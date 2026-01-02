@@ -5,7 +5,9 @@ const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY!
 const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/api/auth/shopify/callback`
 
 // Scopes needed for Shopify API
-const SCOPES = 'read_orders'
+// read_orders: Access order data
+// read_customer_events: Access customer journey/attribution data
+const SCOPES = 'read_orders,read_customer_events'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

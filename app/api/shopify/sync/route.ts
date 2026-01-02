@@ -128,8 +128,15 @@ async function fetchAllOrders(
 
     const result: OrdersResponse = await response.json()
 
+    console.log('[Shopify Sync] GraphQL response:', JSON.stringify(result, null, 2))
+
     if (result.errors && result.errors.length > 0) {
       throw new Error(`Shopify GraphQL error: ${result.errors.map(e => e.message).join(', ')}`)
+    }
+
+    if (!result.data || !result.data.orders) {
+      console.error('[Shopify Sync] Unexpected response structure:', result)
+      throw new Error('Unexpected response from Shopify API')
     }
 
     const { edges, pageInfo } = result.data.orders
@@ -171,16 +178,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
     }
 
-    // Verify user is a member of this workspace
-    const { data: membership, error: memberError } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', workspaceId)
+    // Verify user has access to this workspace (owner or member)
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('id', workspaceId)
       .eq('user_id', userId)
       .single()
 
-    if (memberError || !membership) {
-      return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
+    if (!workspace) {
+      // Not the owner, check if they're a member
+      const { data: membership } = await supabase
+        .from('workspace_members')
+        .select('role')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .single()
+
+      if (!membership) {
+        return NextResponse.json({ error: 'Access denied to workspace' }, { status: 403 })
+      }
     }
 
     // Get Shopify connection for this workspace
