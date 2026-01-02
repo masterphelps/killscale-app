@@ -112,12 +112,15 @@ export async function GET(request: NextRequest) {
 
     // For simple last_touch, use the existing simple aggregation
     if (attributionModel === 'last_touch') {
+      // Only count actual conversion events, not page views
+      // Filter out pageview and any *_page_view events (like purchase_page_view)
       let query = supabase
         .from('pixel_events')
         .select('utm_content, event_type, event_value')
         .eq('pixel_id', pixelId)
         .not('utm_content', 'is', null)
-        .neq('event_type', 'pageview')
+        .not('event_type', 'ilike', '%pageview%')
+        .not('event_type', 'ilike', '%page_view%')
 
       if (dateStart) {
         query = query.gte('event_time', dateStart)
@@ -177,11 +180,13 @@ export async function GET(request: NextRequest) {
 
     // Multi-touch attribution: need to process by client journey
     // Step 1: Get all conversion events (grouped by client_id)
+    // Filter out pageview and any *_page_view events (like purchase_page_view)
     let conversionQuery = supabase
       .from('pixel_events')
       .select('id, client_id, utm_content, event_type, event_value, event_time')
       .eq('pixel_id', pixelId)
-      .neq('event_type', 'pageview')
+      .not('event_type', 'ilike', '%pageview%')
+      .not('event_type', 'ilike', '%page_view%')
 
     if (dateStart) {
       conversionQuery = conversionQuery.gte('event_time', dateStart)
