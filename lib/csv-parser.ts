@@ -39,6 +39,9 @@ export type CSVRow = {
   _metaRevenue?: number
   _manualRevenue?: number
   _manualCount?: number
+  // Internal tracking for Shopify attribution
+  _shopifyAttribution?: boolean
+  _metaResults?: number
 }
 
 const COLUMN_MAP: Record<string, string> = {

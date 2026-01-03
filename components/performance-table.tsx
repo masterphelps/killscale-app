@@ -168,6 +168,8 @@ type PerformanceTableProps = {
     roas: number
   }) => Promise<void>
   onUnstarAd?: (adId: string) => Promise<void>
+  // Shopify attribution data - replaces Meta revenue/results when Shopify is source of truth
+  shopifyAttribution?: Record<string, { revenue: number; orders: number }>
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -620,7 +622,8 @@ export function PerformanceTable({
   starredCreativeIds,
   starredCreativeCounts,
   onStarAd,
-  onUnstarAd
+  onUnstarAd,
+  shopifyAttribution
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -738,12 +741,133 @@ export function PerformanceTable({
 
           // Now aggregate from updated ads
           updatedAds.forEach(ad => {
-            adsetImpressions += ad.impressions || 0
-            adsetClicks += ad.clicks || 0
-            adsetSpend += ad.spend || 0
-            adsetPurchases += ad.purchases || 0
-            adsetRevenue += ad.revenue || 0
-            adsetResults += ad.results || ad.purchases || 0
+            adsetImpressions += ad.impressions ?? 0
+            adsetClicks += ad.clicks ?? 0
+            adsetSpend += ad.spend ?? 0
+            adsetPurchases += ad.purchases ?? 0
+            adsetRevenue += ad.revenue ?? 0
+            adsetResults += ad.results ?? ad.purchases ?? 0
+          })
+
+          // Roll up to campaign
+          campaignImpressions += adsetImpressions
+          campaignClicks += adsetClicks
+          campaignSpend += adsetSpend
+          campaignPurchases += adsetPurchases
+          campaignRevenue += adsetRevenue
+          campaignResults += adsetResults
+
+          // Calculate derived metrics for adset
+          const adsetRoas = adsetSpend > 0 ? adsetRevenue / adsetSpend : 0
+          const adsetCtr = adsetImpressions > 0 ? (adsetClicks / adsetImpressions) * 100 : 0
+          return {
+            ...adset,
+            impressions: adsetImpressions,
+            clicks: adsetClicks,
+            spend: adsetSpend,
+            purchases: adsetPurchases,
+            revenue: adsetRevenue,
+            results: adsetResults,
+            roas: adsetRoas,
+            ctr: adsetCtr,
+            cpr: adsetPurchases > 0 ? adsetSpend / adsetPurchases : 0,
+            cpa: adsetPurchases > 0 ? adsetSpend / adsetPurchases : 0,
+            convRate: adsetClicks > 0 ? (adsetPurchases / adsetClicks) * 100 : 0,
+            verdict: calculateVerdict(adsetSpend, adsetRoas, rules),
+            children: updatedAds
+          }
+        })
+
+        // Calculate derived metrics for campaign
+        const campaignRoas = campaignSpend > 0 ? campaignRevenue / campaignSpend : 0
+        const campaignCtr = campaignImpressions > 0 ? (campaignClicks / campaignImpressions) * 100 : 0
+        return {
+          ...campaign,
+          impressions: campaignImpressions,
+          clicks: campaignClicks,
+          spend: campaignSpend,
+          purchases: campaignPurchases,
+          revenue: campaignRevenue,
+          results: campaignResults,
+          roas: campaignRoas,
+          ctr: campaignCtr,
+          cpr: campaignPurchases > 0 ? campaignSpend / campaignPurchases : 0,
+          cpa: campaignPurchases > 0 ? campaignSpend / campaignPurchases : 0,
+          convRate: campaignClicks > 0 ? (campaignPurchases / campaignClicks) * 100 : 0,
+          verdict: calculateVerdict(campaignSpend, campaignRoas, rules),
+          children: updatedAdsets
+        }
+      })
+    }
+
+    // If Shopify is the revenue source, apply Shopify attribution per-ad
+    // Shopify data is aggregated by ad_id - we replace Meta revenue/purchases/results
+    // Note: Even if shopifyAttribution is empty, we still apply this logic to zero out Meta values
+    if (shopifyAttribution) {
+      return baseHierarchy.map(campaign => {
+        // Aggregate all metrics from adsets (which aggregate from ads)
+        let campaignImpressions = 0
+        let campaignClicks = 0
+        let campaignSpend = 0
+        let campaignPurchases = 0
+        let campaignRevenue = 0
+        let campaignResults = 0
+
+        const updatedAdsets = campaign.children?.map(adset => {
+          // Aggregate all metrics from child ads
+          let adsetImpressions = 0
+          let adsetClicks = 0
+          let adsetSpend = 0
+          let adsetPurchases = 0
+          let adsetRevenue = 0
+          let adsetResults = 0
+
+          // Apply Shopify attribution to each ad
+          const updatedAds = adset.children?.map(ad => {
+            const adId = ad.id
+            const isValidAdId = adId && typeof adId === 'string' && adId.length > 0 && adId !== 'null' && adId !== 'undefined'
+            const shopifyData = isValidAdId ? shopifyAttribution[adId] : null
+
+            if (shopifyData) {
+              // Replace with Shopify data
+              const adRoas = ad.spend > 0 ? shopifyData.revenue / ad.spend : 0
+
+              return {
+                ...ad,
+                purchases: shopifyData.orders,
+                revenue: shopifyData.revenue,
+                results: shopifyData.orders,
+                roas: adRoas,
+                cpr: shopifyData.orders > 0 ? ad.spend / shopifyData.orders : 0,
+                cpa: shopifyData.orders > 0 ? ad.spend / shopifyData.orders : 0,
+                convRate: ad.clicks > 0 ? (shopifyData.orders / ad.clicks) * 100 : 0,
+                verdict: calculateVerdict(ad.spend, adRoas, rules)
+              }
+            }
+
+            // No Shopify data for this ad - zero out revenue/purchases
+            return {
+              ...ad,
+              purchases: 0,
+              revenue: 0,
+              results: 0,
+              roas: 0,
+              cpr: 0,
+              cpa: 0,
+              convRate: 0,
+              verdict: calculateVerdict(ad.spend, 0, rules)
+            }
+          }) || []
+
+          // Now aggregate from updated ads
+          // Use ?? (nullish coalescing) to preserve 0 values from Shopify attribution
+          updatedAds.forEach(ad => {
+            adsetImpressions += ad.impressions ?? 0
+            adsetClicks += ad.clicks ?? 0
+            adsetSpend += ad.spend ?? 0
+            adsetPurchases += ad.purchases ?? 0
+            adsetRevenue += ad.revenue ?? 0
+            adsetResults += ad.results ?? 0
           })
 
           // Roll up to campaign
@@ -798,7 +922,7 @@ export function PerformanceTable({
     }
 
     return baseHierarchy
-  }, [data, rules, lastTouchAttribution])
+  }, [data, rules, lastTouchAttribution, shopifyAttribution])
 
   // Handle deep-linking highlight from alerts
   useEffect(() => {

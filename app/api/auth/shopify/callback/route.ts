@@ -121,6 +121,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=db_failed`)
     }
 
+    // Register webhooks for real-time order updates
+    const webhookUrl = `${baseUrl}/api/shopify/webhook`
+    const webhookTopics = ['orders/create', 'orders/updated', 'orders/cancelled']
+
+    for (const topic of webhookTopics) {
+      try {
+        const webhookResponse = await fetch(`https://${shop}/admin/api/2025-01/webhooks.json`, {
+          method: 'POST',
+          headers: {
+            'X-Shopify-Access-Token': access_token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            webhook: {
+              topic,
+              address: webhookUrl,
+              format: 'json',
+            },
+          }),
+        })
+
+        const webhookResult = await webhookResponse.json()
+        if (webhookResult.errors) {
+          // Webhook might already exist, that's okay
+          console.log(`[Shopify] Webhook ${topic} registration:`, webhookResult.errors)
+        } else {
+          console.log(`[Shopify] Registered webhook: ${topic}`)
+        }
+      } catch (webhookErr) {
+        // Don't fail the whole flow for webhook registration errors
+        console.error(`[Shopify] Failed to register webhook ${topic}:`, webhookErr)
+      }
+    }
+
     return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify=success`)
 
   } catch (err) {

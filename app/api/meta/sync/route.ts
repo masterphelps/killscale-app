@@ -914,32 +914,22 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Delete existing data - for delta sync only delete the dates we're updating
-    if (isDeltaSync) {
-      // Only delete data for the delta date range (today + yesterday)
-      console.log('[Sync] Delta delete - removing data for', deltaStartDate, 'to', deltaEndDate)
-      const { error: deleteError } = await supabase
-        .from('ad_data')
-        .delete()
-        .eq('user_id', userId)
-        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
-        .gte('date_start', deltaStartDate)
-        .lte('date_start', deltaEndDate)
+    // Delete existing data only for the dates being synced (preserves historical data)
+    // This allows ads from previous date ranges to remain in the DB for attribution matching
+    const deleteStartDate = isDeltaSync ? deltaStartDate : requestedRange.since
+    const deleteEndDate = isDeltaSync ? deltaEndDate : requestedRange.until
 
-      if (deleteError) {
-        console.error('Delta delete error:', deleteError)
-      }
-    } else {
-      // Full sync - delete all data for this account
-      const { error: deleteError } = await supabase
-        .from('ad_data')
-        .delete()
-        .eq('user_id', userId)
-        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+    console.log('[Sync] Deleting data for date range:', deleteStartDate, 'to', deleteEndDate, '(preserving historical data)')
+    const { error: deleteError } = await supabase
+      .from('ad_data')
+      .delete()
+      .eq('user_id', userId)
+      .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+      .gte('date_start', deleteStartDate)
+      .lte('date_start', deleteEndDate)
 
-      if (deleteError) {
-        console.error('Delete error:', deleteError)
-      }
+    if (deleteError) {
+      console.error('Delete error:', deleteError)
     }
 
     // Insert new data in parallel batches for speed

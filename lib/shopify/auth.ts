@@ -109,3 +109,49 @@ export async function updateLastSyncAt(workspaceId: string): Promise<void> {
     })
     .eq('workspace_id', workspaceId)
 }
+
+/**
+ * Check if workspace has a Shopify connection
+ */
+export async function hasShopifyConnection(workspaceId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('shopify_connections')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  return !error && !!data
+}
+
+/**
+ * Get Shopify connection status for a workspace
+ */
+export async function getShopifyConnectionStatus(workspaceId: string): Promise<{
+  connected: boolean
+  shop_domain?: string
+  last_sync_at?: string
+  order_count?: number
+}> {
+  const { data: connection, error } = await supabase
+    .from('shopify_connections')
+    .select('shop_domain, last_sync_at')
+    .eq('workspace_id', workspaceId)
+    .single()
+
+  if (error || !connection) {
+    return { connected: false }
+  }
+
+  // Get order count for this workspace
+  const { count } = await supabase
+    .from('shopify_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+
+  return {
+    connected: true,
+    shop_domain: connection.shop_domain,
+    last_sync_at: connection.last_sync_at || undefined,
+    order_count: count || 0,
+  }
+}

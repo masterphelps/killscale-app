@@ -23,6 +23,7 @@ type Workspace = {
   id: string
   name: string
   is_default: boolean
+  business_type?: 'ecommerce' | 'leadgen'
 }
 
 type DataSource = 'none' | 'csv' | 'meta_api'

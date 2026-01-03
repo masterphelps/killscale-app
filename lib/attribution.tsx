@@ -12,6 +12,8 @@ const supabase = createClient(
 )
 
 export type AttributionSource = 'meta' | 'killscale'
+export type RevenueSource = 'shopify' | 'pixel' | 'meta'
+export type BusinessType = 'ecommerce' | 'leadgen'
 
 type PixelConfig = {
   pixel_id: string
@@ -27,6 +29,21 @@ export type AttributionData = Record<string, {
   conversions: number
   revenue: number
 }>
+
+// Shopify attribution data keyed by ad_id (last_utm_content from orders)
+export type ShopifyAttributionData = Record<string, {
+  revenue: number
+  orders: number
+}>
+
+type ShopifyTotals = {
+  total_revenue: number
+  total_orders: number
+  attributed_revenue: number
+  attributed_orders: number
+  unattributed_revenue: number
+  unattributed_orders: number
+}
 
 type AttributionContextType = {
   // Current state
@@ -47,8 +64,16 @@ type AttributionContextType = {
   // TRUE when using a multi-touch model (linear, time_decay, position_based)
   isMultiTouchModel: boolean
 
+  // NEW: Business type and Shopify state
+  businessType: BusinessType
+  hasShopify: boolean
+  shopifyAttribution: ShopifyAttributionData
+  shopifyTotals: ShopifyTotals | null
+  revenueSource: RevenueSource
+
   // Actions
   refreshAttribution: (dateStart: string, dateEnd: string) => Promise<void>
+  refreshShopifyAttribution: (dateStart: string, dateEnd: string) => Promise<void>
   reloadConfig: () => void
 }
 
@@ -64,7 +89,13 @@ const AttributionContext = createContext<AttributionContextType>({
   loading: true,
   isKillScaleActive: false,
   isMultiTouchModel: false,
+  businessType: 'ecommerce',
+  hasShopify: false,
+  shopifyAttribution: {},
+  shopifyTotals: null,
+  revenueSource: 'meta',
   refreshAttribution: async () => {},
+  refreshShopifyAttribution: async () => {},
   reloadConfig: () => {},
 })
 
@@ -79,6 +110,12 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
   const [attributionModel, setAttributionModel] = useState<AttributionModel>('last_touch')
   const [loading, setLoading] = useState(true)
   const [configVersion, setConfigVersion] = useState(0)
+
+  // NEW: Shopify state
+  const [businessType, setBusinessType] = useState<BusinessType>('ecommerce')
+  const [hasShopify, setHasShopify] = useState(false)
+  const [shopifyAttribution, setShopifyAttribution] = useState<ShopifyAttributionData>({})
+  const [shopifyTotals, setShopifyTotals] = useState<ShopifyTotals | null>(null)
 
   const userId = user?.id
 
@@ -97,6 +134,10 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     setLastTouchAttribution({})
     setMultiTouchAttribution({})
     setAttributionModel('last_touch')
+    setBusinessType('ecommerce')
+    setHasShopify(false)
+    setShopifyAttribution({})
+    setShopifyTotals(null)
 
     if (!userId || !currentWorkspaceId) {
       // No workspace = no pixel attribution available
@@ -105,9 +146,29 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const loadPixelConfig = async () => {
+    const loadConfig = async () => {
       setLoading(true)
       try {
+        // Load workspace to get business_type
+        const { data: workspace } = await supabase
+          .from('workspaces')
+          .select('business_type')
+          .eq('id', currentWorkspaceId)
+          .single()
+
+        if (workspace?.business_type) {
+          setBusinessType(workspace.business_type as BusinessType)
+        }
+
+        // Check for Shopify connection
+        const { data: shopifyConn } = await supabase
+          .from('shopify_connections')
+          .select('id')
+          .eq('workspace_id', currentWorkspaceId)
+          .single()
+
+        setHasShopify(!!shopifyConn)
+
         // Query workspace_pixels for this workspace's pixel config
         const { data: wsPixel, error } = await supabase
           .from('workspace_pixels')
@@ -125,8 +186,10 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
         // Map workspace_pixels values ('native'/'pixel') to internal values ('meta'/'killscale')
         const mappedSource: AttributionSource = wsPixel.attribution_source === 'pixel' ? 'killscale' : 'meta'
 
-        console.log('[Attribution] Loaded workspace pixel config:', {
+        console.log('[Attribution] Loaded workspace config:', {
           workspaceId: currentWorkspaceId,
+          businessType: workspace?.business_type,
+          hasShopify: !!shopifyConn,
           pixelId: wsPixel.pixel_id,
           rawSource: wsPixel.attribution_source,
           mappedSource,
@@ -143,14 +206,14 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
           time_decay_half_life: wsPixel.time_decay_half_life || 7,
         })
       } catch (err) {
-        console.error('Error loading pixel config:', err)
+        console.error('Error loading config:', err)
         setPixelConfig(null)
       } finally {
         setLoading(false)
       }
     }
 
-    loadPixelConfig()
+    loadConfig()
   }, [userId, currentWorkspaceId, configVersion])
 
   // Refresh attribution data from KillScale pixel
@@ -217,12 +280,67 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     }
   }, [pixelConfig?.pixel_id, pixelConfig?.workspace_id, pixelConfig?.attribution_source, userId])
 
+  // NEW: Refresh Shopify attribution data
+  const refreshShopifyAttribution = useCallback(async (dateStart: string, dateEnd: string) => {
+    console.log('[Attribution] refreshShopifyAttribution called:', {
+      hasShopify,
+      currentWorkspaceId,
+      userId,
+      dateStart,
+      dateEnd
+    })
+
+    if (!hasShopify || !currentWorkspaceId || !userId) {
+      console.log('[Attribution] Skipping Shopify - not connected or missing params')
+      setShopifyAttribution({})
+      setShopifyTotals(null)
+      return
+    }
+
+    try {
+      // Pass timezone offset so API can convert local dates to UTC correctly
+      const timezoneOffset = new Date().getTimezoneOffset()
+      const url = `/api/shopify/attribution?workspaceId=${currentWorkspaceId}&userId=${userId}&dateStart=${dateStart}&dateEnd=${dateEnd}&timezoneOffset=${timezoneOffset}`
+      console.log('[Attribution] Fetching Shopify attribution:', url)
+      const res = await fetch(url)
+      const data = await res.json()
+      console.log('[Attribution] Shopify API Response:', data)
+
+      if (data.attribution && data.totals) {
+        console.log('[Attribution] Loaded Shopify data:', {
+          totalOrders: data.totals.total_orders,
+          totalRevenue: data.totals.total_revenue,
+          uniqueAds: Object.keys(data.attribution).length,
+          sampleData: Object.entries(data.attribution).slice(0, 3)
+        })
+        setShopifyAttribution(data.attribution)
+        setShopifyTotals(data.totals)
+      } else {
+        console.log('[Attribution] No Shopify attribution data in response')
+        setShopifyAttribution({})
+        setShopifyTotals(null)
+      }
+    } catch (err) {
+      console.error('Failed to load Shopify attribution:', err)
+      setShopifyAttribution({})
+      setShopifyTotals(null)
+    }
+  }, [hasShopify, currentWorkspaceId, userId])
+
   // Computed values
   const isKillScaleActive = pixelConfig?.attribution_source === 'killscale'
   const isMultiTouchModel = attributionModel !== 'last_touch'
   const source = pixelConfig?.attribution_source || 'meta'
   const pixelId = pixelConfig?.pixel_id || null
   const workspaceId = pixelConfig?.workspace_id || null
+
+  // NEW: Determine revenue source based on waterfall logic
+  const revenueSource: RevenueSource = useMemo(() => {
+    if (businessType === 'leadgen') return 'meta' // Lead gen uses Meta results
+    if (hasShopify) return 'shopify'
+    if (isKillScaleActive) return 'pixel'
+    return 'meta'
+  }, [businessType, hasShopify, isKillScaleActive])
 
   const contextValue = useMemo(() => ({
     source,
@@ -236,9 +354,15 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     loading,
     isKillScaleActive,
     isMultiTouchModel,
+    businessType,
+    hasShopify,
+    shopifyAttribution,
+    shopifyTotals,
+    revenueSource,
     refreshAttribution,
+    refreshShopifyAttribution,
     reloadConfig,
-  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, refreshAttribution, reloadConfig])
+  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, businessType, hasShopify, shopifyAttribution, shopifyTotals, revenueSource, refreshAttribution, refreshShopifyAttribution, reloadConfig])
 
   return (
     <AttributionContext.Provider value={contextValue}>

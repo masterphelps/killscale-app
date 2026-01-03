@@ -9,12 +9,14 @@ import { useAttribution } from '@/lib/attribution'
 import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'
 import { ManualEventModal } from '@/components/manual-event-modal'
 import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 type Workspace = {
   id: string
   name: string
   description: string | null
+  business_type: 'ecommerce' | 'leadgen'
   created_at: string
 }
 
@@ -150,6 +152,12 @@ export default function WorkspacesPage() {
   const [connectingShopify, setConnectingShopify] = useState<string | null>(null)
   const [syncingShopify, setSyncingShopify] = useState<string | null>(null)
   const [disconnectingShopify, setDisconnectingShopify] = useState<string | null>(null)
+  const [webhookStatus, setWebhookStatus] = useState<Record<string, {
+    active: boolean
+    webhooks: Array<{ id: number; topic: string; address: string; created_at: string }>
+    missing: string[]
+  } | null>>({})
+  const [registeringWebhooks, setRegisteringWebhooks] = useState<string | null>(null)
 
   // Manual event filter and edit state
   const [eventSourceFilter, setEventSourceFilter] = useState<'all' | 'manual'>('all')
@@ -285,6 +293,19 @@ export default function WorkspacesPage() {
 
     setEditingId(null)
     setEditingName('')
+  }
+
+  const updateBusinessType = async (workspaceId: string, businessType: 'ecommerce' | 'leadgen') => {
+    const { error } = await supabase
+      .from('workspaces')
+      .update({ business_type: businessType })
+      .eq('id', workspaceId)
+
+    if (!error) {
+      setWorkspaces(prev => prev.map(w =>
+        w.id === workspaceId ? { ...w, business_type: businessType } : w
+      ))
+    }
   }
 
   const handleAddAccount = async (workspaceId: string, account: { id: string; name: string; platform?: 'meta' | 'google' }) => {
@@ -604,6 +625,19 @@ export default function WorkspacesPage() {
         ...prev,
         [workspaceId]: data ? { ...data, order_count: orderCount } : null
       }))
+
+      // Also load webhook status if connected
+      if (data) {
+        try {
+          const webhookRes = await fetch(`/api/shopify/webhooks?workspaceId=${workspaceId}&userId=${user.id}`)
+          if (webhookRes.ok) {
+            const webhookData = await webhookRes.json()
+            setWebhookStatus(prev => ({ ...prev, [workspaceId]: webhookData }))
+          }
+        } catch (webhookErr) {
+          console.error('Failed to load webhook status:', webhookErr)
+        }
+      }
     } catch (err) {
       console.error('Failed to load Shopify connection:', err)
     }
@@ -1127,6 +1161,35 @@ ks('pageview');
                       </div>
                     </>
                   )}
+                </div>
+
+                {/* Business Type */}
+                <div className="flex items-center gap-4 p-4 border-b border-border">
+                  <span className="text-sm font-medium">Business Type</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateBusinessType(workspace.id, 'ecommerce')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-sm transition-colors',
+                        workspace.business_type === 'ecommerce'
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                          : 'bg-bg-dark text-zinc-400 border border-border hover:border-zinc-500'
+                      )}
+                    >
+                      E-commerce
+                    </button>
+                    <button
+                      onClick={() => updateBusinessType(workspace.id, 'leadgen')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-sm transition-colors',
+                        workspace.business_type === 'leadgen'
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          : 'bg-bg-dark text-zinc-400 border border-border hover:border-zinc-500'
+                      )}
+                    >
+                      Lead Gen
+                    </button>
+                  </div>
                 </div>
 
                 {/* Accounts */}
@@ -1828,6 +1891,12 @@ ks('pageview');
                                 <div className="text-xs text-zinc-600 mt-1">
                                   Connected {new Date(shopifyConnections[workspace.id]!.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                 </div>
+                                {workspace.business_type === 'ecommerce' && (
+                                  <div className="text-xs text-green-400 mt-2 flex items-center gap-1">
+                                    <Check className="w-3 h-3" />
+                                    Shopify is your revenue source
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1889,6 +1958,81 @@ ks('pageview');
                             </div>
                           </div>
 
+                          {/* Webhook Status Box */}
+                          <div className="p-4 rounded-lg bg-bg-dark border border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm text-zinc-400">Real-time Webhooks</span>
+                              {webhookStatus[workspace.id] && (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  webhookStatus[workspace.id]!.active
+                                    ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-amber-500/20 text-amber-400'
+                                }`}>
+                                  {webhookStatus[workspace.id]!.active ? 'Active' : 'Setup Required'}
+                                </span>
+                              )}
+                            </div>
+                            {webhookStatus[workspace.id] ? (
+                              <div className="space-y-2">
+                                {webhookStatus[workspace.id]!.active ? (
+                                  <div className="flex items-center gap-2 text-sm text-green-400">
+                                    <Activity className="w-4 h-4" />
+                                    <span>{webhookStatus[workspace.id]!.webhooks.length} webhooks registered</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center gap-2 text-sm text-amber-400 mb-2">
+                                      <AlertCircle className="w-4 h-4" />
+                                      <span>Missing: {webhookStatus[workspace.id]!.missing.join(', ')}</span>
+                                    </div>
+                                    <button
+                                      onClick={async () => {
+                                        if (!user) return
+                                        setRegisteringWebhooks(workspace.id)
+                                        try {
+                                          const response = await fetch('/api/shopify/webhooks', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ workspaceId: workspace.id, userId: user.id }),
+                                          })
+                                          if (response.ok) {
+                                            loadShopifyData(workspace.id)
+                                          }
+                                        } catch (err) {
+                                          console.error('Webhook registration error:', err)
+                                        } finally {
+                                          setRegisteringWebhooks(null)
+                                        }
+                                      }}
+                                      disabled={registeringWebhooks === workspace.id}
+                                      className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                    >
+                                      {registeringWebhooks === workspace.id ? (
+                                        <>
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                          Registering...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Activity className="w-4 h-4" />
+                                          Register Webhooks
+                                        </>
+                                      )}
+                                    </button>
+                                  </>
+                                )}
+                                <p className="text-xs text-zinc-500">
+                                  Webhooks sync orders in real-time as they happen in Shopify.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 text-sm text-zinc-500">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Loading webhook status...</span>
+                              </div>
+                            )}
+                          </div>
+
                           {/* Disconnect */}
                           <div className="pt-3 border-t border-border">
                             <button
@@ -1922,49 +2066,67 @@ ks('pageview');
                       ) : (
                         <>
                           {/* Not Connected State */}
-                          <p className="text-sm text-zinc-500 mb-4">
-                            Connect your Shopify store to track purchases and attribute them to your Meta and Google ads.
-                          </p>
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-sm font-medium mb-2">Shop Domain</label>
-                              <div className="flex gap-2">
-                                <div className="flex-1 relative">
-                                  <input
-                                    type="text"
-                                    value={shopifyDomainInput[workspace.id] || ''}
-                                    onChange={(e) => setShopifyDomainInput(prev => ({
-                                      ...prev,
-                                      [workspace.id]: e.target.value
-                                    }))}
-                                    placeholder="mystore"
-                                    disabled={connectingShopify === workspace.id}
-                                    className="w-full px-3 py-2 pr-32 bg-bg-dark border border-border rounded-lg text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 disabled:opacity-50"
-                                  />
-                                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500 pointer-events-none">
-                                    .myshopify.com
-                                  </div>
+                          {workspace.business_type === 'leadgen' ? (
+                            <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                              <div className="flex items-start gap-3">
+                                <Info className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                                <div>
+                                  <p className="text-sm text-amber-400 font-medium mb-1">
+                                    Shopify integration is for e-commerce
+                                  </p>
+                                  <p className="text-xs text-amber-400/80">
+                                    Switch to E-commerce mode above to use Shopify.
+                                  </p>
                                 </div>
-                                <button
-                                  onClick={() => {
-                                    const shop = shopifyDomainInput[workspace.id]?.trim()
-                                    if (!shop || !user) return
-                                    setConnectingShopify(workspace.id)
-                                    const normalizedDomain = shop.replace('.myshopify.com', '')
-                                    window.location.href = `/api/auth/shopify?user_id=${user.id}&workspace_id=${workspace.id}&shop=${normalizedDomain}`
-                                  }}
-                                  disabled={connectingShopify === workspace.id || !shopifyDomainInput[workspace.id]?.trim()}
-                                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  <ShoppingBag className="w-4 h-4" />
-                                  {connectingShopify === workspace.id ? 'Connecting...' : 'Connect'}
-                                </button>
                               </div>
-                              <p className="text-xs text-zinc-500 mt-2">
-                                Enter your store name (e.g., "mystore" for mystore.myshopify.com)
-                              </p>
                             </div>
-                          </div>
+                          ) : (
+                            <>
+                              <p className="text-sm text-zinc-500 mb-4">
+                                Connect your Shopify store to track purchases and attribute them to your Meta and Google ads.
+                              </p>
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-sm font-medium mb-2">Shop Domain</label>
+                                  <div className="flex gap-2">
+                                    <div className="flex-1 relative">
+                                      <input
+                                        type="text"
+                                        value={shopifyDomainInput[workspace.id] || ''}
+                                        onChange={(e) => setShopifyDomainInput(prev => ({
+                                          ...prev,
+                                          [workspace.id]: e.target.value
+                                        }))}
+                                        placeholder="mystore"
+                                        disabled={connectingShopify === workspace.id}
+                                        className="w-full px-3 py-2 pr-32 bg-bg-dark border border-border rounded-lg text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 disabled:opacity-50"
+                                      />
+                                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500 pointer-events-none">
+                                        .myshopify.com
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        const shop = shopifyDomainInput[workspace.id]?.trim()
+                                        if (!shop || !user) return
+                                        setConnectingShopify(workspace.id)
+                                        const normalizedDomain = shop.replace('.myshopify.com', '')
+                                        window.location.href = `/api/auth/shopify?user_id=${user.id}&workspace_id=${workspace.id}&shop=${normalizedDomain}`
+                                      }}
+                                      disabled={connectingShopify === workspace.id || !shopifyDomainInput[workspace.id]?.trim()}
+                                      className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      <ShoppingBag className="w-4 h-4" />
+                                      {connectingShopify === workspace.id ? 'Connecting...' : 'Connect'}
+                                    </button>
+                                  </div>
+                                  <p className="text-xs text-zinc-500 mt-2">
+                                    Enter your store name (e.g., "mystore" for mystore.myshopify.com)
+                                  </p>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

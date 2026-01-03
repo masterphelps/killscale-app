@@ -23,13 +23,16 @@ import {
   Scale,
   Users,
   Layers,
-  Building2
+  Building2,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAccount } from '@/lib/account'
+import { useSidebar } from '@/lib/sidebar-state'
 
 interface Workspace {
   id: string
@@ -68,6 +71,7 @@ export function Sidebar() {
     currentWorkspace,
     switchWorkspace
   } = useAccount()
+  const { isCollapsed, toggleSidebar, expandSidebar } = useSidebar()
 
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [alertCount, setUnreadAlertCount] = useState(0)
@@ -208,59 +212,76 @@ export function Sidebar() {
     : null
 
   return (
-    <aside className="w-60 bg-bg-sidebar border-r border-border fixed h-screen overflow-y-auto flex flex-col p-4">
-      {/* Logo + Privacy Toggle (Agency only) */}
-      <div className="flex items-center justify-between mb-6">
-        <Link href="/dashboard" className="flex items-center gap-2 px-2">
-          <svg width="150" height="30" viewBox="0 0 280 50">
-            <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-            <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-          </svg>
-        </Link>
-        {plan === 'Pro' && (
+    <aside className={cn(
+      "bg-bg-sidebar border-r border-border fixed h-screen overflow-y-auto flex flex-col p-4",
+      "transition-all duration-200 ease-out",
+      isCollapsed ? "w-16" : "w-60"
+    )}>
+      {/* Logo + Collapse Toggle */}
+      {!isCollapsed ? (
+        <div className="flex items-center justify-between mb-6">
+          <Link href="/dashboard" className="flex items-center gap-2 px-2">
+            <svg width="150" height="30" viewBox="0 0 280 50">
+              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
+              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
+            </svg>
+          </Link>
           <button
-            onClick={togglePrivacyMode}
-            className={cn(
-              "p-2 rounded-lg transition-colors",
-              isPrivacyMode
-                ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover"
-            )}
-            title={isPrivacyMode ? "Privacy mode ON - click to show real data" : "Privacy mode OFF - click to hide sensitive data"}
+            onClick={toggleSidebar}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors"
+            title="Collapse sidebar"
           >
-            {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            <PanelLeftClose className="w-4 h-4" />
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <Link href="/dashboard" className="flex items-center justify-center">
+            <svg width="32" height="32" viewBox="0 0 50 50">
+              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
+              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </Link>
+          <button
+            onClick={toggleSidebar}
+            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-bg-hover transition-colors"
+            title="Expand sidebar"
+          >
+            <PanelLeft className="w-5 h-5" />
+          </button>
+        </div>
+      )}
 
       {/* Account Selector */}
-      <div className="relative mb-6">
-        <button
-          onClick={() => canShowDropdown && setShowAccountDropdown(!showAccountDropdown)}
-          className={cn(
-            "w-full bg-bg-card border border-border rounded-lg p-3 text-left transition-colors",
-            canShowDropdown && "hover:border-zinc-600 cursor-pointer",
-          )}
-        >
-          <div className="text-xs text-zinc-500 mb-1">
-            {getSelectorLabel()}
-          </div>
-          <div className="flex items-center justify-between text-sm font-medium">
-            <span className="truncate flex items-center gap-2">
-              {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
-              {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
-              {getDisplayName()}
-            </span>
-            {canShowDropdown && (
-              <ChevronDown className={cn(
-                "w-4 h-4 text-zinc-500 transition-transform",
-                showAccountDropdown && "rotate-180"
-              )} />
+      {!isCollapsed ? (
+        <div className="relative mb-6">
+          <button
+            onClick={() => canShowDropdown && setShowAccountDropdown(!showAccountDropdown)}
+            className={cn(
+              "w-full bg-bg-card border border-border rounded-lg p-3 text-left transition-colors",
+              canShowDropdown && "hover:border-zinc-600 cursor-pointer",
             )}
-          </div>
-        </button>
+          >
+            <div className="text-xs text-zinc-500 mb-1">
+              {getSelectorLabel()}
+            </div>
+            <div className="flex items-center justify-between text-sm font-medium">
+              <span className="truncate flex items-center gap-2">
+                {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
+                {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
+                {getDisplayName()}
+              </span>
+              {canShowDropdown && (
+                <ChevronDown className={cn(
+                  "w-4 h-4 text-zinc-500 transition-transform",
+                  showAccountDropdown && "rotate-180"
+                )} />
+              )}
+            </div>
+          </button>
 
         {/* Dropdown */}
         {showAccountDropdown && (
@@ -354,13 +375,38 @@ export function Sidebar() {
             Connect an account →
           </Link>
         )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex justify-center mb-6">
+          <button
+            onClick={() => {
+              expandSidebar()
+              // Small delay to let sidebar expand before showing dropdown
+              setTimeout(() => setShowAccountDropdown(true), 200)
+            }}
+            className="w-10 h-10 bg-bg-card border border-border rounded-lg flex items-center justify-center hover:border-zinc-600 transition-colors"
+            title={getDisplayName()}
+          >
+            {currentWorkspaceId && isProPlus ? (
+              <Building2 className="w-5 h-5 text-purple-400" />
+            ) : dataSource === 'csv' ? (
+              <FileSpreadsheet className="w-5 h-5 text-zinc-400" />
+            ) : (
+              <span className="text-sm font-bold text-zinc-300">
+                {getDisplayName().charAt(0).toUpperCase()}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="space-y-1 mb-6">
-        <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
-          Menu
-        </div>
+        {!isCollapsed && (
+          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
+            Menu
+          </div>
+        )}
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
@@ -371,15 +417,17 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
+                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
                 isActive
                   ? 'bg-accent text-white'
                   : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
               )}
+              title={isCollapsed ? item.label : undefined}
             >
-              <Icon className="w-5 h-5" />
-              <span className="flex-1">{item.label}</span>
-              {isAlerts && alertCount > 0 && (
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              {!isCollapsed && isAlerts && alertCount > 0 && (
                 <span className={cn(
                   "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
                   isActive
@@ -389,65 +437,85 @@ export function Sidebar() {
                   {alertCount > 99 ? '99+' : alertCount}
                 </span>
               )}
+              {isCollapsed && isAlerts && alertCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center bg-red-500 text-white">
+                  {alertCount > 99 ? '!' : alertCount}
+                </span>
+              )}
             </Link>
           )
         })}
 
-        {/* Settings - Expandable */}
-        <div>
-          <button
-            onClick={() => setSettingsExpanded(!settingsExpanded)}
+        {/* Settings - Expandable (or just icon when collapsed) */}
+        {isCollapsed ? (
+          <Link
+            href="/dashboard/settings"
             className={cn(
-              'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              'flex items-center gap-3 rounded-lg text-sm transition-colors relative justify-center p-3',
               isSettingsActive
-                ? 'bg-accent/20 text-white'
+                ? 'bg-accent text-white'
                 : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
             )}
+            title="Settings"
           >
-            <Settings className="w-5 h-5" />
-            <span className="flex-1 text-left">Settings</span>
-            <ChevronRight className={cn(
-              "w-4 h-4 transition-transform",
-              settingsExpanded && "rotate-90"
-            )} />
-          </button>
+            <Settings className="w-5 h-5 flex-shrink-0" />
+          </Link>
+        ) : (
+          <div>
+            <button
+              onClick={() => setSettingsExpanded(!settingsExpanded)}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                isSettingsActive
+                  ? 'bg-accent/20 text-white'
+                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+              )}
+            >
+              <Settings className="w-5 h-5" />
+              <span className="flex-1 text-left">Settings</span>
+              <ChevronRight className={cn(
+                "w-4 h-4 transition-transform",
+                settingsExpanded && "rotate-90"
+              )} />
+            </button>
 
-          {/* Settings Sub-items */}
-          {settingsExpanded && (
-            <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
-              {settingsItems.map((item) => {
-                // Skip Pro+ only items (Pixel, Workspaces) for Free and Starter tiers
-                if (item.proOnly && !isProPlus) return null
+            {/* Settings Sub-items */}
+            {settingsExpanded && (
+              <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
+                {settingsItems.map((item) => {
+                  // Skip Pro+ only items (Pixel, Workspaces) for Free and Starter tiers
+                  if (item.proOnly && !isProPlus) return null
 
-                const Icon = item.icon
-                const isActive = pathname === item.href
+                  const Icon = item.icon
+                  const isActive = pathname === item.href
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors',
-                      isActive
-                        ? 'bg-accent text-white'
-                        : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors',
+                        isActive
+                          ? 'bg-accent text-white'
+                          : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Upgrade CTA */}
-      {upgradeText && (
+      {/* Upgrade CTA - hidden when collapsed */}
+      {!isCollapsed && upgradeText && (
         <Link
           href="/pricing"
           className="block mb-4 p-3 bg-gradient-to-r from-accent/20 to-emerald-500/20 border border-accent/30 rounded-lg text-center hover:border-accent transition-colors"
@@ -458,21 +526,36 @@ export function Sidebar() {
       )}
 
       {/* User Menu */}
-      <Link
-        href="/account"
-        className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-bg-hover transition-colors"
-      >
-        <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
-          {userName.charAt(0).toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{userName}</div>
-          <div className="text-xs text-zinc-500">{plan} Plan</div>
-        </div>
-      </Link>
+      {isCollapsed ? (
+        <Link
+          href="/account"
+          className="flex justify-center p-2 rounded-lg hover:bg-bg-hover transition-colors"
+          title={userName}
+        >
+          <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+        </Link>
+      ) : (
+        <Link
+          href="/account"
+          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-bg-hover transition-colors"
+        >
+          <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium truncate">{userName}</div>
+            <div className="text-xs text-zinc-500">{plan} Plan</div>
+          </div>
+        </Link>
+      )}
 
-      {/* Support & Logout */}
-      <div className="flex items-center gap-2 mt-2">
+      {/* Support, Privacy & Logout */}
+      <div className={cn(
+        "flex items-center mt-2",
+        isCollapsed ? "flex-col gap-1" : "gap-2"
+      )}>
         <a
           href="mailto:contactkillscale@gmail.com"
           className="flex items-center justify-center w-9 h-9 rounded-lg text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors"
@@ -480,12 +563,30 @@ export function Sidebar() {
         >
           <HelpCircle className="w-4 h-4" />
         </a>
+        {plan === 'Pro' && (
+          <button
+            onClick={togglePrivacyMode}
+            className={cn(
+              "flex items-center justify-center w-9 h-9 rounded-lg transition-colors",
+              isPrivacyMode
+                ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+                : "text-zinc-500 hover:text-white hover:bg-bg-hover"
+            )}
+            title={isPrivacyMode ? "Privacy mode ON" : "Privacy mode OFF"}
+          >
+            {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        )}
         <button
           onClick={signOut}
-          className="flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors"
+          className={cn(
+            "flex items-center rounded-lg text-sm text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors",
+            isCollapsed ? "justify-center w-9 h-9" : "flex-1 gap-3 px-3 py-2"
+          )}
+          title={isCollapsed ? "Sign out" : undefined}
         >
           <LogOut className="w-4 h-4" />
-          Sign out
+          {!isCollapsed && "Sign out"}
         </button>
       </div>
     </aside>

@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Lock, Trash2, RefreshCw, UserPlus } from 'lucide-react'
-import { StatCard, BudgetCard, StatIcons } from '@/components/stat-card'
+import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity } from 'lucide-react'
+import { StatCard, StatIcons } from '@/components/stat-card'
+import { PrimaryStatCard } from '@/components/primary-stat-card'
+import { BudgetStatCard } from '@/components/budget-stat-card'
+import { SecondaryStatsPills } from '@/components/secondary-stats-pills'
 import { PerformanceTable } from '@/components/performance-table'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
@@ -284,7 +287,20 @@ export default function DashboardPage() {
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
-  const { isKillScaleActive, attributionData, lastTouchAttribution, multiTouchAttribution, isMultiTouchModel, refreshAttribution } = useAttribution()
+  const {
+    isKillScaleActive,
+    attributionData,
+    lastTouchAttribution,
+    multiTouchAttribution,
+    isMultiTouchModel,
+    refreshAttribution,
+    businessType,
+    revenueSource,
+    shopifyAttribution,
+    shopifyTotals,
+    hasShopify,
+    refreshShopifyAttribution
+  } = useAttribution()
   const searchParams = useSearchParams()
 
   // Handle deep-linking from alerts page
@@ -571,8 +587,13 @@ export default function DashboardPage() {
 
   // Refresh KillScale attribution when date range changes
   useEffect(() => {
-    console.log('[Dashboard] Attribution effect running, isKillScaleActive:', isKillScaleActive)
-    if (!isKillScaleActive) return
+    console.log('[Dashboard] Attribution effect running:', {
+      isKillScaleActive,
+      hasShopify,
+      datePreset,
+      shopifyAttributionSize: Object.keys(shopifyAttribution).length,
+      revenueSource
+    })
 
     // Calculate date range for attribution refresh
     const today = new Date()
@@ -593,12 +614,27 @@ export default function DashboardPage() {
       const start = new Date(today)
       start.setDate(start.getDate() - days)
       since = formatDate(start)
-      until = formatDate(today)
+      // For "yesterday" and "today", end date should be same as start (single day)
+      // For ranges like "last_7d", end date is today
+      if (datePreset === 'yesterday') {
+        until = since // Yesterday only
+      } else {
+        until = formatDate(today)
+      }
     }
 
-    console.log('[Dashboard] Calling refreshAttribution with:', { since, until })
-    refreshAttribution(since, until)
-  }, [isKillScaleActive, datePreset, customStartDate, customEndDate, refreshAttribution])
+    // Refresh KillScale attribution if active
+    if (isKillScaleActive) {
+      console.log('[Dashboard] Calling refreshAttribution with:', { since, until })
+      refreshAttribution(since, until)
+    }
+
+    // Refresh Shopify attribution if connected
+    if (hasShopify) {
+      console.log('[Dashboard] Calling refreshShopifyAttribution with:', { since, until })
+      refreshShopifyAttribution(since, until)
+    }
+  }, [isKillScaleActive, hasShopify, datePreset, customStartDate, customEndDate, refreshAttribution, refreshShopifyAttribution])
 
   // Load manual events when workspace or date range changes
   // Manual events supplement both Meta and KillScale attribution
@@ -627,7 +663,12 @@ export default function DashboardPage() {
       const start = new Date(today)
       start.setDate(start.getDate() - days)
       since = formatDate(start)
-      until = formatDate(today)
+      // For "yesterday", end date should be same as start (single day)
+      if (datePreset === 'yesterday') {
+        until = since
+      } else {
+        until = formatDate(today)
+      }
     }
 
     fetchManualEvents(currentWorkspaceId, since, until).then(setManualEventsByAd)
@@ -1466,9 +1507,25 @@ export default function DashboardPage() {
       })
     }
 
+    // If Shopify is the revenue source, mark rows for Shopify attribution
+    // BUT don't replace values here - the totals calculation handles aggregation correctly
+    // by summing Shopify data per unique ad_id (not per daily row)
+    // Performance table will also use Shopify attribution for per-ad display
+    if (revenueSource === 'shopify') {
+      return filtered.map(row => {
+        return augmentWithManualEvents({
+          ...row,
+          _shopifyAttribution: true,
+          _metaRevenue: row.revenue || 0,
+          _metaPurchases: row.purchases || 0,
+          _metaResults: row.results || 0,
+        })
+      })
+    }
+
     // Non-KillScale mode: use Meta data and add manual events on top
     return filtered.map(augmentWithManualEvents)
-  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, multiTouchAttribution, isMultiTouchModel, manualEventsByAd])
+  }, [data, selectedAccountId, workspaceAccountIds, isKillScaleActive, multiTouchAttribution, isMultiTouchModel, manualEventsByAd, revenueSource, shopifyAttribution])
 
   const allCampaigns = useMemo(() =>
     Array.from(new Set(accountFilteredData.map(row => row.campaign_name))),
@@ -1613,11 +1670,60 @@ export default function DashboardPage() {
       }
     })
 
-    // When KillScale is active, use Priority Merge Deduplication (Over-Estimate):
+    // When Shopify is the revenue source, use shopifyTotals directly
+    // This is the source of truth - don't try to match ad_ids
+    if (revenueSource === 'shopify') {
+      // Calculate spend from ad platforms (Meta/Google)
+      const totalSpend = selectedData.reduce((sum, row) => sum + row.spend, 0)
+
+      // Use shopifyTotals directly - this is the source of truth from Shopify API
+      const shopifyRevenue = shopifyTotals?.total_revenue ?? 0
+      const shopifyOrders = shopifyTotals?.total_orders ?? 0
+
+      // Calculate other metrics from all selected data (impressions, clicks)
+      const impressions = selectedData.reduce((sum, row) => sum + row.impressions, 0)
+      const clicks = selectedData.reduce((sum, row) => sum + row.clicks, 0)
+
+      // Add manual events on top of Shopify data
+      const totalRevenue = shopifyRevenue + manualRevenue
+      const totalOrders = shopifyOrders + manualCount
+
+      const t = {
+        spend: totalSpend,
+        revenue: totalRevenue,
+        purchases: totalOrders,
+        results: totalOrders,
+        impressions,
+        clicks,
+        roas: 0,
+        cpm: 0,
+        cpc: 0,
+        ctr: 0,
+        cpa: 0,
+        cpr: 0,
+        aov: 0,
+        convRate: 0,
+        // Track manual totals for the indicator
+        manualRevenue,
+        manualCount
+      }
+      t.roas = t.spend > 0 ? t.revenue / t.spend : 0
+      t.cpm = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : 0
+      t.cpc = t.clicks > 0 ? t.spend / t.clicks : 0
+      t.ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0
+      t.cpa = t.purchases > 0 ? t.spend / t.purchases : 0
+      t.cpr = t.results > 0 ? t.spend / t.results : 0
+      t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
+      t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
+      return t
+    }
+
+    // When KillScale is active, use Priority Merge Deduplication:
     // - Verified = MIN(KS, Meta) - both saw these → use Meta revenue (typically higher)
     // - KS_only = excess KS saw that Meta missed → use proportional KS revenue
     // - Meta_only = excess Meta saw that KS missed → use proportional Meta revenue
     // - Spend always comes from Meta API for ALL ads
+    // Note: Shopify branch above returns early, so this only runs when revenueSource !== 'shopify'
     if (isKillScaleActive && Object.keys(multiTouchAttribution).length > 0) {
       let totalSpend = 0
       let verifiedPurchases = 0
@@ -1735,8 +1841,113 @@ export default function DashboardPage() {
     t.aov = t.purchases > 0 ? t.revenue / t.purchases : 0
     t.convRate = t.clicks > 0 ? (t.purchases / t.clicks) * 100 : 0
     return t
-  }, [selectedData, isKillScaleActive, multiTouchAttribution, manualEventsByAd])
-  
+  }, [selectedData, revenueSource, shopifyAttribution, shopifyTotals, isKillScaleActive, multiTouchAttribution, manualEventsByAd])
+
+  // Calculate blended stats with platform breakdowns
+  const blendedStats = useMemo(() => {
+    // Build a map of ad_id to platform from the selected data
+    const adIdToPlatform = new Map<string, 'meta' | 'google'>()
+    selectedData.forEach(row => {
+      if (row.ad_id) {
+        adIdToPlatform.set(row.ad_id, row._platform || 'meta')
+      }
+    })
+
+    // Helper to detect platform from ad_id pattern
+    // Meta ad IDs: numeric, typically start with "120" (e.g., "120237919524130337")
+    // Google ad IDs: numeric but different pattern
+    const detectPlatformFromAdId = (adId: string): 'meta' | 'google' | null => {
+      // Check if we already know this ad from selected data
+      if (adIdToPlatform.has(adId)) {
+        return adIdToPlatform.get(adId)!
+      }
+      // Meta ad IDs are long numeric strings, often starting with "120"
+      if (/^\d{15,}$/.test(adId) && adId.startsWith('120')) {
+        return 'meta'
+      }
+      // Google ad IDs are also numeric but shorter (10-12 digits typically)
+      if (/^\d{10,14}$/.test(adId)) {
+        return 'google'
+      }
+      // Non-numeric like "link_in_bio" - can't determine platform
+      return null
+    }
+
+    // Calculate spend by platform
+    let metaSpend = 0
+    let googleSpend = 0
+    selectedData.forEach(row => {
+      if (row._platform === 'google') {
+        googleSpend += row.spend
+      } else {
+        metaSpend += row.spend
+      }
+    })
+    const totalSpend = metaSpend + googleSpend
+
+    // Calculate attributed revenue/results by platform (from Shopify attribution)
+    // Iterate over ALL Shopify attribution entries and detect platform
+    let metaAttributedRevenue = 0
+    let metaAttributedResults = 0
+    let googleAttributedRevenue = 0
+    let googleAttributedResults = 0
+
+    // Iterate over all Shopify attribution entries and match to platform
+    // This catches revenue from paused/old ads not in current date selection
+    Object.entries(shopifyAttribution).forEach(([adId, shopifyData]) => {
+      const platform = detectPlatformFromAdId(adId)
+      if (platform === 'google') {
+        googleAttributedRevenue += shopifyData.revenue
+        googleAttributedResults += shopifyData.orders
+      } else if (platform === 'meta') {
+        metaAttributedRevenue += shopifyData.revenue
+        metaAttributedResults += shopifyData.orders
+      }
+      // If platform is null (e.g., "link_in_bio"), skip - it stays in "attributed" but not platform-specific
+    })
+
+    // Use shopifyTotals for the hero values - this is the source of truth from Shopify
+    // The per-platform breakdown shows what we can match to the current ads
+    const shopifyTotalRevenue = shopifyTotals?.total_revenue ?? 0
+    const shopifyTotalResults = shopifyTotals?.total_orders ?? 0
+    const totalAttributedRevenue = shopifyTotals?.attributed_revenue ?? 0
+    const totalAttributedResults = shopifyTotals?.attributed_orders ?? 0
+
+    // Calculate ROAS values
+    const blendedRoas = totalSpend > 0 ? shopifyTotalRevenue / totalSpend : 0
+    const metaRoas = metaSpend > 0 ? metaAttributedRevenue / metaSpend : 0
+    const googleRoas = googleSpend > 0 ? googleAttributedRevenue / googleSpend : 0
+
+    // Calculate CPR (cost per result)
+    const cpr = shopifyTotalResults > 0 ? totalSpend / shopifyTotalResults : 0
+
+    return {
+      spend: {
+        total: totalSpend,
+        meta: metaSpend,
+        google: googleSpend
+      },
+      revenue: {
+        total: shopifyTotalRevenue,
+        attributed: totalAttributedRevenue,
+        metaAttributed: metaAttributedRevenue,
+        googleAttributed: googleAttributedRevenue
+      },
+      results: {
+        total: shopifyTotalResults,
+        attributed: totalAttributedResults,
+        metaAttributed: metaAttributedResults,
+        googleAttributed: googleAttributedResults
+      },
+      roas: {
+        blended: blendedRoas,
+        meta: metaRoas,
+        google: googleRoas
+      },
+      cpr
+    }
+  }, [selectedData, shopifyAttribution, shopifyTotals])
+
   const dateRange = {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],
     end: data.length > 0 ? data[0].date_end : new Date().toISOString().split('T')[0]
@@ -1912,11 +2123,12 @@ export default function DashboardPage() {
   // A campaign is ABO if adsets have their own budgets (adset_daily_budget)
   // NOTE: Paused campaigns are ALWAYS excluded from budget totals (regardless of includePaused toggle)
   const budgetTotals = useMemo(() => {
-    let cboBudget = 0
-    let aboBudget = 0
+    let metaCboBudget = 0
+    let metaAboBudget = 0
+    let googleBudget = 0
 
-    // Track campaigns and their budget type
-    const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean; selected: boolean }>()
+    // Track campaigns and their budget type, with platform
+    const campaignBudgets = new Map<string, { budget: number; status: string | null | undefined; isCBO: boolean; selected: boolean; platform: 'meta' | 'google' }>()
     const adsetBudgets = new Map<string, { budget: number; status: string | null | undefined; selected: boolean; campaignName: string; campaignStatus: string | null | undefined }>()
 
     // Filter to current account/workspace first to avoid counting budgets from other accounts
@@ -1952,7 +2164,8 @@ export default function DashboardPage() {
           budget: campaignBudget,
           status: row.campaign_status,
           isCBO: true,
-          selected: selectedCampaigns.has(row.campaign_name)
+          selected: selectedCampaigns.has(row.campaign_name),
+          platform: row._platform || 'meta'
         })
       }
 
@@ -1974,31 +2187,37 @@ export default function DashboardPage() {
             budget: 0,
             status: row.campaign_status,
             isCBO: false,
-            selected: selectedCampaigns.has(row.campaign_name)
+            selected: selectedCampaigns.has(row.campaign_name),
+            platform: row._platform || 'meta'
           })
         }
       }
     })
 
-    // Sum CBO budgets (only selected and non-paused)
-    campaignBudgets.forEach(({ budget, status, isCBO, selected }) => {
+    // Sum CBO budgets (only selected and non-paused) - separate Meta and Google
+    campaignBudgets.forEach(({ budget, status, isCBO, selected, platform }) => {
       if (isCBO && selected && status?.toUpperCase() !== 'PAUSED') {
-        cboBudget += budget
+        if (platform === 'google') {
+          googleBudget += budget
+        } else {
+          metaCboBudget += budget
+        }
       }
     })
 
     // Sum ABO budgets (only selected and non-paused, check parent campaign too)
+    // Note: ABO is Meta-only (Google is always CBO)
     adsetBudgets.forEach(({ budget, status, selected, campaignStatus }) => {
       if (!selected) return
       if (status?.toUpperCase() !== 'PAUSED' && campaignStatus?.toUpperCase() !== 'PAUSED') {
-        aboBudget += budget
+        metaAboBudget += budget
       }
     })
 
     return {
-      cbo: cboBudget,
-      abo: aboBudget,
-      total: cboBudget + aboBudget
+      meta: { cbo: metaCboBudget, abo: metaAboBudget },
+      google: googleBudget,
+      total: metaCboBudget + metaAboBudget + googleBudget
     }
   }, [data, selectedCampaigns, selectedAccountId, workspaceAccountIds])
   
@@ -2208,79 +2427,123 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Primary Stats Row - responsive grid, no horizontal scroll */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
-            <StatCard
-              label="Total Spend"
-              value={formatCurrency(totals.spend)}
-              icon={StatIcons.spend}
-              glow="blue"
-            />
-            <StatCard
-              label="Revenue"
-              value={formatCurrency(totals.revenue)}
-              subValue={totals.manualCount > 0 ? `+${totals.manualCount} manual (${formatCurrency(totals.manualRevenue)})` : undefined}
-              icon={StatIcons.revenue}
-              glow="green"
-            />
-            <StatCard
-              label="ROAS"
-              value={formatROAS(totals.roas)}
-              icon={StatIcons.roas}
-              glow="purple"
-            />
-            <StatCard
-              label="Results"
-              value={formatNumber(totals.results)}
-              subValue={totals.manualCount > 0 ? `+${totals.manualCount} manual` : undefined}
-              icon={StatIcons.results}
-              glow="amber"
-            />
-            <StatCard
-              label="CPR/CPA"
-              value={totals.cpr > 0 ? formatCurrency(totals.cpr) : '—'}
-              icon={StatIcons.cpr}
-              glow="rose"
-            />
+          {/* Revenue Source Indicator */}
+          <div className="flex items-center gap-2 text-xs text-zinc-500 mb-3">
+            {revenueSource === 'shopify' && (
+              <>
+                <ShoppingBag className="w-3 h-3 text-green-400" />
+                <span>Revenue from Shopify</span>
+              </>
+            )}
+            {revenueSource === 'pixel' && (
+              <>
+                <Activity className="w-3 h-3 text-blue-400" />
+                <span>Revenue from KillScale Pixel</span>
+              </>
+            )}
+            {revenueSource === 'meta' && (
+              <span className="text-zinc-500">Revenue from Meta API</span>
+            )}
           </div>
 
-          {/* Secondary Stats Row - hidden on mobile, visible on larger screens */}
-          <div className="hidden lg:grid grid-cols-5 gap-4 mb-8 max-w-[1400px]">
-            {/* Daily Budgets - left bookend */}
-            <BudgetCard
-              totalBudget={formatCurrency(budgetTotals.total)}
-              cboBudget={formatCurrency(budgetTotals.cbo)}
-              aboBudget={formatCurrency(budgetTotals.abo)}
-            />
-
-            {/* Middle metrics */}
-            <StatCard
-              label="CPM"
-              value={formatCPM(totals.spend, totals.impressions)}
-              icon={StatIcons.cpm}
-              glow="cyan"
-            />
-            <StatCard
-              label="CPC"
-              value={formatCPC(totals.spend, totals.clicks)}
-              icon={StatIcons.cpc}
-              glow="blue"
-            />
-            <StatCard
-              label="AOV"
-              value={formatAOV(totals.revenue, totals.purchases)}
-              icon={StatIcons.aov}
-              glow="green"
-            />
-
-            {/* Conv Rate - right bookend */}
-            <StatCard
-              label="Conv Rate"
-              value={formatPercent(totals.convRate)}
-              icon={StatIcons.convRate}
-              glow="amber"
-            />
+          {/* Primary Stats Row - 4 cards, fixed height */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
+            {revenueSource === 'shopify' ? (
+              <>
+                <PrimaryStatCard
+                  label="Spend"
+                  value={blendedStats.spend.total}
+                  prefix="$"
+                  platforms={{
+                    meta: blendedStats.spend.meta > 0 ? `$${blendedStats.spend.meta.toLocaleString()}` : null,
+                    google: blendedStats.spend.google > 0 ? `$${blendedStats.spend.google.toLocaleString()}` : null
+                  }}
+                />
+                <PrimaryStatCard
+                  label="Revenue"
+                  value={blendedStats.revenue.total}
+                  prefix="$"
+                  subtitle={blendedStats.results.total > 0
+                    ? `${blendedStats.results.total} orders • $${Math.round(blendedStats.revenue.total / blendedStats.results.total)}/ea`
+                    : undefined
+                  }
+                  platforms={{
+                    meta: blendedStats.revenue.metaAttributed > 0 ? `$${blendedStats.revenue.metaAttributed.toLocaleString()}` : null,
+                    google: blendedStats.revenue.googleAttributed > 0 ? `$${blendedStats.revenue.googleAttributed.toLocaleString()}` : null
+                  }}
+                />
+                <PrimaryStatCard
+                  label="ROAS"
+                  value={blendedStats.roas.blended.toFixed(2)}
+                  suffix="x"
+                  subtitle="rev ÷ spend"
+                  platforms={{
+                    meta: blendedStats.roas.meta > 0 ? `${blendedStats.roas.meta.toFixed(2)}x` : null,
+                    google: blendedStats.roas.google > 0 ? `${blendedStats.roas.google.toFixed(2)}x` : null
+                  }}
+                />
+                <BudgetStatCard
+                  total={budgetTotals.total}
+                  meta={budgetTotals.meta}
+                  google={budgetTotals.google}
+                />
+              </>
+            ) : (
+              <>
+                <PrimaryStatCard
+                  label="Spend"
+                  value={totals.spend}
+                  prefix="$"
+                  platforms={{
+                    meta: isGoogleAccount(selectedAccountId) ? null : `$${totals.spend.toLocaleString()}`,
+                    google: isGoogleAccount(selectedAccountId) ? `$${totals.spend.toLocaleString()}` : null
+                  }}
+                />
+                <PrimaryStatCard
+                  label="Revenue"
+                  value={totals.revenue}
+                  prefix="$"
+                  subtitle={totals.results > 0
+                    ? `${totals.results} results • $${Math.round(totals.revenue / totals.results)}/ea`
+                    : totals.manualCount > 0
+                      ? `+${totals.manualCount} manual`
+                      : undefined
+                  }
+                  platforms={{
+                    meta: isGoogleAccount(selectedAccountId) ? null : `$${totals.revenue.toLocaleString()}`,
+                    google: isGoogleAccount(selectedAccountId) ? `$${totals.revenue.toLocaleString()}` : null
+                  }}
+                />
+                <PrimaryStatCard
+                  label="ROAS"
+                  value={totals.roas.toFixed(2)}
+                  suffix="x"
+                  subtitle="rev ÷ spend"
+                  platforms={{
+                    meta: isGoogleAccount(selectedAccountId) ? null : `${totals.roas.toFixed(2)}x`,
+                    google: isGoogleAccount(selectedAccountId) ? `${totals.roas.toFixed(2)}x` : null
+                  }}
+                />
+                <BudgetStatCard
+                  total={budgetTotals.total}
+                  meta={budgetTotals.meta}
+                  google={budgetTotals.google}
+                />
+              </>
+            )}
           </div>
+
+          {/* Secondary Stats Pills */}
+          <SecondaryStatsPills
+            metrics={[
+              { label: 'CPM', value: formatCPM(totals.spend, totals.impressions) },
+              { label: 'CPC', value: formatCPC(totals.spend, totals.clicks) },
+              { label: 'AOV', value: formatAOV(totals.revenue, totals.purchases) },
+              { label: 'Conv', value: formatPercent(totals.convRate) }
+            ]}
+            expandable
+            className="max-w-[1400px]"
+          />
 
           {/* Controls Bar */}
           <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 lg:gap-4 mb-6 max-w-[1400px]">
@@ -2408,8 +2671,9 @@ export default function DashboardPage() {
             highlightEntity={highlightEntity}
             userId={user?.id}
             campaignAboAdsets={campaignAboAdsets}
-            lastTouchAttribution={isKillScaleActive ? lastTouchAttribution : undefined}
+            lastTouchAttribution={isKillScaleActive && revenueSource !== 'shopify' ? lastTouchAttribution : undefined}
             isMultiTouchModel={isMultiTouchModel}
+            shopifyAttribution={revenueSource === 'shopify' ? shopifyAttribution : undefined}
             expandAllTrigger={expandTrigger}
             onExpandedStateChange={setTableExpanded}
             externalSortField={sortField}
