@@ -6,6 +6,8 @@ KillScale is a SaaS app for Meta and Google Ads advertisers. Users connect via M
 
 **Live URLs:** Landing at killscale.com, App at app.killscale.com
 
+**Stats (as of Jan 2026):** 45K+ LOC, 67 API endpoints, 35+ React components, 33+ database migrations
+
 ---
 
 ## Development Commands
@@ -25,12 +27,13 @@ npm run lint    # Run Next.js linter
 - **Hosting:** Vercel (auto-deploy on git push)
 - **Charts:** Recharts
 - **CSV Parsing:** Papaparse
+- **AI:** Claude API (Andromeda AI chat, Health Recommendations)
 
 ## Key Conventions
 
 - Ask before performing git commits
 - **Use feature flags** for new integrations (`lib/feature-flags.ts`)
-- Rules and alerts are scoped per ad account (not global per user)
+- Rules and alerts are scoped per workspace (not global per user)
 - Mobile-first responsive design using Tailwind's `lg:` breakpoint
 
 ### Supabase Migrations
@@ -64,6 +67,8 @@ auth.users → handle_new_user() → profiles → create_default_workspace() →
 ```
 If any function in this chain fails or is missing, signup breaks entirely.
 
+---
+
 ## Architecture
 
 ### Monorepo Structure
@@ -71,64 +76,248 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `killscale-landing/` - Static landing page (index.html)
 - `meta-integration-files/` - Reference docs for Meta API integration
 
-### Important Files
+### Key Files by Feature
 
-**Dashboard & Tables:**
-- `app/dashboard/page.tsx` - Main dashboard with stats, filters, date picker
-- `components/performance-table.tsx` - Campaign/adset/ad hierarchy table with CBO/ABO detection
+**Dashboard & Core:**
+- `app/dashboard/page.tsx` (~2800 LOC) - Main dashboard with stats, filters, action sections
+- `components/performance-table.tsx` (~2000 LOC) - Campaign/adset/ad hierarchy with CBO/ABO detection
+- `components/action-cards.tsx` - Verdict-grouped action sections (Kill Now, Scale, Watch, Learn)
 
-**API Routes - Meta:**
-- `app/api/meta/sync/route.ts` - Syncs data from Meta Marketing API (two-step: discovery + date-filtered)
-- `app/api/meta/update-status/route.ts` - Pause/resume campaigns, adsets, ads
-- `app/api/meta/update-budget/route.ts` - Edit budgets via Meta API
-- `app/api/meta/create-campaign/route.ts` - Create campaigns via Meta API
-- `app/api/alerts/` - Alert generation and settings
+**Campaign Creation:**
+- `components/launch-wizard.tsx` (~2800 LOC) - Multi-step wizard for campaigns, ad sets, ads, and Performance Sets
+- `app/dashboard/launch/page.tsx` - Launch hub
 
-**API Routes - Workspaces:**
-- `app/api/workspace/route.ts` - Workspace CRUD
-- `app/api/workspace/members/route.ts` - Member management
-- `app/api/workspace/invite/route.ts` - Send invites
-- `app/api/workspace/invite/accept/route.ts` - Accept invites
-- `app/api/workspace/active-hierarchy/route.ts` - Campaign > Ad Set > Ad tree (ACTIVE only)
+**Scoring Systems:**
+- `lib/andromeda-score.ts` (474 LOC) - Account structure audit against Andromeda best practices
+- `lib/health-score.ts` (734 LOC) - Performance health with fatigue detection
+- `components/andromeda-score-card.tsx` - Score display with AI chat
+- `components/health-score-card.tsx` - Health metrics display
 
-**API Routes - Pixel & Events:**
-- `app/api/pixel/events/route.ts` - Receive pixel events
-- `app/api/pixel/events/manual/route.ts` - Log manual/offline events
-- `app/api/kiosk/settings/route.ts` - Kiosk configuration
-- `app/api/kiosk/data/route.ts` - Kiosk active ads data
+**Attribution:**
+- `lib/attribution.tsx` - Attribution context with waterfall logic (Shopify → Pixel → Meta)
+- `app/api/shopify/attribution/route.ts` - JOIN model: pixel events + Shopify orders on order_id
+- `app/api/pixel/purchase/route.ts` - Pixel purchase events with order_id
 
-**Settings & Config:**
-- `app/dashboard/settings/page.tsx` - Rules configuration per account
-- `app/dashboard/settings/workspaces/page.tsx` - Workspace management
-- `app/dashboard/settings/pixel/page.tsx` - Pixel setup & manual event logging
-- `app/dashboard/alerts/page.tsx` - Alert management per account
-- `app/dashboard/trends/page.tsx` - Performance trends and charts
+**Starred Ads / Performance Sets:**
+- `app/api/starred/route.ts` - CRUD for starred ads
+- `components/star-button.tsx` - Star toggle on ad rows
+- `components/starred-ads-popover.tsx` - Starred ad inventory view
+- Database: `starred_ads` table + `creative_star_counts` view
 
-**Public Pages:**
-- `app/kiosk/[slug]/page.tsx` - Sales kiosk for walk-in attribution
-- `app/invite/[token]/page.tsx` - Workspace invite acceptance
+**Media Library:**
+- `app/api/meta/media/route.ts` - Fetch images/videos from ad account
+- `app/api/meta/token/route.ts` - Secure token for direct uploads
+- `lib/meta-upload.ts` - Direct-to-Meta uploads (bypasses Vercel 4MB limit, supports 1GB videos)
+- `components/media-library-modal.tsx` - Browse/select existing media
+- `components/media-preview-modal.tsx` - Video/image lightbox
 
-**Core Logic:**
-- `lib/supabase.ts` - DB clients + TypeScript types + verdict calculation
-- `lib/auth.tsx` - AuthContext & useAuth hook
-- `lib/subscription.tsx` - SubscriptionContext & useSubscription hook
-- `lib/account.tsx` - AccountContext for account/workspace switching
-- `lib/feature-flags.ts` - Feature flags for gating new integrations
-- `components/launch-wizard.tsx` - Campaign creation wizard
+---
 
-**API Routes - Google Ads:**
-- `lib/google/auth.ts` - Token management, refresh, and customer ID normalization
-- `lib/google/gclid.ts` - gclid capture and validation
-- `app/api/auth/google/route.ts` - OAuth initiation
-- `app/api/auth/google/callback/route.ts` - OAuth callback, fetches customer accounts
-- `app/api/google/sync/route.ts` - Campaign-level sync from Google Ads API
-- `app/api/google/update-status/route.ts` - Pause/resume campaigns
-- `app/api/google/update-budget/route.ts` - Edit campaign budgets
-- `app/api/google/offline/route.ts` - Google Offline Conversions API (placeholder)
+## Implemented Features
+
+### Meta Ads Integration (29 API endpoints)
+- Full OAuth with token refresh
+- Two-step sync (discovery then date-filtered metrics)
+- Campaign/AdSet/Ad creation wizard
+- Bulk operations: pause/resume, budget scaling, deletion
+- Direct creative upload to Meta (images to 30MB, videos to 1GB)
+
+### Google Ads Integration
+- OAuth connection and account listing
+- Campaign-level sync (no ad groups due to type variations)
+- Pause/resume and budget editing
+- Unified dashboard with Meta (platform badges)
+- **Note:** Campaign creation not supported (too complex across campaign types)
+
+### Andromeda Optimization Score
+Audits account structure against Meta's Andromeda ML best practices.
+
+**5-Factor Scoring:**
+| Factor | Weight |
+|--------|--------|
+| CBO adoption | 25% |
+| Creative consolidation | 25% |
+| Ad set count per campaign | 20% |
+| Learning phase exits | 20% |
+| Budget stability | 10% |
+
+**Score Ranges:** Excellent (90+), Good (70+), Needs Work (50+), Critical (0-50)
+
+**Files:** `lib/andromeda-score.ts`, `components/andromeda-score-card.tsx`, `app/api/andromeda-ai/route.ts`
+
+### Health Score Analysis
+Measures performance health (separate from Andromeda's structure audit).
+
+**4-Factor Scoring:**
+- Budget efficiency (30%)
+- Creative health / fatigue detection (25%)
+- Profitability (25%)
+- Trend direction (20%)
+
+**Fatigue Levels:** Healthy → Warning → Fatiguing → Fatigued
+
+**Files:** `lib/health-score.ts`, `components/health-score-card.tsx`, `app/api/ai/health-recommendations/route.ts`
+
+### Starred Ads & Performance Sets
+Star winning ads, then combine into consolidated CBO campaigns.
+
+**Flow:**
+1. Star ads from performance table (tracks creative-level deduplication)
+2. Open StarredAdsPopover to see inventory
+3. Click "Build Performance Set" → Launch Wizard (4th entity type)
+4. Creates CBO campaign with all starred creatives in one ad set
+
+**Files:** `app/api/starred/route.ts`, `components/star-button.tsx`, `components/starred-ads-popover.tsx`
+
+### Campaign Launcher (Multi-Path Wizard)
+Creates campaigns directly from KillScale without Ads Manager.
+
+**Entity Types:**
+1. Campaign (CBO or ABO)
+2. Ad Set (within existing campaign)
+3. Ad (within existing ad set)
+4. Performance Set (from starred ads)
+
+**Steps:** Account → Entity Type → Campaign Selection → Details → Lead Forms → Targeting → Creatives → Copy → Review
+
+**Features:**
+- CBO "Andromeda Recommended" vs ABO "Legacy"
+- Facebook Page selection
+- Special Ad Categories (Housing/Credit/Employment)
+- Location targeting (city + radius)
+- Media Library integration (upload new or select existing)
+- Campaigns created as PAUSED for review
+
+### Media Library
+Browse existing ad account media and upload new files directly to Meta.
+
+**Features:**
+- Direct-to-Meta uploads (bypasses Vercel 4MB limit)
+- Large file support: images to 30MB, videos to 1GB (chunked upload)
+- Browse/filter/search existing images and videos
+- Multi-select for campaign creation
+- Video preview with HTML5 player
+
+**Files:** `lib/meta-upload.ts`, `components/media-library-modal.tsx`, `components/media-preview-modal.tsx`
+
+### Shopify Integration (JOIN Model Attribution)
+Industry-standard attribution model (like Northbeam/Triple Whale).
+
+**Architecture:**
+| Source | Role |
+|--------|------|
+| Shopify Orders (webhooks) | Revenue source of truth |
+| Pixel Events (purchase endpoint) | Attribution source of truth |
+| JOIN on order_id | = Attributed revenue |
+
+**Attribution Logic:**
+| Scenario | Result |
+|----------|--------|
+| Both pixel + order | ATTRIBUTED - use pixel's utm_content as ad_id |
+| Order only (no pixel) | UNATTRIBUTED - revenue counts, no ad credit |
+| Pixel only (no order) | ORPHAN - ignored (no revenue to attribute) |
+
+**Pixel Match Rate:** Target 85%+ of orders with matching pixel events.
+
+**Files:** `app/api/shopify/attribution/route.ts`, `app/api/pixel/purchase/route.ts`
+
+### KillScale Pixel
+First-party tracking pixel independent of Meta's pixel.
+
+**Format:** `KS-XXXXXXX` (7 random chars)
+
+**Two-Snippet Architecture:**
+1. Main Pixel (`<head>`) - Tracks pageviews, captures UTMs, stores in cookie
+2. Shopify Purchase Script (Order Status Page) - Fires with order_id + UTMs
+
+### Multi-Tenant Workspaces
+Virtual business containers with role-based access.
+
+**Roles:** owner, admin, member, viewer
+
+**Features:**
+- Default workspace on signup (via trigger)
+- Pro+ can create additional workspaces
+- Ad accounts linked to workspaces
+- Workspace-scoped rules, pixels, settings
+- Email invites with token-based acceptance
+
+### Business Type Modes
+Workspaces have a business type: `ecommerce` or `leadgen`
+
+**E-commerce Mode:**
+- Revenue source: Shopify orders (via `last_utm_content` UTM)
+- Waterfall: Shopify UTM → KillScale Pixel → Meta API → Unattributed
+- Metrics: Revenue, Orders, ROAS, AOV
+- Verdicts: ROAS-based
+
+**Lead Gen Mode:**
+- Results source: Meta API `results` field (auto-maps to campaign objective)
+- Metrics: Results, CPL/CPR, Conversion Rate
+- Verdicts: CPR-based (target_cpr, max_cpr thresholds)
+
+### Sales Kiosk
+Public page for logging walk-in sales with ad attribution.
+
+**URL:** `/kiosk/[workspace-slug]`
+
+**Features:**
+- No login required (public)
+- Hierarchical ad picker (Campaign → Ad Set → Ad)
+- Quick-log event types (purchase, lead, signup)
+- Mobile-optimized
+
+### Bulk Budget Scaling (Andromeda-Safe)
+Percentage-based scaling with rate limiting to avoid Meta API issues.
+
+**Features:**
+- Configurable scale percentage in rules
+- Batch processing (5 at a time with 200ms delays)
+- Handles both daily and lifetime budgets
+- Tracks changes in `budget_changes` table for cooldown detection
+
+### AI-Powered Features
+- **Andromeda AI Chat:** Follow-up questions about account structure audit
+- **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
+
+---
+
+## Database
+
+33+ migrations. Key tables:
+
+**Core:**
+- `profiles` - User profiles (linked to auth.users)
+- `subscriptions` - Plan, Stripe IDs
+- `meta_connections` - Meta OAuth tokens, ad accounts (JSONB)
+- `google_connections` - Google OAuth tokens, customer IDs (JSONB)
+
+**Workspaces:**
+- `workspaces` - Business containers (includes `business_type`)
+- `workspace_accounts` - Links ad accounts to workspaces (includes `platform`)
+- `workspace_members` - Team with roles
+- `workspace_invites` - Pending invitations
+- `workspace_rules` - ROAS/CPR thresholds per workspace
+- `workspace_pixels` - One pixel per workspace (KS-XXXXXXX)
+
+**Performance:**
+- `ad_data` - Meta ad performance data
+- `google_ad_data` - Google Ads campaign data
+- `pixel_events` - Pixel events (includes `order_id` for JOIN model)
+- `shopify_orders` - Synced orders with `last_utm_content` attribution
+- `starred_ads` - Bookmarked ads for Performance Sets
+- `budget_changes` - Tracking for Andromeda-safe scaling
+
+**Views:**
+- `creative_star_counts` - Aggregates stars by creative (deduplication)
+
+---
 
 ## Verdict Logic
 
-Verdicts are calculated in `lib/supabase.ts:calculateVerdict()`:
+Calculated in `lib/supabase.ts:calculateVerdict()`:
+
+**E-commerce (ROAS-based):**
 ```
 spend < learning_spend → LEARN
 roas >= scale_roas → SCALE
@@ -136,279 +325,78 @@ roas >= min_roas → WATCH
 else → KILL
 ```
 
-Default thresholds: scale_roas=3.0, min_roas=1.5, learning_spend=$100
+**Lead Gen (CPR-based):**
+```
+spend < learning_spend → LEARN
+cpr <= target_cpr → SCALE
+cpr <= max_cpr → WATCH
+else → KILL
+```
+
+**Defaults:** scale_roas=3.0, min_roas=1.5, learning_spend=$100
 
 ### Verdict Display (CBO vs ABO)
+- **CBO campaigns:** Verdict at campaign level only
+- **ABO ad sets:** Verdict at adset level only
+- **Ads:** Performance arrows (up/down) instead of verdict text
 
-Verdict badges only show where the budget lives:
-- **CBO campaigns:** Verdict badge at campaign level only
-- **ABO ad sets:** Verdict badge at adset level only
-- **Ads:** Show performance arrows (up/down) instead of verdict text
+---
 
-## Database
+## Recent Fixes (January 2026)
 
-Supabase PostgreSQL. Key tables:
+### Workspace View Empty Table Fix
+**File:** `components/performance-table.tsx:806`
 
-**Core:**
-- `profiles` - User profiles, linked to auth.users
-- `subscriptions` - User subscription status (plan, Stripe IDs)
-- `meta_connections` - Meta OAuth tokens and ad account list (JSONB `ad_accounts`)
-- `google_connections` - Google OAuth tokens and customer IDs (JSONB `customer_ids`)
+**Problem:** Workspace view showed correct totals in stat cards but no rows in performance table.
 
-**Workspaces (multi-tenant):**
-- `workspaces` - Virtual containers for businesses (each user gets default "My Business")
-- `workspace_accounts` - Links ad accounts to workspaces
-- `workspace_rules` - ROAS/CPR thresholds per workspace
-- `workspace_pixels` - One tracking pixel per workspace (KS-XXXXXXX format)
-- `workspace_members` - Team members with roles (owner/admin/member/viewer)
-- `workspace_invites` - Pending invitations with tokens
+**Root Cause:** When `shopifyAttribution` was passed as an empty object `{}`, the truthy check `if (shopifyAttribution)` passed, entering the Shopify attribution branch which then had no data to apply - effectively hiding all rows.
 
-**Performance:**
-- `ad_data` - Meta ad performance data with status and budget fields
-- `google_ad_data` - Google Ads campaign performance data
-- `pixel_events` - Events tracked by KillScale pixel (purchases, leads, manual events)
+**Fix:** Changed check to require actual data:
+```typescript
+// Before (broken):
+if (shopifyAttribution) {
 
-**Legacy (being migrated to workspace-scoped):**
-- `rules` - ROAS thresholds, scoped by `ad_account_id`
-- `alerts` - Generated alerts, scoped by `ad_account_id`
-- `alert_settings` - Alert preferences per account
-
-## Environment Variables
-
-Required in `.env.local`:
+// After (fixed):
+if (shopifyAttribution && Object.keys(shopifyAttribution).length > 0) {
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
-STRIPE_SECRET_KEY=sk_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-META_APP_ID=...
-META_APP_SECRET=...
-NEXT_PUBLIC_META_APP_ID=...
 
-# Feature Flags (see lib/feature-flags.ts)
-NEXT_PUBLIC_FF_GOOGLE_ADS=true  # Google Ads integration - ENABLED
+**Why totals worked:** `shopifyTotals` comes from aggregate Shopify order data (doesn't require UTM attribution), while `shopifyAttribution` requires per-ad UTM data from pixel. When no orders have UTM attribution yet, totals show but per-ad breakdown is empty.
 
-# Google Ads API
-GOOGLE_ADS_DEVELOPER_TOKEN=...
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
-```
+---
+
+## Current Work (January 2026)
+
+### Shopify + Pixel JOIN Model Attribution
+Implementing order_id based deduplication to prevent double counting when Meta and pixel attribute same sale to different ads.
+
+**Status:** In progress - API updated, pixel purchase endpoint created, migration ready
+
+**Key files:**
+- `app/api/pixel/purchase/route.ts` - Pixel purchase events with order_id (NEW)
+- `app/api/shopify/attribution/route.ts` - JOIN query implementation (UPDATED)
+- `lib/attribution.tsx` - Added pixelMatchRate to context (UPDATED)
+- `supabase/migrations/033_pixel_order_id.sql` - order_id column (NEW)
+
+**Attribution Waterfall (E-commerce):**
+1. Shopify UTM (`last_utm_content`) - Primary
+2. KillScale Pixel (`utm_content`) - Secondary
+3. Meta API - Fallback
+4. Unattributed - No ad credit
+
+**Plan files:** `.claude/plans/gleaming-questing-crane.md`, `.claude/plans/concurrent-tinkering-dusk.md`
+
+### Workspace-Centric Architecture
+Redesigning so same ad account can show different results in different workspaces based on attribution source.
+
+**Plan file:** `.claude/plans/toasty-nibbling-kitten.md`
+
+---
 
 ## Pricing Tiers
 
 - **Launch ($29/mo):** Meta API sync, unlimited campaigns, 1 ad account, Campaign Launcher, Insights, Trends, Alerts
 - **Scale ($49/mo):** Everything in Launch + First Party Pixel, Dynamic Attribution, 2 ad accounts, Workspaces, Manual Events
-- **Pro ($99/mo):** Everything in Scale + unlimited ad accounts, Workspace reporting portal, priority support
-
-## Custom Tailwind Colors
-
-Defined in `tailwind.config.ts`:
-- Verdict: `verdict-scale` (green), `verdict-watch` (yellow), `verdict-kill` (red), `verdict-learn` (gray)
-- Hierarchy: `hierarchy-campaign` (blue), `hierarchy-adset` (purple)
-- Theme: `bg-dark`, `bg-sidebar`, `bg-card`, `bg-hover`
-
----
-
-## Implemented Features
-
-### Workspaces System
-
-Multi-tenant workspace architecture allowing users to organize ad accounts by business/client.
-
-**Key concepts:**
-- Every user gets a default "My Business" workspace on signup (via trigger)
-- Pro+ users can create additional workspaces
-- Ad accounts are linked to workspaces, not directly to users
-- Rules, pixels, and settings are workspace-scoped
-
-**Files:**
-- `app/dashboard/settings/workspaces/page.tsx` - Workspace management UI
-- `app/api/workspace/` - Workspace CRUD APIs
-- `supabase/migrations/015_workspaces.sql` - Schema
-
-### Workspace Members & Invites
-
-Team collaboration with role-based access.
-
-**Roles:**
-- `owner` - Full access, can delete workspace
-- `admin` - Can manage members and settings
-- `member` - Can view and take actions on ads
-- `viewer` - Read-only access
-
-**Invite flow:**
-1. Owner/admin sends invite via email
-2. Invite stored in `workspace_invites` with unique token
-3. Recipient clicks link → `/invite/[token]` page
-4. If new user: signup flow, then auto-added to workspace
-5. If existing user: directly added to workspace
-
-**Files:**
-- `app/invite/[token]/page.tsx` - Invite acceptance page
-- `app/api/workspace/invite/route.ts` - Send invites
-- `app/api/workspace/invite/accept/route.ts` - Accept invites
-- `app/api/workspace/members/route.ts` - Manage members
-
-### KillScale Pixel & Attribution
-
-First-party tracking pixel for attribution independent of Meta's pixel.
-
-**Pixel format:** `KS-XXXXXXX` (7 random chars)
-
-**Attribution logic:**
-- Pixel fires on page load with UTM params
-- `utm_content` contains ad_id for attribution
-- Events (purchases, leads) attributed to the ad that drove the visit
-- Attribution window configurable (default 7 days)
-
-**Files:**
-- `app/dashboard/settings/pixel/page.tsx` - Pixel settings & code snippet
-- `app/api/pixel/events/route.ts` - Receive pixel events
-- `app/api/pixel/attribution/route.ts` - Query attributed conversions
-
-### Manual Events System
-
-Log offline conversions (walk-ins, phone sales, manual leads) and attribute to ads.
-
-**Key concepts:**
-- Events are discrete results - you can't split a "result" across multiple ads
-- Each event is attributed to ONE ad (or unattributed if source unknown)
-- Event types: purchase, lead, signup, or custom
-- Uses hierarchical ad picker: Campaign → Ad Set → Ad
-
-**Hierarchical Ad Picker:**
-- Only shows ACTIVE items (ad, adset, AND campaign must all be ACTIVE)
-- Collapsible tree: expand campaign → see adsets → expand adset → see ads
-- Sorted by spend (highest first)
-- Used in both Pixel Settings modal and Kiosk
-
-**Files:**
-- `app/api/pixel/events/manual/route.ts` - Log manual events
-- `app/api/workspace/active-hierarchy/route.ts` - Fetch Campaign > Ad Set > Ad tree
-
-### Sales Kiosk
-
-Public-facing page for in-store staff to log walk-in sales with ad attribution.
-
-**URL:** `/kiosk/[workspace-slug]`
-
-**Features:**
-- No login required (public page)
-- Shows workspace name and business context
-- Same hierarchical ad picker as dashboard
-- Quick-log common event types
-- Mobile-optimized for tablet/phone use
-
-**Files:**
-- `app/kiosk/[slug]/page.tsx` - Kiosk UI
-- `app/api/kiosk/settings/route.ts` - Fetch kiosk config by slug
-- `app/api/kiosk/data/route.ts` - Fetch active ads for kiosk
-
-### Campaign Launcher
-
-Create Meta campaigns directly from KillScale without touching Ads Manager.
-
-**Implemented:**
-- Multi-step wizard: Account → Budget Type → Details → Targeting → Creative → Copy → Review
-- CBO "Andromeda Recommended" vs ABO "Legacy" selection
-- ABO option to add to existing campaign
-- Facebook Page selection
-- Special Ad Categories (Housing/Credit/Employment)
-- Location targeting (city + radius for local businesses)
-- Creative enhancements toggle (KillScale Recommended = off, Meta Advantage+ = on)
-- Image/video upload to Meta
-- Campaign created as PAUSED for review
-
-**In Progress:** Lead Generation objective (need lead form selection)
-
-**Files:**
-- `app/dashboard/launch/page.tsx` - Launch hub page
-- `components/launch-wizard.tsx` - Multi-step wizard
-- `app/api/meta/create-campaign/route.ts` - Create campaign via Meta API
-- `app/api/meta/upload-creative/route.ts` - Upload images/videos
-- `app/api/meta/pages/route.ts` - Fetch Facebook Pages
-- `app/api/meta/campaigns/route.ts` - Fetch existing campaigns (for ABO)
-- `app/api/meta/locations/route.ts` - Search cities for targeting
-
-### Landing Page
-
-Static landing page with outcome-focused messaging.
-
-**Implemented:**
-- Outcome headline: "Stop Wasting Ad Spend. Start Scaling What Works."
-- Video walkthrough (Supabase Storage) replacing static screenshot
-- Results section with 3 outcome cards
-- Features with outcome-focused headlines
-- Email confirmation success page at `/auth/confirm`
-
-**Files:**
-- `killscale-landing/index.html` - Main landing page
-
-### Google Ads Integration
-
-Full Google Ads support alongside Meta Ads. Users can connect Google Ads accounts, sync campaigns, and manage budgets/status.
-
-**Architecture Decisions (December 2025):**
-
-| Decision | Rationale |
-|----------|-----------|
-| **Campaign-level only** | Google Ads campaign types (PMax, Search, Display, etc.) have inconsistent child structures. Ad Groups and Ads vary wildly by type. We only track campaigns. |
-| **No campaign creation** | Unlike Meta, Google campaign setup is complex with many variations. We focus on monitoring + budget/status control instead. |
-| **Stars are Meta-only** | Star/bookmark system is for collecting winning creatives to build new campaigns. Since we don't create Google campaigns, stars don't apply. |
-| **Always CBO** | Google budgets live at campaign level only. No ABO equivalent for Google. |
-
-**Key concepts:**
-- Google accounts stored in `google_connections` table (parallel to `meta_connections`)
-- Campaign data stored in `google_ad_data` table (separate from Meta's `ad_data`)
-- Account dropdown shows both Meta (`act_*`) and Google (numeric) accounts
-- Workspaces can contain both Meta and Google accounts via `workspace_accounts.platform`
-
-**Files:**
-- `app/api/auth/google/route.ts` - OAuth initiation
-- `app/api/auth/google/callback/route.ts` - OAuth callback
-- `app/api/google/sync/route.ts` - Campaign sync
-- `app/api/google/update-status/route.ts` - Pause/resume
-- `app/api/google/update-budget/route.ts` - Budget editing
-- `lib/google/auth.ts` - Token management
-- `lib/account.tsx` - Unified account context for Meta + Google
-
----
-
-## Current Work / In Progress
-
-### Lead Generation for Campaign Launcher
-
-**Problem:** Lead generation objective is broken - campaigns created without forms attached.
-
-**Solution:**
-1. Add `/api/meta/lead-forms/route.ts` - Fetch Instant Forms from Page
-2. Add lead form selection step to wizard
-3. Update `create-campaign/route.ts` with `promoted_object` for leads
-4. Click-to-Call CTA support
-
-**Plan file:** `~/.claude/plans/snug-roaming-seal.md`
-
----
-
-## Security Notes / Past Issues
-
-### Pixel RLS (Fixed)
-- `pixel_status` table had dangerous "anyone can upsert" policy
-- Fixed with proper user-scoped policies + service role access
-
-### Signup Trigger Chain (Fixed Dec 2025)
-Critical trigger chain: `auth.users → handle_new_user() → profiles → create_default_workspace() → workspaces`
-- Both functions MUST have `SECURITY DEFINER` to bypass RLS
-- If either function is missing or lacks proper permissions, ALL signups break
-- Symptom: "Database error saving new user"
-
-### Pixel Security Punch List
-Some items from `~/.claude/plans/iterative-wandering-finch.md` may still need attention:
-- Add authentication to `/api/pixel/events` and `/api/pixel/attribution` (require userId)
-- Add pixel_secret validation to event ingestion
-- Add rate limiting and deduplication to event ingestion
+- **Pro ($99/mo):** Everything in Scale + unlimited ad accounts, AI recommendations, priority support
 
 ---
 
@@ -447,669 +435,70 @@ The following code sections are critical and have been carefully tuned to avoid 
 
 ---
 
-## Future Enhancements
+## Security Notes
 
-### Live Ad Preview in Launch Wizard (Priority: High)
+### Signup Trigger Chain (Fixed Dec 2025)
+Critical: `auth.users → handle_new_user() → profiles → create_default_workspace() → workspaces`
+- Both functions MUST have `SECURITY DEFINER` to bypass RLS
+- If either is missing, ALL signups break with "Database error saving new user"
 
-**Goal:** Show real-time ad preview while building ads in the Launch Wizard.
-
-**Two-part system:**
-1. **Live Mock Preview** - Custom component renders realistic FB/IG ad mockup as user types (zero latency)
-2. **Real Meta Previews** - "Preview on Meta" button fetches actual iframe previews via `generatepreview` API
-
-**Meta generatepreview API:**
-- Endpoint: `GET /{ad-account-id}/generatepreviews?creative={spec}&ad_format={format}`
-- Returns iframe HTML to embed
-- 75 placement formats available
-
-**Key Placements to Support:**
-| Platform | Formats |
-|----------|---------|
-| FB Feed | `DESKTOP_FEED_STANDARD`, `MOBILE_FEED_STANDARD` |
-| FB Stories/Reels | `FACEBOOK_STORY_MOBILE`, `FACEBOOK_REELS_MOBILE` |
-| IG Feed | `INSTAGRAM_STANDARD`, `INSTAGRAM_FEED_WEB` |
-| IG Stories/Reels | `INSTAGRAM_STORY`, `INSTAGRAM_REELS` |
-
-**Implementation:**
-1. New route: `/api/meta/preview/route.ts` - calls Meta's generatepreview
-2. New component: `components/placement-previews.tsx` - displays iframe grid
-3. Reuse creative spec builder from `create-campaign/route.ts`
-
-**Plan file:** `~/.claude/plans/bubbly-greeting-wombat.md`
-
-### Ad Creative Preview (Priority: Medium)
-
-**Goal:** Click an ad in the performance table to see its creative (image/video thumbnail) in a modal.
-
-**Considerations:**
-- Start with thumbnails (video playback requires HLS streaming)
-- Cache creatives in Supabase to reduce API calls
-- Handle dynamic creatives and carousels
-
-### CBO Scaling (Priority: High)
-
-**Goal:** Let users star/bookmark winning ads over time, then combine them into new CBO campaigns via a modal wizard—without touching Ads Manager.
-
-**User Workflow:**
-1. Mark ads as "winners" via star icon in performance table (ongoing during daily checks)
-2. Click "Build CBO" button when ready to scale
-3. Modal wizard: Name campaign → Select starred ads → Pick targeting source → Set budget → Review → Create (paused)
-
-**Database:** New `starred_ads` table to persist stars across syncs (ad_data gets rebuilt on sync)
-
-```sql
-CREATE TABLE starred_ads (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  ad_account_id TEXT NOT NULL,
-  ad_id TEXT NOT NULL,
-  ad_name TEXT NOT NULL,
-  adset_id TEXT NOT NULL,
-  adset_name TEXT NOT NULL,
-  campaign_id TEXT NOT NULL,
-  campaign_name TEXT NOT NULL,
-  spend DECIMAL(10,2) DEFAULT 0,
-  revenue DECIMAL(10,2) DEFAULT 0,
-  roas DECIMAL(5,2) DEFAULT 0,
-  starred_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, ad_account_id, ad_id)
-);
-```
-
-**New API Endpoints:**
-- `/api/starred/route.ts` - CRUD for starred ads
-- `/api/meta/targeting/route.ts` - Fetch targeting from source ad set
-- `/api/meta/creative/route.ts` - Fetch creative specs from source ads
-- `/api/meta/create-campaign/route.ts` - Create CBO campaign + ad set + ads
-
-**New Components:**
-- `components/star-button.tsx` - Star toggle for ad rows
-- `components/scale-builder-modal.tsx` - 5-step wizard modal
-
-**Key Decisions:**
-- Star/bookmark system (mark winners during daily workflow, pull from pool later)
-- User explicitly picks which ad set's targeting to copy
-- Campaigns created as PAUSED so user can review before going live
-- Pro+ tier only (requires Meta API write access)
-
-**Meta API Calls:**
-```
-# Read
-GET /{adset_id}?fields=targeting,optimization_goal,billing_event,bid_strategy
-GET /{ad_id}?fields=creative{id,name,object_story_spec}
-
-# Write
-POST /{ad_account_id}/campaigns (CBO, status=PAUSED)
-POST /{ad_account_id}/adsets (with copied targeting)
-POST /{ad_account_id}/ads (one per selected creative)
-```
-
-**Files to Modify:**
-- `components/performance-table.tsx` - Add star button to ad rows
-- `app/dashboard/page.tsx` - Starred ads state, Build CBO button, modal
-- `lib/supabase.ts` - Add StarredAd type
+### Pixel RLS (Fixed)
+- `pixel_status` table had dangerous "anyone can upsert" policy
+- Fixed with proper user-scoped policies + service role access
 
 ---
 
-### Results-Based Tracking (Priority: High)
+## Environment Variables
 
-**Goal:** Replace hardcoded "purchases" tracking with generic "results" that adapt to campaign objectives.
-
-**Problem:** Currently KillScale only tracks purchases. If a campaign is optimized for website registrations, leads, or other objectives, those results don't show up.
-
-**Solution:** Use Meta's native "results" concept which automatically maps to whatever the campaign is optimized for.
-
-**Current Model:**
+Required in `.env.local`:
 ```
-Spend → Purchases → Revenue → ROAS → Verdict
-```
-
-**New Model:**
-```
-Spend → Results → Result Value (if applicable) → ROAS or CPR → Verdict
-```
-
-**Meta API Details:**
-- Every campaign has an `objective` / optimization goal
-- The `actions` array returns all actions, but `cost_per_result` and `result` fields auto-map to the campaign's objective
-- Purchase campaigns → Results = purchases (has value, use ROAS)
-- Lead campaigns → Results = leads (no value, use CPL/CPR)
-- Registration campaigns → Results = registrations (no value, use CPR)
-
-**Database Changes:**
-
-| Current Column | New Column | Notes |
-|----------------|------------|-------|
-| `purchases` | `results` | Integer count of results |
-| `revenue` | `result_value` | Nullable - only populated if result has monetary value |
-| - | `result_type` | String: "purchase", "lead", "registration", etc. |
-
-**Rules Table Changes:**
-- Keep `scale_roas`, `min_roas` for value-based results
-- Add `target_cpr`, `max_cpr` for non-value results (Cost Per Result thresholds)
-
-**New Verdict Logic:**
-```
-if result_value exists (purchases, etc):
-    Use ROAS thresholds (scale_roas, min_roas)
-
-if result_value is null (leads, registrations, etc):
-    Use CPR thresholds (target_cpr, max_cpr)
-
-if results < minimum threshold:
-    LEARN
-```
-
-**UI Changes:**
-- Show "Results" column instead of "Purchases"
-- Show "ROAS" when there's revenue, "Cost/Result" when there isn't
-- Display result type label (Lead, Purchase, Registration, etc.)
-- Settings page: Add CPR threshold inputs alongside ROAS thresholds
-
-**Benefits:**
-- Works for eCommerce (purchases) AND lead-gen (forms, registrations, leads)
-- No account-level toggle needed - adapts automatically per campaign
-- Solves agency request for lead-gen businesses (roofers, landscapers, etc.)
-
----
-
-### Andromeda-Safe Scaling (Priority: High)
-
-**Goal:** Help users scale budgets safely without destabilizing Meta's Andromeda algorithm.
-
-**Problem:** Users see SCALE verdict and 3x the budget. Andromeda freaks out, CPMs spike, ROAS tanks. They killed their winner.
-
-**The Rule:** No more than 15-25% budget increase every 2-3 days.
-
-**Solution:** One-tap percentage-based scaling with cooldown tracking.
-
-**Settings/Rules (new field):**
-```
-scale_percentage DECIMAL(5,2) DEFAULT 20.0
-```
-
-User sets their preferred scaling increment once in Settings (default 20%).
-
-**Enhanced Budget Edit Modal:**
-```
-┌─────────────────────────────────────────────┐
-│  Edit Budget                            ✕   │
-├─────────────────────────────────────────────┤
-│                                             │
-│  Campaign: Summer Sale 2024                 │
-│  Current Budget: $50.00/day                 │
-│                                             │
-│  Last changed: Dec 8 (1 day ago)            │
-│  ⏳ Recommended wait: 2 more days           │
-│                                             │
-│  ┌─────────┐           ┌─────────┐          │
-│  │  ↓ 20%  │           │  ↑ 20%  │          │
-│  │  $40.00 │           │  $60.00 │          │
-│  └─────────┘           └─────────┘          │
-│                                             │
-│  ─────────── OR SET MANUAL ───────────      │
-│                                             │
-│  New Budget: [$_______]/day                 │
-│                                             │
-│             [ Cancel ]  [ Apply ]           │
-└─────────────────────────────────────────────┘
-```
-
-**Cooldown Warning (if scaling before recommended wait):**
-```
-⚠️ Budget was changed 1 day ago.
-   Scaling too fast can destabilize Andromeda.
-
-   [ Wait ] [ Scale Anyway ]
-```
-
-**Database: New Table**
-```sql
-CREATE TABLE budget_changes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  ad_account_id TEXT NOT NULL,
-  entity_type TEXT NOT NULL,  -- 'campaign' or 'adset'
-  entity_id TEXT NOT NULL,
-  old_budget DECIMAL(10,2) NOT NULL,
-  new_budget DECIMAL(10,2) NOT NULL,
-  changed_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Index for fast lookups
-CREATE INDEX idx_budget_changes_entity ON budget_changes(entity_type, entity_id);
-
--- RLS
-ALTER TABLE budget_changes ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can view own budget changes" ON budget_changes
-  FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own budget changes" ON budget_changes
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-```
-
-**Rules Table Addition:**
-```sql
-ALTER TABLE rules ADD COLUMN scale_percentage DECIMAL(5,2) DEFAULT 20.0;
-```
-
-**Logic:**
-1. On budget modal open, query `budget_changes` for most recent change to this entity
-2. Calculate days since last change
-3. Display recommendation: "Wait X more days" (default cooldown: 3 days)
-4. If user clicks ↑/↓ before cooldown, show warning but allow override
-5. On budget change via KillScale, insert record into `budget_changes`
-
-**Implementation Files:**
-- `components/budget-edit-modal.tsx` - Add percentage buttons, cooldown display
-- `app/api/meta/update-budget/route.ts` - Log change to `budget_changes` table after successful Meta API call
-- `app/dashboard/settings/page.tsx` - Add scale_percentage input
-
-**Future Enhancements:**
-- Detect external changes: On sync, compare current budget to last known. If different with no KillScale record, flag "Changed outside KillScale"
-- Scaling history view: Show log of all changes with ROAS at time of change
-- Pattern detection: "Every time you scale past $100, ROAS drops"
-
----
-
-### Lead-Gen Mode Enhancements (Priority: Medium - Future)
-
-**Goal:** Additional features for agencies serving local/service businesses.
-
-**Features to consider:**
-- Manual lead entry (log a lead, assign to campaign)
-- Call tracking integrations (CallRail, CallTrackingMetrics, WhatConverts)
-- CRM integrations (GoHighLevel, HubSpot)
-- Lead → Closed deal tracking with deal values
-
----
-
-### Custom Attribution Pixel (Priority: Medium - Paused)
-
-**Goal:** Independent tracking pixel for Shopify stores since Meta's pixel is unreliable.
-
-**Status:** Paused - waiting for user to share their design
-
-**Key Considerations:**
-- First-party cookie tracking (browser restrictions)
-- Shopify app integration
-- Server-side vs client-side tracking
-- GDPR/CCPA compliance
-- Attribution models (first-touch, last-touch, multi-touch)
-
----
-
-## Holy Shit Features (Priority: Critical)
-
-The missing emotional element: **Urgency. Fear. Regret.**
-
-The user needs to feel: *"Every day I'm NOT using this is costing me money."*
-
----
-
-### 1. The Bleed Counter (Priority: Critical)
-
-**Goal:** Show users the real cost of their inaction on KILL ads.
-
-Every KILL ad shows a running "bleed" number:
-```
-🔴 KILL
-Bleeding: $847 total ($23/day)
-Since: Nov 22 (17 days)
-```
-
-**Holy Shit Moment:** First sync, first thing they see:
-```
-"You have 4 ads actively bleeding $127/day. That's $3,810/month."
-```
-
-**Data Requirements:**
-- `verdict_changed_at` - When did this ad cross into KILL?
-- Daily spend tracking since verdict change
-- Bleed calculation: spend accumulated since verdict = KILL
-
----
-
-### 2. The Opportunity Cost Calculator (Priority: Critical)
-
-**Goal:** Show users the money they're leaving on the table by not scaling winners.
-
-Every SCALE ad that hasn't been touched:
-```
-🟢 SCALE
-ROAS: 4.2x
-Budget: $50/day (unchanged 14 days)
-💰 Missed opportunity: ~$2,100
-   (if scaled 20% every 3 days)
-```
-
-**Data Requirements:**
-- `last_action_at` - When did user last touch this ad?
-- Projected revenue if scaled at safe rate (20% every 3 days)
-- Budget change history (already have from Andromeda-safe scaling)
-
----
-
-### 3. The Action Center Dashboard (Priority: Critical)
-
-**Goal:** Replace "here's your data" with "here's what to do + instant insights into where you're losing/leaving money."
-
-**Current:** Data dashboard with verdicts
-**Better:** Action-first view that creates holy shit moments on every login
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  💸 YOUR MONEY SNAPSHOT                                    Dec 10, 2024 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │  BLEEDING   │  │  LEFT ON    │  │   TOTAL     │  │   ROAS      │    │
-│  │   $127/day  │  │   TABLE     │  │   SPEND     │  │   TODAY     │    │
-│  │  $3.8k/mo   │  │   $2,100    │  │   $4,230    │  │    2.4x     │    │
-│  │  4 KILL ads │  │  2 SCALE    │  │   7 days    │  │  vs 2.1 avg │    │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  🧠 ANDROMEDA SCORE: 72/100 "Needs Work"              [ View Audit → ] │
-│  └ 3 critical issues found                                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│  🔴 KILL NOW (3)                                         -$127/day     │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ ☐ Summer Sale - Image 3       $45/day bleeding    14 days      │   │
-│  │ ☐ Holiday Promo - Video 2     $52/day bleeding    8 days       │   │
-│  │ ☐ Retargeting - Carousel      $30/day bleeding    21 days      │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                    [ Kill Selected ]  [ Kill All ]     │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  🟢 READY TO SCALE (2)                               +$89/day est      │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ ☐ Winner Ad - UGC Video       4.2x ROAS   $50/day → $60 (+20%) │   │
-│  │ ☐ Best Performer - Static     3.8x ROAS   $75/day → $90 (+20%) │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                  [ Scale Selected ]  [ Scale All 20% ] │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  👀 WATCH LIST (4)                                      Monitoring...  │
-│  │ 4 ads hovering near thresholds                        [ Expand ▼ ] │
-├─────────────────────────────────────────────────────────────────────────┤
-│  📚 LEARNING (6)                                        $340 to go     │
-│  │ 6 ads still gathering data                            [ Expand ▼ ] │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  📊 TRENDS THIS WEEK                                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  [Mini sparkline: ROAS trend]                                   │   │
-│  │  Mon: 2.1x  Tue: 2.3x  Wed: 2.0x  Thu: 2.4x  Fri: 2.6x         │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ⚡ RECENT ACTIVITY                                                     │
-│  │ • You killed "Bad Ad" 2 days ago - saved $90 so far                 │
-│  │ • You scaled "Winner" 5 days ago - earned +$340 since               │
-│  │ • "Watch Ad" dropped from SCALE → WATCH yesterday                   │
-│                                                          [ View All ]  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  [View Full Performance Table →]                                        │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-**Sections:**
-
-| Section | Purpose |
-|---------|---------|
-| **Money Snapshot** | 4 key metrics: Bleeding, Left on Table, Total Spend, Current ROAS |
-| **Andromeda Score** | Quick score + link to full audit |
-| **Kill Now** | Expandable list with checkboxes, bulk kill, shows bleed/day |
-| **Ready to Scale** | Expandable list with checkboxes, bulk scale 20%, shows opportunity |
-| **Watch List** | Collapsed by default, count + "monitoring" |
-| **Learning** | Collapsed, shows "$ to go" until verdict threshold |
-| **Trends This Week** | Mini sparkline showing ROAS trajectory |
-| **Recent Activity** | Feed showing actions taken + money saved/earned |
-| **Link to Full Table** | For power users who want the data view |
-
-**Key Insight:** Not "here's your data." It's "here's what's costing you, here's what to do about it, with one button."
-
-**Implementation:**
-- New route: `app/dashboard/action-center/page.tsx` (or replace main dashboard)
-- New component: `components/action-center.tsx`
-- Bulk actions with confirmation modals
-- Integrates Andromeda Score, Bleed Counter, Opportunity Calculator
-
----
-
-### 4. The Weekly Guilt Email (Priority: High)
-
-**Goal:** Make NOT logging in feel expensive.
-
-Every Monday:
-```
-Subject: Last week cost you $892
-
-You had 3 KILL ads that ran all week: -$612
-You had 2 SCALE ads you didn't touch: -$280 opportunity
-
-Total cost of inaction: $892
-
-[Open KillScale]
-```
-
-**Implementation:**
-- Scheduled job (Supabase Edge Function or Vercel Cron)
-- Track weekly bleed + opportunity costs
-- Email via Resend/SendGrid
-
----
-
-### 5. Push Notifications That Matter (Priority: Medium)
-
-**Goal:** Money-focused alerts, not status updates.
-
-Examples:
-- 🔴 "Top performer just dropped below WATCH. Take a look."
-- 🟢 "Winner alert: Summer Ad hit 5.1x ROAS. Ready to scale."
-- 💸 "Your KILL list bled $45 today."
-
-Not "here's an update." It's "here's money moving."
-
----
-
-### 6. The Hindsight Report (Priority: Medium)
-
-**Goal:** Monthly accountability showing the real cost of delay.
-
-Monthly email:
-```
-If you had acted on every KILL within 24 hours: Saved $2,340
-If you had scaled every SCALE on schedule: +$4,200 revenue
-
-Cost of delay: $6,540
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+META_APP_ID=...
+META_APP_SECRET=...
+NEXT_PUBLIC_META_APP_ID=...
+ANTHROPIC_API_KEY=...
+
+# Feature Flags
+NEXT_PUBLIC_FF_GOOGLE_ADS=true
+
+# Google Ads API
+GOOGLE_ADS_DEVELOPER_TOKEN=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 ```
 
 ---
 
-## Architectural Requirements for Holy Shit Features
+## Custom Tailwind Colors
 
-### New Data to Track
-
-| Field | Purpose |
-|-------|---------|
-| `verdict_changed_at` | When did this ad cross into KILL/SCALE? |
-| `last_action_at` | When did user last touch this ad? |
-| Daily snapshots | Spend/revenue for bleed/opportunity calcs |
-
-### New Calculations
-
-| Metric | Formula |
-|--------|---------|
-| Bleed | Spend accumulated since verdict = KILL |
-| Opportunity | Projected revenue if scaled at safe rate since verdict = SCALE |
-
-### New Surfaces
-
-1. Action Dashboard (the "do this now" view)
-2. Bleed counter on KILL badges
-3. Opportunity counter on SCALE badges
-4. Weekly email digest
-5. Push notifications
+Defined in `tailwind.config.ts`:
+- Verdict: `verdict-scale` (green), `verdict-watch` (yellow), `verdict-kill` (red), `verdict-learn` (gray)
+- Hierarchy: `hierarchy-campaign` (blue), `hierarchy-adset` (purple)
+- Theme: `bg-dark`, `bg-sidebar`, `bg-card`, `bg-hover`
 
 ---
 
-## The One-Liner Test
+## Plan Files Reference
 
-**Current:** "Know what to scale, watch, and kill in 30 seconds."
+Global plan files are in `~/.claude/plans/`. Key KillScale plans:
 
-**Better options:**
-- "Stop bleeding money on bad ads. Stop leaving money on winners."
-- "KillScale shows you what your inaction costs. Every day."
-
----
-
-## Andromeda Optimization Score (Priority: Critical)
-
-**Goal:** Audit account structure against Meta's Andromeda ML best practices. No other tool does this.
-
-**The Problem:** Users fragment their accounts - too many campaigns, too many ad sets, 1 creative per ad set, ABO instead of CBO. Andromeda can't optimize fragmented accounts.
-
-**The Insight:** "Your account structure is sabotaging Meta's algorithm."
+| Plan | Topic | Status |
+|------|-------|--------|
+| `abstract-cuddling-anchor.md` | Google Ads Integration | COMPLETE |
+| `melodic-weaving-kahn.md` | Starred Ads / CBO Scaling | COMPLETE (rate limiting fix applied) |
+| `eventual-swimming-tide.md` | Campaign Creation Wizard | COMPLETE |
+| `iterative-wandering-finch.md` | Attribution Pixel Punch List | COMPLETE |
+| `gleaming-questing-crane.md` | Pixel + Shopify JOIN Model | IN PROGRESS |
+| `concurrent-tinkering-dusk.md` | Shopify Integration | IN PROGRESS |
+| `toasty-nibbling-kitten.md` | Workspace-Centric Architecture | IN PROGRESS |
 
 ---
 
-### Andromeda Best Practices (What We Audit)
+## Session Context Files
 
-| Rule | Why It Matters |
-|------|----------------|
-| Consolidation over fragmentation | Fewer campaigns/ad sets = more data per entity |
-| CBO over ABO | Let Meta allocate budget across ad sets |
-| Broad targeting | Small audiences fragment learning |
-| 50+ conversions/week/ad set | The learning phase threshold |
-| 15-25% budget changes max | Prevents algorithm destabilization |
-| Multiple creatives per ad set | Don't split creatives into separate ad sets |
-
----
-
-### Anti-Patterns We Detect
-
-| Anti-Pattern | Detection Method | Recommendation |
-|--------------|------------------|----------------|
-| Too many campaigns | Count active campaigns | "You have 12 active campaigns. Consolidate to 2-3." |
-| ABO instead of CBO | `campaign_budget_optimization` field | "3 campaigns using ABO. Switch to CBO." |
-| 1 ad per ad set | Count ads per ad set | "8 ad sets with only 1 ad. Consolidate creatives." |
-| Too many ad sets | Count ad sets per campaign | "Campaign X has 15 ad sets. Aim for 3-5 max." |
-| Stuck in learning | Results per ad set per week | "4 ad sets below 50 conversions/week." |
-| Audience fragmentation | Audience size / overlap | "Multiple ad sets targeting similar audiences." |
-
----
-
-### Score Card UI
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  🧠 ANDROMEDA OPTIMIZATION SCORE                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│                        72 / 100                                         │
-│                    ████████████░░░░                                     │
-│                      "Needs Work"                                       │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ✅ PASSING                                                             │
-│  • Using CBO on 4/5 campaigns                                          │
-│  • Budget changes within safe range                                     │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ⚠️ WARNINGS                                                            │
-│  • 3 ad sets with only 1 creative each                    [ Fix → ]    │
-│    "Consolidate into fewer ad sets with 3-5 creatives"                 │
-│                                                                         │
-│  • 2 ad sets below 50 conversions/week                    [ Fix → ]    │
-│    "Consider pausing or merging - stuck in learning"                   │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  🔴 CRITICAL                                                            │
-│  • Campaign "Holiday Sale" has 12 ad sets                 [ Fix → ]    │
-│    "Too fragmented. Consolidate to 3-4 ad sets max."                   │
-│                                                                         │
-│  • 1 campaign using ABO with $500/day budget              [ Fix → ]    │
-│    "Switch to CBO to let Meta optimize allocation"                     │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-### Score Weighting
-
-| Factor | Weight | Scoring Logic |
-|--------|--------|---------------|
-| CBO adoption | 25% | % of spend on CBO campaigns |
-| Creative consolidation | 25% | Avg ads per ad set (target: 3-6) |
-| Ad set count per campaign | 20% | Penalty for >5 ad sets per campaign |
-| Learning phase exits | 20% | % of ad sets hitting 50 conv/week |
-| Budget stability | 10% | No aggressive scaling (from budget_changes) |
-
-**Score Ranges:**
-- 90-100: "Excellent" - Andromeda-optimized
-- 70-89: "Good" - Minor improvements possible
-- 50-69: "Needs Work" - Significant issues
-- 0-49: "Critical" - Account structure hurting performance
-
----
-
-### Data Requirements
-
-**Already Have:**
-- Campaign count, ad set count, ad count
-- CBO vs ABO detection
-- Budget info and change history
-- Results/conversions per entity
-
-**Need to Add:**
-- `targeting` field from ad sets (for audience overlap detection)
-- Weekly conversion aggregation per ad set
-- Audience size estimates
-
-**API Fields to Fetch:**
-```
-GET /{adset_id}?fields=targeting,optimization_goal,daily_budget,lifetime_budget
-```
-
----
-
-### Implementation
-
-**New Files:**
-- `lib/andromeda-score.ts` - Score calculation logic
-- `components/andromeda-score-card.tsx` - The score card UI component
-
-**Integration:**
-- Calculate score on sync completion
-- Store in new `andromeda_scores` table or as JSON in `ad_accounts`
-- Display on Action Center dashboard
-- "Fix →" buttons open relevant Ads Manager deep links
-
-**Database:**
-```sql
-CREATE TABLE andromeda_audits (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  ad_account_id TEXT NOT NULL,
-  score INTEGER NOT NULL,
-  factors JSONB NOT NULL,  -- Breakdown of each factor
-  issues JSONB NOT NULL,   -- Array of detected issues
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_andromeda_audits_account ON andromeda_audits(ad_account_id, created_at DESC);
-```
-
----
-
-### Future Enhancements
-
-- **Score history** - Track improvement over time
-- **Automated fix suggestions** - "Merge these 3 ad sets" with one click
-- **Competitor benchmarks** - "Your score is higher than 65% of accounts"
-- **Alerts** - "Your Andromeda score dropped 15 points this week"
-- There are active feature tags. Pay attention to them.
+Check `.claude/context/` for session handoff notes with specific implementation details.

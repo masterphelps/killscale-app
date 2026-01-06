@@ -43,6 +43,7 @@ type ShopifyTotals = {
   attributed_orders: number
   unattributed_revenue: number
   unattributed_orders: number
+  pixel_match_rate: number  // % of orders with pixel data (target: 85%+)
 }
 
 type AttributionContextType = {
@@ -70,6 +71,8 @@ type AttributionContextType = {
   shopifyAttribution: ShopifyAttributionData
   shopifyTotals: ShopifyTotals | null
   revenueSource: RevenueSource
+  // Pixel match rate for JOIN model (% of orders with pixel data, target 85%+)
+  pixelMatchRate: number
 
   // Actions
   refreshAttribution: (dateStart: string, dateEnd: string) => Promise<void>
@@ -94,6 +97,7 @@ const AttributionContext = createContext<AttributionContextType>({
   shopifyAttribution: {},
   shopifyTotals: null,
   revenueSource: 'meta',
+  pixelMatchRate: 0,
   refreshAttribution: async () => {},
   refreshShopifyAttribution: async () => {},
   reloadConfig: () => {},
@@ -342,6 +346,9 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     return 'meta'
   }, [businessType, hasShopify, isKillScaleActive])
 
+  // Pixel match rate from Shopify totals (JOIN model)
+  const pixelMatchRate = shopifyTotals?.pixel_match_rate ?? 0
+
   const contextValue = useMemo(() => ({
     source,
     pixelId,
@@ -359,10 +366,11 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     shopifyAttribution,
     shopifyTotals,
     revenueSource,
+    pixelMatchRate,
     refreshAttribution,
     refreshShopifyAttribution,
     reloadConfig,
-  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, businessType, hasShopify, shopifyAttribution, shopifyTotals, revenueSource, refreshAttribution, refreshShopifyAttribution, reloadConfig])
+  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, businessType, hasShopify, shopifyAttribution, shopifyTotals, revenueSource, pixelMatchRate, refreshAttribution, refreshShopifyAttribution, reloadConfig])
 
   return (
     <AttributionContext.Provider value={contextValue}>

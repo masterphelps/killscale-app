@@ -11,8 +11,15 @@ const supabase = createClient(
 /**
  * GET /api/shopify/attribution
  *
- * Aggregate Shopify orders by ad_id (last_utm_content) for revenue attribution.
- * Only counts PAID, PARTIALLY_PAID, and PARTIALLY_REFUNDED orders.
+ * Aggregate Shopify orders by ad_id using the Northbeam/Triple Whale JOIN model:
+ * - Shopify orders = revenue source of truth (from webhooks)
+ * - Pixel events = attribution source of truth (from pixel fires)
+ * - JOIN on order_id = attributed revenue
+ *
+ * Attribution logic:
+ * - Both pixel + order: ATTRIBUTED (use pixel's utm_content as ad_id)
+ * - Order only (no pixel): UNATTRIBUTED (revenue counts, no ad credit)
+ * - Pixel only (no order): ORPHAN (ignored - no revenue to attribute)
  *
  * Query params:
  * - workspaceId: required
@@ -32,10 +39,18 @@ const supabase = createClient(
  *     attributed_revenue: number,
  *     attributed_orders: number,
  *     unattributed_revenue: number,
- *     unattributed_orders: number
+ *     unattributed_orders: number,
+ *     pixel_match_rate: number  // % of orders with pixel data (target: 85%+)
  *   }
  * }
  */
+
+// Extract numeric order ID from Shopify GID format
+// "gid://shopify/Order/12345" -> "12345"
+function extractOrderId(gid: string): string {
+  if (!gid) return ''
+  return gid.replace('gid://shopify/Order/', '')
+}
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const workspaceId = searchParams.get('workspaceId')
@@ -104,11 +119,20 @@ export async function GET(request: NextRequest) {
       endIso,
     })
 
+    // Get the pixel_id for this workspace (for JOIN with pixel_events)
+    const { data: pixelData } = await supabase
+      .from('workspace_pixels')
+      .select('pixel_id')
+      .eq('workspace_id', workspaceId)
+      .single()
+
+    const pixelId = pixelData?.pixel_id
+
     // Fetch all orders for this workspace within date range
     // Filter to paid orders only (PAID, PARTIALLY_PAID, PARTIALLY_REFUNDED)
     const { data: orders, error } = await supabase
       .from('shopify_orders')
-      .select('last_utm_content, total_price, financial_status')
+      .select('shopify_order_id, total_price, financial_status, last_utm_content')
       .eq('workspace_id', workspaceId)
       .gte('order_created_at', startIso)
       .lte('order_created_at', endIso)
@@ -129,11 +153,41 @@ export async function GET(request: NextRequest) {
           attributed_orders: 0,
           unattributed_revenue: 0,
           unattributed_orders: 0,
+          pixel_match_rate: 0,
         },
       })
     }
 
-    // Aggregate by ad_id (last_utm_content)
+    // If we have a pixel, fetch pixel events for these orders
+    // Build a map of order_id -> pixel attribution data
+    const pixelAttributionMap: Record<string, string> = {}  // order_id -> utm_content (ad_id)
+
+    if (pixelId) {
+      // Extract all order IDs to look up
+      const orderIds = orders.map(o => extractOrderId(o.shopify_order_id)).filter(Boolean)
+
+      if (orderIds.length > 0) {
+        // Fetch pixel purchase events for these order IDs
+        const { data: pixelEvents } = await supabase
+          .from('pixel_events')
+          .select('order_id, utm_content')
+          .eq('pixel_id', pixelId)
+          .eq('event_type', 'purchase')
+          .in('order_id', orderIds)
+
+        if (pixelEvents) {
+          for (const event of pixelEvents) {
+            if (event.order_id && event.utm_content) {
+              pixelAttributionMap[event.order_id] = event.utm_content
+            }
+          }
+        }
+      }
+    }
+
+    // Aggregate using the JOIN model:
+    // - Attribution comes from PIXEL events (if matched)
+    // - Revenue comes from SHOPIFY orders (always)
     const attribution: Record<string, { revenue: number; orders: number }> = {}
     let totalRevenue = 0
     let totalOrders = 0
@@ -141,36 +195,46 @@ export async function GET(request: NextRequest) {
     let attributedOrders = 0
     let unattributedRevenue = 0
     let unattributedOrders = 0
+    let pixelMatchedOrders = 0
 
     for (const order of orders) {
       const revenue = order.total_price || 0
+      const orderId = extractOrderId(order.shopify_order_id)
       totalRevenue += revenue
       totalOrders += 1
 
-      const adId = order.last_utm_content
+      // Check if we have pixel attribution for this order
+      const pixelAdId = pixelAttributionMap[orderId]
 
-      if (adId) {
-        // Has UTM attribution
-        if (!attribution[adId]) {
-          attribution[adId] = { revenue: 0, orders: 0 }
+      if (pixelAdId) {
+        // Pixel matched - use pixel's utm_content for attribution
+        pixelMatchedOrders += 1
+        if (!attribution[pixelAdId]) {
+          attribution[pixelAdId] = { revenue: 0, orders: 0 }
         }
-        attribution[adId].revenue += revenue
-        attribution[adId].orders += 1
+        attribution[pixelAdId].revenue += revenue
+        attribution[pixelAdId].orders += 1
         attributedRevenue += revenue
         attributedOrders += 1
       } else {
-        // No UTM = organic/direct/email traffic
+        // No pixel match - order is UNATTRIBUTED
+        // (We don't fall back to Shopify's last_utm_content anymore)
         unattributedRevenue += revenue
         unattributedOrders += 1
       }
     }
 
-    console.log('[Shopify Attribution] Aggregated:', {
+    // Calculate pixel match rate (target: 85%+)
+    const pixelMatchRate = totalOrders > 0 ? (pixelMatchedOrders / totalOrders) * 100 : 0
+
+    console.log('[Shopify Attribution] Aggregated (JOIN model):', {
       workspaceId,
       dateStart,
       dateEnd,
       totalOrders,
       totalRevenue,
+      pixelMatchedOrders,
+      pixelMatchRate: `${pixelMatchRate.toFixed(1)}%`,
       attributedOrders,
       unattributedOrders,
       uniqueAds: Object.keys(attribution).length,
@@ -185,6 +249,7 @@ export async function GET(request: NextRequest) {
         attributed_orders: attributedOrders,
         unattributed_revenue: unattributedRevenue,
         unattributed_orders: unattributedOrders,
+        pixel_match_rate: pixelMatchRate,
       },
     })
 

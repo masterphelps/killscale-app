@@ -800,10 +800,10 @@ export function PerformanceTable({
       })
     }
 
-    // If Shopify is the revenue source, apply Shopify attribution per-ad
+    // If Shopify is the revenue source AND we have attribution data, apply it per-ad
     // Shopify data is aggregated by ad_id - we replace Meta revenue/purchases/results
-    // Note: Even if shopifyAttribution is empty, we still apply this logic to zero out Meta values
-    if (shopifyAttribution) {
+    // IMPORTANT: Only apply if we actually have attribution data, otherwise show Meta data
+    if (shopifyAttribution && Object.keys(shopifyAttribution).length > 0) {
       return baseHierarchy.map(campaign => {
         // Aggregate all metrics from adsets (which aggregate from ads)
         let campaignImpressions = 0

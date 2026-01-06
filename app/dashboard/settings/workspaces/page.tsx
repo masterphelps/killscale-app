@@ -884,7 +884,7 @@ export default function WorkspacesPage() {
     setTimeout(() => setCopiedKioskUrl(null), 2000)
   }
 
-  const getPixelSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Pixel -->
+  const getPixelSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Pixel - Add to your theme's <head> -->
 <script>
 !function(k,s,p,i,x,e,l){if(k.ks)return;x=k.ks=function(){x.q.push(arguments)};
 x.q=[];e=s.createElement(p);l=s.getElementsByTagName(p)[0];
@@ -895,6 +895,59 @@ ks('init', '${pixelId}', { secret: '${pixelSecret}' });
 ks('pageview');
 </script>
 <!-- End KillScale Pixel -->`
+
+  // Shopify-specific snippet for order status page (Settings > Checkout > Order status page)
+  const getShopifyPurchaseSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Purchase Tracking - Add to Shopify Order Status Scripts -->
+<script>
+(function() {
+  // Get UTM params from cookie (stored by main pixel on landing)
+  function getCookie(name) {
+    var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : null;
+  }
+
+  // Get stored UTM data
+  var utmData = {};
+  try {
+    var stored = getCookie('ks_utm') || localStorage.getItem('ks_utm');
+    if (stored) utmData = JSON.parse(stored);
+  } catch(e) {}
+
+  // Shopify provides checkout data on thank-you page
+  if (typeof Shopify !== 'undefined' && Shopify.checkout) {
+    var checkout = Shopify.checkout;
+
+    // Fire purchase event to KillScale
+    fetch('${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/api/pixel/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pixel_id: '${pixelId}',
+        pixel_secret: '${pixelSecret}',
+        order_id: String(checkout.order_id),
+        order_total: parseFloat(checkout.total_price),
+
+        // Attribution from pixel (stored during session)
+        utm_source: utmData.utm_source || null,
+        utm_medium: utmData.utm_medium || null,
+        utm_campaign: utmData.utm_campaign || null,
+        utm_content: utmData.utm_content || null,
+        utm_term: utmData.utm_term || null,
+
+        // Session tracking
+        session_id: getCookie('ks_session') || null,
+        client_id: getCookie('ks_client') || localStorage.getItem('ks_client') || null,
+        landing_page: utmData.landing_page || null,
+        referrer: utmData.referrer || null,
+        page_views: parseInt(utmData.page_views) || null,
+        event_time: new Date().toISOString(),
+        click_time: utmData.click_time || null
+      })
+    }).catch(function(e) { console.log('KillScale: purchase event failed', e); });
+  }
+})();
+</script>
+<!-- End KillScale Purchase Tracking -->`
 
   const copyPixelSnippet = async (pixelId: string, pixelSecret: string, workspaceId: string) => {
     await navigator.clipboard.writeText(getPixelSnippet(pixelId, pixelSecret))
@@ -1279,9 +1332,12 @@ ks('pageview');
                   >
                     <div className="flex items-center gap-2">
                       <Radio className="w-4 h-4 text-green-400" />
-                      <span className="text-sm font-medium">Pixel & Attribution</span>
-                      {isPixelActive(workspace.id) && (
+                      <span className="text-sm font-medium">Pixel</span>
+                      <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">Beta</span>
+                      {isPixelActive(workspace.id) ? (
                         <span className="px-2 py-0.5 text-xs rounded bg-green-500/20 text-green-400">Active</span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs rounded bg-zinc-500/20 text-zinc-400">Inactive</span>
                       )}
                     </div>
                     {expandedPixel === workspace.id ? (
@@ -1344,6 +1400,46 @@ ks('pageview');
                               Add to your website's <code className="bg-zinc-800 px-1 rounded">&lt;head&gt;</code> section.
                             </p>
                           </div>
+
+                          {/* Shopify Purchase Tracking - for order status page */}
+                          {shopifyConnections[workspace.id] && (
+                            <div>
+                              <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-medium text-sm">Shopify Purchase Tracking</h3>
+                                <button
+                                  onClick={async () => {
+                                    await navigator.clipboard.writeText(getShopifyPurchaseSnippet(wp.pixel_id, wp.pixel_secret))
+                                    setCopiedPixelId(`shopify-${workspace.id}`)
+                                    setTimeout(() => setCopiedPixelId(null), 2000)
+                                  }}
+                                  className="flex items-center gap-1.5 px-2.5 py-1 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors"
+                                >
+                                  {copiedPixelId === `shopify-${workspace.id}` ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      Copied!
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5" />
+                                      Copy
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+
+                              <div className="p-3 bg-bg-dark rounded-lg">
+                                <pre className="text-xs text-zinc-400 overflow-x-auto font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                  {getShopifyPurchaseSnippet(wp.pixel_id, wp.pixel_secret)}
+                                </pre>
+                              </div>
+
+                              <p className="text-xs text-zinc-600 mt-2">
+                                Add to <strong>Shopify Admin → Settings → Checkout → Order status page</strong> under "Additional scripts".
+                                This fires purchase events with your Shopify order ID for accurate attribution.
+                              </p>
+                            </div>
+                          )}
 
                           {/* Attribution Insights - REPLACES the toggle */}
                           <div>
@@ -1857,7 +1953,6 @@ ks('pageview');
                     <div className="flex items-center gap-2">
                       <ShoppingBag className="w-4 h-4 text-green-400" />
                       <span className="text-sm font-medium">Shopify Store</span>
-                      <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">Beta</span>
                       {shopifyConnections[workspace.id] && (
                         <span className="px-2 py-0.5 text-xs rounded bg-green-500/20 text-green-400">Connected</span>
                       )}

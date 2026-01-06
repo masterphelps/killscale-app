@@ -1620,7 +1620,7 @@ export default function DashboardPage() {
     // Use accountFilteredData which already has:
     // 1. Account filtering applied
     // 2. KillScale attribution merged (if enabled)
-    return accountFilteredData.filter(row => {
+    const result = accountFilteredData.filter(row => {
       // Date range filter (client-side filtering for instant response)
       // With daily data (time_increment=1), each row has date_start === date_end for a single day
       if (row.date_start) {
@@ -1643,8 +1643,10 @@ export default function DashboardPage() {
 
       return true
     })
+
+    return result
   }, [accountFilteredData, visibleCampaigns, includePaused, getDateRange])
-  
+
   const selectedData = useMemo(() =>
     filteredData.filter(row => {
       // Include row if its campaign is selected
