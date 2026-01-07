@@ -28,6 +28,12 @@ export const FEATURES = {
    * - Server-side event tracking
    */
   SHOPIFY: process.env.NEXT_PUBLIC_FF_SHOPIFY === 'true',
+  /**
+   * Uppromote Integration
+   * - Connect and sync Uppromote ad accounts
+   * - Attribution and performance tracking
+   */
+  UPPROMOTE: process.env.NEXT_PUBLIC_FF_UPPROMOTE === 'true',
 } as const
 
 /**

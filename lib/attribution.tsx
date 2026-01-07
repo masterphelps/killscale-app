@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { useAuth } from './auth'
 import { useAccount } from './account'
 import { AttributionModel } from './attribution-models'
+import { FEATURES } from '@/lib/feature-flags'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,6 +47,12 @@ type ShopifyTotals = {
   pixel_match_rate: number  // % of orders with pixel data (target: 85%+)
 }
 
+type UppromoteTotals = {
+  total_commission: number
+  total_referrals: number
+  currency: string
+}
+
 type AttributionContextType = {
   // Current state
   source: AttributionSource
@@ -74,9 +81,14 @@ type AttributionContextType = {
   // Pixel match rate for JOIN model (% of orders with pixel data, target 85%+)
   pixelMatchRate: number
 
+  // UpPromote state
+  hasUppromote: boolean
+  uppromoteTotals: UppromoteTotals | null
+
   // Actions
   refreshAttribution: (dateStart: string, dateEnd: string) => Promise<void>
   refreshShopifyAttribution: (dateStart: string, dateEnd: string) => Promise<void>
+  refreshUppromoteAttribution: (dateStart: string, dateEnd: string) => Promise<void>
   reloadConfig: () => void
 }
 
@@ -98,8 +110,11 @@ const AttributionContext = createContext<AttributionContextType>({
   shopifyTotals: null,
   revenueSource: 'meta',
   pixelMatchRate: 0,
+  hasUppromote: false,
+  uppromoteTotals: null,
   refreshAttribution: async () => {},
   refreshShopifyAttribution: async () => {},
+  refreshUppromoteAttribution: async () => {},
   reloadConfig: () => {},
 })
 
@@ -120,6 +135,10 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
   const [hasShopify, setHasShopify] = useState(false)
   const [shopifyAttribution, setShopifyAttribution] = useState<ShopifyAttributionData>({})
   const [shopifyTotals, setShopifyTotals] = useState<ShopifyTotals | null>(null)
+
+  // UpPromote state
+  const [hasUppromote, setHasUppromote] = useState(false)
+  const [uppromoteTotals, setUppromoteTotals] = useState<UppromoteTotals | null>(null)
 
   const userId = user?.id
 
@@ -142,6 +161,8 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     setHasShopify(false)
     setShopifyAttribution({})
     setShopifyTotals(null)
+    setHasUppromote(false)
+    setUppromoteTotals(null)
 
     if (!userId || !currentWorkspaceId) {
       // No workspace = no pixel attribution available
@@ -173,6 +194,19 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
 
         setHasShopify(!!shopifyConn)
 
+        // Check for UpPromote connection (only if feature is enabled)
+        if (FEATURES.UPPROMOTE) {
+          const { data: uppromoteConn } = await supabase
+            .from('uppromote_connections')
+            .select('id')
+            .eq('workspace_id', currentWorkspaceId)
+            .single()
+
+          setHasUppromote(!!uppromoteConn)
+        } else {
+          setHasUppromote(false)
+        }
+
         // Query workspace_pixels for this workspace's pixel config
         const { data: wsPixel, error } = await supabase
           .from('workspace_pixels')
@@ -194,6 +228,7 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
           workspaceId: currentWorkspaceId,
           businessType: workspace?.business_type,
           hasShopify: !!shopifyConn,
+          hasUppromote: FEATURES.UPPROMOTE ? hasUppromote : false,
           pixelId: wsPixel.pixel_id,
           rawSource: wsPixel.attribution_source,
           mappedSource,
@@ -331,6 +366,48 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     }
   }, [hasShopify, currentWorkspaceId, userId])
 
+  // NEW: Refresh UpPromote attribution data
+  const refreshUppromoteAttribution = useCallback(async (dateStart: string, dateEnd: string) => {
+    console.log('[Attribution] refreshUppromoteAttribution called:', {
+      hasUppromote,
+      currentWorkspaceId,
+      userId,
+      dateStart,
+      dateEnd
+    })
+
+    if (!hasUppromote || !currentWorkspaceId || !userId) {
+      console.log('[Attribution] Skipping UpPromote - not connected or missing params')
+      setUppromoteTotals(null)
+      return
+    }
+
+    try {
+      // Pass timezone offset so API can convert local dates to UTC correctly
+      const timezoneOffset = new Date().getTimezoneOffset()
+      const url = `/api/uppromote/attribution?workspaceId=${currentWorkspaceId}&userId=${userId}&dateStart=${dateStart}&dateEnd=${dateEnd}&timezoneOffset=${timezoneOffset}`
+      console.log('[Attribution] Fetching UpPromote attribution:', url)
+      const res = await fetch(url)
+      const data = await res.json()
+      console.log('[Attribution] UpPromote API Response:', data)
+
+      if (data.totals) {
+        console.log('[Attribution] Loaded UpPromote data:', {
+          totalCommission: data.totals.total_commission,
+          totalReferrals: data.totals.total_referrals,
+          currency: data.totals.currency
+        })
+        setUppromoteTotals(data.totals)
+      } else {
+        console.log('[Attribution] No UpPromote attribution data in response')
+        setUppromoteTotals(null)
+      }
+    } catch (err) {
+      console.error('Failed to load UpPromote attribution:', err)
+      setUppromoteTotals(null)
+    }
+  }, [hasUppromote, currentWorkspaceId, userId])
+
   // Computed values
   const isKillScaleActive = pixelConfig?.attribution_source === 'killscale'
   const isMultiTouchModel = attributionModel !== 'last_touch'
@@ -367,10 +444,13 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
     shopifyTotals,
     revenueSource,
     pixelMatchRate,
+    hasUppromote,
+    uppromoteTotals,
     refreshAttribution,
     refreshShopifyAttribution,
+    refreshUppromoteAttribution,
     reloadConfig,
-  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, businessType, hasShopify, shopifyAttribution, shopifyTotals, revenueSource, pixelMatchRate, refreshAttribution, refreshShopifyAttribution, reloadConfig])
+  }), [source, pixelId, workspaceId, pixelConfig, attributionModel, attributionData, lastTouchAttribution, multiTouchAttribution, loading, isKillScaleActive, isMultiTouchModel, businessType, hasShopify, shopifyAttribution, shopifyTotals, revenueSource, pixelMatchRate, hasUppromote, uppromoteTotals, refreshAttribution, refreshShopifyAttribution, refreshUppromoteAttribution, reloadConfig])
 
   return (
     <AttributionContext.Provider value={contextValue}>

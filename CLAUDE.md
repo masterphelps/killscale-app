@@ -221,6 +221,37 @@ Industry-standard attribution model (like Northbeam/Triple Whale).
 
 **Files:** `app/api/shopify/attribution/route.ts`, `app/api/pixel/purchase/route.ts`
 
+### UpPromote Integration (Affiliate Costs for True ROAS)
+Tracks affiliate commissions to calculate True ROAS = Revenue ÷ (Ad Spend + Affiliate Commission).
+
+**Architecture:**
+| Source | Role |
+|--------|------|
+| UpPromote API | Affiliate commission source |
+| Local sync | Stores referrals in `uppromote_referrals` table |
+| Dashboard | Shows "Total Costs" and "True ROAS" when connected |
+
+**Key Files:**
+- `app/api/auth/uppromote/connect/route.ts` - API key validation
+- `app/api/uppromote/sync/route.ts` - Sync referrals from UpPromote
+- `app/api/uppromote/disconnect/route.ts` - Remove connection
+- `app/api/uppromote/attribution/route.ts` - Aggregate commissions for date range
+- `lib/uppromote/types.ts` - TypeScript interfaces
+- `lib/uppromote/auth.ts` - Helper functions
+
+**Database Tables:**
+- `uppromote_connections` - One per workspace (API key storage)
+- `uppromote_referrals` - Synced affiliate referral data
+
+**Feature Flag:** `NEXT_PUBLIC_FF_UPPROMOTE=true`
+
+**Tier Access:** Scale + Pro only
+
+**Dashboard Changes:**
+- Spend card → "Total Costs" (Ad Spend + Affiliate Commission)
+- ROAS card → "True ROAS" (Revenue ÷ Total Costs)
+- Orange gift icon for affiliate costs
+
 ### KillScale Pixel
 First-party tracking pixel independent of Meta's pixel.
 
@@ -305,6 +336,8 @@ Percentage-based scaling with rate limiting to avoid Meta API issues.
 - `google_ad_data` - Google Ads campaign data
 - `pixel_events` - Pixel events (includes `order_id` for JOIN model)
 - `shopify_orders` - Synced orders with `last_utm_content` attribution
+- `uppromote_connections` - UpPromote API connections (workspace-scoped)
+- `uppromote_referrals` - Affiliate referral/commission data
 - `starred_ads` - Bookmarked ads for Performance Sets
 - `budget_changes` - Tracking for Andromeda-safe scaling
 
@@ -500,6 +533,7 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| `robust-dazzling-fox.md` | UpPromote Integration (True ROAS) | Jan 07 |
 | `concurrent-tinkering-dusk.md` | Shopify Integration + Bug Fixes | Jan 02 |
 | `cozy-humming-kazoo.md` | Priority Merge Bug Fix | Jan 01 |
 | `shimmering-honking-salamander.md` | Manual Events Integration | Dec 31 |

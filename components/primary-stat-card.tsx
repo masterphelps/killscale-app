@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { Gift } from 'lucide-react'
 import { MetaLogo, GoogleLogo } from './platform-logos'
 
 interface PrimaryStatCardProps {
@@ -12,6 +13,7 @@ interface PrimaryStatCardProps {
   platforms: {
     meta: string | number | null
     google: string | number | null
+    affiliate?: string | number | null
   }
   className?: string
 }
@@ -68,20 +70,33 @@ export function PrimaryStatCard({
         )}
       </div>
 
-      {/* Platform Breakdown - always show both M: and G: */}
-      <div className="flex items-center gap-4 pt-3 mt-auto border-t border-border/50">
-        <div className="flex items-center gap-1.5">
-          <MetaLogo size="sm" />
-          <span className="text-xs font-mono text-zinc-400">
-            {formatPlatformValue(platforms.meta, !!prefix)}
-          </span>
+      {/* Platform Breakdown - always show both M: and G:, optionally Aff: */}
+      <div className="flex flex-col gap-2 pt-3 mt-auto border-t border-border/50">
+        {/* Row 1: Meta and Google */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <MetaLogo size="sm" />
+            <span className="text-xs font-mono text-zinc-400">
+              {formatPlatformValue(platforms.meta, !!prefix)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <GoogleLogo size="sm" />
+            <span className="text-xs font-mono text-zinc-400">
+              {formatPlatformValue(platforms.google, !!prefix)}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <GoogleLogo size="sm" />
-          <span className="text-xs font-mono text-zinc-400">
-            {formatPlatformValue(platforms.google, !!prefix)}
-          </span>
-        </div>
+
+        {/* Row 2: Affiliate (only if present) */}
+        {platforms.affiliate !== undefined && platforms.affiliate !== null && (
+          <div className="flex items-center gap-1.5">
+            <Gift className="w-4 h-4 text-orange-400" />
+            <span className="text-xs font-mono text-zinc-400">
+              {formatPlatformValue(platforms.affiliate, !!prefix)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink, Radio, Download, RefreshCw, Activity, Smartphone, Eye, EyeOff, Info, ShoppingBag, Unlink } from 'lucide-react'
+import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink, Radio, Download, RefreshCw, Activity, Smartphone, Eye, EyeOff, Info, ShoppingBag, Unlink, Gift } from 'lucide-react'
 import { useAuth, supabase } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
 import { useAttribution } from '@/lib/attribution'
 import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'
+import { FEATURES } from '@/lib/feature-flags'
 import { ManualEventModal } from '@/components/manual-event-modal'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -158,6 +159,19 @@ export default function WorkspacesPage() {
     missing: string[]
   } | null>>({})
   const [registeringWebhooks, setRegisteringWebhooks] = useState<string | null>(null)
+
+  // UpPromote state
+  const [expandedUpPromote, setExpandedUpPromote] = useState<string | null>(null)
+  const [upPromoteApiKey, setUpPromoteApiKey] = useState<Record<string, string>>({})
+  const [connectingUpPromote, setConnectingUpPromote] = useState<string | null>(null)
+  const [syncingUpPromote, setSyncingUpPromote] = useState<string | null>(null)
+  const [upPromoteConnections, setUpPromoteConnections] = useState<Record<string, {
+    id: string
+    workspace_id: string
+    api_key: string
+    created_at: string
+    last_sync_at?: string | null
+  } | null>>({})
 
   // Manual event filter and edit state
   const [eventSourceFilter, setEventSourceFilter] = useState<'all' | 'manual'>('all')
@@ -649,6 +663,118 @@ export default function WorkspacesPage() {
       loadShopifyData(expandedShopify)
     }
   }, [expandedShopify])
+
+  // ===== UPPROMOTE FUNCTIONS =====
+
+  // Load UpPromote connection data for a workspace
+  const loadUpPromoteData = async (workspaceId: string) => {
+    if (!user?.id) return
+
+    try {
+      const { data, error } = await supabase
+        .from('uppromote_connections')
+        .select('id, workspace_id, api_key, created_at, last_sync_at')
+        .eq('workspace_id', workspaceId)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Failed to load UpPromote connection:', error)
+        setUpPromoteConnections(prev => ({ ...prev, [workspaceId]: null }))
+        return
+      }
+
+      setUpPromoteConnections(prev => ({
+        ...prev,
+        [workspaceId]: data || null
+      }))
+    } catch (err) {
+      console.error('Failed to load UpPromote connection:', err)
+    }
+  }
+
+  // Load UpPromote data when expanding
+  useEffect(() => {
+    if (expandedUpPromote && upPromoteConnections[expandedUpPromote] === undefined) {
+      loadUpPromoteData(expandedUpPromote)
+    }
+  }, [expandedUpPromote])
+
+  // Connect UpPromote
+  const handleConnectUpPromote = async (workspaceId: string) => {
+    const apiKey = upPromoteApiKey[workspaceId]
+    if (!apiKey?.trim() || !user) return
+
+    setConnectingUpPromote(workspaceId)
+    try {
+      const res = await fetch('/api/auth/uppromote/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, userId: user.id, apiKey: apiKey.trim() })
+      })
+      const data = await res.json()
+      if (data.success) {
+        // Reload connections
+        await loadUpPromoteData(workspaceId)
+        // Clear input
+        setUpPromoteApiKey(prev => ({ ...prev, [workspaceId]: '' }))
+      } else {
+        alert(data.error || 'Failed to connect UpPromote')
+      }
+    } catch (err) {
+      console.error('UpPromote connect error:', err)
+      alert('Failed to connect UpPromote')
+    } finally {
+      setConnectingUpPromote(null)
+    }
+  }
+
+  // Sync UpPromote
+  const handleSyncUpPromote = async (workspaceId: string) => {
+    if (!user) return
+
+    setSyncingUpPromote(workspaceId)
+    try {
+      const res = await fetch('/api/uppromote/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, userId: user.id })
+      })
+      if (res.ok) {
+        await loadUpPromoteData(workspaceId)
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to sync UpPromote')
+      }
+    } catch (err) {
+      console.error('UpPromote sync error:', err)
+      alert('Failed to sync UpPromote')
+    } finally {
+      setSyncingUpPromote(null)
+    }
+  }
+
+  // Disconnect UpPromote
+  const handleDisconnectUpPromote = async (workspaceId: string) => {
+    if (!user) return
+    if (!confirm('Disconnect UpPromote? This will stop tracking affiliate commissions.')) return
+
+    try {
+      const res = await fetch('/api/uppromote/disconnect', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, userId: user.id })
+      })
+      if (res.ok) {
+        setUpPromoteConnections(prev => ({ ...prev, [workspaceId]: null }))
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to disconnect UpPromote')
+      }
+    } catch (err) {
+      console.error('UpPromote disconnect error:', err)
+      alert('Failed to disconnect UpPromote')
+    }
+  }
 
   // ===== PIXEL FUNCTIONS =====
 
@@ -2227,6 +2353,136 @@ ks('pageview');
                     </div>
                   )}
                 </div>
+
+                {/* UpPromote Affiliate */}
+                {FEATURES.UPPROMOTE && (
+                  <div className="border-t border-border">
+                    <button
+                      onClick={() => setExpandedUpPromote(expandedUpPromote === workspace.id ? null : workspace.id)}
+                      className="w-full p-4 flex items-center justify-between hover:bg-bg-hover/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Gift className="w-4 h-4 text-orange-400" />
+                        <span className="text-sm font-medium">UpPromote Affiliate</span>
+                        {upPromoteConnections[workspace.id] && (
+                          <span className="px-2 py-0.5 text-xs rounded bg-orange-500/20 text-orange-400">Connected</span>
+                        )}
+                      </div>
+                      {expandedUpPromote === workspace.id ? (
+                        <ChevronUp className="w-4 h-4 text-zinc-500" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-zinc-500" />
+                      )}
+                    </button>
+
+                    {expandedUpPromote === workspace.id && (
+                      <div className="p-4 pt-0 space-y-4">
+                        {upPromoteConnections[workspace.id] === undefined ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+                          </div>
+                        ) : upPromoteConnections[workspace.id] ? (
+                          <>
+                            {/* Connected State */}
+                            <div className="p-4 rounded-lg bg-bg-dark border border-border">
+                              <div className="flex items-start gap-3">
+                                <Check className="w-5 h-5 text-verdict-scale flex-shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-white">Connected</div>
+                                  {upPromoteConnections[workspace.id]!.last_sync_at && (
+                                    <div className="text-xs text-zinc-500 mt-1">
+                                      Last sync: {(() => {
+                                        const date = new Date(upPromoteConnections[workspace.id]!.last_sync_at!)
+                                        const now = new Date()
+                                        const diffMs = now.getTime() - date.getTime()
+                                        const diffMins = Math.floor(diffMs / 60000)
+                                        const diffHours = Math.floor(diffMins / 60)
+                                        const diffDays = Math.floor(diffHours / 24)
+
+                                        if (diffMins < 1) return 'Just now'
+                                        if (diffMins < 60) return `${diffMins} min ago`
+                                        if (diffHours < 24) return `${diffHours}h ago`
+                                        return `${diffDays}d ago`
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Sync Button */}
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => handleSyncUpPromote(workspace.id)}
+                                disabled={syncingUpPromote === workspace.id}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                              >
+                                <RefreshCw className={`w-4 h-4 ${syncingUpPromote === workspace.id ? 'animate-spin' : ''}`} />
+                                {syncingUpPromote === workspace.id ? 'Syncing...' : 'Sync Now'}
+                              </button>
+                            </div>
+
+                            {/* Disconnect */}
+                            <div className="pt-3 border-t border-border">
+                              <button
+                                onClick={() => handleDisconnectUpPromote(workspace.id)}
+                                className="flex items-center gap-2 text-sm text-zinc-400 hover:text-red-400 transition-colors"
+                              >
+                                <Unlink className="w-4 h-4" />
+                                Disconnect UpPromote
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* Not Connected State */}
+                            <p className="text-sm text-zinc-500 mb-4">
+                              Track affiliate commissions and calculate True ROAS.
+                            </p>
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-sm font-medium mb-2">API Key</label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={upPromoteApiKey[workspace.id] || ''}
+                                    onChange={(e) => setUpPromoteApiKey(prev => ({
+                                      ...prev,
+                                      [workspace.id]: e.target.value
+                                    }))}
+                                    placeholder="paste-your-api-key-here"
+                                    disabled={connectingUpPromote === workspace.id}
+                                    className="flex-1 px-3 py-2 bg-bg-dark border border-border rounded-lg text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 disabled:opacity-50"
+                                  />
+                                  <button
+                                    onClick={() => handleConnectUpPromote(workspace.id)}
+                                    disabled={connectingUpPromote === workspace.id || !upPromoteApiKey[workspace.id]?.trim()}
+                                    className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {connectingUpPromote === workspace.id ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Connecting...
+                                      </>
+                                    ) : (
+                                      'Connect'
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="flex items-start gap-2 mt-2 p-2 rounded bg-blue-500/10 border border-blue-500/20">
+                                  <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-blue-400">
+                                    Get your API key from <strong>UpPromote → Settings → API</strong>
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Client Portal */}
                 <div className="border-t border-border">
