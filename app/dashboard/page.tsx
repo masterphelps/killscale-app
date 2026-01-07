@@ -299,9 +299,23 @@ export default function DashboardPage() {
     shopifyAttribution,
     shopifyTotals,
     hasShopify,
-    refreshShopifyAttribution
+    refreshShopifyAttribution,
+    hasUppromote,
+    uppromoteTotals,
+    refreshUppromoteAttribution
   } = useAttribution()
   const searchParams = useSearchParams()
+
+  // Shopify embed detection logging - TEMPORARY
+  useEffect(() => {
+    console.log('=== KillScale Embed Detection ===')
+    console.log('Full URL:', window.location.href)
+    console.log('Search params:', window.location.search)
+    console.log('Is in iframe:', window.self !== window.top)
+    console.log('Referrer:', document.referrer)
+    // @ts-ignore - ancestorOrigins may not be available in all browsers
+    console.log('Ancestor origins:', window.location.ancestorOrigins ? Array.from(window.location.ancestorOrigins) : 'Not available')
+  }, [])
 
   // Handle deep-linking from alerts page
   useEffect(() => {
@@ -634,7 +648,13 @@ export default function DashboardPage() {
       console.log('[Dashboard] Calling refreshShopifyAttribution with:', { since, until })
       refreshShopifyAttribution(since, until)
     }
-  }, [isKillScaleActive, hasShopify, datePreset, customStartDate, customEndDate, refreshAttribution, refreshShopifyAttribution])
+
+    // Refresh UpPromote attribution if connected
+    if (FEATURES.UPPROMOTE && hasUppromote) {
+      console.log('[Dashboard] Calling refreshUppromoteAttribution with:', { since, until })
+      refreshUppromoteAttribution(since, until)
+    }
+  }, [isKillScaleActive, hasShopify, hasUppromote, datePreset, customStartDate, customEndDate, refreshAttribution, refreshShopifyAttribution, refreshUppromoteAttribution])
 
   // Load manual events when workspace or date range changes
   // Manual events supplement both Meta and KillScale attribution
@@ -1950,6 +1970,11 @@ export default function DashboardPage() {
     }
   }, [selectedData, shopifyAttribution, shopifyTotals])
 
+  // Calculate True ROAS when UpPromote is connected (includes affiliate commission in costs)
+  const affiliateCommission = FEATURES.UPPROMOTE && hasUppromote && uppromoteTotals ? uppromoteTotals.total_commission : 0
+  const totalCosts = blendedStats.spend.total + affiliateCommission
+  const trueRoas = totalCosts > 0 ? blendedStats.revenue.total / totalCosts : 0
+
   const dateRange = {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],
     end: data.length > 0 ? data[0].date_end : new Date().toISOString().split('T')[0]
@@ -2453,12 +2478,15 @@ export default function DashboardPage() {
             {revenueSource === 'shopify' ? (
               <>
                 <PrimaryStatCard
-                  label="Spend"
-                  value={blendedStats.spend.total}
+                  label={FEATURES.UPPROMOTE && hasUppromote ? "Total Costs" : "Spend"}
+                  value={FEATURES.UPPROMOTE && hasUppromote ? totalCosts : blendedStats.spend.total}
                   prefix="$"
                   platforms={{
                     meta: blendedStats.spend.meta > 0 ? `$${blendedStats.spend.meta.toLocaleString()}` : null,
-                    google: blendedStats.spend.google > 0 ? `$${blendedStats.spend.google.toLocaleString()}` : null
+                    google: blendedStats.spend.google > 0 ? `$${blendedStats.spend.google.toLocaleString()}` : null,
+                    ...(FEATURES.UPPROMOTE && hasUppromote && affiliateCommission > 0 ? {
+                      affiliate: `$${affiliateCommission.toLocaleString()}`
+                    } : {})
                   }}
                 />
                 <PrimaryStatCard
@@ -2475,10 +2503,10 @@ export default function DashboardPage() {
                   }}
                 />
                 <PrimaryStatCard
-                  label="ROAS"
-                  value={blendedStats.roas.blended.toFixed(2)}
+                  label={FEATURES.UPPROMOTE && hasUppromote ? "True ROAS" : "ROAS"}
+                  value={FEATURES.UPPROMOTE && hasUppromote ? trueRoas.toFixed(2) : blendedStats.roas.blended.toFixed(2)}
                   suffix="x"
-                  subtitle="rev ÷ spend"
+                  subtitle={FEATURES.UPPROMOTE && hasUppromote ? "rev ÷ total costs" : "rev ÷ spend"}
                   platforms={{
                     meta: blendedStats.roas.meta > 0 ? `${blendedStats.roas.meta.toFixed(2)}x` : null,
                     google: blendedStats.roas.google > 0 ? `${blendedStats.roas.google.toFixed(2)}x` : null
