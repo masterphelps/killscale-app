@@ -54,7 +54,7 @@ const ACCOUNT_LIMITS: Record<string, number> = {
 export default function AccountsPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
-  const { refetch: refetchAccounts, currentWorkspaceId } = useAccount()
+  const { refetch: refetchAccounts } = useAccount()
   const searchParams = useSearchParams()
 
   const [metaConnection, setMetaConnection] = useState<MetaConnection | null>(null)
@@ -77,13 +77,12 @@ export default function AccountsPage() {
   const totalDashboardCount = metaAccountCount + googleAccountCount
 
   useEffect(() => {
-    if (user && currentWorkspaceId) {
+    // Connections are user-scoped, not workspace-scoped
+    // User connects Meta/Google at account level, then assigns ad accounts to workspaces
+    if (user) {
       loadConnections()
-    } else if (user) {
-      // User exists but no workspace - still stop loading
-      setLoading(false)
     }
-  }, [user, currentWorkspaceId])
+  }, [user])
 
   useEffect(() => {
     const success = searchParams.get('success')
