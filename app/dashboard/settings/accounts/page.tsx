@@ -79,6 +79,9 @@ export default function AccountsPage() {
   useEffect(() => {
     if (user && currentWorkspaceId) {
       loadConnections()
+    } else if (user) {
+      // User exists but no workspace - still stop loading
+      setLoading(false)
     }
   }, [user, currentWorkspaceId])
 
