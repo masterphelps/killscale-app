@@ -521,7 +521,10 @@ export default function AccountsPage() {
               </svg>
             </div>
             <div className="text-left">
-              <div className="font-semibold">Google Ads</div>
+              <div className="font-semibold flex items-center gap-2">
+                Google Ads
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400">Beta</span>
+              </div>
               <div className="text-sm text-zinc-500">
                 {googleConnection
                   ? `Connected as ${googleConnection.google_user_email}`
