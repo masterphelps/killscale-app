@@ -78,8 +78,10 @@ export default function DashboardLayout({
   const hasAuthChecked = useRef(false)
   // Track if we ever had a valid user - prevents blank screen on tab switch
   const hadValidUser = useRef(false)
-  // Track if we ever had a valid subscription - prevents redirect on tab switch/refresh
-  const hadValidSubscription = useRef(false)
+  // Track if we ever had a valid subscription - check sessionStorage on init to persist across remounts
+  const hadValidSubscription = useRef(
+    typeof window !== 'undefined' && sessionStorage.getItem('ks_had_valid_subscription') === 'true'
+  )
 
   useEffect(() => {
     if (!loading && !user && !hadValidUser.current) {
@@ -101,6 +103,8 @@ export default function DashboardLayout({
     if (!loading && !subLoading && user) {
       if (plan !== 'None') {
         hadValidSubscription.current = true
+        // Persist to sessionStorage to survive component remounts during navigation
+        sessionStorage.setItem('ks_had_valid_subscription', 'true')
       } else if (!hadValidSubscription.current) {
         // Only redirect if we've never had a valid subscription
         router.push('/account')
