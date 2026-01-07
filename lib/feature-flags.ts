@@ -30,10 +30,11 @@ export const FEATURES = {
   SHOPIFY: process.env.NEXT_PUBLIC_FF_SHOPIFY === 'true',
   /**
    * Uppromote Integration
-   * - Connect and sync Uppromote ad accounts
-   * - Attribution and performance tracking
+   * - Connect and sync UpPromote affiliate data
+   * - True ROAS calculation (Revenue ÷ Total Costs)
+   * - Always enabled (Scale+ tier check happens at runtime)
    */
-  UPPROMOTE: process.env.NEXT_PUBLIC_FF_UPPROMOTE === 'true',
+  UPPROMOTE: true,
 } as const
 
 /**

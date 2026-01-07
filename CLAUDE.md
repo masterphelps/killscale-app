@@ -243,8 +243,6 @@ Tracks affiliate commissions to calculate True ROAS = Revenue ÷ (Ad Spend + Aff
 - `uppromote_connections` - One per workspace (API key storage)
 - `uppromote_referrals` - Synced affiliate referral data
 
-**Feature Flag:** `NEXT_PUBLIC_FF_UPPROMOTE=true`
-
 **Tier Access:** Scale + Pro only
 
 **Dashboard Changes:**
