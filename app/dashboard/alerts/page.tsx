@@ -169,8 +169,15 @@ export default function AlertsPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { user } = useAuth()
   const { plan } = useSubscription()
-  const { currentAccountId, currentAccount } = useAccount()
+  const { currentAccountId, currentAccount, viewMode } = useAccount()
   const router = useRouter()
+
+  // Redirect to dashboard if in workspace mode (Alerts not available for workspaces)
+  useEffect(() => {
+    if (viewMode === 'workspace') {
+      router.push('/dashboard')
+    }
+  }, [viewMode, router])
 
   const canManageAds = plan === 'Scale' || plan === 'Pro'
 

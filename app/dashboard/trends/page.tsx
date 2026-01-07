@@ -37,8 +37,10 @@ import {
   PinOff,
   X
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { useAccount } from '@/lib/account'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAttribution } from '@/lib/attribution'
 import { createClient } from '@supabase/supabase-js'
@@ -380,8 +382,17 @@ export default function TrendsPage() {
     }
     return false
   })
+  const router = useRouter()
   const { user } = useAuth()
+  const { viewMode: accountViewMode } = useAccount()
   const { isKillScaleActive, attributionData } = useAttribution()
+
+  // Redirect to dashboard if in workspace mode (Trends not available for workspaces)
+  useEffect(() => {
+    if (accountViewMode === 'workspace') {
+      router.push('/dashboard')
+    }
+  }, [accountViewMode, router])
 
   // Persist pinned state to localStorage
   useEffect(() => {

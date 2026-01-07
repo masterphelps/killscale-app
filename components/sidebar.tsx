@@ -42,11 +42,11 @@ interface Workspace {
 }
 
 const navItems = [
-  { href: '/dashboard', label: 'Performance', icon: BarChart3 },
-  { href: '/dashboard/campaigns', label: 'Manager', icon: Layers },
-  { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
-  { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
-  { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
+  { href: '/dashboard', label: 'Performance', icon: BarChart3, workspaceEnabled: true },
+  { href: '/dashboard/campaigns', label: 'Manager', icon: Layers, workspaceEnabled: false },
+  { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb, workspaceEnabled: false },
+  { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp, workspaceEnabled: false },
+  { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, workspaceEnabled: false },
 ]
 
 const settingsItems = [
@@ -69,7 +69,8 @@ export function Sidebar() {
     switchAccount,
     currentWorkspaceId,
     currentWorkspace,
-    switchWorkspace
+    switchWorkspace,
+    viewMode
   } = useAccount()
   const { isCollapsed, toggleSidebar, expandSidebar } = useSidebar()
 
@@ -192,9 +193,7 @@ export function Sidebar() {
 
   // Get the label for the selector
   const getSelectorLabel = () => {
-    if (currentWorkspaceId && isProPlus) return 'Workspace'
-    if (dataSource === 'csv') return 'Data Source'
-    return 'Ad Account'
+    return 'View'
   }
 
   const handleSelectWorkspace = async (workspaceId: string) => {
@@ -272,6 +271,7 @@ export function Sidebar() {
               <span className="truncate flex items-center gap-2">
                 {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
                 {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
+                {!currentWorkspaceId && currentAccountId && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
                 {getDisplayName()}
               </span>
               {canShowDropdown && (
@@ -302,7 +302,7 @@ export function Sidebar() {
               {/* WORKSPACES section - Pro+ only */}
               {isProPlus && workspaces.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-xs text-zinc-500 uppercase tracking-wider bg-zinc-900/50">
+                  <div className="px-3 py-1.5 text-xs font-medium text-purple-400 uppercase tracking-wider bg-purple-500/5">
                     Workspaces
                   </div>
                   {workspaces.map((workspace) => (
@@ -329,26 +329,30 @@ export function Sidebar() {
                 </>
               )}
 
-              {/* INDIVIDUAL ACCOUNTS section */}
+              {/* ACCOUNTS section */}
               {accounts.length > 0 && (
                 <>
-                  {isProPlus && workspaces.length > 0 && (
-                    <div className="px-3 py-1.5 text-xs text-zinc-500 uppercase tracking-wider bg-zinc-900/50 border-t border-border">
-                      Individual Accounts
-                    </div>
-                  )}
+                  <div className={cn(
+                    "px-3 py-1.5 text-xs font-medium text-emerald-400 uppercase tracking-wider bg-emerald-500/5",
+                    isProPlus && workspaces.length > 0 && "border-t border-border"
+                  )}>
+                    Accounts
+                  </div>
                   {accounts.map((account, index) => (
                     <button
                       key={account.id}
                       onClick={() => handleSelectAccount(account.id)}
                       className={cn(
                         "w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-bg-hover transition-colors",
-                        account.id === currentAccountId && !currentWorkspaceId && "bg-accent/10"
+                        account.id === currentAccountId && !currentWorkspaceId && "bg-emerald-500/10"
                       )}
                     >
-                      <span className="truncate">{maskText(account.name, `Ad Account ${index + 1}`)}</span>
+                      <span className="truncate flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                        {maskText(account.name, `Ad Account ${index + 1}`)}
+                      </span>
                       {account.id === currentAccountId && !currentWorkspaceId && (
-                        <Check className="w-4 h-4 text-accent flex-shrink-0" />
+                        <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                       )}
                     </button>
                   ))}
@@ -411,6 +415,25 @@ export function Sidebar() {
           const Icon = item.icon
           const isActive = pathname === item.href
           const isAlerts = item.href === '/dashboard/alerts'
+          const isDisabled = viewMode === 'workspace' && !item.workspaceEnabled
+
+          // Render disabled item (non-clickable) when in workspace mode
+          if (isDisabled) {
+            return (
+              <div
+                key={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg text-sm cursor-not-allowed relative',
+                  isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+                  'text-zinc-600'
+                )}
+                title={isCollapsed ? `${item.label} (not available for workspaces)` : 'Switch to an ad account to use this feature'}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              </div>
+            )
+          }
 
           return (
             <Link

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useAuth } from './auth'
 import { FEATURES } from './feature-flags'
@@ -28,6 +28,8 @@ type Workspace = {
 
 type DataSource = 'none' | 'csv' | 'meta_api'
 
+type ViewMode = 'account' | 'workspace' | 'csv' | 'none'
+
 type AccountContextType = {
   // Current state
   currentAccountId: string | null
@@ -40,6 +42,9 @@ type AccountContextType = {
   currentWorkspaceId: string | null
   currentWorkspace: Workspace | null
   workspaceAccountIds: string[]  // All ad_account_ids in current workspace
+
+  // View mode (computed)
+  viewMode: ViewMode
 
   // Actions
   switchAccount: (accountId: string) => Promise<void>
@@ -56,6 +61,7 @@ const AccountContext = createContext<AccountContextType>({
   currentWorkspaceId: null,
   currentWorkspace: null,
   workspaceAccountIds: [],
+  viewMode: 'none',
   switchAccount: async () => {},
   switchWorkspace: async () => {},
   refetch: async () => {},
@@ -310,6 +316,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   // Get current account object
   const currentAccount = accounts.find(a => a.id === currentAccountId) || null
 
+  // Compute view mode based on current selection
+  const viewMode: ViewMode = useMemo(() => {
+    if (currentWorkspaceId) return 'workspace'
+    if (dataSource === 'csv') return 'csv'
+    if (currentAccountId) return 'account'
+    return 'none'
+  }, [currentWorkspaceId, currentAccountId, dataSource])
+
   return (
     <AccountContext.Provider value={{
       currentAccountId,
@@ -320,6 +334,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       currentWorkspaceId,
       currentWorkspace,
       workspaceAccountIds,
+      viewMode,
       switchAccount,
       switchWorkspace,
       refetch: fetchAccounts,

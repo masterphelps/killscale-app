@@ -103,7 +103,14 @@ export default function LaunchPage() {
   const router = useRouter()
   const { user } = useAuth()
   useSubscription() // Keep hook for future use
-  const { currentAccountId, loading: accountLoading, currentWorkspaceId, workspaceAccountIds } = useAccount()
+  const { currentAccountId, loading: accountLoading, currentWorkspaceId, workspaceAccountIds, viewMode } = useAccount()
+
+  // Redirect to dashboard if in workspace mode (Manager not available for workspaces)
+  useEffect(() => {
+    if (viewMode === 'workspace') {
+      router.push('/dashboard')
+    }
+  }, [viewMode, router])
   const { isPrivacyMode, maskText } = usePrivacyMode()
 
   // Helper to mask names in privacy mode

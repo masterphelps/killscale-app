@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { RefreshCw, Lightbulb, Eye, BookOpen, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { HealthScoreCard } from '@/components/health-score-card'
@@ -177,10 +178,18 @@ export default function InsightsPage() {
   } | null>(null)
   const [isUpdatingBudget, setIsUpdatingBudget] = useState(false)
 
+  const router = useRouter()
   const { plan } = useSubscription()
   const { user } = useAuth()
-  const { currentAccountId, currentAccount, workspaceAccountIds } = useAccount()
+  const { currentAccountId, currentAccount, workspaceAccountIds, viewMode } = useAccount()
   const { isPrivacyMode, maskText } = usePrivacyMode()
+
+  // Redirect to dashboard if in workspace mode (Insights not available for workspaces)
+  useEffect(() => {
+    if (viewMode === 'workspace') {
+      router.push('/dashboard')
+    }
+  }, [viewMode, router])
   const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
 
   // Privacy mode helper for entity names
