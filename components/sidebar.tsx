@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useCallback } from 'react'
 import {
   BarChart3,
@@ -58,6 +58,7 @@ const settingsItems = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, signOut } = useAuth()
   const { plan } = useSubscription()
   const { isPrivacyMode, togglePrivacyMode, maskText } = usePrivacyMode()
@@ -199,11 +200,13 @@ export function Sidebar() {
   const handleSelectWorkspace = async (workspaceId: string) => {
     setShowAccountDropdown(false)
     await switchWorkspace(workspaceId)
+    router.push('/dashboard')
   }
 
   const handleSelectAccount = async (accountId: string) => {
     setShowAccountDropdown(false)
     await switchAccount(accountId)
+    router.push('/dashboard')
   }
 
   const upgradeText = plan === 'Launch'
