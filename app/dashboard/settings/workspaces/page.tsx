@@ -235,6 +235,34 @@ export default function WorkspacesPage() {
     loadWorkspaces()
   }, [user])
 
+  // Load pixel status for all workspaces on mount (for active/inactive indicator)
+  useEffect(() => {
+    if (!user?.id || workspaces.length === 0) return
+
+    const loadPixelStatuses = async () => {
+      for (const workspace of workspaces) {
+        // Get pixel for this workspace
+        const { data: pixel } = await supabase
+          .from('workspace_pixels')
+          .select('pixel_id')
+          .eq('workspace_id', workspace.id)
+          .single()
+
+        if (pixel?.pixel_id) {
+          try {
+            const res = await fetch(`/api/pixel/events?pixelId=${pixel.pixel_id}&userId=${user.id}&limit=1`)
+            const data = await res.json()
+            setLastEventTimes(prev => ({ ...prev, [workspace.id]: data.lastEventTime || null }))
+          } catch (err) {
+            // Silently fail - pixel might not have any events yet
+          }
+        }
+      }
+    }
+
+    loadPixelStatuses()
+  }, [user?.id, workspaces])
+
   const handleCreateWorkspace = async () => {
     if (!user || !newWorkspaceName.trim()) return
 
