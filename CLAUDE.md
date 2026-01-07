@@ -485,20 +485,46 @@ Defined in `tailwind.config.ts`:
 
 ## Plan Files Reference
 
-Global plan files are in `~/.claude/plans/`. Key KillScale plans:
+Global plan files are in `~/.claude/plans/`. **Note:** This directory contains plans for both KillScale and Oppzilla projects.
+
+### Active / In Progress (January 2026)
 
 | Plan | Topic | Status |
 |------|-------|--------|
-| `abstract-cuddling-anchor.md` | Google Ads Integration | COMPLETE |
-| `melodic-weaving-kahn.md` | Starred Ads / CBO Scaling | COMPLETE (rate limiting fix applied) |
-| `eventual-swimming-tide.md` | Campaign Creation Wizard | COMPLETE |
-| `iterative-wandering-finch.md` | Attribution Pixel Punch List | COMPLETE |
 | `gleaming-questing-crane.md` | Pixel + Shopify JOIN Model | IN PROGRESS |
-| `concurrent-tinkering-dusk.md` | Shopify Integration | IN PROGRESS |
 | `toasty-nibbling-kitten.md` | Workspace-Centric Architecture | IN PROGRESS |
+| `linked-bubbling-wilkes.md` | Multi-Mode Attribution (E-com/Lead Gen) | IN PROGRESS |
+| `nested-meandering-spring.md` | First-Party Tracking & CAPI | PLANNED |
+
+### Recently Completed (Dec 2025 - Jan 2026)
+
+| Plan | Topic | Date |
+|------|-------|------|
+| `concurrent-tinkering-dusk.md` | Shopify Integration + Bug Fixes | Jan 02 |
+| `cozy-humming-kazoo.md` | Priority Merge Bug Fix | Jan 01 |
+| `shimmering-honking-salamander.md` | Manual Events Integration | Dec 31 |
+| `synthetic-sleeping-hejlsberg.md` | Meta Sync Rate Limits Fix | Dec 30 |
+| `cosmic-growing-koala.md` | Light Mode Polish | Dec 29 |
+| `shiny-munching-locket.md` | Budget Display Bug (100x) Fix | Dec 26 |
+| `sprightly-hopping-quill.md` | Duplicate Ad Set + Age Targeting | Dec 25 |
+| `shiny-puzzling-papert.md` | Google OAuth Fix | Dec 24 |
+
+### Core Feature Plans (Completed)
+
+| Plan | Topic |
+|------|-------|
+| `abstract-cuddling-anchor.md` | Google Ads Integration |
+| `melodic-weaving-kahn.md` | Starred Ads / Performance Sets |
+| `eventual-swimming-tide.md` | Campaign Creation Wizard |
+| `iterative-wandering-finch.md` | Attribution Pixel Security |
+| `glowing-roaming-lemur.md` | Google Ads Comprehensive Plan |
+| `vast-wondering-honey.md` | Landing Page + Blog Content |
 
 ---
 
 ## Session Context Files
 
 Check `.claude/context/` for session handoff notes with specific implementation details.
+
+Current context files:
+- `shopify-revenue-session.md` - Shopify as source of truth implementation details
