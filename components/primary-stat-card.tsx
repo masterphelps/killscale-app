@@ -10,7 +10,7 @@ interface PrimaryStatCardProps {
   prefix?: string
   suffix?: string
   subtitle?: string
-  platforms: {
+  platforms?: {
     meta: string | number | null
     google: string | number | null
     affiliate?: string | number | null
@@ -70,34 +70,36 @@ export function PrimaryStatCard({
         )}
       </div>
 
-      {/* Platform Breakdown - always show both M: and G:, optionally Aff: */}
-      <div className="flex flex-col gap-2 pt-3 mt-auto border-t border-border/50">
-        {/* Row 1: Meta and Google */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <MetaLogo size="sm" />
-            <span className="text-xs font-mono text-zinc-400">
-              {formatPlatformValue(platforms.meta, !!prefix)}
-            </span>
+      {/* Platform Breakdown - only show when platforms prop is provided */}
+      {platforms && (
+        <div className="flex flex-col gap-2 pt-3 mt-auto border-t border-border/50">
+          {/* Row 1: Meta and Google */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <MetaLogo size="sm" />
+              <span className="text-xs font-mono text-zinc-400">
+                {formatPlatformValue(platforms.meta, !!prefix)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <GoogleLogo size="sm" />
+              <span className="text-xs font-mono text-zinc-400">
+                {formatPlatformValue(platforms.google, !!prefix)}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <GoogleLogo size="sm" />
-            <span className="text-xs font-mono text-zinc-400">
-              {formatPlatformValue(platforms.google, !!prefix)}
-            </span>
-          </div>
-        </div>
 
-        {/* Row 2: Affiliate (only if present) */}
-        {platforms.affiliate !== undefined && platforms.affiliate !== null && (
-          <div className="flex items-center gap-1.5">
-            <Gift className="w-4 h-4 text-orange-400" />
-            <span className="text-xs font-mono text-zinc-400">
-              {formatPlatformValue(platforms.affiliate, !!prefix)}
-            </span>
-          </div>
-        )}
-      </div>
+          {/* Row 2: Affiliate (only if present) */}
+          {platforms.affiliate !== undefined && platforms.affiliate !== null && (
+            <div className="flex items-center gap-1.5">
+              <Gift className="w-4 h-4 text-orange-400" />
+              <span className="text-xs font-mono text-zinc-400">
+                {formatPlatformValue(platforms.affiliate, !!prefix)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

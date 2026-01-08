@@ -270,12 +270,12 @@ export function Sidebar() {
             <div className="text-xs text-zinc-500 mb-1">
               {getSelectorLabel()}
             </div>
-            <div className="flex items-center justify-between text-sm font-medium">
-              <span className="truncate flex items-center gap-2">
-                {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400" />}
-                {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400" />}
-                {!currentWorkspaceId && currentAccountId && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
-                {getDisplayName()}
+            <div className="flex items-center justify-between text-sm font-medium min-w-0">
+              <span className="flex items-center gap-2 min-w-0">
+                {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
+                {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400 flex-shrink-0" />}
+                {!currentWorkspaceId && currentAccountId && <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />}
+                <span className="truncate">{getDisplayName()}</span>
               </span>
               {canShowDropdown && (
                 <ChevronDown className={cn(

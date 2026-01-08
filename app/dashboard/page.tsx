@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity } from 'lucide-react'
+import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity, Settings } from 'lucide-react'
 import { StatCard, StatIcons } from '@/components/stat-card'
 import { PrimaryStatCard } from '@/components/primary-stat-card'
 import { BudgetStatCard } from '@/components/budget-stat-card'
@@ -284,6 +284,9 @@ export default function DashboardPage() {
   const [performanceSetAdIds, setPerformanceSetAdIds] = useState<string[]>([])
   // Manual events aggregated by ad_id: { [ad_id]: { revenue, count } }
   const [manualEventsByAd, setManualEventsByAd] = useState<Record<string, { revenue: number; count: number }>>({})
+  // Workspace attribution display toggle
+  const [showAttribution, setShowAttribution] = useState(true)
+  const [showAttributionSettings, setShowAttributionSettings] = useState(false)
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
@@ -346,6 +349,24 @@ export default function DashboardPage() {
   useEffect(() => {
     localStorage.setItem('killscale_viewMode', viewMode)
   }, [viewMode])
+
+  // Load/save showAttribution preference per workspace
+  useEffect(() => {
+    if (currentWorkspaceId) {
+      const saved = localStorage.getItem(`killscale_workspace_${currentWorkspaceId}_showAttribution`)
+      if (saved !== null) {
+        setShowAttribution(saved === 'true')
+      } else {
+        setShowAttribution(true) // default to true for new workspaces
+      }
+    }
+  }, [currentWorkspaceId])
+
+  useEffect(() => {
+    if (currentWorkspaceId) {
+      localStorage.setItem(`killscale_workspace_${currentWorkspaceId}_showAttribution`, String(showAttribution))
+    }
+  }, [currentWorkspaceId, showAttribution])
 
   // Save date preferences when they change
   useEffect(() => {
@@ -2454,22 +2475,65 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Revenue Source Indicator */}
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mb-3">
-            {revenueSource === 'shopify' && (
-              <>
-                <ShoppingBag className="w-3 h-3 text-green-400" />
-                <span>Revenue from Shopify</span>
-              </>
-            )}
-            {revenueSource === 'pixel' && (
-              <>
-                <Activity className="w-3 h-3 text-blue-400" />
-                <span>Revenue from KillScale Pixel</span>
-              </>
-            )}
-            {revenueSource === 'meta' && (
-              <span className="text-zinc-500">Revenue from Meta API</span>
+          {/* Revenue Source Indicator + Workspace Settings */}
+          <div className="flex items-center justify-between mb-3 max-w-[1400px]">
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              {revenueSource === 'shopify' && (
+                <>
+                  <ShoppingBag className="w-3 h-3 text-green-400" />
+                  <span>Revenue from Shopify</span>
+                </>
+              )}
+              {revenueSource === 'pixel' && (
+                <>
+                  <Activity className="w-3 h-3 text-blue-400" />
+                  <span>Revenue from KillScale Pixel</span>
+                </>
+              )}
+              {revenueSource === 'meta' && (
+                <span className="text-zinc-500">Revenue from Meta API</span>
+              )}
+            </div>
+
+            {/* Workspace Stats Settings */}
+            {currentWorkspaceId && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowAttributionSettings(!showAttributionSettings)}
+                  className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover rounded-lg transition-colors"
+                  title="Stats display settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+
+                {showAttributionSettings && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowAttributionSettings(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-bg-card border border-border rounded-lg shadow-xl p-3 min-w-[200px]">
+                      <div className="text-xs font-medium text-zinc-400 mb-2">Display Settings</div>
+                      <label className="flex items-center justify-between gap-3 cursor-pointer group">
+                        <span className="text-sm text-zinc-300 group-hover:text-white">Show Attribution</span>
+                        <button
+                          onClick={() => setShowAttribution(!showAttribution)}
+                          className={`relative w-10 h-5 rounded-full transition-colors ${
+                            showAttribution ? 'bg-accent' : 'bg-zinc-600'
+                          }`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                            showAttribution ? 'translate-x-5' : 'translate-x-0.5'
+                          }`} />
+                        </button>
+                      </label>
+                      <p className="text-xs text-zinc-500 mt-2">
+                        {showAttribution ? 'Platform breakdown visible' : 'Platform breakdown hidden'}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
 
@@ -2494,23 +2558,23 @@ export default function DashboardPage() {
                   value={blendedStats.revenue.total}
                   prefix="$"
                   subtitle={blendedStats.results.total > 0
-                    ? `${blendedStats.results.total} orders • $${Math.round(blendedStats.revenue.total / blendedStats.results.total)}/ea`
+                    ? `${blendedStats.results.total} orders`
                     : undefined
                   }
-                  platforms={{
+                  platforms={showAttribution ? {
                     meta: blendedStats.revenue.metaAttributed > 0 ? `$${blendedStats.revenue.metaAttributed.toLocaleString()}` : null,
                     google: blendedStats.revenue.googleAttributed > 0 ? `$${blendedStats.revenue.googleAttributed.toLocaleString()}` : null
-                  }}
+                  } : undefined}
                 />
                 <PrimaryStatCard
                   label={FEATURES.UPPROMOTE && hasUppromote ? "True ROAS" : "ROAS"}
                   value={FEATURES.UPPROMOTE && hasUppromote ? trueRoas.toFixed(2) : blendedStats.roas.blended.toFixed(2)}
                   suffix="x"
                   subtitle={FEATURES.UPPROMOTE && hasUppromote ? "rev ÷ total costs" : "rev ÷ spend"}
-                  platforms={{
+                  platforms={(!currentWorkspaceId || showAttribution) ? {
                     meta: blendedStats.roas.meta > 0 ? `${blendedStats.roas.meta.toFixed(2)}x` : null,
                     google: blendedStats.roas.google > 0 ? `${blendedStats.roas.google.toFixed(2)}x` : null
-                  }}
+                  } : undefined}
                 />
                 <BudgetStatCard
                   total={budgetTotals.total}
@@ -2534,25 +2598,25 @@ export default function DashboardPage() {
                   value={totals.revenue}
                   prefix="$"
                   subtitle={totals.results > 0
-                    ? `${totals.results} results • $${Math.round(totals.revenue / totals.results)}/ea`
+                    ? `${totals.results} results`
                     : totals.manualCount > 0
                       ? `+${totals.manualCount} manual`
                       : undefined
                   }
-                  platforms={{
+                  platforms={(!currentWorkspaceId || showAttribution) ? {
                     meta: isGoogleAccount(selectedAccountId) ? null : `$${totals.revenue.toLocaleString()}`,
                     google: isGoogleAccount(selectedAccountId) ? `$${totals.revenue.toLocaleString()}` : null
-                  }}
+                  } : undefined}
                 />
                 <PrimaryStatCard
                   label="ROAS"
                   value={totals.roas.toFixed(2)}
                   suffix="x"
                   subtitle="rev ÷ spend"
-                  platforms={{
+                  platforms={(!currentWorkspaceId || showAttribution) ? {
                     meta: isGoogleAccount(selectedAccountId) ? null : `${totals.roas.toFixed(2)}x`,
                     google: isGoogleAccount(selectedAccountId) ? `${totals.roas.toFixed(2)}x` : null
-                  }}
+                  } : undefined}
                 />
                 <BudgetStatCard
                   total={budgetTotals.total}
