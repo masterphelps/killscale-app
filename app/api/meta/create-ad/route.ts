@@ -72,9 +72,9 @@ export async function POST(request: NextRequest) {
       .single()
 
     const planLower = subscription?.plan?.toLowerCase() || ''
-    if (!subscription || !['pro', 'agency'].includes(planLower)) {
+    if (!subscription || !['launch', 'scale', 'pro', 'agency'].includes(planLower)) {
       return NextResponse.json({
-        error: 'Ad creation requires Pro or Agency plan',
+        error: 'Ad creation requires a paid plan',
         upgradeRequired: true
       }, { status: 403 })
     }
