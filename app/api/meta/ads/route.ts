@@ -35,9 +35,10 @@ export async function GET(request: NextRequest) {
 
     const accessToken = connection.access_token
 
-    // Fetch ads for the ad set - include all non-deleted statuses
-    // Statuses: ACTIVE, PAUSED, PENDING_REVIEW, IN_PROCESS, WITH_ISSUES, DISAPPROVED, PREAPPROVED, CAMPAIGN_PAUSED, ADSET_PAUSED
-    const adsUrl = `https://graph.facebook.com/v18.0/${adsetId}/ads?fields=id,name,status,effective_status,creative{id,name,thumbnail_url,image_url,object_story_spec}&filtering=[{"field":"effective_status","operator":"NOT_IN","value":["DELETED","ARCHIVED"]}]&access_token=${accessToken}`
+    // Fetch ads for the ad set
+    // No filtering - Meta's filtered endpoints have ~5min propagation delay for new/modified entities
+    // We filter out DELETED/ARCHIVED client-side instead
+    const adsUrl = `https://graph.facebook.com/v18.0/${adsetId}/ads?fields=id,name,status,effective_status,creative{id,name,thumbnail_url,image_url,object_story_spec}&access_token=${accessToken}`
 
     const response = await fetch(adsUrl)
     const result = await response.json()
@@ -87,7 +88,11 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const ads = result.data || []
+    const ads = (result.data || [])
+      // Filter out DELETED/ARCHIVED client-side (avoids Meta's 5min propagation delay)
+      .filter((ad: { effective_status?: string }) =>
+        !['DELETED', 'ARCHIVED'].includes(ad.effective_status || '')
+      )
 
     return NextResponse.json({
       success: true,
