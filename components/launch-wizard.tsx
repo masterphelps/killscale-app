@@ -1040,6 +1040,27 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
         throw new Error(data.error || `Failed to create ${entityLabel}`)
       }
 
+      // Sync data so the new campaign shows up immediately
+      setDeploymentPhase('Syncing new campaign data...')
+      try {
+        const syncRes = await fetch('/api/meta/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: state.adAccountId,
+            datePreset: 'last_7d',
+            forceFullSync: true  // Force full sync to pick up new entities
+          })
+        })
+        if (!syncRes.ok) {
+          console.warn('Post-creation sync failed, but campaign was created successfully')
+        }
+      } catch (syncErr) {
+        console.warn('Post-creation sync error:', syncErr)
+        // Don't fail the whole operation if sync fails - campaign was created
+      }
+
       // Pass Performance Set result if applicable
       if (state.entityType === 'performance-set') {
         onComplete({ usedAdIds: state.selectedStarredAds })
