@@ -113,15 +113,39 @@ export async function POST(request: NextRequest) {
 
     const cleanAdAccountId = adAccountId.replace(/^act_/, '')
 
-    // Check subscription
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('plan')
-      .eq('user_id', userId)
-      .single()
+    // Check subscription - check both Stripe and admin-granted subscriptions
+    const [stripeResult, adminResult] = await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('plan, status')
+        .eq('user_id', userId)
+        .single(),
+      supabase
+        .from('admin_granted_subscriptions')
+        .select('plan, expires_at, is_active')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single(),
+    ])
 
-    const planLower = subscription?.plan?.toLowerCase() || ''
-    if (!subscription || !['launch', 'scale', 'pro', 'agency'].includes(planLower)) {
+    const stripeSub = stripeResult.data
+    const adminSub = adminResult.data
+
+    // Check if admin-granted subscription is valid
+    const now = new Date()
+    const adminSubValid = adminSub && adminSub.is_active && new Date(adminSub.expires_at) > now
+
+    // Determine effective plan (admin-granted takes precedence)
+    let planLower = ''
+    if (adminSubValid) {
+      planLower = adminSub.plan?.toLowerCase() || ''
+    } else if (stripeSub && (stripeSub.status === 'active' || stripeSub.status === 'trialing')) {
+      planLower = stripeSub.plan?.toLowerCase() || ''
+    }
+
+    if (!planLower || !['launch', 'scale', 'pro', 'agency'].includes(planLower)) {
       return NextResponse.json({
         error: 'Ad set creation requires a paid plan',
         upgradeRequired: true
