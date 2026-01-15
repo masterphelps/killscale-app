@@ -8,7 +8,23 @@
       "WebFetch(domain:developers.google.com)",
       "Bash(grep:*)",
       "WebFetch(domain:ads-developers.googleblog.com)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "WebFetch(domain:shopify.dev)",
+      "Bash(mkdir:*)",
+      "SlashCommand(/ui-architect)",
+      "WebFetch(domain:academy.madgicx.com)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "WebFetch(domain:madgicx.com)",
+      "WebFetch(domain:docs.northbeam.io)",
+      "WebFetch(domain:kb.triplewhale.com)",
+      "WebFetch(domain:databox.com)",
+      "Bash(xargs basename:*)",
+      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 {}')",
+      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ($(stat -f %Sm -t \"\"%b %d\"\" {})) ===\"\" && head -30 {}')",
+      "WebFetch(domain:docs.uppromote.com)",
+      "WebFetch(domain:aff-api.uppromote.com)",
+      "WebFetch(domain:docs.airbyte.com)"
     ]
   }
 }

@@ -35,7 +35,6 @@ import { UtmIndicator } from '@/components/utm-indicator'
 import { BulkActionToolbar, SelectedItem } from '@/components/bulk-action-toolbar'
 import { BulkOperationProgress } from '@/components/bulk-operation-progress'
 import { BulkBudgetModal } from '@/components/bulk-budget-modal'
-import { DuplicateModal } from '@/components/duplicate-modal'
 import { CopyAdsModal } from '@/components/copy-ads-modal'
 import { InlineDuplicateModal } from '@/components/inline-duplicate-modal'
 import { EntityInfoModal } from '@/components/entity-info-modal'
@@ -221,7 +220,7 @@ export default function LaunchPage() {
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Map<string, SelectedItem>>(new Map())
   const [bulkLoading, setBulkLoading] = useState(false)
-  const [bulkLoadingAction, setBulkLoadingAction] = useState<'pause' | 'resume' | 'delete' | 'duplicate' | 'scale' | 'copy' | null>(null)
+  const [bulkLoadingAction, setBulkLoadingAction] = useState<'pause' | 'resume' | 'delete' | 'scale' | 'copy' | null>(null)
   const [bulkProgress, setBulkProgress] = useState<{
     isOpen: boolean
     title: string
@@ -232,7 +231,6 @@ export default function LaunchPage() {
     results: Array<{ id: string; name: string; success: boolean; error?: string }>
   } | null>(null)
   const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false)
-  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
   const [copyAdsModalOpen, setCopyAdsModalOpen] = useState(false)
   const [inlineDuplicateModal, setInlineDuplicateModal] = useState<{
     isOpen: boolean
@@ -1131,147 +1129,6 @@ export default function LaunchPage() {
       setBulkLoading(false)
       setBulkLoadingAction(null)
     }
-  }
-
-  const handleBulkDuplicate = () => {
-    setDuplicateModalOpen(true)
-  }
-
-  const handleDuplicateConfirm = async (options: { newNames: Record<string, string>; createPaused: boolean }) => {
-    if (!user || !currentAccountId) return
-
-    const items = Array.from(selectedItems.values())
-    const copyStatus = options.createPaused ? 'PAUSED' : 'ACTIVE'
-
-    setBulkLoading(true)
-    setBulkLoadingAction('duplicate')
-    setDuplicateModalOpen(false)
-    setBulkProgress({
-      isOpen: true,
-      title: 'Duplicating items...',
-      total: items.length,
-      completed: 0,
-      failed: 0,
-      results: []
-    })
-
-    const results: Array<{ id: string; name: string; success: boolean; error?: string }> = []
-    let succeeded = 0
-    let failed = 0
-
-    // Process items sequentially to avoid rate limits
-    for (const item of items) {
-      const newName = options.newNames[item.id]
-
-      try {
-        let response: Response
-        let endpoint: string
-
-        switch (item.type) {
-          case 'campaign':
-            endpoint = '/api/meta/duplicate-campaign'
-            response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: user.id,
-                adAccountId: currentAccountId,
-                sourceCampaignId: item.id,
-                newName,
-                copyStatus
-              })
-            })
-            break
-
-          case 'adset':
-            endpoint = '/api/meta/duplicate-adset'
-            response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: user.id,
-                adAccountId: currentAccountId,
-                sourceAdsetId: item.id,
-                targetCampaignId: item.parentCampaignId,
-                newName,
-                copyStatus
-              })
-            })
-            break
-
-          case 'ad':
-            endpoint = '/api/meta/duplicate-ad'
-            response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: user.id,
-                adAccountId: currentAccountId,
-                sourceAdId: item.id,
-                targetAdsetId: item.parentAdsetId,
-                newName,
-                copyStatus
-              })
-            })
-            break
-
-          default:
-            throw new Error(`Unknown item type: ${item.type}`)
-        }
-
-        const result = await response.json()
-
-        if (result.error) {
-          results.push({ id: item.id, name: item.name, success: false, error: result.error })
-          failed++
-        } else {
-          const successMessage = item.type === 'campaign'
-            ? `→ ${result.newCampaignName} (${result.adsetsCopied} ad sets, ${result.adsCopied} ads)`
-            : item.type === 'adset'
-              ? `→ ${result.newAdsetName} (${result.adsCopied} ads)`
-              : `→ ${result.newAdName}`
-          results.push({ id: item.id, name: `${item.name} ${successMessage}`, success: true })
-          succeeded++
-        }
-      } catch (err) {
-        results.push({
-          id: item.id,
-          name: item.name,
-          success: false,
-          error: err instanceof Error ? err.message : 'Unknown error'
-        })
-        failed++
-      }
-
-      // Update progress
-      setBulkProgress(prev => prev ? {
-        ...prev,
-        completed: results.length,
-        failed,
-        results
-      } : null)
-
-      // Small delay between items
-      await new Promise(resolve => setTimeout(resolve, 200))
-    }
-
-    setBulkProgress({
-      isOpen: true,
-      title: 'Duplication Complete',
-      total: items.length,
-      completed: items.length,
-      failed,
-      results
-    })
-
-    // Reload campaigns to show new items
-    if (succeeded > 0) {
-      await loadCampaigns()
-      clearSelection()
-    }
-
-    setBulkLoading(false)
-    setBulkLoadingAction(null)
   }
 
   const handleBulkScaleBudget = () => {
@@ -2205,7 +2062,6 @@ export default function LaunchPage() {
         onPause={handleBulkPause}
         onResume={handleBulkResume}
         onDelete={handleBulkDelete}
-        onDuplicate={handleBulkDuplicate}
         onScaleBudget={handleBulkScaleBudget}
         onCopyAds={handleBulkCopyAds}
         onClear={clearSelection}
@@ -2242,20 +2098,6 @@ export default function LaunchPage() {
             isCBO: item.isCBO
           }))}
         onConfirm={handleBulkScaleBudgetConfirm}
-      />
-
-      {/* Duplicate Modal */}
-      <DuplicateModal
-        isOpen={duplicateModalOpen}
-        onClose={() => setDuplicateModalOpen(false)}
-        items={Array.from(selectedItems.values()).map(item => ({
-          id: item.id,
-          type: item.type,
-          name: item.name,
-          parentCampaignId: item.parentCampaignId,
-          parentAdsetId: item.parentAdsetId
-        }))}
-        onConfirm={handleDuplicateConfirm}
       />
 
       {/* Copy Ads Modal */}

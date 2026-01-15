@@ -21,12 +21,11 @@ interface BulkActionToolbarProps {
   onPause: () => void
   onResume: () => void
   onDelete: () => void
-  onDuplicate: () => void
   onScaleBudget: () => void
   onCopyAds: () => void
   onClear: () => void
   isLoading: boolean
-  loadingAction?: 'pause' | 'resume' | 'delete' | 'duplicate' | 'scale' | 'copy' | null
+  loadingAction?: 'pause' | 'resume' | 'delete' | 'scale' | 'copy' | null
 }
 
 export function BulkActionToolbar({
@@ -34,7 +33,6 @@ export function BulkActionToolbar({
   onPause,
   onResume,
   onDelete,
-  onDuplicate,
   onScaleBudget,
   onCopyAds,
   onClear,
@@ -123,25 +121,6 @@ export function BulkActionToolbar({
               <span className="hidden sm:inline">Pause</span>
             </button>
           )}
-
-          {/* Duplicate */}
-          <button
-            onClick={onDuplicate}
-            disabled={isLoading}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
-              "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30",
-              isLoading && "opacity-50 cursor-not-allowed"
-            )}
-            title="Duplicate selected"
-          >
-            {loadingAction === 'duplicate' ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Copy className="w-4 h-4" />
-            )}
-            <span className="hidden sm:inline">Duplicate</span>
-          </button>
 
           {/* Scale Budget - only show if budget items selected */}
           {hasBudgetItems && (
