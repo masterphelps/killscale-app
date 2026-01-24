@@ -22,7 +22,6 @@ type PixelConfig = {
   attribution_source: AttributionSource
   attribution_window: number
   attribution_model?: AttributionModel
-  time_decay_half_life?: number
 }
 
 // Attribution data keyed by ad_id (utm_content from pixel events)
@@ -69,7 +68,7 @@ type AttributionContextType = {
 
   // Computed - TRUE means entire app uses KillScale pixel data (no Meta fallback)
   isKillScaleActive: boolean
-  // TRUE when using a multi-touch model (linear, time_decay, position_based)
+  // Always false - we only support single-touch models (first_touch, last_touch)
   isMultiTouchModel: boolean
 
   // NEW: Business type and Shopify state
@@ -210,7 +209,7 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
         // Query workspace_pixels for this workspace's pixel config
         const { data: wsPixel, error } = await supabase
           .from('workspace_pixels')
-          .select('pixel_id, attribution_source, attribution_window, attribution_model, time_decay_half_life')
+          .select('pixel_id, attribution_source, attribution_window, attribution_model')
           .eq('workspace_id', currentWorkspaceId)
           .single()
 
@@ -242,7 +241,6 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
           attribution_source: mappedSource,
           attribution_window: wsPixel.attribution_window || 7,
           attribution_model: wsPixel.attribution_model || 'last_touch',
-          time_decay_half_life: wsPixel.time_decay_half_life || 7,
         })
       } catch (err) {
         console.error('Error loading config:', err)
@@ -410,7 +408,8 @@ export function AttributionProvider({ children }: { children: ReactNode }) {
 
   // Computed values
   const isKillScaleActive = pixelConfig?.attribution_source === 'killscale'
-  const isMultiTouchModel = attributionModel !== 'last_touch'
+  // Always false - we only support single-touch models (first_touch, last_touch)
+  const isMultiTouchModel = false
   const source = pixelConfig?.attribution_source || 'meta'
   const pixelId = pixelConfig?.pixel_id || null
   const workspaceId = pixelConfig?.workspace_id || null

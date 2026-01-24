@@ -24,7 +24,8 @@
       "Bash(xargs -I {} sh -c 'echo \"\"=== {} ($(stat -f %Sm -t \"\"%b %d\"\" {})) ===\"\" && head -30 {}')",
       "WebFetch(domain:docs.uppromote.com)",
       "WebFetch(domain:aff-api.uppromote.com)",
-      "WebFetch(domain:docs.airbyte.com)"
+      "WebFetch(domain:docs.airbyte.com)",
+      "WebFetch(domain:www.triplewhale.com)"
     ]
   }
 }

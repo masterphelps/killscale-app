@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
 
   try {
     let attributionModel: AttributionModel = 'last_touch'
-    let timeDecayHalfLife = 7
     let isAuthorized = false
 
     // If workspaceId provided, verify ownership via workspace or membership
@@ -55,14 +54,13 @@ export async function GET(request: NextRequest) {
         // User has access, now get the pixel config
         const { data: wsPixel } = await supabase
           .from('workspace_pixels')
-          .select('pixel_id, attribution_model, time_decay_half_life')
+          .select('pixel_id, attribution_model')
           .eq('pixel_id', pixelId)
           .eq('workspace_id', workspaceId)
           .single()
 
         if (wsPixel) {
           attributionModel = (wsPixel.attribution_model as AttributionModel) || 'last_touch'
-          timeDecayHalfLife = wsPixel.time_decay_half_life || 7
           isAuthorized = true
         }
       }
@@ -273,12 +271,11 @@ export async function GET(request: NextRequest) {
         lastTouchData[lastTouchpoint.ad_id].conversions += 1
         lastTouchData[lastTouchpoint.ad_id].revenue += conversionValue
 
-        // MULTI-TOUCH: Apply fractional attribution model (for ad level)
+        // Apply attribution model (first touch or last touch)
         const attributed = applyAttributionModel(
           relevantTouchpoints,
           conversionValue,
-          attributionModel,
-          timeDecayHalfLife
+          attributionModel
         )
 
         allAttributions.push(...attributed)

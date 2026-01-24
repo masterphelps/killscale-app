@@ -1,16 +1,17 @@
 /**
- * Multi-Touch Attribution Models
+ * Attribution Models
  *
- * Each model distributes credit for a conversion across touchpoints differently.
- * A "touchpoint" is an ad click/view that led to a conversion.
+ * For a single-platform tool (Meta ads only), multi-touch attribution
+ * across different ads doesn't provide meaningful insights. The valuable
+ * distinction is:
+ * - First Touch: Which ad first introduced the customer (prospecting)
+ * - Last Touch: Which ad closed the sale (retargeting)
+ *
+ * Multi-touch models (Linear, Time Decay, Position Based) are designed
+ * for cross-channel attribution (Meta vs Google vs TikTok vs Email).
  */
 
-export type AttributionModel =
-  | 'first_touch'
-  | 'last_touch'
-  | 'linear'
-  | 'time_decay'
-  | 'position_based'
+export type AttributionModel = 'first_touch' | 'last_touch'
 
 export interface Touchpoint {
   ad_id: string
@@ -20,18 +21,17 @@ export interface Touchpoint {
 
 export interface AttributedConversion {
   ad_id: string
-  credit: number  // Fractional credit (0-1 for single conversion, can sum >1 for multiple)
-  value: number   // Attributed value = credit * conversion_value
+  credit: number  // 1 for single-touch models
+  value: number   // Full conversion value
 }
 
 /**
- * Apply attribution model to distribute credit across touchpoints
+ * Apply attribution model to get the credited ad
  */
 export function applyAttributionModel(
   touchpoints: Touchpoint[],
   conversionValue: number,
-  model: AttributionModel,
-  timeDecayHalfLife: number = 7
+  model: AttributionModel
 ): AttributedConversion[] {
   if (touchpoints.length === 0) return []
 
@@ -44,13 +44,6 @@ export function applyAttributionModel(
     case 'first_touch':
       return firstTouchAttribution(sorted, conversionValue)
     case 'last_touch':
-      return lastTouchAttribution(sorted, conversionValue)
-    case 'linear':
-      return linearAttribution(sorted, conversionValue)
-    case 'time_decay':
-      return timeDecayAttribution(sorted, conversionValue, timeDecayHalfLife)
-    case 'position_based':
-      return positionBasedAttribution(sorted, conversionValue)
     default:
       return lastTouchAttribution(sorted, conversionValue)
   }
@@ -58,6 +51,7 @@ export function applyAttributionModel(
 
 /**
  * First Touch: 100% credit to the first touchpoint
+ * Useful for understanding which ads bring in new customers (prospecting)
  */
 function firstTouchAttribution(
   touchpoints: Touchpoint[],
@@ -73,6 +67,7 @@ function firstTouchAttribution(
 
 /**
  * Last Touch: 100% credit to the last touchpoint
+ * Useful for understanding which ads close sales (retargeting)
  */
 function lastTouchAttribution(
   touchpoints: Touchpoint[],
@@ -84,120 +79,6 @@ function lastTouchAttribution(
     credit: 1,
     value: conversionValue
   }]
-}
-
-/**
- * Linear: Equal credit to all touchpoints
- */
-function linearAttribution(
-  touchpoints: Touchpoint[],
-  conversionValue: number
-): AttributedConversion[] {
-  const creditPerTouch = 1 / touchpoints.length
-  const valuePerTouch = conversionValue / touchpoints.length
-
-  // Aggregate by ad_id (same ad might appear multiple times)
-  const byAd = new Map<string, { credit: number; value: number }>()
-
-  for (const tp of touchpoints) {
-    const existing = byAd.get(tp.ad_id) || { credit: 0, value: 0 }
-    byAd.set(tp.ad_id, {
-      credit: existing.credit + creditPerTouch,
-      value: existing.value + valuePerTouch
-    })
-  }
-
-  return Array.from(byAd.entries()).map(([ad_id, { credit, value }]) => ({
-    ad_id,
-    credit,
-    value
-  }))
-}
-
-/**
- * Time Decay: Exponential decay giving more credit to recent touchpoints
- * Credit = 2^(-days_before_conversion / half_life)
- */
-function timeDecayAttribution(
-  touchpoints: Touchpoint[],
-  conversionValue: number,
-  halfLifeDays: number
-): AttributedConversion[] {
-  // Conversion time is the last touchpoint (or could be passed separately)
-  const conversionTime = new Date(touchpoints[touchpoints.length - 1].event_time).getTime()
-
-  // Calculate raw weights
-  const weights: { ad_id: string; weight: number }[] = touchpoints.map(tp => {
-    const touchTime = new Date(tp.event_time).getTime()
-    const daysBefore = (conversionTime - touchTime) / (1000 * 60 * 60 * 24)
-    const weight = Math.pow(2, -daysBefore / halfLifeDays)
-    return { ad_id: tp.ad_id, weight }
-  })
-
-  // Normalize weights to sum to 1
-  const totalWeight = weights.reduce((sum, w) => sum + w.weight, 0)
-
-  // Aggregate by ad_id
-  const byAd = new Map<string, { credit: number; value: number }>()
-
-  for (const { ad_id, weight } of weights) {
-    const normalizedCredit = weight / totalWeight
-    const existing = byAd.get(ad_id) || { credit: 0, value: 0 }
-    byAd.set(ad_id, {
-      credit: existing.credit + normalizedCredit,
-      value: existing.value + (normalizedCredit * conversionValue)
-    })
-  }
-
-  return Array.from(byAd.entries()).map(([ad_id, { credit, value }]) => ({
-    ad_id,
-    credit,
-    value
-  }))
-}
-
-/**
- * Position Based: 40% to first, 40% to last, 20% split among middle
- */
-function positionBasedAttribution(
-  touchpoints: Touchpoint[],
-  conversionValue: number
-): AttributedConversion[] {
-  const byAd = new Map<string, { credit: number; value: number }>()
-
-  const addCredit = (ad_id: string, credit: number) => {
-    const existing = byAd.get(ad_id) || { credit: 0, value: 0 }
-    byAd.set(ad_id, {
-      credit: existing.credit + credit,
-      value: existing.value + (credit * conversionValue)
-    })
-  }
-
-  if (touchpoints.length === 1) {
-    // Single touchpoint gets 100%
-    addCredit(touchpoints[0].ad_id, 1)
-  } else if (touchpoints.length === 2) {
-    // Two touchpoints: 50/50
-    addCredit(touchpoints[0].ad_id, 0.5)
-    addCredit(touchpoints[1].ad_id, 0.5)
-  } else {
-    // 40% first, 40% last, 20% split among middle
-    addCredit(touchpoints[0].ad_id, 0.4)
-    addCredit(touchpoints[touchpoints.length - 1].ad_id, 0.4)
-
-    const middleCount = touchpoints.length - 2
-    const middleCredit = 0.2 / middleCount
-
-    for (let i = 1; i < touchpoints.length - 1; i++) {
-      addCredit(touchpoints[i].ad_id, middleCredit)
-    }
-  }
-
-  return Array.from(byAd.entries()).map(([ad_id, { credit, value }]) => ({
-    ad_id,
-    credit,
-    value
-  }))
 }
 
 /**
@@ -214,7 +95,7 @@ export function aggregateAttributions(
     result.set(attr.ad_id, {
       credit: existing.credit + attr.credit,
       value: existing.value + attr.value,
-      conversions: existing.conversions + attr.credit // Fractional conversions
+      conversions: existing.conversions + attr.credit
     })
   }
 
@@ -225,24 +106,12 @@ export function aggregateAttributions(
  * Model descriptions for UI
  */
 export const ATTRIBUTION_MODEL_INFO: Record<AttributionModel, { label: string; description: string }> = {
-  first_touch: {
-    label: 'First Touch',
-    description: '100% credit to the first ad that brought the customer'
-  },
   last_touch: {
     label: 'Last Touch',
-    description: '100% credit to the last ad before conversion'
+    description: 'Credit to the last ad clicked before purchase'
   },
-  linear: {
-    label: 'Linear',
-    description: 'Equal credit split across all touchpoints'
-  },
-  time_decay: {
-    label: 'Time Decay',
-    description: 'More credit to recent touchpoints, less to older ones'
-  },
-  position_based: {
-    label: 'Position Based',
-    description: '40% to first ad, 40% to last ad, 20% split among middle'
+  first_touch: {
+    label: 'First Touch',
+    description: 'Credit to the first ad that introduced the customer'
   }
 }

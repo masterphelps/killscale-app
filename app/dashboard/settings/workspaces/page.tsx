@@ -54,7 +54,6 @@ type WorkspacePixel = {
   pixel_secret: string
   attribution_source: 'native' | 'pixel'
   attribution_model: AttributionModel
-  time_decay_half_life: number
 }
 
 type KioskSettings = {
@@ -813,7 +812,7 @@ export default function WorkspacesPage() {
     // Check if pixel exists
     let { data: existingPixel } = await supabase
       .from('workspace_pixels')
-      .select('pixel_id, pixel_secret, attribution_source, attribution_model, time_decay_half_life')
+      .select('pixel_id, pixel_secret, attribution_source, attribution_model')
       .eq('workspace_id', workspaceId)
       .single()
 
@@ -831,9 +830,8 @@ export default function WorkspacesPage() {
           pixel_secret: crypto.randomUUID().replace(/-/g, ''),
           attribution_source: 'native',
           attribution_model: 'last_touch',
-          time_decay_half_life: 7,
         })
-        .select('pixel_id, pixel_secret, attribution_source, attribution_model, time_decay_half_life')
+        .select('pixel_id, pixel_secret, attribution_source, attribution_model')
         .single()
 
       if (!createError && newPixel) {
@@ -850,7 +848,6 @@ export default function WorkspacesPage() {
           pixel_secret: existingPixel.pixel_secret,
           attribution_source: existingPixel.attribution_source,
           attribution_model: existingPixel.attribution_model || 'last_touch',
-          time_decay_half_life: existingPixel.time_decay_half_life || 7,
         }
       }))
 
@@ -939,19 +936,12 @@ export default function WorkspacesPage() {
   }
 
   // Update attribution model for a workspace
-  const updateAttributionModel = async (workspaceId: string, newModel: AttributionModel, halfLife?: number) => {
+  const updateAttributionModel = async (workspaceId: string, newModel: AttributionModel) => {
     setUpdatingModel(workspaceId)
     try {
-      const updates: { attribution_model: AttributionModel; time_decay_half_life?: number } = {
-        attribution_model: newModel
-      }
-      if (halfLife !== undefined) {
-        updates.time_decay_half_life = halfLife
-      }
-
       const { error } = await supabase
         .from('workspace_pixels')
-        .update(updates)
+        .update({ attribution_model: newModel })
         .eq('workspace_id', workspaceId)
 
       if (!error) {
@@ -960,7 +950,6 @@ export default function WorkspacesPage() {
           [workspaceId]: {
             ...prev[workspaceId],
             attribution_model: newModel,
-            ...(halfLife !== undefined && { time_decay_half_life: halfLife })
           }
         }))
       } else {
@@ -1770,31 +1759,6 @@ ks('pageview');
                                   </button>
                                 ))}
                               </div>
-
-                              {/* Time Decay Half-Life Slider */}
-                              {wp.attribution_model === 'time_decay' && (
-                                <div className="mt-4 p-3 bg-bg-dark rounded-lg">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <label className="text-sm text-zinc-400">Half-Life</label>
-                                    <span className="text-sm font-medium text-white">{wp.time_decay_half_life} days</span>
-                                  </div>
-                                  <input
-                                    type="range"
-                                    min="1"
-                                    max="28"
-                                    value={wp.time_decay_half_life}
-                                    onChange={(e) => updateAttributionModel(workspace.id, 'time_decay', parseInt(e.target.value))}
-                                    className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                                  />
-                                  <div className="flex justify-between text-xs text-zinc-600 mt-1">
-                                    <span>1 day</span>
-                                    <span>28 days</span>
-                                  </div>
-                                  <p className="text-xs text-zinc-500 mt-2">
-                                    Touchpoints lose 50% of their credit every {wp.time_decay_half_life} days before conversion.
-                                  </p>
-                                </div>
-                              )}
 
                               {updatingModel === workspace.id && (
                                 <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
