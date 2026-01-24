@@ -274,7 +274,17 @@ export function Sidebar() {
               <span className="flex items-center gap-2 min-w-0">
                 {dataSource === 'csv' && <FileSpreadsheet className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
                 {currentWorkspaceId && isProPlus && <Building2 className="w-4 h-4 text-purple-400 flex-shrink-0" />}
-                {!currentWorkspaceId && currentAccountId && <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />}
+                {!currentWorkspaceId && currentAccountId && currentAccount && (
+                  currentAccount.platform === 'google' ? (
+                    <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold bg-[#EA4335] text-white" title="Google Ads">
+                      G
+                    </span>
+                  ) : (
+                    <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold bg-[#0866FF] text-white" title="Meta Ads">
+                      M
+                    </span>
+                  )
+                )}
                 <span className="truncate">{getDisplayName()}</span>
               </span>
               {canShowDropdown && (
@@ -351,7 +361,16 @@ export function Sidebar() {
                       )}
                     >
                       <span className="truncate flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                        {/* Platform badge */}
+                        {account.platform === 'google' ? (
+                          <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold bg-[#EA4335] text-white" title="Google Ads">
+                            G
+                          </span>
+                        ) : (
+                          <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold bg-[#0866FF] text-white" title="Meta Ads">
+                            M
+                          </span>
+                        )}
                         {maskText(account.name, `Ad Account ${index + 1}`)}
                       </span>
                       {account.id === currentAccountId && !currentWorkspaceId && (
