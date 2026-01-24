@@ -407,20 +407,36 @@ export default function TrendsPage() {
     return `${labels[level]} ${index + 1}`
   }
 
+  // Calculate last 30 days date range (always use this for trends)
+  const last30DaysRange = useMemo(() => {
+    const end = new Date()
+    end.setHours(23, 59, 59, 999)
+    const start = new Date()
+    start.setDate(start.getDate() - 29) // 30 days including today
+    start.setHours(0, 0, 0, 0)
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0]
+    }
+  }, [])
+
   useEffect(() => {
     if (user) loadData()
-  }, [user])
-  
+  }, [user, last30DaysRange])
+
   const loadData = async () => {
     if (!user) return
     setIsLoading(true)
-    
+
+    // Always fetch last 30 days of data for trends
     const { data: adData, error } = await supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
+      .gte('date_start', last30DaysRange.start)
+      .lte('date_start', last30DaysRange.end)
       .order('date_start', { ascending: true })
-    
+
     if (adData && !error) {
       setData(adData.map(row => ({
         campaign_name: row.campaign_name,
@@ -445,24 +461,8 @@ export default function TrendsPage() {
   
   // Get display label for current date selection
   const getDateLabel = () => {
-    if (dataDateRange) {
-      return `${dataDateRange.start} - ${dataDateRange.end}`
-    }
-    return 'No data'
+    return 'Last 30 Days'
   }
-  
-  // Filter data by date range and paused status
-  // Get actual date range from synced data
-  const dataDateRange = useMemo(() => {
-    if (data.length === 0) return null
-    const dates = data.map(r => r.date_start).filter(Boolean).sort()
-    const endDates = data.map(r => r.date_end).filter(Boolean).sort()
-    if (dates.length === 0) return null
-    return {
-      start: dates[0],
-      end: endDates[endDates.length - 1] || dates[dates.length - 1]
-    }
-  }, [data])
 
   // Apply KillScale attribution to data when active
   const dataWithAttribution = useMemo(() => {
@@ -669,10 +669,17 @@ export default function TrendsPage() {
     return totals
   }, [hierarchy])
   
-  // Time series data for charts
+  // Time series data for charts - always show all 30 days
   const timeSeriesData = useMemo(() => {
+    // Initialize all 30 days with 0 values
     const dateMap: Record<string, { date: string, spend: number, revenue: number, roas: number }> = {}
-    
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const dateStr = d.toISOString().split('T')[0]
+      dateMap[dateStr] = { date: dateStr, spend: 0, revenue: 0, roas: 0 }
+    }
+
     const selectedRows = selection.campaign
       ? filteredData.filter(row => {
           if (selection.ad) return row.ad_name === selection.ad
@@ -680,16 +687,15 @@ export default function TrendsPage() {
           return row.campaign_name === selection.campaign
         })
       : filteredData
-    
+
     selectedRows.forEach(row => {
       const date = row.date_start
-      if (!dateMap[date]) {
-        dateMap[date] = { date, spend: 0, revenue: 0, roas: 0 }
+      if (dateMap[date]) {
+        dateMap[date].spend += row.spend
+        dateMap[date].revenue += row.revenue
       }
-      dateMap[date].spend += row.spend
-      dateMap[date].revenue += row.revenue
     })
-    
+
     return Object.values(dateMap)
       .map(d => ({ ...d, roas: d.spend > 0 ? d.revenue / d.spend : 0 }))
       .sort((a, b) => a.date.localeCompare(b.date))

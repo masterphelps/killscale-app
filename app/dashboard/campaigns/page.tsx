@@ -329,20 +329,17 @@ export default function LaunchPage() {
       setCampaigns(combined)
 
       // Always fetch adsets/ads data for display (needed for UTM counts)
-      // But use cached UTM status to avoid the expensive sync API call
+      // Use cached UTM status - NEVER auto-fetch from API (only manual sync button)
       const cachedUtm = getUtmFromCache(currentAccountId)
       if (cachedUtm && Object.keys(cachedUtm).length > 0) {
         console.log('[UTM] Using cached UTM status for', currentAccountId)
         setUtmStatus(cachedUtm)
         utmFetchedForAccount.current = currentAccountId
-        // Still need to fetch adsets/ads for display - just skip the UTM sync call
-        loadAdSetsAndAdsOnly(combined.map(c => c.id))
-      } else if (utmFetchedForAccount.current !== currentAccountId) {
-        // No cache - fetch everything including UTM status
-        console.log('[UTM] No cache found, fetching from API')
-        utmFetchedForAccount.current = currentAccountId
-        loadAllAdsForUtmStatus(combined.map(c => c.id))
+      } else {
+        console.log('[UTM] No cache found - use manual Sync UTM button to fetch')
       }
+      // Load adsets/ads for display - never auto-fetch UTM status
+      loadAdSetsAndAdsOnly(combined.map(c => c.id))
     } catch (err) {
       console.error('Failed to load campaigns:', err)
     } finally {
@@ -458,9 +455,16 @@ export default function LaunchPage() {
     }
   }
 
-  // Manual UTM sync - clears cache and triggers fresh fetch
+  // Manual UTM sync - clears cache and triggers fresh fetch (active campaigns only)
   const handleManualUtmSync = async () => {
     if (!user || !currentAccountId || campaigns.length === 0) return
+
+    // Only sync active campaigns - skip paused ones to reduce API calls
+    const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE')
+    if (activeCampaigns.length === 0) {
+      console.log('[UTM] No active campaigns to sync')
+      return
+    }
 
     setIsUtmSyncing(true)
     try {
@@ -470,8 +474,8 @@ export default function LaunchPage() {
       utmFetchedForAccount.current = null
       // Clear existing UTM state
       setUtmStatus({})
-      // Trigger fresh fetch
-      await loadAllAdsForUtmStatus(campaigns.map(c => c.id))
+      // Trigger fresh fetch for active campaigns only
+      await loadAllAdsForUtmStatus(activeCampaigns.map(c => c.id))
     } finally {
       setIsUtmSyncing(false)
     }
@@ -738,9 +742,7 @@ export default function LaunchPage() {
             loadCreative(ad.creative.id)
           }
         }
-        // Fetch UTM status for the loaded ads
-        const adIds = data.ads.map((ad: Ad) => ad.id)
-        fetchUtmStatus(adIds)
+        // UTM status comes from cache only - use manual Sync UTM button to fetch
       }
     } catch (err) {
       console.error('Failed to load ads:', err)

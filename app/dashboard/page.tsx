@@ -227,7 +227,7 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
-  const [includePaused, setIncludePaused] = useState(true)
+  const [includePaused, setIncludePaused] = useState(false)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [datePreset, setDatePreset] = useState(() => {
@@ -865,6 +865,8 @@ export default function DashboardPage() {
         status: row.status, // Ad's effective status (includes parent inheritance)
         adset_status: row.adset_status, // Adset's own status
         campaign_status: row.campaign_status, // Campaign's own status
+        // Creative ID for thumbnail display
+        creative_id: row.creative_id,
         // Budget fields for CBO/ABO detection
         campaign_daily_budget: row.campaign_daily_budget,
         campaign_lifetime_budget: row.campaign_lifetime_budget,
@@ -962,6 +964,8 @@ export default function DashboardPage() {
         status: row.status,
         adset_status: row.adset_status,
         campaign_status: row.campaign_status,
+        // Creative ID for thumbnail display
+        creative_id: row.creative_id,
         campaign_daily_budget: row.campaign_daily_budget,
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
@@ -2030,6 +2034,8 @@ export default function DashboardPage() {
     _platform: row._platform,
     ad_account_id: row.ad_account_id,
     campaign_budget_resource_name: row.campaign_budget_resource_name,
+    // Creative ID for thumbnail display
+    creative_id: row.creative_id,
   }))
 
   // Build a map of campaign -> ABO adsets for selection cascading

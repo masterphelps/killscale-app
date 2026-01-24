@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown, Loader2, Video, Image as ImageIcon, X } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
 import { StarButton } from './star-button'
+import { CreativePreviewTooltip } from './creative-preview-tooltip'
 import { Rules, calculateVerdict, Verdict, isEntityActive, StarredAd } from '@/lib/supabase'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { FEATURES } from '@/lib/feature-flags'
@@ -212,6 +213,28 @@ type HierarchyNode = {
   // Manual events (from workspace pixel)
   manualRevenue?: number
   manualCount?: number
+}
+
+// Creative data type (from Meta API)
+interface Creative {
+  id: string
+  name?: string
+  thumbnailUrl?: string
+  imageUrl?: string
+  previewUrl?: string
+  videoSource?: string
+  mediaType: 'image' | 'video' | 'unknown'
+}
+
+// Preview modal state
+interface PreviewModalState {
+  isOpen: boolean
+  previewUrl: string
+  videoSource?: string
+  thumbnailUrl?: string
+  mediaType: 'image' | 'video' | 'unknown'
+  name: string
+  adId?: string
 }
 
 const formatPercent = (value: number) => {
@@ -659,6 +682,13 @@ export function PerformanceTable({
     accountId?: string | null
     budgetResourceName?: string  // Google budget resource name
   } | null>(null)
+
+  // Creative state for thumbnails (lazy loaded when adsets expand)
+  const [creativesData, setCreativesData] = useState<Record<string, Creative>>({})
+  const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
+  const loadedCreativesRef = useRef<Set<string>>(new Set())
+  const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null)
+
   const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
   const startX = useRef(0)
@@ -1068,7 +1098,35 @@ export function PerformanceTable({
       setSortDirection('desc')
     }
   }
-  
+
+  // Load creative details for an ad (lazy loaded when adset expands)
+  const loadCreative = useCallback(async (creativeId: string) => {
+    // Use ref for immediate check (avoids stale closures)
+    if (!userId || loadedCreativesRef.current.has(creativeId)) return
+
+    // Mark as loading immediately using ref
+    loadedCreativesRef.current.add(creativeId)
+    setLoadingCreatives(prev => new Set(prev).add(creativeId))
+
+    try {
+      const res = await fetch(`/api/meta/creative?userId=${userId}&creativeId=${creativeId}`)
+      const data = await res.json()
+      if (data.creative) {
+        setCreativesData(prev => ({ ...prev, [creativeId]: data.creative }))
+      }
+    } catch (err) {
+      console.error('Failed to load creative:', err)
+      // Remove from ref on error so it can be retried
+      loadedCreativesRef.current.delete(creativeId)
+    } finally {
+      setLoadingCreatives(prev => {
+        const next = new Set(prev)
+        next.delete(creativeId)
+        return next
+      })
+    }
+  }, [userId])
+
   // Use account-qualified keys for expand state to prevent collisions in workspace view
   const toggleCampaign = (campaignName: string, accountId?: string | null) => {
     // Create account-qualified key for expanded state
@@ -1100,7 +1158,30 @@ export function PerformanceTable({
     }
     setExpandedAdsets(newSet)
   }
-  
+
+  // Load creatives when adsets are expanded (lazy loading)
+  useEffect(() => {
+    if (!userId) return
+
+    // For each expanded adset, find ads with creativeIds and load them
+    sortedHierarchy.forEach(campaign => {
+      const campaignKey = `${campaign.accountId}::${campaign.name}`
+      if (!expandedCampaigns.has(campaignKey)) return
+
+      campaign.children?.forEach(adset => {
+        const adsetKey = `${campaignKey}::${adset.name}`
+        if (!expandedAdsets.has(adsetKey)) return
+
+        // Load creatives for visible ads (Meta only - Google doesn't have creatives)
+        adset.children?.forEach(ad => {
+          if (ad.creativeId && ad.platform !== 'google' && !loadedCreativesRef.current.has(ad.creativeId)) {
+            loadCreative(ad.creativeId)
+          }
+        })
+      })
+    })
+  }, [expandedAdsets, expandedCampaigns, sortedHierarchy, userId, loadCreative])
+
   const toggleAll = () => {
     if (allExpanded) {
       setExpandedCampaigns(new Set())
@@ -1298,7 +1379,67 @@ export function PerformanceTable({
             })()}
           </div>
         ) : null}
-        
+
+        {/* Creative thumbnail for ads only */}
+        {level === 'ad' && node.creativeId && node.platform !== 'google' && (
+          <CreativePreviewTooltip
+            previewUrl={(() => {
+              const creative = creativesData[node.creativeId!]
+              return creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+            })()}
+            mediaType={creativesData[node.creativeId!]?.mediaType}
+            alt={nameToShow}
+            onFullPreview={() => {
+              const creative = creativesData[node.creativeId!]
+              const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+              if (previewUrl || creative?.videoSource) {
+                setPreviewModal({
+                  isOpen: true,
+                  previewUrl: previewUrl || '',
+                  videoSource: creative?.videoSource,
+                  thumbnailUrl: previewUrl,
+                  mediaType: creative?.mediaType || 'unknown',
+                  name: nameToShow,
+                  adId: node.id || undefined
+                })
+              }
+            }}
+          >
+            <div className="w-10 h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
+              {loadingCreatives.has(node.creativeId!) ? (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                </div>
+              ) : (() => {
+                const creative = creativesData[node.creativeId!]
+                const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+                return previewUrl ? (
+                  <div className="relative w-full h-full">
+                    <img
+                      src={previewUrl}
+                      alt={nameToShow}
+                      className="w-full h-full object-cover"
+                    />
+                    {creative?.mediaType === 'video' && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <Play className="w-3 h-3 text-white fill-white" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {creative?.mediaType === 'video' ? (
+                      <Video className="w-4 h-4 text-zinc-600" />
+                    ) : (
+                      <ImageIcon className="w-4 h-4 text-zinc-600" />
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          </CreativePreviewTooltip>
+        )}
+
         {/* Expand/collapse chevron */}
         {onToggle ? (
           <button
@@ -1655,6 +1796,60 @@ export function PerformanceTable({
               />
             </div>
           )}
+          {/* Creative thumbnail for ads (mobile) */}
+          {level === 'ad' && node.creativeId && node.platform !== 'google' && (
+            <div
+              className="flex-shrink-0 mr-3 cursor-pointer"
+              onClick={() => {
+                const creative = creativesData[node.creativeId!]
+                const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+                if (previewUrl || creative?.videoSource) {
+                  setPreviewModal({
+                    isOpen: true,
+                    previewUrl: previewUrl || '',
+                    videoSource: creative?.videoSource,
+                    thumbnailUrl: previewUrl,
+                    mediaType: creative?.mediaType || 'unknown',
+                    name: nameToShow,
+                    adId: node.id || undefined
+                  })
+                }
+              }}
+            >
+              <div className="w-12 h-14 rounded-lg bg-bg-hover overflow-hidden">
+                {loadingCreatives.has(node.creativeId!) ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                  </div>
+                ) : (() => {
+                  const creative = creativesData[node.creativeId!]
+                  const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+                  return previewUrl ? (
+                    <div className="relative w-full h-full">
+                      <img
+                        src={previewUrl}
+                        alt={nameToShow}
+                        className="w-full h-full object-cover"
+                      />
+                      {creative?.mediaType === 'video' && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Play className="w-4 h-4 text-white fill-white" />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      {creative?.mediaType === 'video' ? (
+                        <Video className="w-5 h-5 text-zinc-600" />
+                      ) : (
+                        <ImageIcon className="w-5 h-5 text-zinc-600" />
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
           <div className="flex-1 pr-3">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-[10px] text-zinc-500 uppercase tracking-wide">{levelLabels[level]}</span>
@@ -2008,6 +2203,76 @@ export function PerformanceTable({
           scalePercentage={rules.scale_percentage}
           userId={userId}
         />
+      )}
+
+      {/* Creative Preview Modal */}
+      {previewModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setPreviewModal(null)}
+        >
+          {/* Close button */}
+          <button
+            onClick={() => setPreviewModal(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+
+          {/* Media preview */}
+          <div className="max-w-[90vw] sm:max-w-4xl max-h-[80vh] relative" onClick={(e) => e.stopPropagation()}>
+            {previewModal.mediaType === 'video' && previewModal.videoSource ? (
+              // Video with playable source
+              <video
+                src={previewModal.videoSource}
+                controls
+                autoPlay
+                muted
+                playsInline
+                poster={previewModal.thumbnailUrl}
+                className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
+              >
+                Your browser does not support video playback.
+              </video>
+            ) : previewModal.mediaType === 'video' ? (
+              // Video without playable source - show thumbnail with message
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  {previewModal.thumbnailUrl ? (
+                    <img
+                      src={previewModal.thumbnailUrl}
+                      alt={previewModal.name}
+                      className="max-w-full max-h-[60vh] rounded-lg shadow-2xl object-contain"
+                    />
+                  ) : (
+                    <div className="w-80 h-48 bg-zinc-800 rounded-lg flex items-center justify-center">
+                      <Video className="w-16 h-16 text-zinc-600" />
+                    </div>
+                  )}
+                  {/* Video icon overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center">
+                      <Video className="w-8 h-8 text-white" />
+                    </div>
+                  </div>
+                </div>
+                <p className="text-zinc-400 text-sm">Video preview not available</p>
+              </div>
+            ) : (
+              // Image preview
+              <img
+                src={previewModal.previewUrl}
+                alt={previewModal.name}
+                className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain"
+              />
+            )}
+          </div>
+
+          {/* Title bar */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-4 py-2 rounded-lg max-w-[90vw]">
+            <p className="text-white text-sm font-medium truncate">{previewModal.name}</p>
+          </div>
+        </div>
       )}
     </div>
   )

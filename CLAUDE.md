@@ -375,6 +375,59 @@ else → KILL
 
 ## Recent Fixes (January 2026)
 
+### Creative Thumbnails in Performance Table (Jan 24)
+**Status:** IN PROGRESS - thumbnails not displaying, debugging `creative_id` data flow
+
+**Files Modified:**
+- `components/performance-table.tsx` - Added creative loading, thumbnails, preview modal
+- `app/dashboard/page.tsx` - Added `creative_id` to data mapping (was missing!)
+
+**Implementation:**
+- Lazy loads creatives when adsets expand (via useEffect)
+- Uses `CreativePreviewTooltip` for hover preview (desktop)
+- Full-screen preview modal on click
+- Supports images and videos (play icon overlay)
+- Skips Google Ads (no creatives)
+
+**Key Pattern (from campaigns page):**
+```typescript
+const [creativesData, setCreativesData] = useState<Record<string, Creative>>({})
+const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
+const loadedCreativesRef = useRef<Set<string>>(new Set())  // Prevents duplicate loads
+```
+
+**Debugging:** Console logs added at line ~1176 to check if `ad.creativeId` is populated.
+
+### Attribution Models Simplified (Jan 24)
+Removed multi-touch attribution models (Linear, Time Decay, Position Based) - only meaningful for cross-channel attribution. KillScale is Meta-only, so only First Touch and Last Touch make sense.
+
+**Files Modified:**
+- `lib/attribution-models.ts` - Simplified to only `first_touch` | `last_touch`
+- `lib/attribution.tsx` - Removed `time_decay_half_life`, set `isMultiTouchModel` to always false
+- `app/dashboard/settings/workspaces/page.tsx` - Removed multi-touch UI options
+- `app/api/pixel/attribution/route.ts` - Simplified attribution logic
+
+### UTM Sync Never Auto-Fetches (Jan 24)
+Campaign manager no longer auto-fetches UTM status on page load or adset expand.
+
+**Files Modified:**
+- `app/dashboard/campaigns/page.tsx`
+  - Removed `loadAllAdsForUtmStatus` call on page load (now always uses `loadAdSetsAndAdsOnly`)
+  - Removed `fetchUtmStatus(adIds)` call in `loadAds()`
+  - Manual sync button only syncs ACTIVE campaigns (skips paused)
+
+### Trends Page Always Shows Last 30 Days (Jan 24)
+**File:** `app/dashboard/trends/page.tsx`
+
+- Data query now filters to last 30 days (independent of dashboard date selection)
+- Time series chart shows all 30 days (days with no data show as 0)
+- Date label always shows "Last 30 Days"
+
+### Dashboard Paused Filter Default (Jan 24)
+**File:** `app/dashboard/page.tsx:230`
+
+Changed `includePaused` default from `true` to `false` - paused items hidden by default.
+
 ### Workspace View Empty Table Fix
 **File:** `components/performance-table.tsx:806`
 
@@ -522,6 +575,7 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Status |
 |------|-------|--------|
+| `eager-hatching-minsky.md` | Creative Thumbnails in Performance Table | IN PROGRESS (debugging) |
 | `gleaming-questing-crane.md` | Pixel + Shopify JOIN Model | IN PROGRESS |
 | `toasty-nibbling-kitten.md` | Workspace-Centric Architecture | IN PROGRESS |
 | `linked-bubbling-wilkes.md` | Multi-Mode Attribution (E-com/Lead Gen) | IN PROGRESS |
@@ -531,6 +585,8 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| Attribution Models Simplified | Removed multi-touch, kept First/Last Touch only | Jan 24 |
+| UTM Sync / Trends / Dashboard Defaults | Various UX improvements | Jan 24 |
 | `robust-dazzling-fox.md` | UpPromote Integration (True ROAS) | Jan 07 |
 | `concurrent-tinkering-dusk.md` | Shopify Integration + Bug Fixes | Jan 02 |
 | `cozy-humming-kazoo.md` | Priority Merge Bug Fix | Jan 01 |

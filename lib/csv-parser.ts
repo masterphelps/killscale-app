@@ -9,6 +9,8 @@ export type CSVRow = {
   campaign_id?: string | null
   adset_name: string
   adset_id?: string | null
+  // Creative ID for thumbnail display and star deduplication
+  creative_id?: string | null
   impressions: number
   clicks: number
   spend: number
