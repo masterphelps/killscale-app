@@ -39,9 +39,9 @@ const CURRENCIES = [
 type UserPreferences = {
   timezone: string
   currency: string
-  email_weekly_digest: boolean
-  email_alerts: boolean
-  email_product_updates: boolean
+  email_digest_enabled: boolean
+  alert_emails_enabled: boolean
+  marketing_emails_enabled: boolean
 }
 
 export default function GeneralSettingsPage() {
@@ -51,9 +51,9 @@ export default function GeneralSettingsPage() {
   const [preferences, setPreferences] = useState<UserPreferences>({
     timezone: 'America/New_York',
     currency: 'USD',
-    email_weekly_digest: true,
-    email_alerts: true,
-    email_product_updates: false,
+    email_digest_enabled: true,
+    alert_emails_enabled: true,
+    marketing_emails_enabled: false,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -75,9 +75,9 @@ export default function GeneralSettingsPage() {
         setPreferences({
           timezone: data.timezone || 'America/New_York',
           currency: data.currency || 'USD',
-          email_weekly_digest: data.email_weekly_digest ?? true,
-          email_alerts: data.email_alerts ?? true,
-          email_product_updates: data.email_product_updates ?? false,
+          email_digest_enabled: data.email_digest_enabled ?? true,
+          alert_emails_enabled: data.alert_emails_enabled ?? true,
+          marketing_emails_enabled: data.marketing_emails_enabled ?? false,
         })
       }
       setLoading(false)
@@ -310,8 +310,8 @@ export default function GeneralSettingsPage() {
             </div>
             <input
               type="checkbox"
-              checked={preferences.email_weekly_digest}
-              onChange={(e) => handleChange('email_weekly_digest', e.target.checked)}
+              checked={preferences.email_digest_enabled}
+              onChange={(e) => handleChange('email_digest_enabled', e.target.checked)}
               className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
             />
           </label>
@@ -323,8 +323,8 @@ export default function GeneralSettingsPage() {
             </div>
             <input
               type="checkbox"
-              checked={preferences.email_alerts}
-              onChange={(e) => handleChange('email_alerts', e.target.checked)}
+              checked={preferences.alert_emails_enabled}
+              onChange={(e) => handleChange('alert_emails_enabled', e.target.checked)}
               className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
             />
           </label>
@@ -336,8 +336,8 @@ export default function GeneralSettingsPage() {
             </div>
             <input
               type="checkbox"
-              checked={preferences.email_product_updates}
-              onChange={(e) => handleChange('email_product_updates', e.target.checked)}
+              checked={preferences.marketing_emails_enabled}
+              onChange={(e) => handleChange('marketing_emails_enabled', e.target.checked)}
               className="w-5 h-5 rounded border-border bg-bg-dark text-accent focus:ring-accent focus:ring-offset-0"
             />
           </label>
