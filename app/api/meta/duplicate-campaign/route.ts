@@ -49,7 +49,10 @@ export async function POST(request: NextRequest) {
     const campaignData = await campaignRes.json()
 
     if (campaignData.error) {
-      return NextResponse.json({ error: campaignData.error.message }, { status: 400 })
+      console.error('[duplicate-campaign] Failed to fetch source campaign:', campaignData.error)
+      // Use user-friendly message if available, otherwise fall back to generic message
+      const errorMsg = campaignData.error.error_user_msg || campaignData.error.message || 'Failed to fetch source campaign'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
     // 2. Create new campaign
@@ -62,6 +65,11 @@ export async function POST(request: NextRequest) {
       status: copyStatus,
       special_ad_categories: campaignData.special_ad_categories || [],
       access_token: accessToken
+    }
+
+    // Include buying_type (required for certain campaign types)
+    if (campaignData.buying_type) {
+      createCampaignBody.buying_type = campaignData.buying_type
     }
 
     // Copy budget if CBO
@@ -86,7 +94,12 @@ export async function POST(request: NextRequest) {
     const newCampaignData = await newCampaignRes.json()
 
     if (newCampaignData.error) {
-      return NextResponse.json({ error: newCampaignData.error.message }, { status: 400 })
+      console.error('[duplicate-campaign] Failed to create campaign:', {
+        error: newCampaignData.error,
+        sentBody: { ...createCampaignBody, access_token: '[REDACTED]' }
+      })
+      const errorMsg = newCampaignData.error.error_user_msg || newCampaignData.error.message || 'Failed to create campaign'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
     const newCampaignId = newCampaignData.id
@@ -142,7 +155,8 @@ export async function POST(request: NextRequest) {
           const newAdsetData = await newAdsetRes.json()
 
           if (newAdsetData.error) {
-            errors.push(`Ad set "${adset.name}": ${newAdsetData.error.message}`)
+            const msg = newAdsetData.error.error_user_msg || newAdsetData.error.message
+            errors.push(`Ad set "${adset.name}": ${msg}`)
             continue
           }
 
@@ -179,7 +193,8 @@ export async function POST(request: NextRequest) {
                 const newAdData = await newAdRes.json()
 
                 if (newAdData.error) {
-                  errors.push(`Ad "${ad.name}": ${newAdData.error.message}`)
+                  const msg = newAdData.error.error_user_msg || newAdData.error.message
+                  errors.push(`Ad "${ad.name}": ${msg}`)
                   continue
                 }
 
