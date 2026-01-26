@@ -375,12 +375,13 @@ else → KILL
 
 ## Recent Fixes (January 2026)
 
-### Creative Thumbnails in Performance Table (Jan 24)
-**Status:** IN PROGRESS - thumbnails not displaying, debugging `creative_id` data flow
+### Creative Thumbnails in Performance Table (Jan 25)
+**Status:** COMPLETE
 
 **Files Modified:**
 - `components/performance-table.tsx` - Added creative loading, thumbnails, preview modal
-- `app/dashboard/page.tsx` - Added `creative_id` to data mapping (was missing!)
+- `app/dashboard/page.tsx` - Added `creative_id` to data mapping in BOTH `loadData` and `loadDataAndCache` functions, AND in `tableData` transformation
+- `lib/csv-parser.ts` - Added `creative_id` field to `CSVRow` type
 
 **Implementation:**
 - Lazy loads creatives when adsets expand (via useEffect)
@@ -396,7 +397,30 @@ const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
 const loadedCreativesRef = useRef<Set<string>>(new Set())  // Prevents duplicate loads
 ```
 
-**Debugging:** Console logs added at line ~1176 to check if `ad.creativeId` is populated.
+**Bug Fix (Jan 25):** `creative_id` was being stripped at THREE places:
+1. `loadDataAndCache` function was missing `creative_id: row.creative_id`
+2. `CSVRow` type in `lib/csv-parser.ts` didn't include `creative_id` field
+3. `tableData` transformation wasn't passing `creative_id` through
+
+### Settings Page Alert Preferences Fix (Jan 25)
+**File:** `app/dashboard/settings/page.tsx`
+
+**Problem:** Alert preferences weren't saving - changes lost on refresh.
+
+**Root Cause:** Frontend column names didn't match database schema:
+- Frontend: `email_weekly_digest`, `email_alerts`, `email_product_updates`
+- Database: `email_digest_enabled`, `alert_emails_enabled`, `marketing_emails_enabled`
+
+**Fix:** Updated frontend to use correct database column names.
+
+### Sidebar Platform Badges (Jan 25)
+**File:** `components/sidebar.tsx`
+
+Added platform badges to account selector dropdown:
+- Meta accounts show blue "M" badge (`bg-[#0866FF]`)
+- Google accounts show red "G" badge (`bg-[#EA4335]`)
+
+Badges appear both in the main selector button and in the dropdown list.
 
 ### Attribution Models Simplified (Jan 24)
 Removed multi-touch attribution models (Linear, Time Decay, Position Based) - only meaningful for cross-channel attribution. KillScale is Meta-only, so only First Touch and Last Touch make sense.
@@ -575,7 +599,6 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Status |
 |------|-------|--------|
-| `eager-hatching-minsky.md` | Creative Thumbnails in Performance Table | IN PROGRESS (debugging) |
 | `gleaming-questing-crane.md` | Pixel + Shopify JOIN Model | IN PROGRESS |
 | `toasty-nibbling-kitten.md` | Workspace-Centric Architecture | IN PROGRESS |
 | `linked-bubbling-wilkes.md` | Multi-Mode Attribution (E-com/Lead Gen) | IN PROGRESS |
@@ -585,6 +608,9 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| `eager-hatching-minsky.md` | Creative Thumbnails in Performance Table | Jan 25 |
+| Sidebar Platform Badges | M/G badges for Meta/Google accounts | Jan 25 |
+| Settings Alert Preferences Fix | Column name mismatch fix | Jan 25 |
 | Attribution Models Simplified | Removed multi-touch, kept First/Last Touch only | Jan 24 |
 | UTM Sync / Trends / Dashboard Defaults | Various UX improvements | Jan 24 |
 | `robust-dazzling-fox.md` | UpPromote Integration (True ROAS) | Jan 07 |
