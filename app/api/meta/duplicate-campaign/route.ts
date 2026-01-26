@@ -83,6 +83,14 @@ export async function POST(request: NextRequest) {
       createCampaignBody.bid_strategy = campaignData.bid_strategy
     }
 
+    // For ABO campaigns (no campaign budget), Meta requires is_adset_budget_sharing_enabled
+    // This allows ad sets to share up to 20% of budget for optimization
+    const isABO = !campaignData.daily_budget && !campaignData.lifetime_budget
+    if (isABO) {
+      // Default to false (no budget sharing) to preserve original campaign behavior
+      createCampaignBody.is_adset_budget_sharing_enabled = false
+    }
+
     const newCampaignRes = await fetch(
       `https://graph.facebook.com/v18.0/${formattedAccountId}/campaigns`,
       {
