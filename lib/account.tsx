@@ -1,14 +1,9 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import { useAuth } from './auth'
 import { FEATURES } from './feature-flags'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from './supabase-browser'
 
 type AdAccount = {
   id: string

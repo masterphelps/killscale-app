@@ -43,8 +43,8 @@ import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAttribution } from '@/lib/attribution'
-import { createClient } from '@supabase/supabase-js'
 import { StatCard } from '@/components/stat-card'
+import { supabase } from '@/lib/supabase-browser'
 import {
   AreaChart,
   Area,
@@ -74,11 +74,6 @@ import {
   Funnel,
   LabelList
 } from 'recharts'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type AdData = {
   campaign_name: string

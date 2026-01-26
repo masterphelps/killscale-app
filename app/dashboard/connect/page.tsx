@@ -5,16 +5,11 @@ import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
-import { createClient } from '@supabase/supabase-js'
 import { Lock, Link2, Unlink, RefreshCw, CheckCircle, AlertCircle, Zap, LayoutDashboard, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { Select } from '@/components/ui/select'
 import { FEATURES } from '@/lib/feature-flags'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 type AdAccount = {
   id: string

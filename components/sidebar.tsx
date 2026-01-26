@@ -28,8 +28,9 @@ import {
   PanelLeft
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth, supabase } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { supabase } from '@/lib/supabase-browser'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAccount } from '@/lib/account'
 import { useSidebar } from '@/lib/sidebar-state'

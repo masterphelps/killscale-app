@@ -18,18 +18,13 @@ import {
   Video
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { createClient } from '@supabase/supabase-js'
 import { cn, formatFileSize } from '@/lib/utils'
 import { Select } from '@/components/ui/select'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import { AdPreviewPanel } from '@/components/ad-preview-panel'
 import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import type { MediaImage, MediaVideo } from '@/app/api/meta/media/route'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 // Generate thumbnail from video file using canvas
 const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {

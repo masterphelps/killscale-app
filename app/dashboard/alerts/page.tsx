@@ -19,14 +19,9 @@ import {
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
-import { createClient } from '@supabase/supabase-js'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { useRouter } from 'next/navigation'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 type AdAccount = {
   id: string

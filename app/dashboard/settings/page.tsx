@@ -5,12 +5,7 @@ import { Save, Loader2, User, CreditCard, Bell, Globe, ExternalLink, CheckCircle
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 const TIMEZONES = [
   { value: 'America/New_York', label: 'Eastern Time (ET)' },

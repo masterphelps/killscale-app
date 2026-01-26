@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Loader2, Layers, X, Edit2, Check, AlertCircle, Lock, Users, UserPlus, Copy, ChevronDown, ChevronUp, Globe, ExternalLink, Radio, Download, RefreshCw, Activity, Smartphone, Eye, EyeOff, Info, ShoppingBag, Unlink, Gift } from 'lucide-react'
-import { useAuth, supabase } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { supabase } from '@/lib/supabase-browser'
 import { useAccount } from '@/lib/account'
 import { useAttribution } from '@/lib/attribution'
 import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'

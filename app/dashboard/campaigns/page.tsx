@@ -25,7 +25,6 @@ import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
 import { usePrivacyMode } from '@/lib/privacy-mode'
-import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 import { LaunchWizard } from '@/components/launch-wizard'
 import { DeleteEntityModal } from '@/components/confirm-modal'
@@ -38,11 +37,7 @@ import { BulkBudgetModal } from '@/components/bulk-budget-modal'
 import { CopyAdsModal } from '@/components/copy-ads-modal'
 import { InlineDuplicateModal } from '@/components/inline-duplicate-modal'
 import { EntityInfoModal } from '@/components/entity-info-modal'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 interface MetaCampaign {
   id: string

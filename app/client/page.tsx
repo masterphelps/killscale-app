@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, DollarSign, TrendingUp, ShoppingCart, ChevronDown, Plus, Clock, X, LogOut } from 'lucide-react'
-import { useAuth, supabase } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase-browser'
 
 const EVENT_TYPES = [
   { value: 'purchase', label: 'Purchase' },

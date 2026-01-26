@@ -5,12 +5,7 @@ import { Save, RotateCcw, Loader2, AlertCircle, Plus, X } from 'lucide-react'
 import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 const DEFAULT_RULES = {
   scale_roas: '3.0',

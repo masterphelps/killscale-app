@@ -1,13 +1,9 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
-import { createClient, User, Session } from '@supabase/supabase-js'
+import { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from './supabase-browser'
 
 // Track user session activity for admin dashboard
 async function trackSession(userId: string) {
@@ -134,5 +130,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthContext)
-
-export { supabase }

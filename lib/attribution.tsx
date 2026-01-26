@@ -1,16 +1,11 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import { useAuth } from './auth'
 import { useAccount } from './account'
 import { AttributionModel } from './attribution-models'
 import { FEATURES } from '@/lib/feature-flags'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from './supabase-browser'
 
 export type AttributionSource = 'meta' | 'killscale'
 export type RevenueSource = 'shopify' | 'pixel' | 'meta'

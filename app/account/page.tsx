@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
-import { createClient } from '@supabase/supabase-js'
 import { DeleteAccountModal } from '@/components/account/delete-account-modal'
 import {
   User,
@@ -22,11 +21,7 @@ import {
   Loader2,
   LogOut
 } from 'lucide-react'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 const TIMEZONES = [
   { value: 'UTC', label: 'UTC' },

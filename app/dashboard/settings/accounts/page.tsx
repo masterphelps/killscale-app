@@ -5,16 +5,11 @@ import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
-import { createClient } from '@supabase/supabase-js'
 import { Lock, Link2, Unlink, CheckCircle, AlertCircle, ChevronDown, Eye, EyeOff, Upload, FileSpreadsheet, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { CSVUpload } from '@/components/csv-upload'
 import { CSVRow } from '@/lib/csv-parser'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 type AdAccount = {
   id: string

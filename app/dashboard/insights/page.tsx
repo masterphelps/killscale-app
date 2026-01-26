@@ -21,13 +21,8 @@ import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAttribution } from '@/lib/attribution'
-import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 const DEFAULT_RULES: Rules = {
   id: '',

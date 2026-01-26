@@ -21,14 +21,9 @@ import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { useAttribution } from '@/lib/attribution'
-import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { FEATURES } from '@/lib/feature-flags'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase } from '@/lib/supabase-browser'
 
 const DEFAULT_RULES: Rules = {
   id: '',
