@@ -1,9 +1,26 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2, Wand2, AlertTriangle } from 'lucide-react'
+import { X, Loader2, Wand2, AlertTriangle, Search, Target, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 type EntityType = 'campaign' | 'adset' | 'ad'
+
+interface LocationResult {
+  key: string
+  name: string
+  region: string
+  countryName: string
+}
+
+interface TargetingOption {
+  id: string
+  name: string
+  type: 'interest' | 'behavior'
+  path?: string[]
+}
+
+const RADIUS_OPTIONS = [10, 15, 25, 35, 50]
 
 type EditEntityModalProps = {
   isOpen: boolean
@@ -40,10 +57,36 @@ export function EditEntityModal({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  // Targeting state for adsets
+  const [showTargeting, setShowTargeting] = useState(false)
+  const [isFetchingTargeting, setIsFetchingTargeting] = useState(false)
+  const [locationType, setLocationType] = useState<'city' | 'country'>('country')
+  const [locationKey, setLocationKey] = useState('')
+  const [locationName, setLocationName] = useState('')
+  const [locationRadius, setLocationRadius] = useState(25)
+  const [locationQuery, setLocationQuery] = useState('')
+  const [locationResults, setLocationResults] = useState<LocationResult[]>([])
+  const [searchingLocations, setSearchingLocations] = useState(false)
+  const [ageMin, setAgeMin] = useState(18)
+  const [ageMax, setAgeMax] = useState(65)
+  const [targetingMode, setTargetingMode] = useState<'broad' | 'custom'>('broad')
+  const [selectedInterests, setSelectedInterests] = useState<TargetingOption[]>([])
+  const [targetingQuery, setTargetingQuery] = useState('')
+  const [targetingResults, setTargetingResults] = useState<TargetingOption[]>([])
+  const [searchingTargeting, setSearchingTargeting] = useState(false)
+  const [targetingChanged, setTargetingChanged] = useState(false)
+
   // Fetch current creative data for ads
   useEffect(() => {
     if (isOpen && entityType === 'ad') {
       fetchCreativeData()
+    }
+  }, [isOpen, entityType, entityId])
+
+  // Fetch current targeting for adsets
+  useEffect(() => {
+    if (isOpen && entityType === 'adset') {
+      fetchTargetingData()
     }
   }, [isOpen, entityType, entityId])
 
@@ -53,8 +96,79 @@ export function EditEntityModal({
       setName(entityName)
       setError(null)
       setSuccess(null)
+      setShowTargeting(false)
+      setTargetingChanged(false)
     }
   }, [isOpen, entityName])
+
+  // Debounced location search
+  useEffect(() => {
+    if (!locationQuery || locationQuery.length < 2) {
+      setLocationResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingLocations(true)
+      try {
+        const res = await fetch(`/api/meta/locations?userId=${userId}&query=${encodeURIComponent(locationQuery)}`)
+        const data = await res.json()
+        setLocationResults(data.locations || [])
+      } catch (err) {
+        console.error('Location search failed:', err)
+      } finally {
+        setSearchingLocations(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [locationQuery, userId])
+
+  // Debounced targeting search
+  useEffect(() => {
+    if (!targetingQuery || targetingQuery.length < 2) {
+      setTargetingResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingTargeting(true)
+      try {
+        const res = await fetch(`/api/meta/targeting?userId=${userId}&type=interest&q=${encodeURIComponent(targetingQuery)}`)
+        const data = await res.json()
+        setTargetingResults(data.options || [])
+      } catch (err) {
+        console.error('Targeting search failed:', err)
+      } finally {
+        setSearchingTargeting(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [targetingQuery, userId])
+
+  const fetchTargetingData = async () => {
+    setIsFetchingTargeting(true)
+    try {
+      const res = await fetch(`/api/meta/get-adset-targeting?userId=${userId}&adsetId=${entityId}`)
+      const data = await res.json()
+      if (data.success && data.targeting) {
+        const t = data.targeting
+        setLocationType(t.locationType)
+        setLocationKey(t.locationKey || '')
+        setLocationName(t.locationName || '')
+        setLocationRadius(t.locationRadius || 25)
+        setAgeMin(t.ageMin || 18)
+        setAgeMax(t.ageMax || 65)
+        setTargetingMode(t.targetingMode || 'broad')
+        setSelectedInterests(t.interests || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch targeting data:', err)
+    } finally {
+      setIsFetchingTargeting(false)
+    }
+  }
 
   const fetchCreativeData = async () => {
     setIsFetchingCreative(true)
@@ -75,8 +189,6 @@ export function EditEntityModal({
   }
 
   const applyKillScaleTemplate = () => {
-    // Don't URL encode - Meta handles that when appending to destination URLs
-    // Replace spaces with underscores for cleaner tracking
     const safeCampaignName = (campaignName || 'campaign').replace(/\s+/g, '_')
     const template = [
       'utm_source=facebook',
@@ -113,6 +225,43 @@ export function EditEntityModal({
     }
   }
 
+  const handleSaveTargeting = async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/meta/update-adset-targeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          adsetId: entityId,
+          targeting: {
+            locationType,
+            locationKey: locationType === 'city' ? locationKey : undefined,
+            locationRadius: locationType === 'city' ? locationRadius : undefined,
+            countries: locationType === 'country' ? ['US'] : undefined,
+            ageMin,
+            ageMax,
+            targetingMode,
+            interests: targetingMode === 'custom' ? selectedInterests : undefined
+          }
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+
+      setSuccess('Targeting updated!')
+      setTargetingChanged(false)
+      onUpdate()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update targeting')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSaveCreative = async () => {
     setIsLoading(true)
     setError(null)
@@ -142,6 +291,10 @@ export function EditEntityModal({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const markTargetingChanged = () => {
+    setTargetingChanged(true)
   }
 
   if (!isOpen) return null
@@ -203,6 +356,282 @@ export function EditEntityModal({
           </button>
         </div>
       </div>
+
+      {/* Targeting editing - adsets only */}
+      {entityType === 'adset' && (
+        <div className="mb-6">
+          <div className="border border-border rounded-xl overflow-hidden">
+            {/* Targeting header - collapsible */}
+            <button
+              onClick={() => setShowTargeting(!showTargeting)}
+              className="w-full flex items-center justify-between p-4 hover:bg-bg-hover transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-accent" />
+                <span className="text-sm font-medium">Audience Targeting</span>
+                {targetingChanged && (
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded-full">
+                    Unsaved
+                  </span>
+                )}
+              </div>
+              <ChevronDown className={cn("w-4 h-4 text-zinc-400 transition-transform", showTargeting && "rotate-180")} />
+            </button>
+
+            {showTargeting && (
+              <div className="p-4 border-t border-border bg-bg-dark/50 space-y-4">
+                {isFetchingTargeting ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+                  </div>
+                ) : (
+                  <>
+                    {/* Location Type */}
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Location</label>
+                      <div className="flex gap-2 mb-2">
+                        <button
+                          onClick={() => { setLocationType('country'); markTargetingChanged() }}
+                          className={cn(
+                            "flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            locationType === 'country'
+                              ? "bg-accent/20 border-accent text-accent"
+                              : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                          )}
+                        >
+                          United States
+                        </button>
+                        <button
+                          onClick={() => { setLocationType('city'); markTargetingChanged() }}
+                          className={cn(
+                            "flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            locationType === 'city'
+                              ? "bg-accent/20 border-accent text-accent"
+                              : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                          )}
+                        >
+                          City + Radius
+                        </button>
+                      </div>
+
+                      {locationType === 'city' && (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                            <input
+                              type="text"
+                              value={locationName || locationQuery}
+                              onChange={(e) => {
+                                setLocationQuery(e.target.value)
+                                setLocationName('')
+                                setLocationKey('')
+                                markTargetingChanged()
+                              }}
+                              placeholder="Search city..."
+                              className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-accent"
+                            />
+                            {searchingLocations && (
+                              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
+                            )}
+                          </div>
+
+                          {locationResults.length > 0 && !locationKey && (
+                            <div className="border border-border rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+                              {locationResults.slice(0, 5).map((loc) => (
+                                <button
+                                  key={loc.key}
+                                  onClick={() => {
+                                    setLocationKey(loc.key)
+                                    setLocationName(`${loc.name}, ${loc.region}`)
+                                    setLocationQuery('')
+                                    setLocationResults([])
+                                    markTargetingChanged()
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg-hover border-b border-border last:border-0"
+                                >
+                                  {loc.name}, {loc.region}, {loc.countryName}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {locationKey && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-zinc-400">Radius:</span>
+                              <select
+                                value={locationRadius}
+                                onChange={(e) => { setLocationRadius(parseInt(e.target.value)); markTargetingChanged() }}
+                                className="bg-bg-dark border border-border rounded-lg px-3 py-1.5 text-sm"
+                              >
+                                {RADIUS_OPTIONS.map(r => (
+                                  <option key={r} value={r}>{r} miles</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Age Range */}
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Age Range</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={ageMin}
+                          onChange={(e) => {
+                            const newMin = parseInt(e.target.value)
+                            setAgeMin(newMin)
+                            setAgeMax(Math.max(ageMax, newMin))
+                            markTargetingChanged()
+                          }}
+                          className="bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm"
+                        >
+                          {[18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65].map(age => (
+                            <option key={age} value={age}>{age}</option>
+                          ))}
+                        </select>
+                        <span className="text-sm text-zinc-400">to</span>
+                        <select
+                          value={ageMax}
+                          onChange={(e) => {
+                            const newMax = parseInt(e.target.value)
+                            setAgeMax(newMax)
+                            setAgeMin(Math.min(ageMin, newMax))
+                            markTargetingChanged()
+                          }}
+                          className="bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm"
+                        >
+                          {[18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 65].map(age => (
+                            <option key={age} value={age}>{age === 65 ? '65+' : age}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Targeting Mode */}
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Audience Targeting</label>
+                      <div className="flex gap-2 mb-2">
+                        <button
+                          onClick={() => {
+                            setTargetingMode('broad')
+                            setSelectedInterests([])
+                            markTargetingChanged()
+                          }}
+                          className={cn(
+                            "flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            targetingMode === 'broad'
+                              ? "bg-accent/20 border-accent text-accent"
+                              : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                          )}
+                        >
+                          Broad Audience
+                        </button>
+                        <button
+                          onClick={() => { setTargetingMode('custom'); markTargetingChanged() }}
+                          className={cn(
+                            "flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            targetingMode === 'custom'
+                              ? "bg-accent/20 border-accent text-accent"
+                              : "bg-bg-dark border-border text-zinc-400 hover:border-zinc-500"
+                          )}
+                        >
+                          Custom Interests
+                        </button>
+                      </div>
+
+                      {targetingMode === 'custom' && (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                            <input
+                              type="text"
+                              value={targetingQuery}
+                              onChange={(e) => setTargetingQuery(e.target.value)}
+                              placeholder="Search interests..."
+                              className="w-full bg-bg-dark border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-accent"
+                            />
+                            {searchingTargeting && (
+                              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-500" />
+                            )}
+                          </div>
+
+                          {targetingResults.length > 0 && (
+                            <div className="border border-border rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+                              {targetingResults.slice(0, 5).map((opt) => (
+                                <button
+                                  key={opt.id}
+                                  onClick={() => {
+                                    if (!selectedInterests.find(i => i.id === opt.id)) {
+                                      setSelectedInterests([...selectedInterests, opt])
+                                      markTargetingChanged()
+                                    }
+                                    setTargetingQuery('')
+                                    setTargetingResults([])
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg-hover border-b border-border last:border-0"
+                                >
+                                  <div className="font-medium">{opt.name}</div>
+                                  {opt.path && <div className="text-zinc-500 text-xs">{opt.path.join(' > ')}</div>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {selectedInterests.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {selectedInterests.map((interest) => (
+                                <span
+                                  key={interest.id}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-accent/20 border border-accent/30 rounded-full text-xs text-accent"
+                                >
+                                  {interest.name}
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInterests(selectedInterests.filter(i => i.id !== interest.id))
+                                      markTargetingChanged()
+                                    }}
+                                    className="hover:text-white"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Learning Phase Warning */}
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-medium">Learning Phase:</span> Changing targeting may cause the ad set to re-enter learning phase.
+                      </div>
+                    </div>
+
+                    {/* Save Targeting Button */}
+                    <button
+                      onClick={handleSaveTargeting}
+                      disabled={isLoading || !targetingChanged}
+                      className="w-full px-4 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium"
+                    >
+                      {isLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Save Targeting'}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Budget hint */}
+          <p className="text-sm text-zinc-500 mt-3">
+            To edit budget, use the budget button on the ad set row.
+          </p>
+        </div>
+      )}
 
       {/* Creative editing - ads only */}
       {entityType === 'ad' && (
@@ -291,10 +720,10 @@ export function EditEntityModal({
         </>
       )}
 
-      {/* Info text for budget editing */}
-      {(entityType === 'campaign' || entityType === 'adset') && (
+      {/* Info text for campaign budget editing */}
+      {entityType === 'campaign' && (
         <div className="text-sm text-zinc-500 border-t border-border pt-4">
-          To edit budget, use the budget button on the {entityType} row.
+          To edit budget, use the budget button on the campaign row.
         </div>
       )}
     </div>

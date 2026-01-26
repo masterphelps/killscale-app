@@ -6,15 +6,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+interface CopyOverride {
+  primaryText: string
+  headline: string
+  description: string
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, sourceAdId, targetAdsetId, newName, copyStatus = 'PAUSED' } = await request.json() as {
+    const { userId, adAccountId, sourceAdId, targetAdsetId, newName, copyStatus = 'PAUSED', copyOverride } = await request.json() as {
       userId: string
       adAccountId: string
       sourceAdId: string
       targetAdsetId?: string // If not provided, use same ad set
       newName?: string
       copyStatus?: 'PAUSED' | 'ACTIVE'
+      copyOverride?: CopyOverride
     }
 
     if (!userId || !adAccountId || !sourceAdId) {
@@ -53,6 +60,57 @@ export async function POST(request: NextRequest) {
     const adName = newName || `${adData.name} - Copy`
     const adsetId = targetAdsetId || adData.adset_id
 
+    let creativeToUse = adData.creative.id
+
+    // If there's a copy override, create a new creative with modified copy
+    if (copyOverride) {
+      // Fetch the original creative details
+      const creativeRes = await fetch(
+        `https://graph.facebook.com/v18.0/${adData.creative.id}?fields=object_story_spec,url_tags&access_token=${accessToken}`
+      )
+      const creativeData = await creativeRes.json()
+
+      if (creativeData.error) {
+        return NextResponse.json({ error: `Failed to fetch creative: ${creativeData.error.message}` }, { status: 400 })
+      }
+
+      // Build the new creative with modified copy
+      const objectStorySpec = creativeData.object_story_spec || {}
+      const linkData = objectStorySpec.link_data || {}
+
+      // Create new object_story_spec with updated copy
+      const newObjectStorySpec: Record<string, any> = {
+        ...objectStorySpec,
+        link_data: {
+          ...linkData,
+          message: copyOverride.primaryText || linkData.message,
+          name: copyOverride.headline || linkData.name,
+          description: copyOverride.description || linkData.description
+        }
+      }
+
+      // Create the new creative
+      const newCreativeRes = await fetch(
+        `https://graph.facebook.com/v18.0/${formattedAccountId}/adcreatives`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            object_story_spec: newObjectStorySpec,
+            url_tags: creativeData.url_tags,
+            access_token: accessToken
+          })
+        }
+      )
+      const newCreativeData = await newCreativeRes.json()
+
+      if (newCreativeData.error) {
+        return NextResponse.json({ error: `Failed to create creative: ${newCreativeData.error.message}` }, { status: 400 })
+      }
+
+      creativeToUse = newCreativeData.id
+    }
+
     const newAdRes = await fetch(
       `https://graph.facebook.com/v18.0/${formattedAccountId}/ads`,
       {
@@ -61,7 +119,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           adset_id: adsetId,
           name: adName,
-          creative: { creative_id: adData.creative.id },
+          creative: { creative_id: creativeToUse },
           status: copyStatus,
           access_token: accessToken
         })
@@ -76,7 +134,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       newAdId: newAdData.id,
-      newAdName: adName
+      newAdName: adName,
+      needsSync: true  // Tells frontend to auto-sync for immediate display
     })
 
   } catch (err) {

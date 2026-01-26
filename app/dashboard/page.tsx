@@ -2,13 +2,16 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity, Settings } from 'lucide-react'
+import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity, Settings, Plus } from 'lucide-react'
 import { StatCard, StatIcons } from '@/components/stat-card'
 import { PrimaryStatCard } from '@/components/primary-stat-card'
 import { BudgetStatCard } from '@/components/budget-stat-card'
 import { SecondaryStatsPills } from '@/components/secondary-stats-pills'
-import { PerformanceTable } from '@/components/performance-table'
-import { StatusChangeModal } from '@/components/confirm-modal'
+import { PerformanceTable, HierarchyNode } from '@/components/performance-table'
+import { StatusChangeModal, DeleteEntityModal } from '@/components/confirm-modal'
+import { EditEntityModal } from '@/components/edit-entity-modal'
+import { EntityInfoModal } from '@/components/entity-info-modal'
+import { InlineDuplicateModal } from '@/components/inline-duplicate-modal'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
 import { StarredAdsPopover } from '@/components/starred-ads-popover'
 import { LaunchWizard, StarredAdForWizard } from '@/components/launch-wizard'
@@ -264,6 +267,33 @@ export default function DashboardPage() {
     accountId?: string | null  // Meta ad_account_id or Google customer_id
   } | null>(null)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  // Row action modals
+  const [editModal, setEditModal] = useState<{
+    entityType: 'campaign' | 'adset' | 'ad'
+    entityId: string
+    entityName: string
+    campaignName?: string
+    adsetId?: string
+  } | null>(null)
+  const [infoModal, setInfoModal] = useState<{
+    entityType: 'adset' | 'ad'
+    entityId: string
+    entityName: string
+  } | null>(null)
+  const [duplicateModal, setDuplicateModal] = useState<{
+    itemType: 'campaign' | 'adset' | 'ad'
+    itemId: string
+    itemName: string
+    parentCampaignId?: string
+    parentAdsetId?: string
+  } | null>(null)
+  const [deleteModal, setDeleteModal] = useState<{
+    entityType: 'campaign' | 'adset' | 'ad'
+    entityId: string
+    entityName: string
+    childCount?: { adsets?: number; ads?: number }
+  } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [highlightEntity, setHighlightEntity] = useState<{
     type: 'campaign' | 'adset' | 'ad'
     name: string
@@ -1399,6 +1429,85 @@ export default function DashboardPage() {
     await loadData(false)
   }
 
+  // Row action handlers
+  const handleEditEntity = (node: HierarchyNode) => {
+    setEditModal({
+      entityType: node.type,
+      entityId: node.id!,
+      entityName: node.name,
+      campaignName: node.campaignName,
+      adsetId: node.adsetId || undefined,
+    })
+  }
+
+  const handleInfoEntity = (node: HierarchyNode) => {
+    if (node.type === 'campaign') return // Info not available for campaigns
+    setInfoModal({
+      entityType: node.type as 'adset' | 'ad',
+      entityId: node.id!,
+      entityName: node.name,
+    })
+  }
+
+  const handleDuplicateEntity = (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => {
+    setDuplicateModal({
+      itemType: level,
+      itemId: node.id!,
+      itemName: node.name,
+      parentCampaignId: node.campaignId || undefined,
+      parentAdsetId: node.adsetId || undefined,
+    })
+  }
+
+  const handleDeleteEntity = (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => {
+    // Count children for cascade warning
+    let childCount: { adsets?: number; ads?: number } | undefined
+    if (node.children && node.children.length > 0) {
+      if (level === 'campaign') {
+        const adsetCount = node.children.length
+        const adCount = node.children.reduce((sum, adset) => sum + (adset.children?.length || 0), 0)
+        childCount = { adsets: adsetCount, ads: adCount }
+      } else if (level === 'adset') {
+        childCount = { ads: node.children.length }
+      }
+    }
+    setDeleteModal({
+      entityType: level,
+      entityId: node.id!,
+      entityName: node.name,
+      childCount,
+    })
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal || !user) return
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch('/api/meta/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entityId: deleteModal.entityId,
+          entityType: deleteModal.entityType,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setDeleteModal(null)
+        await loadData()
+      } else {
+        alert(result.error || 'Failed to delete')
+      }
+    } catch (err) {
+      alert('Failed to delete. Please try again.')
+    }
+    setIsDeleting(false)
+  }
+
   // Format time since last sync
   const getTimeSinceSync = () => {
     if (!lastSyncTime) return null
@@ -2374,8 +2483,8 @@ export default function DashboardPage() {
                 className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
                 title="Log a walk-in or offline conversion"
               >
-                <UserPlus className="w-4 h-4" />
-                <span className="hidden xl:inline">Walk-In</span>
+                <Plus className="w-4 h-4" />
+                <span className="hidden xl:inline">Event</span>
               </button>
             )}
 
@@ -2745,43 +2854,60 @@ export default function DashboardPage() {
                   Detailed
                 </button>
               </div>
+
+              {/* Create button - only show when user can manage Meta ads (not Google) */}
+              {canSync && selectedAccountId && !isGoogleAccount(selectedAccountId) && (
+                <button
+                  onClick={() => { setLaunchWizardEntityType('campaign'); setShowLaunchWizard(true) }}
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create
+                </button>
+              )}
             </div>
           </div>
           
-          <PerformanceTable
-            data={tableData}
-            rules={rules}
-            dateRange={dateRange}
-            verdictFilter="all"
-            includePaused={includePaused}
-            viewMode={viewMode}
-            selectedCampaigns={selectedCampaigns}
-            onCampaignToggle={handleCampaignToggle}
-            onSelectAll={handleSelectAll}
-            allSelected={allSelected}
-            someSelected={someSelected}
-            onStatusChange={handleStatusChangeRequest}
-            canManageAds={canSync && !!selectedAccountId}
-            onBudgetChange={handleBudgetChange}
-            highlightEntity={highlightEntity}
-            userId={user?.id}
-            campaignAboAdsets={campaignAboAdsets}
-            lastTouchAttribution={isKillScaleActive && revenueSource !== 'shopify' ? lastTouchAttribution : undefined}
-            isMultiTouchModel={isMultiTouchModel}
-            shopifyAttribution={revenueSource === 'shopify' ? shopifyAttribution : undefined}
-            expandAllTrigger={expandTrigger}
-            onExpandedStateChange={setTableExpanded}
-            externalSortField={sortField}
-            externalSortDirection={sortDirection}
-            starredAdIds={starredAdIds}
-            starredCreativeIds={starredCreativeIds}
-            starredCreativeCounts={starredCreativeCounts}
-            onStarAd={handleStarAd}
-            onUnstarAd={handleUnstarAd}
-          />
+          <div>
+            <PerformanceTable
+              data={tableData}
+              rules={rules}
+              dateRange={dateRange}
+              verdictFilter="all"
+              includePaused={includePaused}
+              viewMode={viewMode}
+              selectedCampaigns={selectedCampaigns}
+              onCampaignToggle={handleCampaignToggle}
+              onSelectAll={handleSelectAll}
+              allSelected={allSelected}
+              someSelected={someSelected}
+              onStatusChange={handleStatusChangeRequest}
+              canManageAds={canSync && !!selectedAccountId}
+              onBudgetChange={handleBudgetChange}
+              highlightEntity={highlightEntity}
+              userId={user?.id}
+              campaignAboAdsets={campaignAboAdsets}
+              lastTouchAttribution={isKillScaleActive && revenueSource !== 'shopify' ? lastTouchAttribution : undefined}
+              isMultiTouchModel={isMultiTouchModel}
+              shopifyAttribution={revenueSource === 'shopify' ? shopifyAttribution : undefined}
+              expandAllTrigger={expandTrigger}
+              onExpandedStateChange={setTableExpanded}
+              externalSortField={sortField}
+              externalSortDirection={sortDirection}
+              starredAdIds={starredAdIds}
+              starredCreativeIds={starredCreativeIds}
+              starredCreativeCounts={starredCreativeCounts}
+              onStarAd={handleStarAd}
+              onUnstarAd={handleUnstarAd}
+              onEditEntity={handleEditEntity}
+              onInfoEntity={handleInfoEntity}
+              onDuplicateEntity={handleDuplicateEntity}
+              onDeleteEntity={handleDeleteEntity}
+            />
+          </div>
         </>
       )}
-      
+
       {/* Status Change Confirmation Modal */}
       {statusChangeModal && (
         <StatusChangeModal
@@ -2792,6 +2918,66 @@ export default function DashboardPage() {
           entityType={statusChangeModal.entityType}
           action={statusChangeModal.action}
           isLoading={isUpdatingStatus}
+        />
+      )}
+
+      {/* Edit Entity Modal */}
+      {editModal && user && (
+        <EditEntityModal
+          isOpen={true}
+          onClose={() => setEditModal(null)}
+          entityType={editModal.entityType}
+          entityId={editModal.entityId}
+          entityName={editModal.entityName}
+          campaignName={editModal.campaignName}
+          adsetId={editModal.adsetId}
+          adAccountId={selectedAccountId || undefined}
+          userId={user.id}
+          onUpdate={() => loadData()}
+        />
+      )}
+
+      {/* Entity Info Modal */}
+      {infoModal && user && (
+        <EntityInfoModal
+          isOpen={true}
+          onClose={() => setInfoModal(null)}
+          entityType={infoModal.entityType}
+          entityId={infoModal.entityId}
+          entityName={infoModal.entityName}
+          userId={user.id}
+        />
+      )}
+
+      {/* Inline Duplicate Modal */}
+      {duplicateModal && user && selectedAccountId && (
+        <InlineDuplicateModal
+          isOpen={true}
+          onClose={() => setDuplicateModal(null)}
+          itemType={duplicateModal.itemType}
+          itemId={duplicateModal.itemId}
+          itemName={duplicateModal.itemName}
+          parentCampaignId={duplicateModal.parentCampaignId}
+          parentAdsetId={duplicateModal.parentAdsetId}
+          userId={user.id}
+          adAccountId={selectedAccountId}
+          onComplete={() => {
+            setDuplicateModal(null)
+            loadData()
+          }}
+        />
+      )}
+
+      {/* Delete Entity Modal */}
+      {deleteModal && (
+        <DeleteEntityModal
+          isOpen={true}
+          onClose={() => setDeleteModal(null)}
+          onConfirm={handleDeleteConfirm}
+          entityName={deleteModal.entityName}
+          entityType={deleteModal.entityType}
+          childCount={deleteModal.childCount}
+          isLoading={isDeleting}
         />
       )}
 

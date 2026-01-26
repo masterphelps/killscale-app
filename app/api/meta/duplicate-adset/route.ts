@@ -212,7 +212,8 @@ export async function POST(request: NextRequest) {
       newAdsetId,
       newAdsetName: adsetName,
       adsCopied,
-      errors: errors.length > 0 ? errors : undefined
+      errors: errors.length > 0 ? errors : undefined,
+      needsSync: true  // Tells frontend to auto-sync for immediate display
     })
 
   } catch (err) {

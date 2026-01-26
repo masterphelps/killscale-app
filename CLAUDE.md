@@ -375,6 +375,42 @@ else → KILL
 
 ## Recent Fixes (January 2026)
 
+### Unified Dashboard: Campaign Manager Merged (Jan 26)
+**Status:** COMPLETE
+
+**Problem Solved:** Campaign Manager was a separate page, causing orphaned entities (new/paused items not visible in Performance Dashboard) and forcing users to context-switch between pages.
+
+**Solution:** Merged all Campaign Manager features into Performance Dashboard.
+
+**Files Created:**
+- `app/api/meta/sync-entity/route.ts` - Lightweight endpoint to sync single entity from Meta (for immediate display after create/duplicate)
+
+**Files Modified:**
+- `components/performance-table.tsx`:
+  - Added overflow menu (⋯) with Edit, Info, Duplicate, Delete actions
+  - Added "+ Create" button in table header
+  - Added `syncingEntities` prop for loading overlay on rows
+  - Exported `HierarchyNode` type
+  - New callbacks: `onEditEntity`, `onInfoEntity`, `onDuplicateEntity`, `onDeleteEntity`
+- `app/dashboard/page.tsx`:
+  - Added modal state and handlers for Edit, Info, Duplicate, Delete
+  - Integrated all modals from Campaign Manager
+- `app/api/meta/duplicate-campaign/route.ts` - Added `needsSync: true` to response
+- `app/api/meta/duplicate-adset/route.ts` - Added `needsSync: true` to response
+- `app/api/meta/duplicate-ad/route.ts` - Added `needsSync: true` to response, `copyOverride` for ad copy editing
+- `components/inline-duplicate-modal.tsx` - Added ad copy editing UI (Primary Text, Headline, Description)
+- `components/edit-entity-modal.tsx` - Enhanced for unified dashboard integration
+- `components/sidebar.tsx` - Removed "Manager" nav item
+- `app/dashboard/campaigns/page.tsx` - Now redirects to `/dashboard` (old code preserved as `page.old.tsx`)
+
+**Key Features:**
+- All entity management (edit, duplicate, delete) available directly in Performance table rows
+- Create button opens Launch Wizard for new campaigns
+- Syncing overlay shows when entities are being fetched after create/duplicate
+- Google Ads entities show only play/pause (no overflow menu - limited API support)
+- Ad copy editing when duplicating ads (Primary Text, Headline, Description)
+- Creates new creative with modified copy via Meta API (existing creatives are immutable)
+
 ### Creative Thumbnails in Performance Table (Jan 25)
 **Status:** COMPLETE
 
@@ -608,6 +644,7 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| `unified-dashboard-merge.md` | Unified Dashboard: Campaign Manager Merged | Jan 26 |
 | `eager-hatching-minsky.md` | Creative Thumbnails in Performance Table | Jan 25 |
 | Sidebar Platform Badges | M/G badges for Meta/Google accounts | Jan 25 |
 | Settings Alert Preferences Fix | Column name mismatch fix | Jan 25 |

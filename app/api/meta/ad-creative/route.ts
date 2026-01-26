@@ -9,15 +9,49 @@ const supabase = createClient(
 const META_API_URL = 'https://graph.facebook.com/v21.0'
 
 // GET - Fetch creative ID(s) from source ad(s)
-// Query: ?adIds=123,456,789&userId=xxx
+// Query: ?adIds=123,456,789&userId=xxx OR ?adId=123&userId=xxx (single ad with full details)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const adIdsParam = searchParams.get('adIds')
+    const singleAdId = searchParams.get('adId')
     const userId = searchParams.get('userId')
 
-    if (!adIdsParam || !userId) {
-      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId parameter' }, { status: 400 })
+    }
+
+    // Single ad mode - fetch full creative details including copy
+    if (singleAdId) {
+      const { data: connection, error: connectionError } = await supabase
+        .from('meta_connections')
+        .select('access_token')
+        .eq('user_id', userId)
+        .single()
+
+      if (connectionError || !connection?.access_token) {
+        return NextResponse.json({ error: 'Meta connection not found' }, { status: 401 })
+      }
+
+      const accessToken = connection.access_token
+
+      // Fetch ad with creative details
+      const response = await fetch(
+        `${META_API_URL}/${singleAdId}?fields=id,name,creative{id,body,title,link_description,object_story_spec}&access_token=${accessToken}`
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        return NextResponse.json({ error: error.error?.message || 'Failed to fetch ad creative' }, { status: 400 })
+      }
+
+      const data = await response.json()
+      return NextResponse.json({ creative: data.creative || {} })
+    }
+
+    // Multiple ads mode (original behavior)
+    if (!adIdsParam) {
+      return NextResponse.json({ error: 'Missing adIds or adId parameter' }, { status: 400 })
     }
 
     const adIds = adIdsParam.split(',').filter(id => id.trim())

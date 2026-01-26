@@ -10,14 +10,46 @@ async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+interface TargetingOption {
+  id: string
+  name: string
+}
+
+interface CustomTargeting {
+  locationType: 'city' | 'country'
+  locationKey?: string
+  locationName?: string
+  locationRadius?: number
+  countries?: string[]
+  ageMin: number
+  ageMax: number
+  targetingMode: 'broad' | 'custom'
+  interests?: TargetingOption[]
+  behaviors?: TargetingOption[]
+}
+
+interface AdsetTargetingOverride {
+  sourceAdsetId: string
+  customTargeting: CustomTargeting
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, sourceCampaignId, newName, copyStatus = 'PAUSED' } = await request.json() as {
+    const { userId, adAccountId, sourceCampaignId, newName, copyStatus = 'PAUSED', adsetTargetingOverrides } = await request.json() as {
       userId: string
       adAccountId: string
       sourceCampaignId: string
       newName?: string
       copyStatus?: 'PAUSED' | 'ACTIVE'
+      adsetTargetingOverrides?: AdsetTargetingOverride[]
+    }
+
+    // Build a map for quick lookup of per-adset targeting overrides
+    const targetingOverrideMap = new Map<string, CustomTargeting>()
+    if (adsetTargetingOverrides) {
+      for (const override of adsetTargetingOverrides) {
+        targetingOverrideMap.set(override.sourceAdsetId, override.customTargeting)
+      }
     }
 
     if (!userId || !adAccountId || !sourceCampaignId) {
@@ -125,12 +157,56 @@ export async function POST(request: NextRequest) {
       for (const adset of adsetsData.data) {
         await delay(100)
 
+        // Build targeting - check for per-adset override, otherwise copy from source
+        let targeting = adset.targeting
+        const adsetOverride = targetingOverrideMap.get(adset.id)
+        if (adsetOverride) {
+          targeting = {
+            geo_locations: adsetOverride.locationType === 'city' && adsetOverride.locationKey
+              ? {
+                  cities: [{
+                    key: adsetOverride.locationKey,
+                    radius: adsetOverride.locationRadius || 25,
+                    distance_unit: 'mile'
+                  }]
+                }
+              : {
+                  countries: adsetOverride.countries || ['US']
+                },
+            age_min: adsetOverride.ageMin || 18,
+            age_max: adsetOverride.ageMax || 65
+          }
+
+          // Add detailed targeting if custom mode
+          if (adsetOverride.targetingMode === 'custom') {
+            const flexibleSpecEntry: Record<string, unknown> = {}
+
+            if (adsetOverride.interests && adsetOverride.interests.length > 0) {
+              flexibleSpecEntry.interests = adsetOverride.interests.map(i => ({
+                id: i.id,
+                name: i.name
+              }))
+            }
+
+            if (adsetOverride.behaviors && adsetOverride.behaviors.length > 0) {
+              flexibleSpecEntry.behaviors = adsetOverride.behaviors.map(b => ({
+                id: b.id,
+                name: b.name
+              }))
+            }
+
+            if (Object.keys(flexibleSpecEntry).length > 0) {
+              targeting.flexible_spec = [flexibleSpecEntry]
+            }
+          }
+        }
+
         const createAdsetBody: Record<string, any> = {
           campaign_id: newCampaignId,
           name: adset.name,
           optimization_goal: adset.optimization_goal,
           billing_event: adset.billing_event,
-          targeting: adset.targeting,
+          targeting,
           status: copyStatus,
           access_token: accessToken
         }
@@ -238,7 +314,8 @@ export async function POST(request: NextRequest) {
       newCampaignName: campaignName,
       adsetsCopied,
       adsCopied,
-      errors: errors.length > 0 ? errors : undefined
+      errors: errors.length > 0 ? errors : undefined,
+      needsSync: true  // Tells frontend to auto-sync for immediate display
     })
 
   } catch (err) {

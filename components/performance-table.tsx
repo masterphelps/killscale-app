@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown, Loader2, Video, Image as ImageIcon, X } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown, Loader2, Video, Image as ImageIcon, X, MoreHorizontal, Pencil, Info, Copy, Trash2 } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
@@ -171,11 +171,18 @@ type PerformanceTableProps = {
   onUnstarAd?: (adId: string) => Promise<void>
   // Shopify attribution data - replaces Meta revenue/results when Shopify is source of truth
   shopifyAttribution?: Record<string, { revenue: number; orders: number }>
+  // Entity IDs currently being synced (show loading overlay)
+  syncingEntities?: Set<string>
+  // Row action callbacks (for overflow menu)
+  onEditEntity?: (node: HierarchyNode) => void
+  onInfoEntity?: (node: HierarchyNode) => void
+  onDuplicateEntity?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
+  onDeleteEntity?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
 
-type HierarchyNode = {
+export type HierarchyNode = {
   name: string
   id?: string | null  // Meta entity ID for API calls
   type: 'campaign' | 'adset' | 'ad'
@@ -646,7 +653,12 @@ export function PerformanceTable({
   starredCreativeCounts,
   onStarAd,
   onUnstarAd,
-  shopifyAttribution
+  shopifyAttribution,
+  syncingEntities,
+  onEditEntity,
+  onInfoEntity,
+  onDuplicateEntity,
+  onDeleteEntity
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -688,6 +700,25 @@ export function PerformanceTable({
   const [loadingCreatives, setLoadingCreatives] = useState<Set<string>>(new Set())
   const loadedCreativesRef = useRef<Set<string>>(new Set())
   const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null)
+
+  // Overflow menu state
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+
+  // Close overflow menu when clicking outside
+  useEffect(() => {
+    if (!openMenuId) return
+    const handleClickOutside = (e: MouseEvent) => {
+      setOpenMenuId(null)
+    }
+    // Small delay to avoid closing immediately on the same click that opened it
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [openMenuId])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const resizing = useRef(false)
@@ -1275,13 +1306,15 @@ export function PerformanceTable({
     const indent = level === 'campaign' ? 0 : level === 'adset' ? 28 : 56
     const isHighlighted = rowKey === highlightedRow
     const textClass = level === 'campaign' ? 'text-white font-medium' : level === 'adset' ? 'text-zinc-200' : 'text-zinc-400'
+    // Check if this entity is currently being synced
+    const isSyncing = syncingEntities?.has(node.id || '')
 
     return (
       <div
         ref={isHighlighted ? highlightRef : undefined}
         className={cn(
           // New card-style row with dark background
-          'rounded-xl px-4 py-5 transition-all duration-200',
+          'relative rounded-xl px-4 py-5 transition-all duration-200',
           'bg-bg-card',
           'border border-border',
           'hover:border-border/50 hover:bg-bg-hover',
@@ -1294,6 +1327,14 @@ export function PerformanceTable({
         )}
         style={{ marginLeft: indent }}
       >
+        {/* Syncing overlay */}
+        {isSyncing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-dark/50 z-10 rounded-xl">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+            <span className="ml-2 text-sm text-gray-400">Syncing...</span>
+          </div>
+        )}
+
         {/* Star button for ads - positioned where checkbox would be */}
         {level === 'ad' && node.id && onStarAd && onUnstarAd ? (
           <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32 }}>
@@ -1636,6 +1677,68 @@ export function PerformanceTable({
             )}
           </button>
         )}
+
+        {/* Overflow menu for row actions */}
+        {canManageAds && node.id && node.platform !== 'google' && (
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpenMenuId(openMenuId === rowKey ? null : rowKey!)
+              }}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-white transition-all flex-shrink-0"
+              title="More actions"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {openMenuId === rowKey && (
+              <div className="absolute right-0 top-full mt-1 w-36 bg-bg-card border border-border rounded-lg shadow-xl z-50 py-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEditEntity?.(node)
+                    setOpenMenuId(null)
+                  }}
+                  className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-zinc-300 hover:text-white hover:bg-bg-hover transition-colors"
+                >
+                  <Pencil className="w-4 h-4" /> Edit
+                </button>
+                {level !== 'campaign' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onInfoEntity?.(node)
+                      setOpenMenuId(null)
+                    }}
+                    className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-zinc-300 hover:text-white hover:bg-bg-hover transition-colors"
+                  >
+                    <Info className="w-4 h-4" /> Info
+                  </button>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDuplicateEntity?.(node, level)
+                    setOpenMenuId(null)
+                  }}
+                  className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-zinc-300 hover:text-white hover:bg-bg-hover transition-colors"
+                >
+                  <Copy className="w-4 h-4" /> Duplicate
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteEntity?.(node, level)
+                    setOpenMenuId(null)
+                  }}
+                  className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-bg-hover transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -1910,6 +2013,67 @@ export function PerformanceTable({
                 )}
               </button>
             )}
+            {/* Overflow menu for mobile */}
+            {canManageAds && node.id && node.platform !== 'google' && (
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const mobileMenuId = `mobile-${node.id}`
+                    setOpenMenuId(openMenuId === mobileMenuId ? null : mobileMenuId)
+                  }}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-700 text-zinc-400"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {openMenuId === `mobile-${node.id}` && (
+                  <div className="absolute right-0 top-full mt-1 w-36 bg-bg-card border border-border rounded-lg shadow-xl z-50 py-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEditEntity?.(node)
+                        setOpenMenuId(null)
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-zinc-300"
+                    >
+                      <Pencil className="w-4 h-4" /> Edit
+                    </button>
+                    {level !== 'campaign' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onInfoEntity?.(node)
+                          setOpenMenuId(null)
+                        }}
+                        className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-zinc-300"
+                      >
+                        <Info className="w-4 h-4" /> Info
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDuplicateEntity?.(node, level)
+                        setOpenMenuId(null)
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-zinc-300"
+                    >
+                      <Copy className="w-4 h-4" /> Duplicate
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteEntity?.(node, level)
+                        setOpenMenuId(null)
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-red-400"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -2047,7 +2211,7 @@ export function PerformanceTable({
     <div ref={containerRef}>
       {/* Desktop Table View - no header, just cards */}
       <div className="desktop-table overflow-x-auto">
-        <div className="space-y-2 min-w-[900px] max-w-[1400px]">
+        <div className="space-y-2 min-w-[900px] max-w-[1400px] min-h-[calc(100vh-200px)]">
             {sortedHierarchy.length === 0 ? (
               <div className="px-5 py-8 text-center text-zinc-500">
                 No ads match the selected filter
