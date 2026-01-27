@@ -83,19 +83,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing health score data' }, { status: 400 })
     }
 
-    // Check subscription - Pro or Agency only
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('plan, status')
-      .eq('user_id', userId)
-      .single()
+    // Check subscription - Pro only (check both Stripe and admin-granted)
+    const [stripeResult, adminResult] = await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('plan, status')
+        .eq('user_id', userId)
+        .single(),
+      supabase
+        .from('admin_granted_subscriptions')
+        .select('plan, expires_at, is_active')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+    ])
 
-    const planName = subscription?.plan?.toLowerCase() || 'free'
-    const isActive = subscription?.status === 'active'
+    const stripeSub = stripeResult.data
+    const adminSub = adminResult.data
 
-    if (!isActive || (planName !== 'pro' && planName !== 'agency')) {
+    // Check admin-granted subscription first (takes precedence)
+    const now = new Date()
+    const adminSubValid = adminSub && adminSub.is_active && new Date(adminSub.expires_at) > now
+    const adminPlan = adminSubValid ? adminSub.plan?.toLowerCase() : null
+
+    // Fall back to Stripe subscription
+    const stripePlan = stripeSub?.plan?.toLowerCase()
+    const stripeActive = stripeSub?.status === 'active'
+
+    // Determine effective plan
+    const effectivePlan = adminPlan || (stripeActive ? stripePlan : null) || 'free'
+    const hasAccess = effectivePlan === 'pro' || effectivePlan === 'agency'
+
+    console.log('[AI Recommendations] Plan check:', {
+      userId,
+      stripePlan,
+      stripeActive,
+      adminPlan,
+      adminSubValid,
+      effectivePlan,
+      hasAccess
+    })
+
+    if (!hasAccess) {
       return NextResponse.json(
-        { error: 'AI recommendations require Pro or Agency plan' },
+        { error: `AI recommendations require Pro plan. Your plan: ${effectivePlan}` },
         { status: 403 }
       )
     }
