@@ -44,8 +44,8 @@ interface Workspace {
 
 const navItems = [
   { href: '/dashboard', label: 'Performance', icon: BarChart3, workspaceEnabled: true },
-  { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb, workspaceEnabled: false },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp, workspaceEnabled: false },
+  { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb, workspaceEnabled: false },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, workspaceEnabled: false },
 ]
 
