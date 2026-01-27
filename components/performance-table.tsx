@@ -8,6 +8,7 @@ import { BudgetEditModal } from './budget-edit-modal'
 import { StarButton } from './star-button'
 import { CreativePreviewTooltip } from './creative-preview-tooltip'
 import { Rules, calculateVerdict, Verdict, isEntityActive, StarredAd } from '@/lib/supabase'
+import { SelectedItem } from './bulk-action-toolbar'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { FEATURES } from '@/lib/feature-flags'
 
@@ -178,6 +179,9 @@ type PerformanceTableProps = {
   onInfoEntity?: (node: HierarchyNode) => void
   onDuplicateEntity?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
   onDeleteEntity?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
+  // Bulk selection for actions
+  bulkSelectedItems?: Map<string, SelectedItem>
+  onBulkSelectItem?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -658,7 +662,9 @@ export function PerformanceTable({
   onEditEntity,
   onInfoEntity,
   onDuplicateEntity,
-  onDeleteEntity
+  onDeleteEntity,
+  bulkSelectedItems,
+  onBulkSelectItem
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -1308,10 +1314,29 @@ export function PerformanceTable({
     const textClass = level === 'campaign' ? 'text-white font-medium' : level === 'adset' ? 'text-zinc-200' : 'text-zinc-400'
     // Check if this entity is currently being synced
     const isSyncing = syncingEntities?.has(node.id || '')
+    // Check if this item is bulk selected
+    const isBulkSelected = node.id ? bulkSelectedItems?.has(node.id) : false
+
+    // Handle row click for bulk selection
+    const handleRowClick = (e: React.MouseEvent) => {
+      // Don't select if clicking on interactive elements
+      const target = e.target as HTMLElement
+      const isInteractive = target.closest('button') ||
+                           target.closest('[data-no-select]') ||
+                           target.closest('input')
+      if (isInteractive) return
+
+      // If onBulkSelectItem is provided and we have an ID, select/deselect
+      if (onBulkSelectItem && node.id) {
+        e.stopPropagation()
+        onBulkSelectItem(node, level)
+      }
+    }
 
     return (
       <div
         ref={isHighlighted ? highlightRef : undefined}
+        onClick={handleRowClick}
         className={cn(
           // New card-style row with dark background
           'relative rounded-xl px-4 py-5 transition-all duration-200',
@@ -1323,7 +1348,10 @@ export function PerformanceTable({
           viewMode === 'detailed' ? 'items-start' : 'items-center',
           isHighlighted && 'ring-2 ring-accent/50 border-accent/50',
           !isSelected && level !== 'ad' && 'opacity-60',
-          onToggle && 'cursor-pointer'
+          onBulkSelectItem && 'cursor-pointer',
+          // Bulk selection highlight - left border + background, no ring to avoid overlap
+          // Use ! to override hover states
+          isBulkSelected && 'border-l-4 !border-l-accent !bg-accent/10'
         )}
         style={{ marginLeft: indent }}
       >
@@ -1484,6 +1512,7 @@ export function PerformanceTable({
         {/* Expand/collapse chevron */}
         {onToggle ? (
           <button
+            data-no-select
             onClick={(e) => { e.stopPropagation(); onToggle(); }}
             className="w-5 h-5 flex items-center justify-center text-zinc-500 hover:text-white transition-colors flex-shrink-0"
           >
@@ -1497,9 +1526,10 @@ export function PerformanceTable({
         <div className={cn('w-1 self-stretch rounded-full flex-shrink-0', typeColors[level])} style={{ minHeight: 32 }} />
 
         {/* Name section - two rows, max-width to ensure metrics align */}
+        {/* Only toggle expand on click if bulk selection is not active */}
         <div
           className="flex-1 min-w-0 max-w-[280px]"
-          onClick={onToggle}
+          onClick={onBulkSelectItem ? undefined : onToggle}
         >
           {/* Row 1: Name */}
           <div className={cn('truncate text-sm', textClass)} title={nameToShow}>{nameToShow}</div>

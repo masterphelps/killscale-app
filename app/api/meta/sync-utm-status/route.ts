@@ -143,9 +143,35 @@ export async function POST(request: NextRequest) {
 
     console.log(`[sync-utm-status] Completed. Found UTM params on ${Object.values(utmStatus).filter(Boolean).length} of ${adIds.length} ads`)
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // Store results in Supabase for caching (reads don't hit Meta API)
+    // ══════════════════════════════════════════════════════════════════════════
+    const now = new Date().toISOString()
+    const upsertData = Object.entries(utmStatus).map(([adId, hasUtm]) => ({
+      user_id: userId,
+      ad_account_id: adAccountId,
+      ad_id: adId,
+      has_utm: hasUtm,
+      last_synced_at: now
+    }))
+
+    if (upsertData.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('utm_status')
+        .upsert(upsertData, { onConflict: 'user_id,ad_account_id,ad_id' })
+
+      if (upsertError) {
+        console.error('[sync-utm-status] Failed to store in Supabase:', upsertError)
+        // Don't fail the request - we still have the data in memory
+      } else {
+        console.log(`[sync-utm-status] Stored ${upsertData.length} UTM status records in Supabase`)
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      utmStatus
+      utmStatus,
+      lastSynced: now
     })
 
   } catch (err) {
@@ -207,4 +233,53 @@ function checkUtmParams(adData: { creative?: { object_story_spec?: {
   }
 
   return false
+}
+
+/**
+ * GET - Fetch cached UTM status from Supabase (no Meta API call)
+ * This allows the UI to display cached data without hitting rate limits
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+    const adAccountId = searchParams.get('adAccountId')
+
+    if (!userId || !adAccountId) {
+      return NextResponse.json({ error: 'Missing userId or adAccountId' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('utm_status')
+      .select('ad_id, has_utm, last_synced_at')
+      .eq('user_id', userId)
+      .eq('ad_account_id', adAccountId)
+
+    if (error) {
+      console.error('[sync-utm-status GET] Supabase error:', error)
+      return NextResponse.json({ error: 'Failed to fetch UTM status' }, { status: 500 })
+    }
+
+    // Convert to { [adId]: boolean } format
+    const utmStatus: UtmStatusResult = {}
+    let lastSynced: string | null = null
+
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        utmStatus[row.ad_id] = row.has_utm
+      })
+      // Use the most recent sync time
+      lastSynced = data[0].last_synced_at
+    }
+
+    return NextResponse.json({
+      utmStatus,
+      lastSynced,
+      cached: true
+    })
+
+  } catch (err) {
+    console.error('Get UTM status error:', err)
+    return NextResponse.json({ error: 'Failed to fetch UTM status' }, { status: 500 })
+  }
 }

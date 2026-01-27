@@ -10,6 +10,7 @@ import { useAttribution } from '@/lib/attribution'
 import { ATTRIBUTION_MODEL_INFO, AttributionModel } from '@/lib/attribution-models'
 import { FEATURES } from '@/lib/feature-flags'
 import { ManualEventModal } from '@/components/manual-event-modal'
+import { UtmStatusPanel } from '@/components/utm-status-panel'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -1911,22 +1912,24 @@ ks('pageview');
                             </button>
                           </div>
 
-                          {/* Event Viewer */}
-                          <div>
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <Activity className="w-4 h-4 text-zinc-400" />
-                                <h3 className="font-medium text-sm">Events</h3>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {/* Source filter toggle */}
-                                <div className="flex rounded-lg overflow-hidden border border-border">
-                                  <button
-                                    onClick={() => setEventSourceFilter('all')}
-                                    className={cn(
-                                      "px-2.5 py-1 text-xs transition-colors",
-                                      eventSourceFilter === 'all'
-                                        ? "bg-accent text-white"
+                          {/* Events + UTM Status Grid */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* Event Viewer */}
+                            <div>
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="w-4 h-4 text-zinc-400" />
+                                  <h3 className="font-medium text-sm">Events</h3>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {/* Source filter toggle */}
+                                  <div className="flex rounded-lg overflow-hidden border border-border">
+                                    <button
+                                      onClick={() => setEventSourceFilter('all')}
+                                      className={cn(
+                                        "px-2.5 py-1 text-xs transition-colors",
+                                        eventSourceFilter === 'all'
+                                          ? "bg-accent text-white"
                                         : "bg-bg-dark text-zinc-400 hover:text-white"
                                     )}
                                   >
@@ -2056,6 +2059,17 @@ ks('pageview');
                                 </div>
                               )
                             })()}
+                            </div>
+
+                            {/* UTM Tracking Status Panel */}
+                            <UtmStatusPanel
+                              userId={user!.id}
+                              adAccountIds={
+                                (workspaceAccounts[workspace.id] || [])
+                                  .filter(a => a.platform === 'meta')
+                                  .map(a => a.ad_account_id)
+                              }
+                            />
                           </div>
                         </>
                       )}

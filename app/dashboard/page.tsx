@@ -12,6 +12,8 @@ import { StatusChangeModal, DeleteEntityModal } from '@/components/confirm-modal
 import { EditEntityModal } from '@/components/edit-entity-modal'
 import { EntityInfoModal } from '@/components/entity-info-modal'
 import { InlineDuplicateModal } from '@/components/inline-duplicate-modal'
+import { BulkActionToolbar, SelectedItem } from '@/components/bulk-action-toolbar'
+import { BulkOperationProgress } from '@/components/bulk-operation-progress'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
 import { StarredAdsPopover } from '@/components/starred-ads-popover'
 import { LaunchWizard, StarredAdForWizard } from '@/components/launch-wizard'
@@ -312,6 +314,19 @@ export default function DashboardPage() {
   // Workspace attribution display toggle
   const [showAttribution, setShowAttribution] = useState(true)
   const [showAttributionSettings, setShowAttributionSettings] = useState(false)
+  // Bulk selection state
+  const [bulkSelectedItems, setBulkSelectedItems] = useState<Map<string, SelectedItem>>(new Map())
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkLoadingAction, setBulkLoadingAction] = useState<'pause' | 'resume' | 'delete' | null>(null)
+  const [bulkProgress, setBulkProgress] = useState<{
+    isOpen: boolean
+    title: string
+    total: number
+    completed: number
+    failed: number
+    currentItem: string
+    results: Array<{ id: string; name: string; success: boolean; error?: string }>
+  } | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
   const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
@@ -1506,6 +1521,202 @@ export default function DashboardPage() {
       alert('Failed to delete. Please try again.')
     }
     setIsDeleting(false)
+  }
+
+  // Bulk selection handler
+  const handleBulkSelectItem = (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => {
+    if (!node.id) return
+
+    setBulkSelectedItems(prev => {
+      const next = new Map(prev)
+      if (next.has(node.id!)) {
+        next.delete(node.id!)
+      } else {
+        next.set(node.id!, {
+          id: node.id!,
+          type: level,
+          name: node.name,
+          status: node.status || 'ACTIVE',
+          parentCampaignId: node.campaignId || undefined,
+          parentAdsetId: node.adsetId || undefined,
+          budget: node.dailyBudget || node.lifetimeBudget || undefined,
+          budgetType: node.dailyBudget ? 'daily' : node.lifetimeBudget ? 'lifetime' : undefined,
+          isCBO: node.budgetType === 'CBO'
+        })
+      }
+      return next
+    })
+  }
+
+  const handleBulkClearSelection = () => {
+    setBulkSelectedItems(new Map())
+  }
+
+  // Bulk pause action
+  const handleBulkPause = async () => {
+    if (!user || bulkSelectedItems.size === 0) return
+
+    const items = Array.from(bulkSelectedItems.values())
+    setBulkLoading(true)
+    setBulkLoadingAction('pause')
+    setBulkProgress({
+      isOpen: true,
+      title: 'Pausing items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      currentItem: '',
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entities: items.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name
+          })),
+          status: 'PAUSED'
+        })
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setBulkProgress(prev => prev ? {
+          ...prev,
+          completed: result.successCount || items.length,
+          failed: result.failedCount || 0,
+          results: result.results || []
+        } : null)
+        // Clear selection and reload data
+        setBulkSelectedItems(new Map())
+        await loadData()
+      } else {
+        alert(result.error || 'Bulk pause failed')
+      }
+    } catch (err) {
+      alert('Bulk pause failed. Please try again.')
+    }
+
+    setBulkLoading(false)
+    setBulkLoadingAction(null)
+  }
+
+  // Bulk resume action
+  const handleBulkResume = async () => {
+    if (!user || bulkSelectedItems.size === 0) return
+
+    const items = Array.from(bulkSelectedItems.values())
+    setBulkLoading(true)
+    setBulkLoadingAction('resume')
+    setBulkProgress({
+      isOpen: true,
+      title: 'Activating items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      currentItem: '',
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entities: items.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name
+          })),
+          status: 'ACTIVE'
+        })
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setBulkProgress(prev => prev ? {
+          ...prev,
+          completed: result.successCount || items.length,
+          failed: result.failedCount || 0,
+          results: result.results || []
+        } : null)
+        // Clear selection and reload data
+        setBulkSelectedItems(new Map())
+        await loadData()
+      } else {
+        alert(result.error || 'Bulk activate failed')
+      }
+    } catch (err) {
+      alert('Bulk activate failed. Please try again.')
+    }
+
+    setBulkLoading(false)
+    setBulkLoadingAction(null)
+  }
+
+  // Bulk delete action
+  const handleBulkDelete = async () => {
+    if (!user || bulkSelectedItems.size === 0) return
+
+    const items = Array.from(bulkSelectedItems.values())
+    const confirmed = confirm(`Delete ${items.length} item${items.length > 1 ? 's' : ''}? This cannot be undone.`)
+    if (!confirmed) return
+
+    setBulkLoading(true)
+    setBulkLoadingAction('delete')
+    setBulkProgress({
+      isOpen: true,
+      title: 'Deleting items...',
+      total: items.length,
+      completed: 0,
+      failed: 0,
+      currentItem: '',
+      results: []
+    })
+
+    try {
+      const response = await fetch('/api/meta/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          entities: items.map(item => ({
+            entityId: item.id,
+            entityType: item.type,
+            name: item.name
+          }))
+        })
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setBulkProgress(prev => prev ? {
+          ...prev,
+          completed: result.successCount || items.length,
+          failed: result.failedCount || 0,
+          results: result.results || []
+        } : null)
+        // Clear selection and reload data
+        setBulkSelectedItems(new Map())
+        await loadData()
+      } else {
+        alert(result.error || 'Bulk delete failed')
+      }
+    } catch (err) {
+      alert('Bulk delete failed. Please try again.')
+    }
+
+    setBulkLoading(false)
+    setBulkLoadingAction(null)
   }
 
   // Format time since last sync
@@ -2903,6 +3114,8 @@ export default function DashboardPage() {
               onInfoEntity={handleInfoEntity}
               onDuplicateEntity={handleDuplicateEntity}
               onDeleteEntity={handleDeleteEntity}
+              bulkSelectedItems={bulkSelectedItems}
+              onBulkSelectItem={handleBulkSelectItem}
             />
           </div>
         </>
@@ -3098,6 +3311,33 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Bulk Action Toolbar - floating at bottom */}
+      <BulkActionToolbar
+        selectedItems={bulkSelectedItems}
+        onPause={handleBulkPause}
+        onResume={handleBulkResume}
+        onDelete={handleBulkDelete}
+        onScaleBudget={() => {}} // TODO: Implement bulk budget scaling
+        onCopyAds={() => {}} // TODO: Implement bulk copy
+        onClear={handleBulkClearSelection}
+        isLoading={bulkLoading}
+        loadingAction={bulkLoadingAction}
+      />
+
+      {/* Bulk Operation Progress */}
+      {bulkProgress && (
+        <BulkOperationProgress
+          isOpen={bulkProgress.isOpen}
+          title={bulkProgress.title}
+          total={bulkProgress.total}
+          completed={bulkProgress.completed}
+          failed={bulkProgress.failed}
+          currentItem={bulkProgress.currentItem}
+          results={bulkProgress.results}
+          onClose={() => setBulkProgress(null)}
+        />
       )}
     </>
   )
