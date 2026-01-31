@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       }))
 
       // Make single batch API call for up to 50 ads
-      const batchUrl = `https://graph.facebook.com/v18.0/?batch=${encodeURIComponent(
+      const batchUrl = `${META_GRAPH_URL}/?batch=${encodeURIComponent(
         JSON.stringify(batchRequests)
       )}&access_token=${accessToken}&include_headers=false`
 

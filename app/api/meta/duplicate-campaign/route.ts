@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Fetch source campaign details
     const campaignRes = await fetch(
-      `https://graph.facebook.com/v18.0/${sourceCampaignId}?fields=name,objective,special_ad_categories,daily_budget,lifetime_budget,bid_strategy,buying_type&access_token=${accessToken}`
+      `${META_GRAPH_URL}/${sourceCampaignId}?fields=name,objective,special_ad_categories,daily_budget,lifetime_budget,bid_strategy,buying_type&access_token=${accessToken}`
     )
     const campaignData = await campaignRes.json()
 
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
     }
 
     const newCampaignRes = await fetch(
-      `https://graph.facebook.com/v18.0/${formattedAccountId}/campaigns`,
+      `${META_GRAPH_URL}/${formattedAccountId}/campaigns`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
     // 3. Fetch and duplicate ad sets
     await delay(100)
     const adsetsRes = await fetch(
-      `https://graph.facebook.com/v18.0/${sourceCampaignId}/adsets?fields=name,daily_budget,lifetime_budget,optimization_goal,billing_event,targeting,promoted_object,bid_strategy,bid_amount&limit=100&access_token=${accessToken}`
+      `${META_GRAPH_URL}/${sourceCampaignId}/adsets?fields=name,daily_budget,lifetime_budget,optimization_goal,billing_event,targeting,promoted_object,bid_strategy,bid_amount&limit=100&access_token=${accessToken}`
     )
     const adsetsData = await adsetsRes.json()
 
@@ -229,7 +230,7 @@ export async function POST(request: NextRequest) {
 
         try {
           const newAdsetRes = await fetch(
-            `https://graph.facebook.com/v18.0/${formattedAccountId}/adsets`,
+            `${META_GRAPH_URL}/${formattedAccountId}/adsets`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -250,7 +251,7 @@ export async function POST(request: NextRequest) {
           // 4. Fetch and duplicate ads for this ad set
           await delay(100)
           const adsRes = await fetch(
-            `https://graph.facebook.com/v18.0/${adset.id}/ads?fields=name,creative&limit=100&access_token=${accessToken}`
+            `${META_GRAPH_URL}/${adset.id}/ads?fields=name,creative&limit=100&access_token=${accessToken}`
           )
           const adsData = await adsRes.json()
 
@@ -261,7 +262,7 @@ export async function POST(request: NextRequest) {
               // Create new ad using existing creative
               try {
                 const newAdRes = await fetch(
-                  `https://graph.facebook.com/v18.0/${formattedAccountId}/ads`,
+                  `${META_GRAPH_URL}/${formattedAccountId}/ads`,
                   {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

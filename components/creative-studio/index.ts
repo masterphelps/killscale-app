@@ -5,11 +5,13 @@ export { SkeletonCard } from './skeleton-card'
 export { EmptyState } from './empty-state'
 export { FatigueTrendChart } from './fatigue-trend-chart'
 export { CreativeHealthBanner } from './creative-health-banner'
+export { FunnelFilterBar } from './funnel-filter-bar'
 export { StarredMediaBar } from './starred-media-bar'
 export { PeriodComparison } from './period-comparison'
 export { AudienceBreakdown } from './audience-breakdown'
 export { CopyVariations } from './copy-variations'
 export { TheaterModal } from './theater-modal'
+export { MediaTable } from './media-table'
 
 // Types
 export type {

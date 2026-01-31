@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 import type { DailyMetrics, AudiencePerformance, CopyVariation, FatigueStatus } from '@/components/creative-studio/types'
 
 const supabase = createClient(
@@ -135,6 +136,132 @@ export async function GET(request: NextRequest) {
 
       if (creativeRows) {
         allAdData = creativeRows
+      }
+    }
+
+    // Step D: Full gallery-style derivative resolution
+    // When sync-media hasn't resolved derivatives, no ad_data row matches the
+    // media_library hash. Replicate the gallery endpoint's full resolution:
+    // aggregate spend per derivative hash, then match unmatched derivatives to
+    // unmatched inventory videos using the same spend-ordered assignment.
+    if (allAdData.length === 0 && mediaItem.media_type === 'video') {
+      // Fetch all video ad_data for this account (same dataset the gallery uses)
+      const { data: allVideoData } = await supabase
+        .from('ad_data')
+        .select('creative_id, media_hash, spend, ad_id, adset_id, campaign_id, video_views')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .eq('media_type', 'video')
+        .limit(50000)
+
+      if (allVideoData && allVideoData.length > 0) {
+        // Get inventory in same order as gallery (synced_at desc)
+        const { data: inventoryItems } = await supabase
+          .from('media_library')
+          .select('media_hash')
+          .eq('user_id', userId)
+          .eq('ad_account_id', strippedAccountId)
+          .eq('media_type', 'video')
+          .order('synced_at', { ascending: false })
+
+        const inventoryHashes = new Set(inventoryItems?.map(m => m.media_hash) || [])
+        const inventoryOrder = inventoryItems?.map(m => m.media_hash) || []
+
+        // Build creative_id → hashes + derivative→original via creative_id linkage
+        const creativeHashMap = new Map<string, Set<string>>()
+        for (const row of allVideoData) {
+          if (!row.creative_id || !row.media_hash) continue
+          if (!creativeHashMap.has(row.creative_id)) {
+            creativeHashMap.set(row.creative_id, new Set())
+          }
+          creativeHashMap.get(row.creative_id)!.add(row.media_hash)
+        }
+
+        const derivToOriginal = new Map<string, string>()
+        for (const [, hashes] of Array.from(creativeHashMap)) {
+          const hashArray = Array.from(hashes)
+          const origHash = hashArray.find(h => inventoryHashes.has(h))
+          if (origHash) {
+            for (const h of hashArray) {
+              if (h !== origHash) derivToOriginal.set(h, origHash)
+            }
+          }
+        }
+
+        // Aggregate spend per resolved hash and track creative_ids
+        const hashSpend = new Map<string, number>()
+        const hashCreatives = new Map<string, Set<string>>()
+        const hashHasVideo = new Map<string, boolean>()
+        for (const row of allVideoData) {
+          if (!row.media_hash) continue
+          const resolved = derivToOriginal.get(row.media_hash) || row.media_hash
+          hashSpend.set(resolved, (hashSpend.get(resolved) || 0) + (parseFloat(row.spend) || 0))
+          if (row.creative_id) {
+            if (!hashCreatives.has(resolved)) hashCreatives.set(resolved, new Set())
+            hashCreatives.get(resolved)!.add(row.creative_id)
+          }
+          if (row.video_views) hashHasVideo.set(resolved, true)
+        }
+
+        // Check if creative_id linkage resolved derivatives to our hash
+        if (hashSpend.has(mediaHash) && (hashSpend.get(mediaHash) || 0) > 0) {
+          const cids = hashCreatives.get(mediaHash)
+          if (cids) Array.from(cids).forEach(cid => creativeIds.add(cid))
+        }
+
+        // Last resort: match unmatched derivatives to unmatched inventory by spend order
+        // (same heuristic as gallery endpoint lines 400-436)
+        if (creativeIds.size === 0) {
+          // Unmatched derivative hashes with video data
+          const unmatchedDerivs = new Map<string, { spend: number; creatives: Set<string> }>()
+          for (const [hash, spend] of Array.from(hashSpend)) {
+            if (!inventoryHashes.has(hash) && hashHasVideo.get(hash)) {
+              unmatchedDerivs.set(hash, {
+                spend,
+                creatives: hashCreatives.get(hash) || new Set(),
+              })
+            }
+          }
+
+          // Unmatched inventory videos (no perf data mapped to them)
+          const matchedInventory = new Set<string>()
+          for (const hash of Array.from(hashSpend.keys())) {
+            if (inventoryHashes.has(hash)) matchedInventory.add(hash)
+          }
+          const unmatchedInventory = inventoryOrder.filter(h => !matchedInventory.has(h))
+
+          if (unmatchedDerivs.size > 0 && unmatchedInventory.length > 0) {
+            // Sort derivatives by spend descending (same as gallery)
+            const derivEntries = Array.from(unmatchedDerivs.entries())
+              .sort(([, a], [, b]) => b.spend - a.spend)
+            const libraryVideos = [...unmatchedInventory]
+
+            for (const [, derivData] of derivEntries) {
+              if (libraryVideos.length === 0) break
+              const targetHash = libraryVideos.shift()!
+              // If this derivative maps to our mediaHash, use its creative_ids
+              if (targetHash === mediaHash) {
+                Array.from(derivData.creatives).forEach(cid => creativeIds.add(cid))
+                break // Found our match
+              }
+            }
+          }
+        }
+
+        // Fetch full ad_data for discovered creative_ids
+        if (creativeIds.size > 0) {
+          const { data: fallbackRows } = await supabase
+            .from('ad_data')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('ad_account_id', adAccountId)
+            .in('creative_id', Array.from(creativeIds))
+            .order('date_start', { ascending: true })
+
+          if (fallbackRows) {
+            allAdData = fallbackRows
+          }
+        }
       }
     }
 
@@ -425,7 +552,7 @@ export async function GET(request: NextRequest) {
               .single()
 
             if (connection && new Date(connection.token_expires_at) > new Date()) {
-              const videoUrl = `https://graph.facebook.com/v21.0/${videoRow.video_id}?fields=source&access_token=${connection.access_token}`
+              const videoUrl = `${META_GRAPH_URL}/${videoRow.video_id}?fields=source&access_token=${connection.access_token}`
               const videoRes = await fetch(videoUrl)
               const videoData = await videoRes.json()
               if (videoData.source) {

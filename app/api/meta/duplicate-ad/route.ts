@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Fetch source ad details
     const adRes = await fetch(
-      `https://graph.facebook.com/v18.0/${sourceAdId}?fields=name,adset_id,creative&access_token=${accessToken}`
+      `${META_GRAPH_URL}/${sourceAdId}?fields=name,adset_id,creative&access_token=${accessToken}`
     )
     const adData = await adRes.json()
 
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
     if (copyOverride) {
       // Fetch the original creative details
       const creativeRes = await fetch(
-        `https://graph.facebook.com/v18.0/${adData.creative.id}?fields=object_story_spec,url_tags&access_token=${accessToken}`
+        `${META_GRAPH_URL}/${adData.creative.id}?fields=object_story_spec,url_tags&access_token=${accessToken}`
       )
       const creativeData = await creativeRes.json()
 
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
 
       // Create the new creative
       const newCreativeRes = await fetch(
-        `https://graph.facebook.com/v18.0/${formattedAccountId}/adcreatives`,
+        `${META_GRAPH_URL}/${formattedAccountId}/adcreatives`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
     }
 
     const newAdRes = await fetch(
-      `https://graph.facebook.com/v18.0/${formattedAccountId}/ads`,
+      `${META_GRAPH_URL}/${formattedAccountId}/ads`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

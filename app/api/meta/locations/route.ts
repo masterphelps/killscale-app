@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     const accessToken = connection.access_token
 
     // Search for cities
-    const locationsUrl = `https://graph.facebook.com/v18.0/search?type=adgeolocation&location_types=city&q=${encodeURIComponent(query)}&access_token=${accessToken}`
+    const locationsUrl = `${META_GRAPH_URL}/search?type=adgeolocation&location_types=city&q=${encodeURIComponent(query)}&access_token=${accessToken}`
 
     const response = await fetch(locationsUrl)
     const result = await response.json()

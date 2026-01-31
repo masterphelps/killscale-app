@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Star, MoreHorizontal, TrendingUp, TrendingDown, Image, Film } from 'lucide-react'
+import { Play, Star, MoreHorizontal, Image, Film } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { StudioAsset, FatigueStatus } from './types'
 
@@ -16,40 +16,49 @@ interface MediaGalleryCardProps {
   onRequestVideoSource?: () => void
 }
 
-// ROAS-based glow styling
-const getROASStyles = (roas: number) => {
-  if (roas >= 3) {
+// Score-based glow styling — uses hook score for videos, click score for images
+const getScoreStyles = (score: number | null) => {
+  if (score === null) return null
+  if (score >= 75) {
     return {
       glow: 'shadow-[0_0_40px_rgba(34,197,94,0.3),0_0_80px_rgba(34,197,94,0.15),0_0_120px_rgba(34,197,94,0.05)]',
       border: 'border-emerald-500/50',
-      badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
-      icon: <TrendingUp className="w-3.5 h-3.5" />,
+      text: 'text-emerald-400',
+      label: 'Excellent',
     }
   }
-  if (roas >= 1.5) {
+  if (score >= 50) {
     return {
       glow: 'shadow-[0_0_40px_rgba(234,179,8,0.25),0_0_80px_rgba(234,179,8,0.12),0_0_120px_rgba(234,179,8,0.04)]',
       border: 'border-amber-500/40',
-      badge: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
-      icon: <TrendingUp className="w-3.5 h-3.5" />,
+      text: 'text-amber-400',
+      label: 'Good',
+    }
+  }
+  if (score >= 25) {
+    return {
+      glow: 'shadow-[0_0_40px_rgba(249,115,22,0.25),0_0_80px_rgba(249,115,22,0.12),0_0_120px_rgba(249,115,22,0.04)]',
+      border: 'border-orange-500/40',
+      text: 'text-orange-400',
+      label: 'Average',
     }
   }
   return {
     glow: 'shadow-[0_0_40px_rgba(239,68,68,0.25),0_0_80px_rgba(239,68,68,0.12),0_0_120px_rgba(239,68,68,0.04)]',
     border: 'border-red-500/40',
-    badge: 'bg-red-500/20 text-red-400 border-red-500/40',
-    icon: <TrendingDown className="w-3.5 h-3.5" />,
+    text: 'text-red-400',
+    label: 'Weak',
   }
 }
 
 // Fatigue status styling
 const getFatigueStyles = (status: FatigueStatus) => {
-  const styles: Record<FatigueStatus, { color: string; stroke: string; pulse: boolean }> = {
-    fresh: { color: 'text-emerald-400', stroke: 'stroke-emerald-500', pulse: false },
-    healthy: { color: 'text-lime-400', stroke: 'stroke-lime-500', pulse: false },
-    warning: { color: 'text-amber-400', stroke: 'stroke-amber-500', pulse: true },
-    fatiguing: { color: 'text-orange-400', stroke: 'stroke-orange-500', pulse: true },
-    fatigued: { color: 'text-red-400', stroke: 'stroke-red-500', pulse: true },
+  const styles: Record<FatigueStatus, { color: string; stroke: string; pulse: boolean; label: string }> = {
+    fresh: { color: 'text-emerald-400', stroke: 'stroke-emerald-500', pulse: false, label: 'Fresh' },
+    healthy: { color: 'text-lime-400', stroke: 'stroke-lime-500', pulse: false, label: 'Healthy' },
+    warning: { color: 'text-amber-400', stroke: 'stroke-amber-500', pulse: true, label: 'Warning' },
+    fatiguing: { color: 'text-orange-400', stroke: 'stroke-orange-500', pulse: true, label: 'Fatiguing' },
+    fatigued: { color: 'text-red-400', stroke: 'stroke-red-500', pulse: true, label: 'Fatigued' },
   }
   return styles[status]
 }
@@ -78,10 +87,14 @@ export function MediaGalleryCard({
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const hasPerf = item.hasPerformanceData
-  const roasStyles = hasPerf ? getROASStyles(item.roas) : null
+  const isVideo = item.mediaType === 'video'
   const fatigueStyles = hasPerf ? getFatigueStyles(item.fatigueStatus) : null
 
-  const isVideo = item.mediaType === 'video'
+  // Primary score: hook for videos, click for images
+  const primaryScore = isVideo ? item.hookScore : item.clickScore
+  const primaryLabel = isVideo ? 'Hook' : 'Click'
+  const scoreStyles = hasPerf ? getScoreStyles(primaryScore) : null
+
   const storageUrl = item.storageUrl || null
   const thumbnailUrl = item.imageUrl || item.thumbnailUrl
 
@@ -90,8 +103,6 @@ export function MediaGalleryCard({
     if (val >= 1000) return `$${(val / 1000).toFixed(1)}k`
     return `$${val.toFixed(0)}`
   }
-
-  const formatROAS = (val: number) => `${val.toFixed(1)}x`
 
   const effectiveVideoSource = storageUrl && isVideo ? storageUrl : videoSourceUrl
 
@@ -146,8 +157,8 @@ export function MediaGalleryCard({
       className={cn(
         'relative rounded-2xl overflow-hidden cursor-pointer',
         'bg-bg-card border transition-all duration-300',
-        hasPerf && roasStyles ? roasStyles.border : 'border-border',
-        hasPerf && isHovered && roasStyles ? roasStyles.glow : !hasPerf && isHovered && 'shadow-[0_0_40px_rgba(255,255,255,0.05)]',
+        hasPerf && scoreStyles ? scoreStyles.border : 'border-border',
+        hasPerf && isHovered && scoreStyles ? scoreStyles.glow : !hasPerf && isHovered && 'shadow-[0_0_40px_rgba(255,255,255,0.05)]',
         'group'
       )}
     >
@@ -270,6 +281,7 @@ export function MediaGalleryCard({
             <motion.div
               animate={fatigueStyles.pulse ? { scale: [1, 1.05, 1] } : {}}
               transition={fatigueStyles.pulse ? { duration: 2, repeat: Infinity } : {}}
+              title={`Fatigue: ${fatigueStyles.label} (${item.fatigueScore.toFixed(0)})`}
               className={cn(
                 'relative w-11 h-11 rounded-full flex items-center justify-center',
                 'bg-black/70 backdrop-blur-md border border-white/10',
@@ -347,25 +359,25 @@ export function MediaGalleryCard({
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <span className="text-zinc-500 text-[10px] uppercase tracking-wide font-medium">Revenue</span>
+                      <span className="text-zinc-500 text-[10px] uppercase tracking-wide font-medium">Spend</span>
                       <motion.div
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.05 }}
                         className="text-white font-bold font-mono text-lg"
                       >
-                        {formatCurrency(item.revenue)}
+                        {formatCurrency(item.spend)}
                       </motion.div>
                     </div>
                     <div>
-                      <span className="text-zinc-500 text-[10px] uppercase tracking-wide font-medium">Spend</span>
+                      <span className="text-zinc-500 text-[10px] uppercase tracking-wide font-medium">Impressions</span>
                       <motion.div
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
                         className="text-white font-bold font-mono text-lg"
                       >
-                        {formatCurrency(item.spend)}
+                        {item.impressions >= 1000000 ? `${(item.impressions / 1000000).toFixed(1)}M` : item.impressions >= 1000 ? `${(item.impressions / 1000).toFixed(1)}k` : item.impressions}
                       </motion.div>
                     </div>
                   </div>
@@ -413,33 +425,25 @@ export function MediaGalleryCard({
       <div className="p-4 space-y-3">
         {hasPerf ? (
           <>
-            {/* ROAS badge + Revenue */}
+            {/* Primary score — large and prominent */}
             <div className="flex items-center justify-between gap-3">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border',
-                  roasStyles!.badge
-                )}
-              >
-                {roasStyles!.icon}
-                <span className="font-bold font-mono text-sm">{formatROAS(item.roas)}</span>
-              </motion.div>
+              <div className="flex items-baseline gap-2">
+                <span className={cn(
+                  'text-2xl font-bold font-mono tabular-nums',
+                  scoreStyles ? scoreStyles.text : 'text-zinc-500'
+                )}>
+                  {primaryScore !== null ? primaryScore : '—'}
+                </span>
+                <span className="text-xs text-zinc-500 font-medium">{primaryLabel}</span>
+              </div>
 
-              <span className={cn(
-                'font-semibold font-mono text-sm',
-                item.revenue > 0 ? 'text-verdict-scale' : 'text-zinc-500'
-              )}>
-                {formatCurrency(item.revenue)}
+              <span className="text-xs text-zinc-500 font-mono">
+                {formatCurrency(item.spend)} spent
               </span>
             </div>
 
-            {/* Metrics row: Video → Spend | Thumbstop | Hold, Image → Spend | CTR | CPC */}
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Spend</div>
-                <div className="text-xs font-mono text-zinc-300">{formatCurrency(item.spend)}</div>
-              </div>
+            {/* Metrics row: Video → Thumbstop | Hold, Image → CTR | CPC */}
+            <div className={cn('grid gap-2', isVideo ? 'grid-cols-2' : 'grid-cols-2')}>
               {item.thumbstopRate !== null && item.thumbstopRate !== undefined ? (
                 <>
                   <div>
@@ -465,13 +469,13 @@ export function MediaGalleryCard({
               )}
             </div>
 
-            {/* Composite score pills */}
-            {(item.hookScore !== null || item.clickScore !== null || item.convertScore !== null) && (
+            {/* Composite score pills — skip the primary since it's already shown large */}
+            {(item.hookScore !== null || item.holdScore !== null || item.clickScore !== null || item.convertScore !== null) && (
               <div className="flex flex-wrap gap-1.5">
-                {item.hookScore !== null && <ScorePill label="Hook" value={item.hookScore} />}
-                {item.holdScore !== null && <ScorePill label="Hold" value={item.holdScore} />}
-                {item.clickScore !== null && <ScorePill label="Click" value={item.clickScore} />}
+                {isVideo && item.holdScore !== null && <ScorePill label="Hold" value={item.holdScore} />}
+                {item.clickScore !== null && (isVideo ? <ScorePill label="Click" value={item.clickScore} /> : null)}
                 {item.convertScore !== null && <ScorePill label="Conv" value={item.convertScore} />}
+                {!isVideo && item.hookScore !== null && <ScorePill label="Hook" value={item.hookScore} />}
               </div>
             )}
           </>

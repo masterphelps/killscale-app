@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
     const accessToken = connection.access_token
 
     // Fetch ad with creative details including object_story_spec for copy and UTMs
-    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,creative{id,name,object_story_spec}&access_token=${accessToken}`
+    const adUrl = `${META_GRAPH_URL}/${adId}?fields=id,name,creative{id,name,object_story_spec}&access_token=${accessToken}`
 
     console.log('[get-ad-creative] Fetching:', adUrl.replace(accessToken, '[REDACTED]'))
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
       const cleanAdAccountId = adAccountId.replace(/^act_/, '')
 
       // First, try to get the ad account's business and its pages
-      const adAccountUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}?fields=business{id,name,owned_pages{id,name},client_pages{id,name}}&access_token=${accessToken}`
+      const adAccountUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}?fields=business{id,name,owned_pages{id,name},client_pages{id,name}}&access_token=${accessToken}`
       console.log('Fetching ad account business info:', cleanAdAccountId)
 
       const adAccountResponse = await fetch(adAccountUrl)
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
       }
 
       // If no business or no pages from business, try promotable_pages
-      const promotableUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/promote_pages?fields=id,name&access_token=${accessToken}`
+      const promotableUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/promote_pages?fields=id,name&access_token=${accessToken}`
       console.log('Trying promote_pages endpoint...')
 
       const promotableResponse = await fetch(promotableUrl)
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all user's pages (default or fallback)
-    const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name&access_token=${accessToken}`
+    const pagesUrl = `${META_GRAPH_URL}/me/accounts?fields=id,name&access_token=${accessToken}`
     console.log('Fetching all user pages')
 
     const response = await fetch(pagesUrl)

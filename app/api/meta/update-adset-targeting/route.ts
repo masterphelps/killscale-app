@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     // Update the adset targeting via Meta API
     const res = await fetch(
-      `https://graph.facebook.com/v18.0/${adsetId}`,
+      `${META_GRAPH_URL}/${adsetId}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       await delay(50)
       try {
         const adRes = await fetch(
-          `https://graph.facebook.com/v18.0/${adId}?fields=name,creative&access_token=${accessToken}`
+          `${META_GRAPH_URL}/${adId}?fields=name,creative&access_token=${accessToken}`
         )
         const adData = await adRes.json()
         if (!adData.error && adData.creative) {
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
         if (dest.newAdsetConfig.copyTargetingFrom) {
           try {
             const targetingRes = await fetch(
-              `https://graph.facebook.com/v18.0/${dest.newAdsetConfig.copyTargetingFrom}?fields=targeting,optimization_goal,billing_event,promoted_object&access_token=${accessToken}`
+              `${META_GRAPH_URL}/${dest.newAdsetConfig.copyTargetingFrom}?fields=targeting,optimization_goal,billing_event,promoted_object&access_token=${accessToken}`
             )
             const targetingData = await targetingRes.json()
             if (!targetingData.error) {
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
           }
 
           const newAdsetRes = await fetch(
-            `https://graph.facebook.com/v18.0/${formattedAccountId}/adsets`,
+            `${META_GRAPH_URL}/${formattedAccountId}/adsets`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest) {
           }
 
           const newAdRes = await fetch(
-            `https://graph.facebook.com/v18.0/${formattedAccountId}/ads`,
+            `${META_GRAPH_URL}/${formattedAccountId}/ads`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

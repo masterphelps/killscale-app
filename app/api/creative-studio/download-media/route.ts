@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
 
           try {
             const metaRes = await fetch(
-              `https://graph.facebook.com/v21.0/${videoId}?fields=source&access_token=${connection.access_token}`
+              `${META_GRAPH_URL}/${videoId}?fields=source&access_token=${connection.access_token}`
             )
             const metaData = await metaRes.json()
 

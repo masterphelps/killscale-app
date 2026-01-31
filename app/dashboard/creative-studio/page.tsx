@@ -2,27 +2,26 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { LayoutGrid, List, Search, RefreshCw, Download, Film, Image } from 'lucide-react'
+import { LayoutGrid, List, RefreshCw, Download, Film, Image } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import {
   GalleryGrid,
-  CreativeHealthBanner,
+  FunnelFilterBar,
   StarredMediaBar,
   TheaterModal,
+  MediaTable,
 } from '@/components/creative-studio'
 import type {
   StudioAsset,
   StudioAssetDetail,
-  CreativeHealthScore,
-  FatigueStatus,
 } from '@/components/creative-studio/types'
 
+type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
+
 type ViewMode = 'gallery' | 'table'
-type SortOption = 'roas' | 'spend' | 'revenue' | 'fatigue' | 'adCount' | 'thumbstopRate' | 'holdRate' | 'hookScore' | 'fileSize' | 'syncedAt' | 'name'
-type MediaTypeFilter = 'all' | 'image' | 'video'
-type HasDataFilter = 'all' | 'with_spend' | 'unused'
+type SortOption = 'hookScore' | 'holdScore' | 'clickScore' | 'convertScore' | 'spend' | 'roas' | 'revenue' | 'fatigue' | 'adCount' | 'fileSize' | 'syncedAt' | 'name' | 'thumbstopRate' | 'holdRate' | 'ctr' | 'cpc' | 'impressions'
 
 export default function CreativeStudioPage() {
   // Auth & Account
@@ -31,18 +30,19 @@ export default function CreativeStudioPage() {
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('gallery')
-  const [sortBy, setSortBy] = useState<SortOption>('roas')
+  const [sortBy, setSortBy] = useState<SortOption>('hookScore')
   const [sortDesc, setSortDesc] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterFatigue, setFilterFatigue] = useState<FatigueStatus | 'all'>('all')
-  const [mediaTypeFilter, setMediaTypeFilter] = useState<MediaTypeFilter>('all')
-  const [hasDataFilter, setHasDataFilter] = useState<HasDataFilter>('all')
+
 
   // Data state
   const [assets, setAssets] = useState<StudioAsset[]>([])
-  const [healthScore, setHealthScore] = useState<CreativeHealthScore | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+
+  // Funnel filter state — null = inactive, number = score threshold for that stage
+  const [funnelThresholds, setFunnelThresholds] = useState<Record<FunnelStage, number | null>>({
+    hook: null, hold: null, click: null, convert: null, scale: null,
+  })
 
   // Download state (Phase 2 of sync)
   const [isDownloading, setIsDownloading] = useState(false)
@@ -89,9 +89,8 @@ export default function CreativeStudioPage() {
         adAccountId: currentAccountId,
       })
 
-      const [assetsRes, healthRes, starredRes] = await Promise.all([
+      const [assetsRes, starredRes] = await Promise.all([
         fetch(`/api/creative-studio/media?${params}`),
-        fetch(`/api/creative-studio/health?${params}`),
         fetch(`/api/creative-studio/starred?${params}`),
       ])
 
@@ -102,10 +101,6 @@ export default function CreativeStudioPage() {
           isStarred: false,
         }))
         setAssets(transformed)
-      }
-      if (healthRes.ok) {
-        const data = await healthRes.json()
-        setHealthScore(data)
       }
       if (starredRes.ok) {
         const data = await starredRes.json()
@@ -268,9 +263,19 @@ export default function CreativeStudioPage() {
     }
   }, [assets, loadDetailData])
 
+  // Handle table sort (from column header clicks)
+  const handleTableSort = useCallback((field: string) => {
+    if (field === sortBy) {
+      setSortDesc(prev => !prev)
+    } else {
+      setSortBy(field as SortOption)
+      setSortDesc(true)
+    }
+  }, [sortBy])
+
   // Handle menu click
   const handleMenuClick = useCallback((id: string) => {
-    console.log('Menu clicked for:', id)
+    // TODO: implement menu actions
   }, [])
 
   // Handle close detail
@@ -281,7 +286,7 @@ export default function CreativeStudioPage() {
 
   // Handle build from starred
   const handleBuildFromStarred = useCallback(() => {
-    console.log('Build from starred:', Array.from(starredIds))
+    // TODO: implement build from starred
   }, [starredIds])
 
   // Handle clear starred
@@ -304,51 +309,96 @@ export default function CreativeStudioPage() {
     }
   }, [user, currentAccountId])
 
+  // Funnel filter handlers
+  const toggleFunnelFilter = useCallback((stage: FunnelStage) => {
+    setFunnelThresholds(prev => ({
+      ...prev,
+      [stage]: prev[stage] !== null ? null : 75, // default to 75 when activating
+    }))
+  }, [])
+
+  const setFunnelThreshold = useCallback((stage: FunnelStage, value: number) => {
+    setFunnelThresholds(prev => ({
+      ...prev,
+      [stage]: value, // setting a threshold also activates the filter
+    }))
+  }, [])
+
+  const clearFunnelFilters = useCallback(() => {
+    setFunnelThresholds({ hook: null, hold: null, click: null, convert: null, scale: null })
+  }, [])
+
+  // Compute scale threshold (median spend x 2) from assets with spend data
+  const scaleThreshold = useMemo(() => {
+    const spends = assets
+      .filter(a => a.hasPerformanceData && a.spend > 0)
+      .map(a => a.spend)
+      .sort((a, b) => a - b)
+    if (spends.length === 0) return 0
+    const mid = Math.floor(spends.length / 2)
+    const median = spends.length % 2 === 0
+      ? (spends[mid - 1] + spends[mid]) / 2
+      : spends[mid]
+    return median * 2
+  }, [assets])
+
+  // Funnel stats — computed from pre-funnel-filtered assets (respects search/type/fatigue/hasData filters but NOT funnel filters)
+  const preFunnelAssets = useMemo(() => assets, [assets])
+
+  const funnelStats = useMemo(() => {
+    const withData = preFunnelAssets.filter(a => a.hasPerformanceData)
+    const total = withData.length
+    const t = (stage: FunnelStage) => funnelThresholds[stage] ?? 75
+    return {
+      hook: { good: withData.filter(a => (a.hookScore ?? 0) >= t('hook')).length, total },
+      hold: { good: withData.filter(a => (a.holdScore ?? 0) >= t('hold')).length, total },
+      click: { good: withData.filter(a => (a.clickScore ?? 0) >= t('click')).length, total },
+      convert: { good: withData.filter(a => (a.convertScore ?? 0) >= t('convert')).length, total },
+      scale: { good: withData.filter(a => a.spend >= scaleThreshold).length, total },
+    }
+  }, [preFunnelAssets, scaleThreshold, funnelThresholds])
+
   // Filter and sort all assets
   const filteredAssets = useMemo(() => {
     let items = [...assets]
 
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
+    // Funnel stage filters (additive AND, per-stage thresholds)
+    const activeStages = (Object.entries(funnelThresholds) as [FunnelStage, number | null][])
+      .filter(([, v]) => v !== null)
+    if (activeStages.length > 0) {
       items = items.filter(item => {
-        if (item.name) return item.name.toLowerCase().includes(query)
-        return false
+        for (const [stage, threshold] of activeStages) {
+          if (stage === 'hook' && (item.hookScore ?? 0) < threshold!) return false
+          if (stage === 'hold' && (item.holdScore ?? 0) < threshold!) return false
+          if (stage === 'click' && (item.clickScore ?? 0) < threshold!) return false
+          if (stage === 'convert' && (item.convertScore ?? 0) < threshold!) return false
+          if (stage === 'scale' && item.spend < scaleThreshold) return false
+        }
+        return true
       })
-    }
-
-    // Media type filter
-    if (mediaTypeFilter !== 'all') {
-      items = items.filter(item => item.mediaType === mediaTypeFilter)
-    }
-
-    // Fatigue filter
-    if (filterFatigue !== 'all') {
-      items = items.filter(item => item.fatigueStatus === filterFatigue)
-    }
-
-    // Has data filter
-    if (hasDataFilter === 'with_spend') {
-      items = items.filter(item => item.hasPerformanceData)
-    } else if (hasDataFilter === 'unused') {
-      items = items.filter(item => !item.hasPerformanceData)
     }
 
     // Sort
     items.sort((a, b) => {
       let comparison = 0
       switch (sortBy) {
-        case 'roas': comparison = a.roas - b.roas; break
+        case 'hookScore': comparison = (a.hookScore ?? -1) - (b.hookScore ?? -1); break
+        case 'holdScore': comparison = (a.holdScore ?? -1) - (b.holdScore ?? -1); break
+        case 'clickScore': comparison = (a.clickScore ?? -1) - (b.clickScore ?? -1); break
+        case 'convertScore': comparison = (a.convertScore ?? -1) - (b.convertScore ?? -1); break
         case 'spend': comparison = a.spend - b.spend; break
+        case 'roas': comparison = a.roas - b.roas; break
         case 'revenue': comparison = a.revenue - b.revenue; break
         case 'fatigue': comparison = a.fatigueScore - b.fatigueScore; break
         case 'adCount': comparison = a.adCount - b.adCount; break
-        case 'thumbstopRate': comparison = (a.thumbstopRate ?? -1) - (b.thumbstopRate ?? -1); break
-        case 'holdRate': comparison = (a.holdRate ?? -1) - (b.holdRate ?? -1); break
-        case 'hookScore': comparison = (a.hookScore ?? -1) - (b.hookScore ?? -1); break
         case 'fileSize': comparison = (a.fileSize || 0) - (b.fileSize || 0); break
         case 'syncedAt': comparison = (a.syncedAt || '').localeCompare(b.syncedAt || ''); break
         case 'name': comparison = (a.name || '').localeCompare(b.name || ''); break
+        case 'thumbstopRate': comparison = (a.thumbstopRate ?? -1) - (b.thumbstopRate ?? -1); break
+        case 'holdRate': comparison = (a.holdRate ?? -1) - (b.holdRate ?? -1); break
+        case 'ctr': comparison = a.ctr - b.ctr; break
+        case 'cpc': comparison = a.cpc - b.cpc; break
+        case 'impressions': comparison = a.impressions - b.impressions; break
       }
       return sortDesc ? -comparison : comparison
     })
@@ -357,7 +407,7 @@ export default function CreativeStudioPage() {
       ...item,
       isStarred: starredIds.has(item.mediaHash),
     }))
-  }, [assets, searchQuery, mediaTypeFilter, filterFatigue, hasDataFilter, sortBy, sortDesc, starredIds])
+  }, [assets, funnelThresholds, scaleThreshold, sortBy, sortDesc, starredIds])
 
   // Split filtered assets into videos and images for sectioned display
   const videos = useMemo(() => filteredAssets.filter(a => a.mediaType === 'video'), [filteredAssets])
@@ -410,28 +460,30 @@ export default function CreativeStudioPage() {
           </div>
         </motion.div>
 
-        {/* Health Score Banner */}
+        {/* Funnel Filters + Sort Controls */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
+          className="flex items-center justify-between gap-4"
         >
-          {isLoading ? (
-            <div className="h-16 bg-bg-card border border-border rounded-xl animate-pulse" />
-          ) : healthScore ? (
-            <CreativeHealthBanner healthScore={healthScore} />
-          ) : null}
-        </motion.div>
+          {/* Left: Funnel pills */}
+          <div className="flex-1 min-w-0">
+            {isLoading ? (
+              <div className="h-16 bg-bg-card border border-border rounded-xl animate-pulse" />
+            ) : (
+              <FunnelFilterBar
+                thresholds={funnelThresholds}
+                onToggle={toggleFunnelFilter}
+                onSetThreshold={setFunnelThreshold}
+                onClear={clearFunnelFilters}
+                stats={funnelStats}
+              />
+            )}
+          </div>
 
-        {/* Controls Row */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-        >
-          {/* Left: Sort */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Right: Sort + View Toggle */}
+          <div className="flex items-center gap-3 flex-shrink-0">
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -441,84 +493,19 @@ export default function CreativeStudioPage() {
                 'focus:outline-none focus:border-accent'
               )}
             >
-              <option value="roas">Sort: ROAS</option>
-              <option value="spend">Sort: Spend</option>
-              <option value="revenue">Sort: Revenue</option>
-              <option value="fatigue">Sort: Fatigue</option>
-              <option value="adCount">Sort: Usage</option>
-              <option value="thumbstopRate">Sort: Thumbstop</option>
-              <option value="holdRate">Sort: Hold Rate</option>
-              <option value="hookScore">Sort: Hook Score</option>
-              <option value="fileSize">Sort: File Size</option>
-              <option value="syncedAt">Sort: Date Synced</option>
+              <option value="hookScore">Hook</option>
+              <option value="holdScore">Hold</option>
+              <option value="clickScore">Click</option>
+              <option value="convertScore">Convert</option>
+              <option value="spend">Scale</option>
+              <option value="roas">ROAS</option>
+              <option value="revenue">Revenue</option>
+              <option value="fatigue">Fatigue</option>
+              <option value="adCount">Usage</option>
+              <option value="fileSize">File Size</option>
+              <option value="syncedAt">Date Synced</option>
             </select>
 
-            {/* Filters */}
-            <select
-              value={mediaTypeFilter}
-              onChange={(e) => setMediaTypeFilter(e.target.value as MediaTypeFilter)}
-              className={cn(
-                'bg-bg-card border border-border rounded-lg px-3 py-2',
-                'text-sm text-white',
-                'focus:outline-none focus:border-accent'
-              )}
-            >
-              <option value="all">All Types</option>
-              <option value="video">Videos</option>
-              <option value="image">Images</option>
-            </select>
-
-            <select
-              value={filterFatigue}
-              onChange={(e) => setFilterFatigue(e.target.value as FatigueStatus | 'all')}
-              className={cn(
-                'bg-bg-card border border-border rounded-lg px-3 py-2',
-                'text-sm text-white',
-                'focus:outline-none focus:border-accent'
-              )}
-            >
-              <option value="all">All Status</option>
-              <option value="fresh">Fresh</option>
-              <option value="healthy">Healthy</option>
-              <option value="warning">Warning</option>
-              <option value="fatiguing">Fatiguing</option>
-              <option value="fatigued">Fatigued</option>
-            </select>
-
-            <select
-              value={hasDataFilter}
-              onChange={(e) => setHasDataFilter(e.target.value as HasDataFilter)}
-              className={cn(
-                'bg-bg-card border border-border rounded-lg px-3 py-2',
-                'text-sm text-white',
-                'focus:outline-none focus:border-accent'
-              )}
-            >
-              <option value="all">All Assets</option>
-              <option value="with_spend">With Spend</option>
-              <option value="unused">Unused</option>
-            </select>
-          </div>
-
-          {/* Right Controls */}
-          <div className="flex items-center gap-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className={cn(
-                  'w-48 lg:w-64 bg-bg-card border border-border rounded-lg pl-10 pr-4 py-2',
-                  'text-sm text-white placeholder:text-zinc-600',
-                  'focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50'
-                )}
-              />
-            </div>
-
-            {/* View Toggle */}
             <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
               <button
                 onClick={() => setViewMode('gallery')}
@@ -556,11 +543,8 @@ export default function CreativeStudioPage() {
           className="text-sm text-zinc-500"
         >
           {filteredAssets.length} assets
-          {mediaTypeFilter !== 'all' && ` (${mediaTypeFilter}s)`}
-          {searchQuery && ` matching "${searchQuery}"`}
-          {filterFatigue !== 'all' && ` with ${filterFatigue} status`}
-          {hasDataFilter === 'with_spend' && ' with spend data'}
-          {hasDataFilter === 'unused' && ' (unused)'}
+          {Object.entries(funnelThresholds).some(([, v]) => v !== null) &&
+            ` filtered by ${Object.entries(funnelThresholds).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}+`).join(' + ')}`}
         </motion.div>
 
         {/* Content — single view with Videos + Images sections */}
@@ -595,7 +579,7 @@ export default function CreativeStudioPage() {
             ) : (
               <div className="space-y-8">
                 {/* Videos Section */}
-                {(mediaTypeFilter === 'all' || mediaTypeFilter === 'video') && videos.length > 0 && (
+                {videos.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <Film className="w-5 h-5 text-purple-400" />
@@ -616,7 +600,7 @@ export default function CreativeStudioPage() {
                 )}
 
                 {/* Images Section */}
-                {(mediaTypeFilter === 'all' || mediaTypeFilter === 'image') && images.length > 0 && (
+                {images.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <Image className="w-5 h-5 text-blue-400" />
@@ -638,9 +622,16 @@ export default function CreativeStudioPage() {
               </div>
             )
           ) : (
-            <div className="p-8 text-center text-zinc-500">
-              Table view coming soon. Use gallery view for now.
-            </div>
+            <MediaTable
+              items={filteredAssets}
+              isLoading={isLoading}
+              sortField={sortBy}
+              sortDirection={sortDesc ? 'desc' : 'asc'}
+              onSort={handleTableSort}
+              onSelect={(id) => handleSelect(id)}
+              onStar={(id) => handleToggleStar(id)}
+              starredIds={starredIds}
+            />
           )}
         </motion.div>
       </div>
@@ -666,7 +657,7 @@ export default function CreativeStudioPage() {
           }
         }}
         onBuildNewAds={() => {
-          console.log('Build new ads from:', selectedItem)
+          // TODO: implement build new ads
         }}
       />
     </div>

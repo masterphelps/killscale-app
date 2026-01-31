@@ -79,6 +79,12 @@ type AdRow = {
   ad_name: string
   ad_id?: string | null
   creative_id?: string | null  // For star deduplication
+  // Creative preview data from sync (no API calls needed)
+  thumbnail_url?: string | null
+  image_url?: string | null
+  media_type?: string | null
+  media_hash?: string | null
+  storage_url?: string | null
   impressions: number
   clicks: number
   spend: number
@@ -221,6 +227,12 @@ export type HierarchyNode = {
   campaignName?: string
   // Creative info (for star deduplication)
   creativeId?: string | null
+  // Creative preview data from sync (no API calls needed)
+  thumbnail_url?: string | null
+  image_url?: string | null
+  media_type?: string | null
+  media_hash?: string | null
+  storage_url?: string | null
   // Manual events (from workspace pixel)
   manualRevenue?: number
   manualCount?: number
@@ -453,6 +465,11 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         campaignName: campaign.name,
         // Creative info for star deduplication
         creativeId: row.creative_id,
+        // Creative preview data from sync
+        thumbnail_url: row.thumbnail_url,
+        image_url: row.image_url,
+        media_type: row.media_type,
+        storage_url: row.storage_url,
         // Manual events tracking
         manualRevenue: 0,
         manualCount: 0
@@ -461,7 +478,19 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     }
     // Ensure we have the ID even if first row didn't have it
     if (row.ad_id && !ad.id) ad.id = row.ad_id
-    
+    // Backfill thumbnail data from any row that has it
+    if (!ad.thumbnail_url && row.thumbnail_url) ad.thumbnail_url = row.thumbnail_url
+    if (!ad.image_url && row.image_url) ad.image_url = row.image_url
+    if (!ad.media_type && row.media_type) ad.media_type = row.media_type
+    // Backfill storage_url and media_hash — critical for derivative video IDs where
+    // only some rows match media_library (originals have storage_url, derivatives don't)
+    if (!ad.storage_url && row.storage_url) ad.storage_url = row.storage_url
+    if (!ad.media_hash && row.media_hash) ad.media_hash = row.media_hash
+    // DEBUG: log first 3 ads thumbnail data
+    if (ad.type === 'ad' && adset.children && adset.children.length <= 3) {
+      console.log('[THUMB DEBUG]', ad.name?.slice(0, 30), { thumbnail_url: row.thumbnail_url?.slice(0, 80), image_url: row.image_url?.slice(0, 80), media_type: row.media_type, media_hash: row.media_hash })
+    }
+
     // Aggregate ad metrics
     ad.impressions += row.impressions
     ad.clicks += row.clicks
@@ -1210,8 +1239,11 @@ export function PerformanceTable({
         if (!expandedAdsets.has(adsetKey)) return
 
         // Load creatives for visible ads (Meta only - Google doesn't have creatives)
+        // Skip images that already have data from sync. Always load videos (need videoSource).
         adset.children?.forEach(ad => {
           if (ad.creativeId && ad.platform !== 'google' && !loadedCreativesRef.current.has(ad.creativeId)) {
+            const isImage = ad.media_type && ad.media_type.toLowerCase() !== 'video'
+            if (isImage && (ad.thumbnail_url || ad.image_url)) return // images have CDN URL already
             loadCreative(ad.creativeId)
           }
         })
@@ -1450,15 +1482,70 @@ export function PerformanceTable({
         ) : null}
 
         {/* Creative thumbnail for ads only */}
-        {level === 'ad' && node.creativeId && node.platform !== 'google' && (
+        {level === 'ad' && (node.creativeId || node.thumbnail_url || node.image_url || node.storage_url) && node.platform !== 'google' && (
           <CreativePreviewTooltip
             previewUrl={(() => {
+              // Prefer storage URL from Supabase Storage (zero external calls)
+              if (node.storage_url) return node.storage_url
+              // Prefer row-level data from sync (no API call needed)
+              // Videos: prefer thumbnail_url (video thumbnail from media_library)
+              // Images: prefer image_url (high-quality permanent CDN URL from media_library)
+              const rowUrl = node.media_type?.toUpperCase() === 'VIDEO'
+                ? (node.thumbnail_url || node.image_url)
+                : (node.image_url || node.thumbnail_url)
+              if (rowUrl) return rowUrl
               const creative = creativesData[node.creativeId!]
               return creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
             })()}
-            mediaType={creativesData[node.creativeId!]?.mediaType}
+            mediaType={(() => {
+              if (node.storage_url || node.thumbnail_url || node.image_url) return node.media_type?.toUpperCase() === 'VIDEO' ? 'video' : 'image'
+              return creativesData[node.creativeId!]?.mediaType
+            })()}
             alt={nameToShow}
-            onFullPreview={() => {
+            onFullPreview={async () => {
+              const isVideo = node.media_type?.toUpperCase() === 'VIDEO'
+
+              // If we have a storage URL, use it directly (zero API calls)
+              if (node.storage_url) {
+                setPreviewModal({
+                  isOpen: true,
+                  previewUrl: node.storage_url,
+                  videoSource: isVideo ? node.storage_url : undefined,
+                  thumbnailUrl: node.storage_url,
+                  mediaType: isVideo ? 'video' : 'image',
+                  name: nameToShow,
+                  adId: node.id || undefined
+                })
+                return
+              }
+
+              // Prefer row-level data from sync
+              const rowUrl = isVideo
+                ? (node.thumbnail_url || node.image_url)
+                : (node.image_url || node.thumbnail_url)
+              if (rowUrl) {
+                // For videos, fetch playable source on demand
+                let videoSource: string | undefined
+                if (isVideo && node.media_hash && userId) {
+                  try {
+                    const res = await fetch(`/api/creative-studio/video-source?userId=${userId}&videoId=${node.media_hash}`)
+                    if (res.ok) {
+                      const data = await res.json()
+                      videoSource = data.source
+                    }
+                  } catch (e) { /* ignore */ }
+                }
+                setPreviewModal({
+                  isOpen: true,
+                  previewUrl: rowUrl,
+                  videoSource,
+                  thumbnailUrl: rowUrl,
+                  mediaType: isVideo ? 'video' : 'image',
+                  name: nameToShow,
+                  adId: node.id || undefined
+                })
+                return
+              }
               const creative = creativesData[node.creativeId!]
               const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
               if (previewUrl || creative?.videoSource) {
@@ -1474,30 +1561,96 @@ export function PerformanceTable({
               }
             }}
           >
-            <div className="w-10 h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
-              {loadingCreatives.has(node.creativeId!) ? (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
-                </div>
-              ) : (() => {
-                const creative = creativesData[node.creativeId!]
-                const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
-                return previewUrl ? (
-                  <div className="relative w-full h-full">
-                    <img
-                      src={previewUrl}
-                      alt={nameToShow}
-                      className="w-full h-full object-cover"
-                    />
-                    {creative?.mediaType === 'video' && (
+            <div data-no-select className="w-10 h-12 rounded-lg bg-bg-hover flex-shrink-0 overflow-hidden">
+              {(() => {
+                const isVideo = node.media_type?.toUpperCase() === 'VIDEO'
+                const creative = node.creativeId ? creativesData[node.creativeId] : undefined
+
+                // Stored videos: use <video> tag — #t=0.3 forces browser to render a visible frame
+                if (isVideo && node.storage_url) {
+                  return (
+                    <div className="relative w-full h-full">
+                      <video
+                        src={`${node.storage_url}#t=0.3`}
+                        muted
+                        playsInline
+                        preload="auto"
+                        className="w-full h-full object-cover"
+                      />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                         <Play className="w-3 h-3 text-white fill-white" />
                       </div>
-                    )}
-                  </div>
-                ) : (
+                    </div>
+                  )
+                }
+
+                // Stored images: use storage URL directly
+                if (!isVideo && node.storage_url) {
+                  return (
+                    <div className="relative w-full h-full">
+                      <img src={node.storage_url} alt={nameToShow} className="w-full h-full object-cover" />
+                    </div>
+                  )
+                }
+
+                // Images: use row data from media_library (high-quality CDN URL)
+                if (!isVideo) {
+                  const imgUrl = node.image_url || node.thumbnail_url || creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+                  if (imgUrl) {
+                    return (
+                      <div className="relative w-full h-full">
+                        <img src={imgUrl} alt={nameToShow} className="w-full h-full object-cover" />
+                      </div>
+                    )
+                  }
+                }
+
+                // Videos: use <video> element — #t=0.3 forces browser to render a visible frame
+                if (isVideo && creative?.videoSource) {
+                  return (
+                    <div className="relative w-full h-full">
+                      <video
+                        src={`${creative.videoSource}#t=0.3`}
+                        muted
+                        playsInline
+                        preload="auto"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <Play className="w-3 h-3 text-white fill-white" />
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Videos: fallback to thumbnail while lazy loader fetches source
+                if (isVideo) {
+                  const thumbUrl = node.thumbnail_url || node.image_url || creative?.previewUrl || creative?.thumbnailUrl
+                  if (thumbUrl) {
+                    return (
+                      <div className="relative w-full h-full">
+                        <img src={thumbUrl} alt={nameToShow} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Play className="w-3 h-3 text-white fill-white" />
+                        </div>
+                      </div>
+                    )
+                  }
+                }
+
+                // Loading state
+                if (node.creativeId && loadingCreatives.has(node.creativeId)) {
+                  return (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                    </div>
+                  )
+                }
+
+                // No data at all
+                return (
                   <div className="w-full h-full flex items-center justify-center">
-                    {creative?.mediaType === 'video' ? (
+                    {isVideo ? (
                       <Video className="w-4 h-4 text-zinc-600" />
                     ) : (
                       <ImageIcon className="w-4 h-4 text-zinc-600" />
@@ -1930,10 +2083,43 @@ export function PerformanceTable({
             </div>
           )}
           {/* Creative thumbnail for ads (mobile) */}
-          {level === 'ad' && node.creativeId && node.platform !== 'google' && (
+          {level === 'ad' && (node.creativeId || node.thumbnail_url || node.image_url || node.storage_url) && node.platform !== 'google' && (
             <div
+              data-no-select
               className="flex-shrink-0 mr-3 cursor-pointer"
               onClick={() => {
+                const isVideo = node.media_type?.toUpperCase() === 'VIDEO'
+
+                // Prefer storage URL (zero API calls)
+                if (node.storage_url) {
+                  setPreviewModal({
+                    isOpen: true,
+                    previewUrl: node.storage_url,
+                    videoSource: isVideo ? node.storage_url : undefined,
+                    thumbnailUrl: node.storage_url,
+                    mediaType: isVideo ? 'video' : 'image',
+                    name: nameToShow,
+                    adId: node.id || undefined
+                  })
+                  return
+                }
+
+                // Prefer row-level data from sync
+                const rowUrl = isVideo
+                  ? (node.thumbnail_url || node.image_url)
+                  : (node.image_url || node.thumbnail_url)
+                if (rowUrl) {
+                  setPreviewModal({
+                    isOpen: true,
+                    previewUrl: rowUrl,
+                    videoSource: undefined,
+                    thumbnailUrl: rowUrl,
+                    mediaType: isVideo ? 'video' : 'image',
+                    name: nameToShow,
+                    adId: node.id || undefined
+                  })
+                  return
+                }
                 const creative = creativesData[node.creativeId!]
                 const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
                 if (previewUrl || creative?.videoSource) {
@@ -1950,12 +2136,69 @@ export function PerformanceTable({
               }}
             >
               <div className="w-12 h-14 rounded-lg bg-bg-hover overflow-hidden">
-                {loadingCreatives.has(node.creativeId!) ? (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
-                  </div>
-                ) : (() => {
-                  const creative = creativesData[node.creativeId!]
+                {(() => {
+                  const isVideo = node.media_type?.toUpperCase() === 'VIDEO'
+
+                  // Stored video: use <video> tag — #t=0.3 forces browser to render a visible frame
+                  if (isVideo && node.storage_url) {
+                    return (
+                      <div className="relative w-full h-full">
+                        <video
+                          src={`${node.storage_url}#t=0.3`}
+                          muted
+                          playsInline
+                          preload="auto"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Play className="w-4 h-4 text-white fill-white" />
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  // Stored image: use storage URL directly
+                  if (!isVideo && node.storage_url) {
+                    return (
+                      <div className="relative w-full h-full">
+                        <img
+                          src={node.storage_url}
+                          alt={nameToShow}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )
+                  }
+
+                  // Prefer row-level data from sync
+                  const rowUrl = isVideo
+                    ? (node.thumbnail_url || node.image_url)
+                    : (node.image_url || node.thumbnail_url)
+                  if (rowUrl) {
+                    return (
+                      <div className="relative w-full h-full">
+                        <img
+                          src={rowUrl}
+                          alt={nameToShow}
+                          className="w-full h-full object-cover"
+                        />
+                        {isVideo && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                            <Play className="w-4 h-4 text-white fill-white" />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+                  // Fallback to lazy-loaded creative data
+                  if (node.creativeId && loadingCreatives.has(node.creativeId)) {
+                    return (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                      </div>
+                    )
+                  }
+                  const creative = node.creativeId ? creativesData[node.creativeId] : undefined
                   const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
                   return previewUrl ? (
                     <div className="relative w-full h-full">

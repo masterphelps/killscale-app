@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -195,7 +196,7 @@ export async function POST(request: NextRequest) {
     if (objective === 'conversions') {
       // Fetch available pixels for this ad account
       const pixelsResponse = await fetch(
-        `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adspixels?fields=id,name&access_token=${accessToken}`
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/adspixels?fields=id,name&access_token=${accessToken}`
       )
       const pixelsResult = await pixelsResponse.json()
 
@@ -240,7 +241,7 @@ export async function POST(request: NextRequest) {
       }
 
       const campaignResponse = await fetch(
-        `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/campaigns`,
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/campaigns`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -349,7 +350,7 @@ export async function POST(request: NextRequest) {
     console.log('[create-campaign v2] Creating adset with payload:', JSON.stringify(adsetPayload, null, 2))
 
     const adsetResponse = await fetch(
-      `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adsets`,
+      `${META_GRAPH_URL}/act_${cleanAdAccountId}/adsets`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -394,7 +395,7 @@ export async function POST(request: NextRequest) {
         console.log(`Creating ad ${i + 1}/${existingCreativeIds.length}: ${adName} with creative ${creativeId}`)
 
         const adResponse = await fetch(
-          `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/ads`,
+          `${META_GRAPH_URL}/act_${cleanAdAccountId}/ads`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -519,7 +520,7 @@ export async function POST(request: NextRequest) {
       })
 
       const creativeResponse = await fetch(
-        `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`,
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/adcreatives`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -549,7 +550,7 @@ export async function POST(request: NextRequest) {
       }
 
       const adResponse = await fetch(
-        `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/ads`,
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/ads`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -577,7 +578,7 @@ export async function POST(request: NextRequest) {
           console.log(`[create-campaign] Updating ad ${adResult.id} with UTM: ${actualUrlTags}`)
 
           // Fetch the creative we just created to get its full spec
-          const creativeUrl = `https://graph.facebook.com/v18.0/${creativeResult.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
+          const creativeUrl = `${META_GRAPH_URL}/${creativeResult.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
           const creativeResponse = await fetch(creativeUrl)
           const creativeData = await creativeResponse.json()
 
@@ -611,7 +612,7 @@ export async function POST(request: NextRequest) {
 
             // Create new creative with UTM
             const newCreativeResponse = await fetch(
-              `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`,
+              `${META_GRAPH_URL}/act_${cleanAdAccountId}/adcreatives`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -630,7 +631,7 @@ export async function POST(request: NextRequest) {
             } else {
               // Update ad to use new creative with UTM
               const updateAdResponse = await fetch(
-                `https://graph.facebook.com/v18.0/${adResult.id}`,
+                `${META_GRAPH_URL}/${adResult.id}`,
                 {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },

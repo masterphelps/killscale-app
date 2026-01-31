@@ -139,6 +139,12 @@ export async function POST(request: NextRequest) {
     const end = dateEnd || new Date().toISOString().split('T')[0]
     const start = dateStart || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
+    // Validate date format to prevent injection in GAQL query
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+    if (!dateRegex.test(start) || !dateRegex.test(end)) {
+      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
+    }
+
     // Normalize customer ID for API calls (remove hyphens)
     const normalizedCustomerId = normalizeCustomerId(customerId)
 

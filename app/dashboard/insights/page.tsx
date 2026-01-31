@@ -7,13 +7,11 @@ import Link from 'next/link'
 import { HealthScoreCard } from '@/components/health-score-card'
 import { AndromedaPreview } from '@/components/andromeda-preview'
 import { AndromedaAuditModal } from '@/components/andromeda-audit-modal'
-import { MoneyBar } from '@/components/money-bar'
 import { ActionCards, ActionCardItem } from '@/components/action-cards'
 import { AIHealthRecommendations } from '@/components/ai-health-recommendations'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { BudgetEditModal } from '@/components/budget-edit-modal'
-import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
-import { HealthScoreResult, HierarchyItem as HealthHierarchyItem } from '@/lib/health-score'
+import { HealthScoreResult } from '@/lib/health-score'
 import { calculateAndromedaScore, CampaignData, BudgetChangeRecord, AndromedaScoreResult } from '@/lib/andromeda-score'
 import { Rules, calculateVerdict } from '@/lib/supabase'
 import { useSubscription } from '@/lib/subscription'
@@ -37,50 +35,8 @@ const DEFAULT_RULES: Rules = {
   updated_at: ''
 }
 
-// Shared localStorage keys for date preferences (used by dashboard and insights)
-const DATE_STORAGE_KEY = 'killscale_date_preference'
-
-type DatePreference = {
-  preset: string
-  customStart?: string
-  customEnd?: string
-}
-
-function loadDatePreference(): DatePreference {
-  if (typeof window === 'undefined') return { preset: 'last_30d' }
-  try {
-    const stored = sessionStorage.getItem(DATE_STORAGE_KEY)
-    if (stored) {
-      return JSON.parse(stored)
-    }
-  } catch (e) {
-    // Ignore parse errors
-  }
-  return { preset: 'last_30d' }
-}
-
-function saveDatePreference(pref: DatePreference): void {
-  if (typeof window === 'undefined') return
-  try {
-    sessionStorage.setItem(DATE_STORAGE_KEY, JSON.stringify(pref))
-  } catch (e) {
-    // Ignore storage errors
-  }
-}
-
-// Helper to get human-readable date label
-function getDateLabel(datePreset: string, customStartDate: string, customEndDate: string): string {
-  if (datePreset === 'custom' && customStartDate && customEndDate) {
-    const formatDate = (d: string) => {
-      const date = new Date(d)
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    }
-    return `${formatDate(customStartDate)} - ${formatDate(customEndDate)}`
-  }
-
-  const preset = DATE_PRESETS.find(p => p.value === datePreset)
-  return preset?.label || 'Select dates'
-}
+// Fixed 30-day window for insights analysis
+const INSIGHTS_DAYS = 30
 
 // Extended hierarchy item for action center
 type HierarchyItem = {
@@ -126,28 +82,6 @@ export default function InsightsPage() {
   // UI state
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [datePreset, setDatePreset] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const pref = loadDatePreference()
-      return pref.preset
-    }
-    return 'last_30d'
-  })
-  const [customStartDate, setCustomStartDate] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const pref = loadDatePreference()
-      return pref.customStart || ''
-    }
-    return ''
-  })
-  const [customEndDate, setCustomEndDate] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const pref = loadDatePreference()
-      return pref.customEnd || ''
-    }
-    return ''
-  })
   const [hasMounted, setHasMounted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAuditModal, setShowAuditModal] = useState(false)
@@ -193,76 +127,36 @@ export default function InsightsPage() {
     return entityType === 'campaign' ? `Campaign ${index + 1}` : `Ad Set ${index + 1}`
   }
 
-  // Mark as mounted (date preferences already loaded in useState initializers)
+  // Mark as mounted
   useEffect(() => {
     setHasMounted(true)
   }, [])
 
-  // Save date preferences to localStorage when they change
-  useEffect(() => {
-    if (!hasMounted) return
-    saveDatePreference({
-      preset: datePreset,
-      customStart: customStartDate || undefined,
-      customEnd: customEndDate || undefined
-    })
-  }, [datePreset, customStartDate, customEndDate, hasMounted])
-
-  // Load data when account or dates change (after mount to use correct dates)
+  // Load data when account changes (after mount)
   useEffect(() => {
     if (user && currentAccountId && hasMounted) {
       loadAllData()
     }
-  }, [user?.id, currentAccountId, datePreset, customStartDate, customEndDate, hasMounted])
+  }, [user?.id, currentAccountId, hasMounted])
 
-  // Refresh KillScale attribution when date range changes
+  // Refresh KillScale attribution on mount
   useEffect(() => {
     if (!isKillScaleActive || !hasMounted) return
 
     const dateRange = getDateRange()
     refreshAttribution(dateRange.start, dateRange.end)
-  }, [isKillScaleActive, datePreset, customStartDate, customEndDate, hasMounted])
+  }, [isKillScaleActive, hasMounted])
 
   // Use currentAccountId from AccountContext as the single source of truth
   const selectedAccountId = currentAccountId
   const selectedAccountName = currentAccount?.name
 
-  // Calculate date range
+  // Fixed 30-day date range for insights
   const getDateRange = () => {
     const today = new Date()
     today.setHours(23, 59, 59, 999)
-    let startDate: Date
-
-    if (datePreset === 'custom' && customStartDate) {
-      return {
-        start: customStartDate,
-        end: customEndDate || today.toISOString().split('T')[0]
-      }
-    }
-
-    startDate = new Date()
-    switch (datePreset) {
-      case 'today':
-        break
-      case 'yesterday':
-        startDate.setDate(startDate.getDate() - 1)
-        today.setDate(today.getDate() - 1)
-        break
-      case 'last_7d':
-        startDate.setDate(startDate.getDate() - 6)
-        break
-      case 'last_14d':
-        startDate.setDate(startDate.getDate() - 13)
-        break
-      case 'last_30d':
-        startDate.setDate(startDate.getDate() - 29)
-        break
-      case 'last_90d':
-        startDate.setDate(startDate.getDate() - 89)
-        break
-      default:
-        startDate.setDate(startDate.getDate() - 6)
-    }
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - (INSIGHTS_DAYS - 1))
     startDate.setHours(0, 0, 0, 0)
 
     return {
@@ -271,13 +165,8 @@ export default function InsightsPage() {
     }
   }
 
-  // Calculate date range in days
-  const dateRangeDays = useMemo(() => {
-    const range = getDateRange()
-    const start = new Date(range.start)
-    const end = new Date(range.end)
-    return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-  }, [datePreset, customStartDate, customEndDate])
+  // Fixed date range in days
+  const dateRangeDays = INSIGHTS_DAYS
 
   // Load all data (health score, ad data, rules, budget changes)
   const loadAllData = async () => {
@@ -396,6 +285,7 @@ export default function InsightsPage() {
   }, [data, isKillScaleActive, attributionData])
 
   // Build hierarchy from data (filtered by date range)
+  // Note: We include ALL campaigns (active + paused) for historical analysis
   const hierarchy = useMemo<HierarchyItem[]>(() => {
     if (dataWithAttribution.length === 0) return []
 
@@ -407,12 +297,8 @@ export default function InsightsPage() {
       } else if (selectedAccountId && row.ad_account_id && row.ad_account_id !== selectedAccountId) {
         return false
       }
-      // Filter by date
+      // Filter by date only - include all statuses for historical analysis
       if (row.date_start && (row.date_start < dateRange.start || row.date_start > dateRange.end)) {
-        return false
-      }
-      // Filter to ACTIVE only - insights should only analyze current active data
-      if (row.campaign_status !== 'ACTIVE' || row.adset_status !== 'ACTIVE') {
         return false
       }
       return true
@@ -503,7 +389,7 @@ export default function InsightsPage() {
     })
 
     return Array.from(campaignMap.values())
-  }, [dataWithAttribution, datePreset, customStartDate, customEndDate, workspaceAccountIds, selectedAccountId])
+  }, [dataWithAttribution, workspaceAccountIds, selectedAccountId])
 
   // Build action items from hierarchy
   const actionItems = useMemo(() => {
@@ -566,42 +452,6 @@ export default function InsightsPage() {
     return items
   }, [hierarchy, rules])
 
-  // Calculate totals for Money Bar
-  const totals = useMemo(() => {
-    let totalDailyBudget = 0
-    let losingBudget = 0
-    let neutralBudget = 0
-    let profitableBudget = 0
-
-    hierarchy.forEach(campaign => {
-      if (campaign.budgetType === 'CBO' && campaign.dailyBudget) {
-        totalDailyBudget += campaign.dailyBudget
-        if (campaign.roas < 1.0) {
-          losingBudget += campaign.dailyBudget
-        } else if (campaign.roas >= rules.scale_roas) {
-          profitableBudget += campaign.dailyBudget
-        } else {
-          neutralBudget += campaign.dailyBudget
-        }
-      }
-
-      campaign.children?.forEach(adset => {
-        if ((adset.budgetType === 'ABO' || !campaign.budgetType) && adset.dailyBudget) {
-          totalDailyBudget += adset.dailyBudget
-          if (adset.roas < 1.0) {
-            losingBudget += adset.dailyBudget
-          } else if (adset.roas >= rules.scale_roas) {
-            profitableBudget += adset.dailyBudget
-          } else {
-            neutralBudget += adset.dailyBudget
-          }
-        }
-      })
-    })
-
-    return { totalDailyBudget, losingBudget, neutralBudget, profitableBudget }
-  }, [hierarchy, rules.scale_roas])
-
   // Calculate Andromeda Score - only for ACTIVE campaigns/adsets
   const andromedaScore = useMemo<AndromedaScoreResult | null>(() => {
     if (!hierarchy || hierarchy.length === 0) return null
@@ -640,17 +490,12 @@ export default function InsightsPage() {
     setIsSyncing(true)
 
     try {
-      const dateRange = getDateRange()
-
       const response = await fetch('/api/meta/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
           adAccountId: selectedAccountId,
-          datePreset: 'custom',
-          customStartDate: dateRange.start,
-          customEndDate: dateRange.end
         })
       })
 
@@ -872,37 +717,10 @@ export default function InsightsPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Date Picker */}
-            <div className="relative">
-              <DatePickerButton
-                label={getDateLabel(datePreset, customStartDate, customEndDate)}
-                onClick={() => setShowDatePicker(!showDatePicker)}
-                isOpen={showDatePicker}
-              />
-              {showDatePicker && (
-                <DatePicker
-                  isOpen={showDatePicker}
-                  onClose={() => setShowDatePicker(false)}
-                  datePreset={datePreset}
-                  onPresetChange={(preset) => {
-                    setDatePreset(preset)
-                    if (preset !== 'custom') {
-                      setShowDatePicker(false)
-                    }
-                  }}
-                  customStartDate={customStartDate}
-                  customEndDate={customEndDate}
-                  onCustomDateChange={(start, end) => {
-                    setCustomStartDate(start)
-                    setCustomEndDate(end)
-                  }}
-                  onApply={() => {
-                    setShowDatePicker(false)
-                    handleSync()
-                  }}
-                />
-              )}
-            </div>
+            {/* Fixed date range label */}
+            <span className="text-sm text-zinc-500 bg-bg-card px-3 py-1.5 rounded-lg border border-border">
+              Last {INSIGHTS_DAYS} Days
+            </span>
 
             {/* Sync Button */}
             {selectedAccountId && (
@@ -953,14 +771,6 @@ export default function InsightsPage() {
                 />
               </div>
             </div>
-
-            {/* Money Bar */}
-            <MoneyBar
-              losingBudget={totals.losingBudget}
-              neutralBudget={totals.neutralBudget}
-              profitableBudget={totals.profitableBudget}
-              totalDailyBudget={totals.totalDailyBudget}
-            />
 
             {/* Kill / Scale Cards */}
             <ActionCards

@@ -11,6 +11,14 @@ export type CSVRow = {
   adset_id?: string | null
   // Creative ID for thumbnail display and star deduplication
   creative_id?: string | null
+  // Creative preview data from sync (null for CSV uploads)
+  thumbnail_url?: string | null
+  image_url?: string | null
+  media_type?: string | null
+  // Media hash for media_library enrichment (image_hash or video_id from Meta)
+  media_hash?: string | null
+  // Supabase Storage URL for stored media
+  storage_url?: string | null
   impressions: number
   clicks: number
   spend: number

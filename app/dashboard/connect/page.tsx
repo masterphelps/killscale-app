@@ -336,7 +336,6 @@ export default function ConnectPage() {
         body: JSON.stringify({
           userId: user.id,
           adAccountId: accountId,
-          datePreset,
         }),
       })
       

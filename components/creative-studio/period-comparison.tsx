@@ -62,7 +62,7 @@ export function PeriodComparison({ earlyPeriod, recentPeriod }: PeriodComparison
 
   return (
     <div className="bg-bg-card rounded-xl p-4">
-      <h4 className="text-sm font-medium text-zinc-400 mb-4">Performance Over Time</h4>
+      {/* Title provided by parent Section wrapper */}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Early Period */}

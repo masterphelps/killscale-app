@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
         const newBudgetCents = Math.round(newBudget * 100)
 
         try {
-          const metaUrl = `https://graph.facebook.com/v18.0/${entity.entityId}`
+          const metaUrl = `${META_GRAPH_URL}/${entity.entityId}`
 
           const budgetField = entity.budgetType === 'daily' ? 'daily_budget' : 'lifetime_budget'
 

@@ -25,7 +25,8 @@ import {
   Layers,
   Building2,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Palette
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -44,6 +45,7 @@ interface Workspace {
 
 const navItems = [
   { href: '/dashboard', label: 'Performance', icon: BarChart3, workspaceEnabled: true },
+  { href: '/dashboard/creative-studio', label: 'Creative Studio', icon: Palette, workspaceEnabled: false },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp, workspaceEnabled: false },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb, workspaceEnabled: false },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, workspaceEnabled: false },

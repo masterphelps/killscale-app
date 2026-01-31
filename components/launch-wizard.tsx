@@ -925,20 +925,43 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
         const selectedAds = starredAds.filter(ad => state.selectedStarredAds.includes(ad.ad_id))
         const adIds = selectedAds.map(ad => ad.ad_id).join(',')
 
+        console.log('[Performance Set Debug] starredAds prop length:', starredAds.length)
+        console.log('[Performance Set Debug] selectedStarredAds state:', state.selectedStarredAds.length, state.selectedStarredAds)
+        console.log('[Performance Set Debug] selectedAds after filter:', selectedAds.length)
+        console.log('[Performance Set Debug] adIds string:', adIds)
+
         // Fetch creative IDs from the source ads
         const creativeRes = await fetch(`/api/meta/ad-creative?adIds=${adIds}&userId=${user.id}`)
         const creativeData = await creativeRes.json()
+
+        console.log('[Performance Set Debug] creativeData response:', JSON.stringify(creativeData, null, 2))
 
         if (!creativeRes.ok || !creativeData.creatives || creativeData.creatives.length === 0) {
           throw new Error(creativeData.error || 'Failed to fetch creatives from starred ads')
         }
 
+        console.log('[Performance Set Debug] creativeData.creatives length:', creativeData.creatives.length)
+
         // Map creatives to the format expected by create-campaign
-        const existingCreativeIds = creativeData.creatives.map((c: { adId: string; adName: string; creativeId: string }) => ({
-          adId: c.adId,
-          adName: c.adName,
-          creativeId: c.creativeId
-        }))
+        // Deduplicate by creativeId - same creative starred in multiple ad sets should only create one ad
+        const seenCreativeIds = new Set<string>()
+        const existingCreativeIds = creativeData.creatives
+          .map((c: { adId: string; adName: string; creativeId: string }) => ({
+            adId: c.adId,
+            adName: c.adName,
+            creativeId: c.creativeId
+          }))
+          .filter((c: { creativeId: string }) => {
+            if (seenCreativeIds.has(c.creativeId)) {
+              console.log('[Performance Set Debug] Skipping duplicate creative:', c.creativeId)
+              return false // Skip duplicate creative
+            }
+            seenCreativeIds.add(c.creativeId)
+            return true
+          })
+
+        console.log('[Performance Set Debug] existingCreativeIds after dedup:', existingCreativeIds.length)
+        console.log('[Performance Set Debug] existingCreativeIds:', JSON.stringify(existingCreativeIds, null, 2))
 
         setDeploymentPhase('Creating Performance Set...')
 
@@ -1036,6 +1059,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       }
 
       // Sync data so the new campaign shows up immediately
+      // Append sync will pick up the newly created entity (entity endpoints always run)
       setDeploymentPhase('Syncing new campaign data...')
       try {
         const syncRes = await fetch('/api/meta/sync', {
@@ -1044,8 +1068,6 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
           body: JSON.stringify({
             userId: user.id,
             adAccountId: state.adAccountId,
-            datePreset: 'last_7d',
-            forceFullSync: true  // Force full sync to pick up new entities
           })
         })
         if (!syncRes.ok) {
@@ -2784,12 +2806,38 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
 
       case 'review':
         // Dynamic review based on entity type
-        const entityLabel = state.entityType === 'ad' ? 'Ad' : state.entityType === 'adset' ? 'Ad Set' : 'Campaign'
-        const effectiveObjective = state.entityType === 'campaign' ? state.objective : state.selectedCampaignObjective
+        const entityLabel = state.entityType === 'ad' ? 'Ad' : state.entityType === 'adset' ? 'Ad Set' : state.entityType === 'performance-set' ? 'Performance Set' : 'Campaign'
+        const effectiveObjective = state.entityType === 'campaign' || state.entityType === 'performance-set' ? state.objective : state.selectedCampaignObjective
 
         return (
           <div className="space-y-6">
             <div className="bg-bg-hover rounded-xl p-5 space-y-4">
+              {/* Performance Set path */}
+              {state.entityType === 'performance-set' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Performance Set</span>
+                    <span className="font-medium">{state.campaignName || `Performance Set - ${new Date().toLocaleDateString()}`}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Budget Type</span>
+                    <span className="font-medium uppercase">CBO (Andromeda Optimized)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Objective</span>
+                    <span className="font-medium capitalize">{state.objective}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Budget</span>
+                    <span className="font-medium">${state.dailyBudget}/day</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Starred Ads</span>
+                    <span className="font-medium">{state.selectedStarredAds.length} winners selected</span>
+                  </div>
+                </>
+              )}
+
               {/* Campaign path */}
               {state.entityType === 'campaign' && (
                 <>
@@ -2873,14 +2921,16 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                 </>
               )}
 
-              {/* Creatives - all paths */}
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Creatives</span>
-                <span className="font-medium">{state.creatives.length} {state.creatives.length === 1 ? 'creative' : 'creatives'}</span>
-              </div>
+              {/* Creatives - campaign, adset, ad paths (not performance-set, already shown above) */}
+              {state.entityType !== 'performance-set' && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Creatives</span>
+                  <span className="font-medium">{state.creatives.length} {state.creatives.length === 1 ? 'creative' : 'creatives'}</span>
+                </div>
+              )}
 
-              {/* Enhancements - campaign and adset only */}
-              {state.entityType !== 'ad' && (
+              {/* Enhancements - campaign and adset only (not performance-set) */}
+              {state.entityType !== 'ad' && state.entityType !== 'performance-set' && (
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Enhancements</span>
                   <span className="font-medium">{state.creativeEnhancements ? 'Meta Advantage+' : 'KillScale Recommended'}</span>
@@ -2912,9 +2962,31 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                   <span>1 Ad Set with new targeting</span>
                 </div>
               )}
+              {state.entityType === 'performance-set' && (
+                <>
+                  <div className="flex items-center gap-2 text-verdict-scale">
+                    <Check className="w-4 h-4" />
+                    <span>CBO Campaign - Andromeda optimized budget distribution</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-verdict-scale">
+                    <Check className="w-4 h-4" />
+                    <span>
+                      {state.targetingMode === 'broad'
+                        ? '1 Ad Set - Advantage+ Audience (broad)'
+                        : `1 Ad Set - Custom targeting (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
+                      }
+                    </span>
+                  </div>
+                </>
+              )}
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />
-                <span>{state.creatives.length} {state.creatives.length === 1 ? 'Ad' : 'Ads'} - Your creatives + copy</span>
+                <span>
+                  {state.entityType === 'performance-set'
+                    ? `${state.selectedStarredAds.length} ${state.selectedStarredAds.length === 1 ? 'Ad' : 'Ads'} - Winning creatives with original copy`
+                    : `${state.creatives.length} ${state.creatives.length === 1 ? 'Ad' : 'Ads'} - Your creatives + copy`
+                  }
+                </span>
               </div>
               <div className="flex items-center gap-2 text-verdict-scale">
                 <Check className="w-4 h-4" />

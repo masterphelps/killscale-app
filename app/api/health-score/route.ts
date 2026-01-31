@@ -87,13 +87,11 @@ export async function POST(request: NextRequest) {
     const endDate = new Date(dateRange.end)
     const dateRangeDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
 
-    // Filter ad data by date range AND ACTIVE status only
-    // Insights should only analyze current active campaigns/adsets
+    // Filter ad data by date range only - include ALL statuses for historical analysis
+    // This allows analyzing why campaigns were paused and overall account health
     const filteredAdData = adData.filter(row =>
       row.date_start >= dateRange.start &&
-      row.date_start <= dateRange.end &&
-      row.campaign_status === 'ACTIVE' &&
-      row.adset_status === 'ACTIVE'
+      row.date_start <= dateRange.end
     )
 
     // Fetch rules

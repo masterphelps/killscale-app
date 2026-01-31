@@ -112,6 +112,39 @@ type CacheEntry = {
 }
 const dataCache = new Map<string, CacheEntry>()
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const SESSION_CACHE_KEY = 'ks_dashboard_cache'
+
+// Persist cache to sessionStorage for faster navigation
+const saveToSessionCache = (key: string, entry: CacheEntry) => {
+  try {
+    const existing = JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) || '{}')
+    existing[key] = entry
+    sessionStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(existing))
+  } catch (e) {
+    // Storage full or other error - ignore
+  }
+}
+
+const loadFromSessionCache = (key: string): CacheEntry | null => {
+  try {
+    const existing = JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) || '{}')
+    return existing[key] || null
+  } catch (e) {
+    return null
+  }
+}
+
+// Initialize in-memory cache from sessionStorage on module load
+if (typeof window !== 'undefined') {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) || '{}')
+    Object.entries(stored).forEach(([key, entry]) => {
+      dataCache.set(key, entry as CacheEntry)
+    })
+  } catch (e) {
+    // Ignore parse errors
+  }
+}
 
 // Helper to detect Google vs Meta accounts
 // Meta accounts start with 'act_', Google customer IDs don't
@@ -120,12 +153,69 @@ const isGoogleAccount = (accountId: string | null): boolean => {
   return FEATURES.GOOGLE_ADS_INTEGRATION && !accountId.startsWith('act_')
 }
 
-// Helper to get cache key
+// Helper to get cache key (account-based only - date range validation is separate)
 const getCacheKey = (accountId: string | null, workspaceAccountIds: string[]): string => {
   if (workspaceAccountIds.length > 0) {
     return `workspace:${workspaceAccountIds.sort().join(',')}`
   }
   return accountId || 'none'
+}
+
+// Helper to calculate date range from preset (for server-side filtering)
+const getDateRangeFromPreset = (preset: string, customStart?: string, customEnd?: string): { since: string; until: string } => {
+  const today = new Date()
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  if (preset === 'custom' && customStart && customEnd) {
+    return { since: customStart, until: customEnd }
+  }
+
+  switch (preset) {
+    case 'today':
+      return { since: formatDate(today), until: formatDate(today) }
+    case 'yesterday': {
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      return { since: formatDate(yesterday), until: formatDate(yesterday) }
+    }
+    case 'last_7d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 6)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_14d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 13)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_30d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 29)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_90d': {
+      const start = new Date(today)
+      start.setDate(start.getDate() - 89)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'this_month': {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      return { since: formatDate(start), until: formatDate(today) }
+    }
+    case 'last_month': {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const end = new Date(today.getFullYear(), today.getMonth(), 0)
+      return { since: formatDate(start), until: formatDate(end) }
+    }
+    case 'maximum':
+    default:
+      return { since: '2000-01-01', until: formatDate(today) }
+  }
 }
 
 // Helper to check if cached data covers the requested date range
@@ -220,7 +310,6 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
-  const isFirstSessionLoad = useRef(typeof window !== 'undefined' && !sessionStorage.getItem('ks_session_synced')) // Fresh login detection
   const userManuallyDeselected = useRef(false) // Track if user manually deselected all
   const [pendingInitialSync, setPendingInitialSync] = useState<string | null>(null) // Account ID to sync on first load
   const [pendingWorkspaceSync, setPendingWorkspaceSync] = useState(false) // Workspace sync on first load
@@ -562,37 +651,39 @@ export default function DashboardPage() {
   const planLower = plan?.toLowerCase() || ''
   const isProPlus = planLower === 'pro' || planLower === 'agency'
   
-  // Initial data load - triggers 30-day sync if no data exists
+  // Initial data load - checks last_sync_at to decide if sync is needed
   useEffect(() => {
     if (!user) return
 
     const initialLoad = async () => {
-      // First load data from Supabase
+      // First load data from Supabase (instant — reads stored data)
       await loadData()
 
-      // Check if we should trigger initial sync (only once per page load)
+      // Check if we should trigger auto-sync (only once per page load)
       if (hasTriggeredInitialSync.current) return
+      hasTriggeredInitialSync.current = true
 
-      // Check cache validity for current account/workspace
-      const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
-      const cached = dataCache.get(cacheKey)
-      const hasFreshCache = cached && isCacheValid(cached, 'last_30d')
+      // Check last_sync_at from meta_connections to decide if sync is needed
+      // If >24 hours ago (or never synced) → trigger append sync
+      // If <24 hours ago → data is fresh, skip sync
+      const { data: metaConn } = await supabase
+        .from('meta_connections')
+        .select('last_sync_at')
+        .eq('user_id', user.id)
+        .single()
 
-      // Only sync on fresh login (new session)
-      // If we've already synced this session, just load from Supabase - don't hit Meta API again
-      const hasSessionSync = sessionStorage.getItem('ks_session_synced')
-      if (isFirstSessionLoad.current && !hasSessionSync) {
-        hasTriggeredInitialSync.current = true
-        sessionStorage.setItem('ks_session_synced', 'true')
-        console.log('[Dashboard] Fresh session - triggering initial sync')
-        setDatePreset('last_30d')
+      const lastSyncAt = metaConn?.last_sync_at ? new Date(metaConn.last_sync_at) : null
+      const hoursSinceSync = lastSyncAt ? (Date.now() - lastSyncAt.getTime()) / (1000 * 60 * 60) : Infinity
+
+      if (hoursSinceSync > 24) {
+        console.log('[Dashboard] Data stale (last sync:', lastSyncAt ? `${Math.round(hoursSinceSync)}h ago` : 'never', ') - triggering auto sync')
 
         // Workspace mode: sync all workspace accounts
         if (workspaceAccountIds.length > 0) {
           console.log('[Dashboard] Syncing workspace -', workspaceAccountIds.length, 'accounts')
           setPendingWorkspaceSync(true)
         } else {
-          // Single account mode (existing logic)
+          // Single account mode
           const accountToSync = currentAccountId || accounts[0]?.id
           if (accountToSync && accounts.length > 0) {
             console.log('[Dashboard] Syncing single account:', accountToSync)
@@ -600,38 +691,30 @@ export default function DashboardPage() {
           }
         }
       } else {
-        console.log('[Dashboard] Already synced this session - loading from Supabase only')
+        console.log('[Dashboard] Data fresh (synced', Math.round(hoursSinceSync), 'h ago) - loading from Supabase only')
       }
     }
 
     initialLoad()
   }, [user?.id, accounts.length]) // Include accounts.length to re-run when accounts load
 
-  // Track when we're executing the initial sync (to prevent Effect 4 from double-syncing)
-  const isExecutingInitialSyncRef = useRef(false)
-
-  // Execute pending initial sync (separate effect to ensure datePreset is updated)
+  // Execute pending initial sync (separate effect so state updates have settled)
   useEffect(() => {
-    if (pendingInitialSync && datePreset === 'last_30d' && !isSyncing) {
-      console.log('[Dashboard] Executing initial 30-day sync for', pendingInitialSync)
-      isExecutingInitialSyncRef.current = true
+    if (pendingInitialSync && !isSyncing) {
+      console.log('[Dashboard] Executing auto sync for', pendingInitialSync)
       setPendingInitialSync(null) // Clear before executing to prevent loops
       handleSyncAccount(pendingInitialSync)
-      // Reset the flag after a delay to allow the sync to complete
-      setTimeout(() => {
-        isExecutingInitialSyncRef.current = false
-      }, 2000)
     }
-  }, [pendingInitialSync, datePreset, isSyncing])
+  }, [pendingInitialSync, isSyncing])
 
   // Execute pending workspace sync (separate effect for workspace mode)
   useEffect(() => {
-    if (pendingWorkspaceSync && datePreset === 'last_30d' && !isSyncing && workspaceAccountIds.length > 0) {
-      console.log('[Dashboard] Executing initial workspace sync for', workspaceAccountIds.length, 'accounts')
+    if (pendingWorkspaceSync && !isSyncing && workspaceAccountIds.length > 0) {
+      console.log('[Dashboard] Executing auto workspace sync for', workspaceAccountIds.length, 'accounts')
       setPendingWorkspaceSync(false) // Clear before executing to prevent loops
       handleSyncWorkspace()
     }
-  }, [pendingWorkspaceSync, datePreset, isSyncing, workspaceAccountIds])
+  }, [pendingWorkspaceSync, isSyncing, workspaceAccountIds])
 
   // Check cache when switching accounts/workspaces
   useEffect(() => {
@@ -640,7 +723,16 @@ export default function DashboardPage() {
     if (!currentAccountId && workspaceAccountIds.length === 0) return
 
     const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
-    const cached = dataCache.get(cacheKey)
+    let cached = dataCache.get(cacheKey)
+
+    // If not in memory, try sessionStorage
+    if (!cached) {
+      const sessionCached = loadFromSessionCache(cacheKey)
+      if (sessionCached) {
+        cached = sessionCached
+        dataCache.set(cacheKey, cached)
+      }
+    }
 
     if (cached && isCacheValid(cached, datePreset, customStartDate, customEndDate)) {
       // Use cached data
@@ -816,68 +908,65 @@ export default function DashboardPage() {
   }, [selectedAccountId, user?.id])
 
   // Track if this is the initial mount (to prevent auto-sync on page load)
+  // Re-query Supabase when date preset changes (no sync, just re-read stored data)
   const isInitialMount = useRef(true)
 
-  // NOTE: Meta's presets (last_30d, last_7d, etc) are COMPLETE days - they don't include today
-  // Only "today" preset has truly live data. Removed misleading "Live" indicator.
-
-  // NOTE: Sync uses the selected date range from the date picker
-  // Track if user has manually changed the date preset (vs component mount/navigation)
-  const userChangedDatePreset = useRef(false)
-
-  // Smart sync when date preset changes - only sync if USER changed it and cache can't serve
   useEffect(() => {
-    // Skip initial mount
+    // Skip initial mount (initial load handles this)
     if (isInitialMount.current) {
       isInitialMount.current = false
       return
     }
 
-    if (!selectedAccountId || !user) return
+    if (!user) return
     if (datePreset === 'custom') return // Custom dates handled by handleCustomDateApply
-    if (pendingInitialSync) return // Initial sync will handle this
-    if (isExecutingInitialSyncRef.current) return // Don't double-sync during initial load
 
-    // Only sync if user explicitly changed the date preset
-    // This prevents syncs from component remount/navigation
-    if (!userChangedDatePreset.current) {
-      console.log('[Dashboard] Date preset effect skipped - not a user change')
-      return
-    }
-    userChangedDatePreset.current = false // Reset after handling
+    console.log('[Dashboard] Date preset changed to', datePreset, '- re-querying Supabase (no sync)')
+    loadData(false) // Re-query stored data with new date filter, no loading spinner
+  }, [datePreset])
 
-    // Check if current cache can serve this request
-    const cachedEntry = dataCache.get(selectedAccountId)
-    if (cachedEntry && isCacheValid(cachedEntry, datePreset)) {
-      // Cache covers this range - no sync needed, client-side filtering handles it
-      return
-    }
-
-    // Need larger range than cached - sync new data
-    // Debounce to avoid rapid syncs when clicking through presets
-    const timeout = setTimeout(() => {
-      // Double-check we're not in initial sync when timeout fires
-      if (isExecutingInitialSyncRef.current) return
-      handleSyncAccount(selectedAccountId)
-    }, 500)
-
-    return () => clearTimeout(timeout)
-  }, [datePreset, selectedAccountId, user])
+  const isLoadingData = useRef(false)
 
   const loadData = async (showLoading = true) => {
     if (!user) return
+
+    // Prevent concurrent loads
+    if (isLoadingData.current) {
+      console.log('[loadData] Already loading, skipping')
+      return
+    }
+    isLoadingData.current = true
+
+    const startTime = Date.now()
+    console.log('[loadData] Starting for account:', currentAccountId)
 
     // Only show loading spinner on very first load (never loaded before)
     if (showLoading && !hasLoadedOnce) {
       setIsLoading(true)
     }
 
-    // Load Meta ad data
-    const { data: adData, error } = await supabase
+    // Calculate date range for filtering
+    const dateRange = getDateRangeFromPreset(datePreset, customStartDate, customEndDate)
+    console.log('[loadData] Date range:', dateRange.since, 'to', dateRange.until)
+
+    // Build query with account AND date filters to minimize data transfer
+    let query = supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
+      .gte('date_start', dateRange.since)
+      .lte('date_start', dateRange.until)
+
+    // Filter by account(s) to reduce data fetched
+    if (workspaceAccountIds.length > 0) {
+      query = query.in('ad_account_id', workspaceAccountIds)
+    } else if (currentAccountId) {
+      query = query.eq('ad_account_id', currentAccountId)
+    }
+
+    const { data: adData, error } = await query
       .order('date_start', { ascending: false })
+    console.log('[loadData] Supabase query took', Date.now() - startTime, 'ms, got', adData?.length || 0, 'rows')
 
     let rows: CSVRow[] = []
 
@@ -907,6 +996,12 @@ export default function DashboardPage() {
         campaign_status: row.campaign_status, // Campaign's own status
         // Creative ID for thumbnail display
         creative_id: row.creative_id,
+        // Creative preview data (from sync batch - no API calls needed)
+        thumbnail_url: row.thumbnail_url,
+        image_url: row.image_url,
+        media_type: row.media_type,
+        media_hash: row.media_hash,
+        storage_url: row.storage_url,
         // Budget fields for CBO/ABO detection
         campaign_daily_budget: row.campaign_daily_budget,
         campaign_lifetime_budget: row.campaign_lifetime_budget,
@@ -915,15 +1010,93 @@ export default function DashboardPage() {
         // Platform marker for display
         _platform: 'meta' as const,
       }))
+
+      // Enrich with high-quality URLs from media_library
+      try {
+        // Derive account IDs from the actual data (context may not be ready yet)
+        const acctIds = Array.from(new Set(
+          rows.map(r => r.ad_account_id?.replace(/^act_/, '')).filter(Boolean)
+        )) as string[]
+        if (acctIds.length > 0) {
+          const { data: mediaRows } = await supabase
+            .from('media_library')
+            .select('media_hash, media_type, url, video_thumbnail_url, storage_url')
+            .in('ad_account_id', acctIds)
+
+          if (mediaRows && mediaRows.length > 0) {
+            const mediaLookup = new Map<string, typeof mediaRows[0]>()
+            for (const mr of mediaRows) {
+              mediaLookup.set(mr.media_hash, mr)
+            }
+
+            // Build a reverse lookup: creative_id → original media_hash (from rows that DO match)
+            // This handles derivative video IDs — Meta assigns different video_ids per placement,
+            // but media_library only stores the original. We find the original via sibling rows.
+            const creativeToOriginalHash = new Map<string, string>()
+            for (const row of rows) {
+              if (row.media_hash && row.creative_id && mediaLookup.has(row.media_hash as string)) {
+                creativeToOriginalHash.set(row.creative_id as string, row.media_hash as string)
+              }
+            }
+
+            let enriched = 0
+            let loggedOne = false
+            for (const row of rows) {
+              if (row.media_hash) {
+                // Try direct match first, then fallback to original hash via creative_id
+                let media = mediaLookup.get(row.media_hash as string)
+                if (!media && row.creative_id) {
+                  const originalHash = creativeToOriginalHash.get(row.creative_id as string)
+                  if (originalHash) media = mediaLookup.get(originalHash)
+                }
+                if (media) {
+                  if (media.storage_url) {
+                    row.storage_url = media.storage_url
+                  }
+                  if (media.media_type === 'image' && media.url) {
+                    row.image_url = media.url
+                    enriched++
+                  }
+                  if (media.media_type === 'video' && media.video_thumbnail_url) {
+                    if (!loggedOne) {
+                      console.log('[ENRICH] Before:', row.thumbnail_url?.slice(0, 80))
+                      console.log('[ENRICH] After:', media.video_thumbnail_url?.slice(0, 80))
+                      loggedOne = true
+                    }
+                    row.thumbnail_url = media.video_thumbnail_url
+                    enriched++
+                  }
+                }
+              }
+            }
+            console.log(`[Dashboard] Enriched ${enriched} rows from media_library`)
+          }
+        }
+      } catch (mediaErr) {
+        console.error('Media library enrichment failed:', mediaErr)
+      }
     }
 
     // Load Google ad data if feature enabled
     if (FEATURES.GOOGLE_ADS_INTEGRATION) {
-      const { data: googleData, error: googleError } = await supabase
+      let googleQuery = supabase
         .from('google_ad_data')
         .select('*')
         .eq('user_id', user.id)
-        .order('date_start', { ascending: false })
+        .gte('date_start', dateRange.since)
+        .lte('date_start', dateRange.until)
+
+      // Filter by account if specified (Google uses customer_id)
+      if (workspaceAccountIds.length > 0) {
+        const googleAccounts = workspaceAccountIds.filter(id => !id.startsWith('act_'))
+        if (googleAccounts.length > 0) {
+          googleQuery = googleQuery.in('customer_id', googleAccounts)
+        }
+      } else if (currentAccountId && !currentAccountId.startsWith('act_')) {
+        googleQuery = googleQuery.eq('customer_id', currentAccountId)
+      }
+
+      const { data: googleData, error: googleError } = await googleQuery.order('date_start', { ascending: false })
 
       if (googleData && !googleError) {
         const googleRows = googleData.map(row => ({
@@ -967,18 +1140,34 @@ export default function DashboardPage() {
     // This ensures selection is always for the currently selected account
     setHasLoadedOnce(true)
     setIsLoading(false)
+    isLoadingData.current = false
+    console.log('[loadData] Complete, loaded', rows.length, 'rows in', Date.now() - startTime, 'ms')
   }
 
   // Load data and cache for specific account or workspace
   const loadDataAndCache = async (accountId: string | null, wsAccountIds: string[] = []) => {
     if (!user) return
+    console.log('[loadDataAndCache] Starting for account:', accountId, 'workspace accounts:', wsAccountIds.length)
 
-    // Load Meta ad data
-    const { data: adData, error } = await supabase
+    // Calculate date range for filtering
+    const dateRange = getDateRangeFromPreset(datePreset, customStartDate, customEndDate)
+
+    // Build query with account AND date filters
+    let query = supabase
       .from('ad_data')
       .select('*')
       .eq('user_id', user.id)
-      .order('date_start', { ascending: false })
+      .gte('date_start', dateRange.since)
+      .lte('date_start', dateRange.until)
+
+    // Filter by account(s) to reduce data fetched
+    if (wsAccountIds.length > 0) {
+      query = query.in('ad_account_id', wsAccountIds)
+    } else if (accountId) {
+      query = query.eq('ad_account_id', accountId)
+    }
+
+    const { data: adData, error } = await query.order('date_start', { ascending: false })
 
     let rows: CSVRow[] = []
 
@@ -1006,6 +1195,12 @@ export default function DashboardPage() {
         campaign_status: row.campaign_status,
         // Creative ID for thumbnail display
         creative_id: row.creative_id,
+        // Creative preview data (from sync batch - no API calls needed)
+        thumbnail_url: row.thumbnail_url,
+        image_url: row.image_url,
+        media_type: row.media_type,
+        media_hash: row.media_hash,
+        storage_url: row.storage_url,
         campaign_daily_budget: row.campaign_daily_budget,
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
@@ -1013,15 +1208,79 @@ export default function DashboardPage() {
         // Platform marker for display
         _platform: 'meta' as const,
       }))
+
+      // Enrich with high-quality URLs from media_library
+      try {
+        const acctIds = Array.from(new Set(
+          rows.map(r => r.ad_account_id?.replace(/^act_/, '')).filter(Boolean)
+        )) as string[]
+        if (acctIds.length > 0) {
+          const { data: mediaRows } = await supabase
+            .from('media_library')
+            .select('media_hash, media_type, url, video_thumbnail_url, storage_url')
+            .in('ad_account_id', acctIds)
+
+          if (mediaRows && mediaRows.length > 0) {
+            const mediaLookup = new Map<string, typeof mediaRows[0]>()
+            for (const mr of mediaRows) {
+              mediaLookup.set(mr.media_hash, mr)
+            }
+
+            // Build reverse lookup for derivative video IDs (same as loadData)
+            const creativeToOriginalHash = new Map<string, string>()
+            for (const row of rows) {
+              if (row.media_hash && row.creative_id && mediaLookup.has(row.media_hash as string)) {
+                creativeToOriginalHash.set(row.creative_id as string, row.media_hash as string)
+              }
+            }
+
+            for (const row of rows) {
+              if (row.media_hash) {
+                let media = mediaLookup.get(row.media_hash as string)
+                if (!media && row.creative_id) {
+                  const originalHash = creativeToOriginalHash.get(row.creative_id as string)
+                  if (originalHash) media = mediaLookup.get(originalHash)
+                }
+                if (media) {
+                  if (media.storage_url) {
+                    row.storage_url = media.storage_url
+                  }
+                  if (media.media_type === 'image' && media.url) {
+                    row.image_url = media.url
+                  }
+                  if (media.media_type === 'video' && media.video_thumbnail_url) {
+                    row.thumbnail_url = media.video_thumbnail_url
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (mediaErr) {
+        console.error('Media library enrichment failed:', mediaErr)
+      }
     }
 
     // Load Google ad data if feature enabled
     if (FEATURES.GOOGLE_ADS_INTEGRATION) {
-      const { data: googleData, error: googleError } = await supabase
+      let googleQuery = supabase
         .from('google_ad_data')
         .select('*')
         .eq('user_id', user.id)
-        .order('date_start', { ascending: false })
+        .gte('date_start', dateRange.since)
+        .lte('date_start', dateRange.until)
+
+      // Filter by account if specified (Google uses customer_id)
+      if (wsAccountIds.length > 0) {
+        const googleAccounts = wsAccountIds.filter(id => !id.startsWith('act_'))
+        if (googleAccounts.length > 0) {
+          googleQuery = googleQuery.in('customer_id', googleAccounts)
+        }
+      } else if (accountId && !accountId.startsWith('act_')) {
+        googleQuery = googleQuery.eq('customer_id', accountId)
+      }
+
+      const { data: googleData, error: googleError } = await googleQuery.order('date_start', { ascending: false })
 
       if (googleData && !googleError) {
         const googleRows = googleData.map(row => ({
@@ -1070,13 +1329,15 @@ export default function DashboardPage() {
       cacheData = rows
     }
 
-    dataCache.set(cacheKey, {
+    const cacheEntry: CacheEntry = {
       data: cacheData,
       datePreset,
       customStartDate,
       customEndDate,
       fetchedAt: Date.now()
-    })
+    }
+    dataCache.set(cacheKey, cacheEntry)
+    saveToSessionCache(cacheKey, cacheEntry)
     console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
 
     return rows
@@ -1163,6 +1424,7 @@ export default function DashboardPage() {
       const syncEndpoint = isGoogle ? '/api/google/sync' : '/api/meta/sync'
 
       // Build request body - Google uses different field names
+      // Meta sync is append-only (no datePreset needed — sync endpoint determines range)
       const requestBody = isGoogle
         ? {
             userId: user.id,
@@ -1173,11 +1435,6 @@ export default function DashboardPage() {
         : {
             userId: user.id,
             adAccountId: accountId,
-            datePreset: datePreset,
-            ...(datePreset === 'custom' && customStartDate && customEndDate ? {
-              customStartDate,
-              customEndDate,
-            } : {}),
           }
 
       const response = await fetch(syncEndpoint, {
@@ -1248,7 +1505,7 @@ export default function DashboardPage() {
     const workspaceCacheKey = getCacheKey(null, workspaceAccountIds)
     dataCache.delete(workspaceCacheKey)
     for (const accountId of workspaceAccountIds) {
-      dataCache.delete(accountId)
+      dataCache.delete(getCacheKey(accountId, []))
     }
 
     setIsSyncing(true)
@@ -1260,6 +1517,7 @@ export default function DashboardPage() {
         const isGoogle = isGoogleAccount(accountId)
         const syncEndpoint = isGoogle ? '/api/google/sync' : '/api/meta/sync'
 
+        // Meta sync is append-only (no datePreset needed — sync endpoint determines range)
         const requestBody = isGoogle
           ? {
               userId: user.id,
@@ -1270,11 +1528,6 @@ export default function DashboardPage() {
           : {
               userId: user.id,
               adAccountId: accountId,
-              datePreset: datePreset,
-              ...(datePreset === 'custom' && customStartDate && customEndDate ? {
-                customStartDate,
-                customEndDate,
-              } : {}),
             }
 
         const response = await fetch(syncEndpoint, {
@@ -1510,10 +1763,13 @@ export default function DashboardPage() {
       })
 
       const result = await response.json()
+      console.log('[Delete] Response:', response.ok, result)
 
       if (response.ok) {
         setDeleteModal(null)
+        console.log('[Delete] Calling loadData() to refresh...')
         await loadData()
+        console.log('[Delete] loadData() completed')
       } else {
         alert(result.error || 'Failed to delete')
       }
@@ -1731,7 +1987,6 @@ export default function DashboardPage() {
   }
 
   const handleDatePresetChange = (preset: string) => {
-    userChangedDatePreset.current = true // Mark as user-initiated change
     setDatePreset(preset)
     if (preset === 'custom') {
       setShowCustomDateInputs(true)
@@ -1745,10 +2000,9 @@ export default function DashboardPage() {
       setDatePreset('custom')
       setShowDatePicker(false)
       setShowCustomDateInputs(false)
-      // Trigger sync for custom date range
-      if (canSync && (selectedAccountId || workspaceAccountIds.length > 0)) {
-        handleSync()
-      }
+      // Re-query Supabase with custom date range (no sync - data is already stored)
+      console.log('[Dashboard] Custom date applied - re-querying Supabase (no sync)')
+      loadData(false)
     }
   }
 
@@ -2351,6 +2605,12 @@ export default function DashboardPage() {
     campaign_budget_resource_name: row.campaign_budget_resource_name,
     // Creative ID for thumbnail display
     creative_id: row.creative_id,
+    // Creative preview data (from sync - zero API calls)
+    thumbnail_url: row.thumbnail_url,
+    image_url: row.image_url,
+    media_type: row.media_type,
+    media_hash: row.media_hash,
+    storage_url: row.storage_url,
   }))
 
   // Build a map of campaign -> ABO adsets for selection cascading

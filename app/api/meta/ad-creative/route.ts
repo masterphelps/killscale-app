@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-const META_API_URL = 'https://graph.facebook.com/v21.0'
 
 // GET - Fetch creative ID(s) from source ad(s)
 // Query: ?adIds=123,456,789&userId=xxx OR ?adId=123&userId=xxx (single ad with full details)
@@ -37,7 +36,7 @@ export async function GET(request: NextRequest) {
 
       // Fetch ad with creative details
       const response = await fetch(
-        `${META_API_URL}/${singleAdId}?fields=id,name,creative{id,body,title,link_description,object_story_spec}&access_token=${accessToken}`
+        `${META_GRAPH_URL}/${singleAdId}?fields=id,name,creative{id,body,title,link_description,object_story_spec}&access_token=${accessToken}`
       )
 
       if (!response.ok) {
@@ -81,7 +80,7 @@ export async function GET(request: NextRequest) {
     const fetchCreative = async (adId: string) => {
       try {
         const response = await fetch(
-          `${META_API_URL}/${adId}?fields=id,name,creative{id,name,effective_object_story_id}&access_token=${accessToken}`
+          `${META_GRAPH_URL}/${adId}?fields=id,name,creative{id,name,effective_object_story_id}&access_token=${accessToken}`
         )
 
         if (!response.ok) {

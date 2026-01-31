@@ -25,7 +25,27 @@
       "WebFetch(domain:docs.uppromote.com)",
       "WebFetch(domain:aff-api.uppromote.com)",
       "WebFetch(domain:docs.airbyte.com)",
-      "WebFetch(domain:www.triplewhale.com)"
+      "WebFetch(domain:www.triplewhale.com)",
+      "Bash(git add:*)",
+      "Bash(npm install:*)",
+      "Bash(sort:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "WebFetch(domain:developers.facebook.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:dnmtechs.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.sammyk.me)",
+      "WebFetch(domain:www.adamigo.ai)",
+      "WebFetch(domain:www.appsloveworld.com)",
+      "WebFetch(domain:help.motionapp.com)",
+      "WebFetch(domain:motionapp.com)",
+      "WebFetch(domain:docs.dataddo.com)",
+      "WebFetch(domain:docs.supermetrics.com)",
+      "WebFetch(domain:www.foreplay.co)",
+      "Bash(SB_URL=\"https://uzaudqeqwmihnxcccipv.supabase.co\")",
+      "Bash(SB_KEY=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6YXVkcWVxd21paG54Y2NjaXB2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDI4ODQ3NSwiZXhwIjoyMDc5ODY0NDc1fQ.Zh59EYLefYJOsINIY2oCtT9Q3cehxrms6b6NP8vKmjo\")"
     ]
   }
 }

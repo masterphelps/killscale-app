@@ -31,7 +31,7 @@ const fatigueStatusConfig: Record<FatigueStatus, { label: string; color: string;
 
 function getFatigueProgress(status: FatigueStatus): number {
   switch (status) {
-    case 'fresh': return 0
+    case 'fresh': return 10
     case 'healthy': return 25
     case 'warning': return 50
     case 'fatiguing': return 75
@@ -227,6 +227,21 @@ export function TheaterModal({
                 {/* ========== ASSET WITH PERFORMANCE DATA ========== */}
                 {hasPerf && (
                   <>
+                    {/* PERFORMANCE OVER TIME Section */}
+                    {!isLoadingDetail && detailData && (
+                      <Section title="Performance Over Time" icon={<Calendar className="w-4 h-4 text-zinc-400" />}>
+                        <div className="space-y-3">
+                          {detailData.dailyData.length > 0 && (
+                            <FatigueTrendChart data={detailData.dailyData} />
+                          )}
+                          <PeriodComparison
+                            earlyPeriod={detailData.earlyPeriod}
+                            recentPeriod={detailData.recentPeriod}
+                          />
+                        </div>
+                      </Section>
+                    )}
+
                     {/* HOOK Section (video only) */}
                     {isVideo && (
                       <Section title="Hook" icon={<Eye className="w-4 h-4 text-purple-400" />}>
@@ -351,19 +366,6 @@ export function TheaterModal({
                             <ScoreBadge value={item.convertScore} />
                           </div>
                         )}
-
-                        {/* ROAS Trend Chart + Period Comparison */}
-                        {!isLoadingDetail && detailData && (
-                          <>
-                            {detailData.dailyData.length > 0 && (
-                              <FatigueTrendChart data={detailData.dailyData} />
-                            )}
-                            <PeriodComparison
-                              earlyPeriod={detailData.earlyPeriod}
-                              recentPeriod={detailData.recentPeriod}
-                            />
-                          </>
-                        )}
                       </div>
                     </Section>
 
@@ -394,11 +396,6 @@ export function TheaterModal({
                               <span>Fatigued</span>
                             </div>
                           </div>
-
-                          {/* Fatigue chart from detail data */}
-                          {!isLoadingDetail && detailData && detailData.dailyData.length > 0 && (
-                            <FatigueTrendChart data={detailData.dailyData} />
-                          )}
                         </div>
                       )}
                     </Section>

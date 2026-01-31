@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch images
     if (type === 'all' || type === 'images') {
-      const imagesUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adimages?fields=id,hash,name,url,url_128,width,height,created_time,bytes&limit=100&access_token=${accessToken}`
+      const imagesUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/adimages?fields=id,hash,name,url,url_128,width,height,created_time,bytes&limit=100&access_token=${accessToken}`
 
       const imagesRes = await fetch(imagesUrl)
       const imagesData = await imagesRes.json()
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch videos
     if (type === 'all' || type === 'videos') {
-      const videosUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/advideos?fields=id,title,thumbnails,source,length,created_time&limit=100&access_token=${accessToken}`
+      const videosUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/advideos?fields=id,title,thumbnails,source,length,created_time&limit=100&access_token=${accessToken}`
 
       const videosRes = await fetch(videosUrl)
       const videosData = await videosRes.json()

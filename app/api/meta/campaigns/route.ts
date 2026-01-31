@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch campaigns for the ad account
     // Filter to only active/paused campaigns (not deleted/archived)
-    const campaignsUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget,objective&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]&access_token=${accessToken}`
+    const campaignsUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget,objective&filtering=[{"field":"effective_status","operator":"IN","value":["ACTIVE","PAUSED"]}]&access_token=${accessToken}`
 
     const response = await fetch(campaignsUrl)
     const result = await response.json()

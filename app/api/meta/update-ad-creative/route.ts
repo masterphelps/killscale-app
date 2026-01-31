@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Fetch the ad to get the creative ID
     console.log('[update-ad-creative] Step 1: Fetching ad to get creative ID...')
-    const adUrl = `https://graph.facebook.com/v18.0/${adId}?fields=id,name,creative{id}&access_token=${accessToken}`
+    const adUrl = `${META_GRAPH_URL}/${adId}?fields=id,name,creative{id}&access_token=${accessToken}`
     const adResponse = await fetch(adUrl)
     const adResult = await adResponse.json()
 
@@ -91,12 +92,12 @@ async function updateAdCreative(
     description?: string
   }
 ) {
-  const cleanAdAccountId = adAccountId.replace('act_', '')
+  const cleanAdAccountId = adAccountId.replace(/^act_/, '')
   const { urlTags, primaryText, headline, description } = updates
 
   // Fetch full creative spec
   console.log('[update-ad-creative] Fetching full creative spec...')
-  const creativeUrl = `https://graph.facebook.com/v18.0/${existingCreativeRef.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
+  const creativeUrl = `${META_GRAPH_URL}/${existingCreativeRef.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
   const creativeResponse = await fetch(creativeUrl)
   const existingCreative = await creativeResponse.json()
 
@@ -192,7 +193,7 @@ async function updateAdCreative(
   console.log('[update-ad-creative] New object_story_spec:', JSON.stringify(objectStorySpec, null, 2))
 
   // Create new creative
-  const createCreativeUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adcreatives`
+  const createCreativeUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/adcreatives`
   const createCreativeResponse = await fetch(createCreativeUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -216,7 +217,7 @@ async function updateAdCreative(
   console.log('[update-ad-creative] New creative created:', newCreativeId)
 
   // Update ad to use new creative
-  const updateAdUrl = `https://graph.facebook.com/v18.0/${adId}`
+  const updateAdUrl = `${META_GRAPH_URL}/${adId}`
   const updateAdResponse = await fetch(updateAdUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

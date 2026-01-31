@@ -51,28 +51,32 @@ function calculateCompositeScores(
 
   if (!hasEnoughSpend) return { hookScore, holdScore, clickScore, convertScore }
 
-  // Hook Score (video only): benchmarked on thumbstop rate
+  // Hook Score (video only): benchmarked on thumbstop rate (3s views / impressions)
+  // Benchmarks: 30%+ excellent, 25-30% good, 15-25% average, <15% poor
   if (isVideo && thumbstopRate !== null) {
-    if (thumbstopRate >= 35) hookScore = 75 + Math.min(25, (thumbstopRate - 35) / 15 * 25)
-    else if (thumbstopRate >= 25) hookScore = 50 + (thumbstopRate - 25) / 10 * 25
+    if (thumbstopRate >= 30) hookScore = 75 + Math.min(25, (thumbstopRate - 30) / 20 * 25)
+    else if (thumbstopRate >= 25) hookScore = 50 + (thumbstopRate - 25) / 5 * 25
     else if (thumbstopRate >= 15) hookScore = 25 + (thumbstopRate - 15) / 10 * 25
     else hookScore = Math.max(0, thumbstopRate / 15 * 25)
     hookScore = Math.round(hookScore)
   }
 
-  // Hold Score (video only): 60% hold rate + 40% completion rate
+  // Hold Score (video only): 75% hold rate + 25% completion rate
+  // Hold Rate = ThruPlays / 3-second views × 100
+  // Benchmarks (Motion, Triple Whale, Affiliate World): 40%+ elite, 30-40% strong, 20-30% good, <20% weak
   if (isVideo && holdRate !== null && completionRate !== null) {
     let holdComponent: number
-    if (holdRate >= 70) holdComponent = 100
-    else if (holdRate >= 30) holdComponent = 50 + (holdRate - 30) / 40 * 50
-    else holdComponent = holdRate / 30 * 50
+    if (holdRate >= 40) holdComponent = 75 + Math.min(25, (holdRate - 40) / 20 * 25)
+    else if (holdRate >= 30) holdComponent = 50 + (holdRate - 30) / 10 * 25
+    else if (holdRate >= 20) holdComponent = 25 + (holdRate - 20) / 10 * 25
+    else holdComponent = holdRate / 20 * 25
 
     let completionComponent: number
     if (completionRate >= 25) completionComponent = 100
     else if (completionRate >= 5) completionComponent = 50 + (completionRate - 5) / 20 * 50
     else completionComponent = completionRate / 5 * 50
 
-    holdScore = Math.round(holdComponent * 0.6 + completionComponent * 0.4)
+    holdScore = Math.round(holdComponent * 0.75 + completionComponent * 0.25)
   }
 
   // Click Score (all): 60% CTR benchmark + 40% CPC benchmark

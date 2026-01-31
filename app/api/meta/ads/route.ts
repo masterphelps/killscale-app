@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
     // Fetch ads for the ad set
     // No filtering - Meta's filtered endpoints have ~5min propagation delay for new/modified entities
     // We filter out DELETED/ARCHIVED client-side instead
-    const adsUrl = `https://graph.facebook.com/v18.0/${adsetId}/ads?fields=id,name,status,effective_status,creative{id,name,thumbnail_url,image_url,object_story_spec}&access_token=${accessToken}`
+    const adsUrl = `${META_GRAPH_URL}/${adsetId}/ads?fields=id,name,status,effective_status,creative{id,name,thumbnail_url,image_url,object_story_spec}&access_token=${accessToken}`
 
     const response = await fetch(adsUrl)
     const result = await response.json()

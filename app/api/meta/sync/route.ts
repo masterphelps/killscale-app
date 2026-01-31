@@ -19,11 +19,18 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// Initial sync lookback window (days). Controls how far back the first sync fetches.
+// "maximum" was too slow — 120 days covers ~4 months of history which is enough for
+// Creative Studio fatigue analysis and dashboard date ranges up to "Last 90 Days".
+// TODO: Make configurable in global settings
+const INITIAL_SYNC_LOOKBACK_DAYS = 120
 
 // Result type for fetch operations - tracks success/failure
 type FetchResult<T> = {
@@ -147,6 +154,33 @@ type MetaInsight = {
   action_values?: { action_type: string; value: string }[]
   date_start: string
   date_stop: string
+  // Video metrics (returned as action arrays except where noted)
+  video_thruplay_watched_actions?: { action_type: string; value: string }[]
+  video_p25_watched_actions?: { action_type: string; value: string }[]
+  video_p50_watched_actions?: { action_type: string; value: string }[]
+  video_p75_watched_actions?: { action_type: string; value: string }[]
+  video_p95_watched_actions?: { action_type: string; value: string }[]
+  video_p100_watched_actions?: { action_type: string; value: string }[]
+  video_avg_time_watched_actions?: { action_type: string; value: string }[]
+  video_play_actions?: { action_type: string; value: string }[]
+  cost_per_thruplay?: { action_type: string; value: string }[]
+  outbound_clicks?: { action_type: string; value: string }[]
+  inline_link_click_ctr?: string  // scalar string
+  cost_per_inline_link_click?: string  // scalar string
+}
+
+// Extract integer value from Meta action array (first element)
+function extractActionValue(actions?: { action_type: string; value: string }[]): number | null {
+  if (!actions || !actions.length) return null
+  const val = parseInt(actions[0].value)
+  return isNaN(val) ? null : val
+}
+
+// Extract float value from Meta action array (first element)
+function extractActionFloat(actions?: { action_type: string; value: string }[]): number | null {
+  if (!actions || !actions.length) return null
+  const val = parseFloat(actions[0].value)
+  return isNaN(val) ? null : val
 }
 
 type CampaignData = {
@@ -171,7 +205,7 @@ type AdData = {
   name: string
   adset_id: string
   effective_status: string
-  creative?: { id: string }
+  creative?: { id: string; thumbnail_url?: string; image_url?: string; video_id?: string; image_hash?: string }
 }
 
 // Map our UI presets to valid Meta API date_preset values
@@ -239,7 +273,7 @@ function getDateRangeFromPreset(datePreset: string): { since: string; until: str
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, datePreset = 'last_30d', customStartDate, customEndDate, forceFullSync = false } = await request.json()
+    const { userId, adAccountId, forceFullSync = false } = await request.json()
 
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -255,11 +289,11 @@ export async function POST(request: NextRequest) {
       .select('*')
       .eq('user_id', userId)
       .single()
-    
+
     if (connError || !connection) {
       return NextResponse.json({ error: 'Meta account not connected' }, { status: 401 })
     }
-    
+
     // Check token expiry
     if (new Date(connection.token_expires_at) < new Date()) {
       return NextResponse.json({ error: 'Token expired, please reconnect' }, { status: 401 })
@@ -267,46 +301,60 @@ export async function POST(request: NextRequest) {
 
     const accessToken = connection.access_token
 
-    // SMART DELTA SYNC: Only fetch what's needed
-    // If we synced recently and user isn't expanding the date range, just fetch today
+    // APPEND-ONLY SYNC: Store everything, sync only new data, filter on read
+    // Two modes:
+    //   INITIAL: First-time sync → date_preset=maximum (all history)
+    //   APPEND:  Subsequent syncs → (last_sync_at - 2 days) to today
     const lastSyncAt = connection.last_sync_at ? new Date(connection.last_sync_at) : null
     const today = new Date()
     const formatDate = (d: Date) => d.toISOString().split('T')[0]
     const todayStr = formatDate(today)
 
-    // Calculate requested date range
-    const requestedRange = datePreset === 'custom' && customStartDate && customEndDate
-      ? { since: customStartDate, until: customEndDate }
-      : getDateRangeFromPreset(datePreset)
+    // Check workspace_accounts for initial_sync_complete flag
+    const { data: wsAccount } = await supabase
+      .from('workspace_accounts')
+      .select('initial_sync_complete')
+      .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
+      .limit(1)
+      .single()
 
-    // Determine if this is a delta sync (only today) or full sync
-    let isDeltaSync = false
-    let deltaStartDate = todayStr
-    let deltaEndDate = todayStr
+    // Determine sync mode
+    let isInitialSync = forceFullSync || !wsAccount?.initial_sync_complete
 
-    if (!forceFullSync && lastSyncAt) {
-      const lastSyncDate = formatDate(lastSyncAt)
-      const hoursSinceSync = (today.getTime() - lastSyncAt.getTime()) / (1000 * 60 * 60)
-
-      // Delta sync if: synced within last 24 hours and requesting same/smaller range
-      if (hoursSinceSync < 24) {
-        // Check if we need to expand the range (user wants older data than what we have)
-        // For now, assume we always have last_30d - if user requests last_30d or smaller, delta sync
-        const smallRanges = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d']
-        if (datePreset !== 'custom' && smallRanges.includes(datePreset)) {
-          isDeltaSync = true
-          // Fetch today and yesterday to ensure we have complete data
-          const yesterday = new Date(today)
-          yesterday.setDate(yesterday.getDate() - 1)
-          deltaStartDate = formatDate(yesterday)
-          deltaEndDate = todayStr
-          console.log('[Sync] Delta sync - only fetching', deltaStartDate, 'to', deltaEndDate)
-        }
-      }
+    // Edge case: no workspace_accounts row → check if ad_data has any rows
+    if (!wsAccount) {
+      const { data: existingData } = await supabase
+        .from('ad_data')
+        .select('id')
+        .eq('user_id', userId)
+        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+        .limit(1)
+      isInitialSync = !existingData || existingData.length === 0
     }
 
-    if (!isDeltaSync) {
-      console.log('[Sync] Full sync - fetching', requestedRange.since, 'to', requestedRange.until)
+    // Calculate append window: (last_sync_at - 2 days) to today
+    // The -2 day buffer re-fetches before last sync for delayed Meta attribution
+    // Meta can take up to 72 hours to finalize attribution
+    let appendStartDate = todayStr
+    let appendEndDate = todayStr
+
+    if (!isInitialSync && lastSyncAt) {
+      const bufferDate = new Date(lastSyncAt)
+      bufferDate.setDate(bufferDate.getDate() - 2)
+      appendStartDate = formatDate(bufferDate)
+      appendEndDate = todayStr
+      console.log(`[Sync] Append sync - fetching ${appendStartDate} to ${appendEndDate}`)
+    } else if (!isInitialSync && !lastSyncAt) {
+      // No last_sync_at but marked as complete — use 3-day default
+      const threeDaysAgo = new Date(today)
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 2)
+      appendStartDate = formatDate(threeDaysAgo)
+      appendEndDate = todayStr
+      console.log(`[Sync] Append sync (no last_sync_at) - fetching ${appendStartDate} to ${appendEndDate}`)
+    }
+
+    if (isInitialSync) {
+      console.log(`[Sync] Initial sync - fetching last ${INITIAL_SYNC_LOOKBACK_DAYS} days`)
     }
 
     // Fetch rules (including event_values) for this ad account
@@ -332,42 +380,70 @@ export async function POST(request: NextRequest) {
       'spend',
       'actions',
       'action_values',
+      // Video engagement metrics (zero extra API calls — included in same insights response)
+      'video_thruplay_watched_actions',
+      'video_p25_watched_actions',
+      'video_p50_watched_actions',
+      'video_p75_watched_actions',
+      'video_p95_watched_actions',
+      'video_p100_watched_actions',
+      'video_avg_time_watched_actions',
+      'video_play_actions',
+      'cost_per_thruplay',
+      'outbound_clicks',
+      'inline_link_click_ctr',
+      'cost_per_inline_link_click',
     ].join(',')
 
     // Hierarchy cache will be built from entity endpoints (faster than date_preset=maximum discovery)
     const adHierarchyCache: Record<string, { campaign_name: string; campaign_id: string; adset_name: string; adset_id: string; ad_name: string }> = {}
 
     // Build URLs for all fetches
-    const insightsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/insights`)
+    const insightsUrl = new URL(`${META_GRAPH_URL}/${adAccountId}/insights`)
     insightsUrl.searchParams.set('access_token', accessToken)
     insightsUrl.searchParams.set('fields', fields)
     insightsUrl.searchParams.set('level', 'ad')
     insightsUrl.searchParams.set('limit', '1000')
 
-    // For delta sync, only fetch today + yesterday; for full sync use requested range
-    if (isDeltaSync) {
-      insightsUrl.searchParams.set('time_range', JSON.stringify({ since: deltaStartDate, until: deltaEndDate }))
-    } else if (datePreset === 'custom' && customStartDate && customEndDate) {
-      insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
+    // Initial sync uses a configurable lookback window (default 120 days).
+    // This returns data for ALL ads that had activity in that window, including paused ads.
+    // Paused ads appear in entity maps (via effective_status filter on entity endpoints)
+    // so they won't be filtered out by the activeInsights campaign check.
+
+    // Initial sync: fetch lookback window; Append sync: fetch dynamic window
+    if (isInitialSync) {
+      const initialStart = new Date(today)
+      initialStart.setDate(initialStart.getDate() - INITIAL_SYNC_LOOKBACK_DAYS)
+      insightsUrl.searchParams.set('time_range', JSON.stringify({ since: formatDate(initialStart), until: todayStr }))
     } else {
-      insightsUrl.searchParams.set('date_preset', VALID_META_PRESETS[datePreset] || 'last_30d')
+      insightsUrl.searchParams.set('time_range', JSON.stringify({ since: appendStartDate, until: appendEndDate }))
     }
     // Use time_increment=1 to get daily data for proper client-side date filtering
     insightsUrl.searchParams.set('time_increment', '1')
 
-    const campaignsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/campaigns`)
+    // Include all non-deleted entity statuses so ads from the lookback window get creative data.
+    // Meta defaults to ACTIVE only. CAMPAIGN_PAUSED/ADSET_PAUSED are ads that are active
+    // themselves but paused at a parent level — missing these was causing null media_hash.
+    const entityStatusFilter = JSON.stringify(['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'])
+
+    const campaignsUrl = new URL(`${META_GRAPH_URL}/${adAccountId}/campaigns`)
     campaignsUrl.searchParams.set('access_token', accessToken)
     campaignsUrl.searchParams.set('fields', 'id,name,effective_status,daily_budget,lifetime_budget')
+    campaignsUrl.searchParams.set('effective_status', entityStatusFilter)
     campaignsUrl.searchParams.set('limit', '1000')
 
-    const adsetsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/adsets`)
+    const adsetsUrl = new URL(`${META_GRAPH_URL}/${adAccountId}/adsets`)
     adsetsUrl.searchParams.set('access_token', accessToken)
     adsetsUrl.searchParams.set('fields', 'id,name,campaign_id,effective_status,daily_budget,lifetime_budget')
+    adsetsUrl.searchParams.set('effective_status', entityStatusFilter)
     adsetsUrl.searchParams.set('limit', '1000')
 
-    const adsUrl = new URL(`https://graph.facebook.com/v18.0/${adAccountId}/ads`)
+    const adsUrl = new URL(`${META_GRAPH_URL}/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
-    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status,creative{id}')
+    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status,creative{id,thumbnail_url,image_url,video_id,image_hash}')
+    adsUrl.searchParams.set('effective_status', entityStatusFilter)
+    adsUrl.searchParams.set('thumbnail_width', '1080')
+    adsUrl.searchParams.set('thumbnail_height', '1080')
     adsUrl.searchParams.set('limit', '1000')
 
     // SEQUENTIAL FETCH with delays - avoid Meta API rate limits
@@ -377,8 +453,6 @@ export async function POST(request: NextRequest) {
     let insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
     let allInsights = insightsResult.data
 
-    // For delta sync, skip entity fetches - use existing data from Supabase
-    // Entity data (status, budget) rarely changes and can be fetched separately if needed
     let allCampaigns: CampaignData[] = []
     let allAdsets: AdsetData[] = []
     let allAdsData: AdData[] = []
@@ -386,9 +460,8 @@ export async function POST(request: NextRequest) {
     let adsetsResult: FetchResult<AdsetData> = { data: [], success: true }
     let adsResult: FetchResult<AdData> = { data: [], success: true }
 
-    if (isDeltaSync) {
-      // Delta sync: Check if we have existing data, if not fall back to full sync
-      console.log('[Sync] Delta sync - checking for existing data')
+    // Safety check: if append mode but DB is empty, fall back to initial sync
+    if (!isInitialSync) {
       const { data: existingData } = await supabase
         .from('ad_data')
         .select('id')
@@ -396,26 +469,18 @@ export async function POST(request: NextRequest) {
         .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
         .limit(1)
 
-      // If DB is empty, fall back to full sync and re-fetch insights with full date range
       if (!existingData || existingData.length === 0) {
-        console.log('[Sync] Delta sync aborted - no existing data, falling back to full sync')
-        isDeltaSync = false
+        console.log('[Sync] Append mode aborted - no existing data, falling back to initial sync')
+        isInitialSync = true
 
-        // Re-build insights URL with full date range (not delta)
-        if (datePreset === 'custom' && customStartDate && customEndDate) {
-          insightsUrl.searchParams.set('time_range', JSON.stringify({ since: customStartDate, until: customEndDate }))
-        } else {
-          insightsUrl.searchParams.delete('time_range')
-          insightsUrl.searchParams.set('date_preset', VALID_META_PRESETS[datePreset] || 'last_30d')
-        }
+        // Re-build insights URL for initial sync (lookback window)
+        const initialStart = new Date(today)
+        initialStart.setDate(initialStart.getDate() - INITIAL_SYNC_LOOKBACK_DAYS)
+        insightsUrl.searchParams.set('time_range', JSON.stringify({ since: formatDate(initialStart), until: todayStr }))
 
-        // Re-fetch insights with correct date range
-        console.log('[Sync] Re-fetching insights with full date range:', datePreset)
         insightsResult = await fetchAllPages<MetaInsight>(insightsUrl.toString())
         allInsights = insightsResult.data
-        console.log('[Sync] Full sync insights count:', allInsights.length)
-      } else {
-        console.log('[Sync] Delta sync - existing data found, fetching entities from Meta')
+        console.log('[Sync] Initial sync insights count:', allInsights.length)
       }
     }
 
@@ -429,10 +494,11 @@ export async function POST(request: NextRequest) {
     // Use Meta's Batch API to combine all 3 entity requests into one HTTP call
     // This significantly reduces rate limit pressure vs 3 sequential calls with pagination
     // See: https://developers.facebook.com/docs/marketing-api/asyncrequests/
-    const batchUrl = `https://graph.facebook.com/v18.0/?batch=${encodeURIComponent(JSON.stringify([
-      { method: 'GET', relative_url: `${adAccountId}/campaigns?fields=id,name,effective_status,daily_budget,lifetime_budget&limit=500` },
-      { method: 'GET', relative_url: `${adAccountId}/adsets?fields=id,name,campaign_id,effective_status,daily_budget,lifetime_budget&limit=500` },
-      { method: 'GET', relative_url: `${adAccountId}/ads?fields=id,name,adset_id,effective_status,creative{id}&limit=500` }
+    // Batch API: include ACTIVE + PAUSED entities (Meta defaults to ACTIVE only)
+    const batchUrl = `${META_GRAPH_URL}/?batch=${encodeURIComponent(JSON.stringify([
+      { method: 'GET', relative_url: `${adAccountId}/campaigns?fields=id,name,effective_status,daily_budget,lifetime_budget&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&limit=500` },
+      { method: 'GET', relative_url: `${adAccountId}/adsets?fields=id,name,campaign_id,effective_status,daily_budget,lifetime_budget&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&limit=500` },
+      { method: 'GET', relative_url: `${adAccountId}/ads?fields=id,name,adset_id,effective_status,creative{id,thumbnail_url,image_url,video_id,image_hash}&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&thumbnail_width=1080&thumbnail_height=1080&limit=500` }
     ]))}&access_token=${accessToken}&include_headers=false`
 
     try {
@@ -562,7 +628,7 @@ export async function POST(request: NextRequest) {
 
     // Log fetch results for debugging
     console.log('Meta sync fetch results:', {
-      syncType: isDeltaSync ? 'delta' : 'full',
+      syncType: isInitialSync ? 'initial' : 'append',
       campaigns: { count: allCampaigns.length, success: campaignsResult.success, error: campaignsResult.error },
       adsets: { count: allAdsets.length, success: adsetsResult.success, error: adsetsResult.error },
       ads: { count: allAdsData.length, success: adsResult.success, error: adsResult.error },
@@ -632,7 +698,7 @@ export async function POST(request: NextRequest) {
     const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adStatusMap: Record<string, string> = {}
-    const adCreativeMap: Record<string, string | null> = {}  // ad_id -> creative_id
+    const adCreativeMap: Record<string, { id: string; thumbnail_url?: string; image_url?: string; video_id?: string; image_hash?: string } | null> = {}  // ad_id -> creative object
 
     allCampaigns.forEach((c) => {
       campaignMap[c.id] = {
@@ -655,7 +721,7 @@ export async function POST(request: NextRequest) {
 
     allAdsData.forEach((ad) => {
       adStatusMap[ad.id] = ad.effective_status
-      adCreativeMap[ad.id] = ad.creative?.id || null
+      adCreativeMap[ad.id] = ad.creative || null
       // Build hierarchy cache from entity data
       if (!adHierarchyCache[ad.id] && ad.adset_id) {
         const adset = adsetMap[ad.adset_id]
@@ -672,9 +738,9 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // Filter out insights from deleted campaigns BEFORE any fallback processing
-    // The campaigns endpoint only returns non-deleted campaigns, so if a campaign
-    // isn't in our map, it was deleted. We don't want stale data from deleted campaigns.
+    // Filter out insights from deleted/archived campaigns BEFORE any fallback processing
+    // Entity endpoints fetch ACTIVE + PAUSED campaigns, so if a campaign
+    // isn't in our map, it was deleted or archived. We don't want stale data from those.
     const activeInsights = allInsights.filter((insight: MetaInsight) => {
       return campaignMap[insight.campaign_id] !== undefined
     })
@@ -723,6 +789,14 @@ export async function POST(request: NextRequest) {
       }
     })
     
+    // Helper to extract media hash and type from creative object
+    const extractMedia = (creative: { id: string; video_id?: string; image_hash?: string } | null): { mediaHash: string | null; mediaType: string | null } => {
+      if (!creative) return { mediaHash: null, mediaType: null }
+      if (creative.video_id) return { mediaHash: creative.video_id, mediaType: 'video' }
+      if (creative.image_hash) return { mediaHash: creative.image_hash, mediaType: 'image' }
+      return { mediaHash: null, mediaType: null }
+    }
+
     // Track which ads have insights in the selected date range
     const adsWithInsights = new Set<string>()
 
@@ -817,6 +891,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Parse video metrics from insight actions
+      const videoViews = insight.actions?.find(a => a.action_type === 'video_view')
+      const videoThruplay = extractActionValue(insight.video_thruplay_watched_actions)
+      const videoP25 = extractActionValue(insight.video_p25_watched_actions)
+      const videoP50 = extractActionValue(insight.video_p50_watched_actions)
+      const videoP75 = extractActionValue(insight.video_p75_watched_actions)
+      const videoP95 = extractActionValue(insight.video_p95_watched_actions)
+      const videoP100 = extractActionValue(insight.video_p100_watched_actions)
+      const videoAvgTimeWatched = extractActionFloat(insight.video_avg_time_watched_actions)
+      const videoPlays = extractActionValue(insight.video_play_actions)
+      const costPerThruplay = extractActionFloat(insight.cost_per_thruplay)
+      const outboundClicks = extractActionValue(insight.outbound_clicks)
+      const inlineLinkClickCtr = insight.inline_link_click_ctr ? parseFloat(insight.inline_link_click_ctr) : null
+      const costPerInlineLinkClick = insight.cost_per_inline_link_click ? parseFloat(insight.cost_per_inline_link_click) : null
+
       // Get status at each level using the new maps
       const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
       const adset = adsetMap[insight.adset_id]
@@ -841,7 +930,12 @@ export async function POST(request: NextRequest) {
         campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
         adset_daily_budget: adset?.daily_budget ?? null,
         adset_lifetime_budget: adset?.lifetime_budget ?? null,
-        creative_id: adCreativeMap[insight.ad_id] || null,
+        creative_id: adCreativeMap[insight.ad_id]?.id || null,
+        thumbnail_url: adCreativeMap[insight.ad_id]?.thumbnail_url || null,
+        image_url: adCreativeMap[insight.ad_id]?.image_url || null,
+        video_id: adCreativeMap[insight.ad_id]?.video_id || null,
+        media_hash: extractMedia(adCreativeMap[insight.ad_id]).mediaHash,
+        media_type: extractMedia(adCreativeMap[insight.ad_id]).mediaType,
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,
@@ -850,14 +944,29 @@ export async function POST(request: NextRequest) {
         results: resultCount,
         result_value: resultValue,
         result_type: resultType,
+        // Video engagement metrics
+        video_views: videoViews ? parseInt(videoViews.value) || null : null,
+        video_thruplay: videoThruplay,
+        video_p25: videoP25,
+        video_p50: videoP50,
+        video_p75: videoP75,
+        video_p95: videoP95,
+        video_p100: videoP100,
+        video_avg_time_watched: videoAvgTimeWatched,
+        video_plays: videoPlays,
+        cost_per_thruplay: costPerThruplay,
+        outbound_clicks: outboundClicks,
+        inline_link_click_ctr: inlineLinkClickCtr,
+        cost_per_inline_link_click: costPerInlineLinkClick,
         synced_at: new Date().toISOString(),
       }
     })
 
     // Calculate date range for ads without insights
-    const dateRange = (datePreset === 'custom' && customStartDate && customEndDate)
-      ? { since: customStartDate, until: customEndDate }
-      : getDateRangeFromPreset(datePreset)
+    // Initial sync: use today as the date marker; Append: use the append window
+    const dateRange = isInitialSync
+      ? { since: todayStr, until: todayStr }
+      : { since: appendStartDate, until: appendEndDate }
 
     // Add entries for ads without any insights (no activity during date range)
     // Use hierarchy cache built from /ads endpoint
@@ -890,7 +999,12 @@ export async function POST(request: NextRequest) {
           campaign_lifetime_budget: campaign?.lifetime_budget ?? null,
           adset_daily_budget: adset?.daily_budget ?? null,
           adset_lifetime_budget: adset?.lifetime_budget ?? null,
-          creative_id: adCreativeMap[adId] || null,
+          creative_id: adCreativeMap[adId]?.id || null,
+          thumbnail_url: adCreativeMap[adId]?.thumbnail_url || null,
+          image_url: adCreativeMap[adId]?.image_url || null,
+          video_id: adCreativeMap[adId]?.video_id || null,
+          media_hash: extractMedia(adCreativeMap[adId]).mediaHash,
+          media_type: extractMedia(adCreativeMap[adId]).mediaType,
           impressions: 0,
           clicks: 0,
           spend: 0,
@@ -899,6 +1013,20 @@ export async function POST(request: NextRequest) {
           results: 0,
           result_value: null,
           result_type: null,
+          // Video metrics — null for ads without insights
+          video_views: null,
+          video_thruplay: null,
+          video_p25: null,
+          video_p50: null,
+          video_p75: null,
+          video_p95: null,
+          video_p100: null,
+          video_avg_time_watched: null,
+          video_plays: null,
+          cost_per_thruplay: null,
+          outbound_clicks: null,
+          inline_link_click_ctr: null,
+          cost_per_inline_link_click: null,
           synced_at: new Date().toISOString(),
         })
       }
@@ -914,22 +1042,33 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // Delete existing data only for the dates being synced (preserves historical data)
-    // This allows ads from previous date ranges to remain in the DB for attribution matching
-    const deleteStartDate = isDeltaSync ? deltaStartDate : requestedRange.since
-    const deleteEndDate = isDeltaSync ? deltaEndDate : requestedRange.until
+    // Delete existing data for the synced range before inserting fresh data
+    // Initial sync: delete ALL data for this account (clean slate)
+    // Append sync: delete only the append window (preserves historical data)
+    if (isInitialSync) {
+      console.log('[Sync] Initial sync - deleting ALL existing data for this account')
+      const { error: deleteError } = await supabase
+        .from('ad_data')
+        .delete()
+        .eq('user_id', userId)
+        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
 
-    console.log('[Sync] Deleting data for date range:', deleteStartDate, 'to', deleteEndDate, '(preserving historical data)')
-    const { error: deleteError } = await supabase
-      .from('ad_data')
-      .delete()
-      .eq('user_id', userId)
-      .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
-      .gte('date_start', deleteStartDate)
-      .lte('date_start', deleteEndDate)
+      if (deleteError) {
+        console.error('Delete error:', deleteError)
+      }
+    } else {
+      console.log('[Sync] Append sync - deleting data for', appendStartDate, 'to', appendEndDate)
+      const { error: deleteError } = await supabase
+        .from('ad_data')
+        .delete()
+        .eq('user_id', userId)
+        .or(`ad_account_id.eq.${adAccountId},ad_account_id.eq.${cleanAccountId},ad_account_id.eq.${normalizedAccountId}`)
+        .gte('date_start', appendStartDate)
+        .lte('date_start', appendEndDate)
 
-    if (deleteError) {
-      console.error('Delete error:', deleteError)
+      if (deleteError) {
+        console.error('Delete error:', deleteError)
+      }
     }
 
     // Insert new data in parallel batches for speed
@@ -949,6 +1088,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save ad data' }, { status: 500 })
     }
     
+    // After initial sync, mark workspace_accounts as complete so future syncs use append mode
+    // GUARD: Only set the flag if we actually got insights data — a broken sync with zero rows
+    // must NOT poison the flag, otherwise all future syncs run as append-only with no historical data
+    if (isInitialSync && allAdData.length > 0) {
+      const { error: flagError } = await supabase
+        .from('workspace_accounts')
+        .update({ initial_sync_complete: true })
+        .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
+
+      if (flagError) {
+        console.error('[Sync] Failed to set initial_sync_complete:', flagError)
+      } else {
+        console.log('[Sync] Marked workspace_accounts as initial_sync_complete')
+      }
+    } else if (isInitialSync && allAdData.length === 0) {
+      console.warn('[Sync] Initial sync returned 0 insights rows — NOT setting initial_sync_complete. Next sync will retry initial mode.')
+    }
+
     // Update last sync time on connection
     await supabase
       .from('meta_connections')
@@ -968,6 +1125,19 @@ export async function POST(request: NextRequest) {
       // Don't fail the sync if alert generation fails
     }
 
+    // Fire-and-forget: sync media library for high-quality thumbnails
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      fetch(`${baseUrl}/api/meta/sync-media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, adAccountId: normalizedAccountId })
+      }).catch(err => console.error('[Sync] Media library sync failed:', err))
+    } catch (mediaErr) {
+      console.error('[Sync] Failed to trigger media sync:', mediaErr)
+      // Don't fail the sync if media sync fails
+    }
+
     // Trigger attribution merge for workspaces that include this ad account
     try {
       // Find workspace(s) containing this ad account
@@ -983,9 +1153,9 @@ export async function POST(request: NextRequest) {
       if (workspaceAccounts && workspaceAccounts.length > 0) {
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-        // Use the actual sync date range (matches dashboard selection)
-        const mergeStart = isDeltaSync ? deltaStartDate : requestedRange.since
-        const mergeEnd = isDeltaSync ? deltaEndDate : requestedRange.until
+        // Use the actual sync date range
+        const mergeStart = isInitialSync ? '2020-01-01' : appendStartDate
+        const mergeEnd = todayStr
 
         // Trigger merge for each workspace (fire and forget)
         for (const wa of workspaceAccounts) {
@@ -1002,7 +1172,7 @@ export async function POST(request: NextRequest) {
             })
           }).catch(err => console.error('[Sync] Attribution merge failed:', err))
         }
-        console.log(`[Sync] Triggered attribution merge for ${workspaceAccounts.length} workspace(s), range: ${mergeStart} to ${mergeEnd}`)
+        console.log(`[Sync] Triggered attribution merge for ${workspaceAccounts.length} workspace(s), range: ${mergeStart} to ${mergeEnd} (${isInitialSync ? 'initial' : 'append'})`)
       }
     } catch (mergeErr) {
       console.error('[Sync] Failed to trigger attribution merge:', mergeErr)
@@ -1010,13 +1180,13 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: isDeltaSync ? 'Delta sync complete (today + yesterday only)' : 'Full sync complete',
+      message: isInitialSync ? 'Initial sync complete (full history)' : `Append sync complete (${appendStartDate} to ${appendEndDate})`,
       count: allAdData.length,
       adsWithActivity: adData.length,
       adsWithoutActivity: adsWithoutInsights.length,
       filteredDeletedInsights: allInsights.length - activeInsights.length,
-      syncType: isDeltaSync ? 'delta' : 'full',
-      dateRange: isDeltaSync ? { since: deltaStartDate, until: deltaEndDate } : requestedRange
+      syncType: isInitialSync ? 'initial' : 'append',
+      dateRange: isInitialSync ? { since: 'maximum', until: todayStr } : { since: appendStartDate, until: appendEndDate }
     })
     
   } catch (err) {

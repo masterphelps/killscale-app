@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const META_APP_ID = process.env.META_APP_ID!
 const META_APP_SECRET = process.env.META_APP_SECRET!
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Exchange code for access token
-    const tokenUrl = new URL('https://graph.facebook.com/v18.0/oauth/access_token')
+    const tokenUrl = new URL(`${META_GRAPH_URL}/oauth/access_token`)
     tokenUrl.searchParams.set('client_id', META_APP_ID)
     tokenUrl.searchParams.set('client_secret', META_APP_SECRET)
     tokenUrl.searchParams.set('redirect_uri', REDIRECT_URI)
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
     const { access_token, expires_in } = tokenData
     
     // Get long-lived token (60 days instead of 1 hour)
-    const longLivedUrl = new URL('https://graph.facebook.com/v18.0/oauth/access_token')
+    const longLivedUrl = new URL(`${META_GRAPH_URL}/oauth/access_token`)
     longLivedUrl.searchParams.set('grant_type', 'fb_exchange_token')
     longLivedUrl.searchParams.set('client_id', META_APP_ID)
     longLivedUrl.searchParams.set('client_secret', META_APP_SECRET)
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     // Get user's ad accounts
     const adAccountsResponse = await fetch(
-      `https://graph.facebook.com/v18.0/me/adaccounts?fields=id,name,account_status,currency&access_token=${finalToken}`
+      `${META_GRAPH_URL}/me/adaccounts?fields=id,name,account_status,currency&access_token=${finalToken}`
     )
     const adAccountsData = await adAccountsResponse.json()
     
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
     
     // Get user's Meta profile info
     const profileResponse = await fetch(
-      `https://graph.facebook.com/v18.0/me?fields=id,name&access_token=${finalToken}`
+      `${META_GRAPH_URL}/me?fields=id,name&access_token=${finalToken}`
     )
     const profileData = await profileResponse.json()
     

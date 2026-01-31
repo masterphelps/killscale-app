@@ -137,8 +137,11 @@ const SCORE_LABELS: { min: number; label: HealthScoreResult['label'] }[] = [
   { min: 0, label: 'Critical' }
 ]
 
+// Minimum spend threshold for meaningful analysis
+const MIN_SPEND_THRESHOLD = 50
+
 /**
- * Calculate Budget Efficiency (0-25 pts)
+ * Calculate Budget Efficiency (0-30 pts)
  * What percentage of daily budget goes to profitable ads?
  */
 function calculateBudgetEfficiency(
@@ -175,10 +178,10 @@ function calculateBudgetEfficiency(
 
   if (totalBudget === 0) {
     return {
-      score: WEIGHTS.budgetEfficiency,
+      score: 0,
       maxPoints: WEIGHTS.budgetEfficiency,
-      percentage: 100,
-      details: 'No budget data available'
+      percentage: 0,
+      details: 'Insufficient data - no budget allocation found'
     }
   }
 
@@ -203,23 +206,21 @@ function calculateCreativeHealth(
   hierarchy: HierarchyItem[],
   dateRange: { start: string; end: string }
 ): { score: HealthFactorScore; creatives: CreativeFatigueResult[]; budgetEntities: BudgetEntityHealth[] } {
-  // Filter to only include data within the date range AND active budgets
-  // Both campaign AND adset must be ACTIVE for data to count
-  // (Paused campaigns/adsets shouldn't appear in health analysis)
+  // Filter to only include data within the date range
+  // Include ALL statuses for historical analysis - we want to understand
+  // why things were paused and overall health trends
   const filteredData = adData.filter(row =>
     row.date_start >= dateRange.start &&
-    row.date_start <= dateRange.end &&
-    row.campaign_status === 'ACTIVE' &&
-    row.adset_status === 'ACTIVE'
+    row.date_start <= dateRange.end
   )
 
   if (filteredData.length === 0) {
     return {
       score: {
-        score: WEIGHTS.creativeHealth,
+        score: 0,
         maxPoints: WEIGHTS.creativeHealth,
-        percentage: 100,
-        details: 'No ad data to analyze'
+        percentage: 0,
+        details: 'Insufficient data - no ad performance to analyze'
       },
       creatives: [],
       budgetEntities: []
@@ -431,10 +432,10 @@ function calculateCreativeHealth(
   if (totalEntities === 0) {
     return {
       score: {
-        score: WEIGHTS.creativeHealth,
+        score: 0,
         maxPoints: WEIGHTS.creativeHealth,
-        percentage: 100,
-        details: 'Insufficient data for health analysis'
+        percentage: 0,
+        details: 'Insufficient data - no budget entities found'
       },
       creatives: [],
       budgetEntities: []
@@ -497,10 +498,10 @@ function calculateProfitability(
 
   if (totalSpend === 0) {
     return {
-      score: WEIGHTS.profitability,
+      score: 0,
       maxPoints: WEIGHTS.profitability,
-      percentage: 100,
-      details: 'No spend data available'
+      percentage: 0,
+      details: 'Insufficient data - no spend recorded'
     }
   }
 
@@ -548,6 +549,7 @@ function calculateProfitability(
 /**
  * Calculate Trend Direction (0-20 pts)
  * Compare current period ROAS vs previous period
+ * Requires minimum spend in both periods for meaningful comparison
  */
 function calculateTrendDirection(
   adData: AdDataRow[],
@@ -579,7 +581,27 @@ function calculateTrendDirection(
   )
   const previous = aggregatePeriod(prevData, prevStart, prevEnd)
 
-  // Calculate ROAS change
+  // Require minimum spend in BOTH periods for meaningful trend comparison
+  const hasInsufficientData = current.totalSpend < MIN_SPEND_THRESHOLD || previous.totalSpend < MIN_SPEND_THRESHOLD
+
+  if (hasInsufficientData) {
+    return {
+      score: {
+        score: 0,
+        maxPoints: WEIGHTS.trendDirection,
+        percentage: 0,
+        details: `Insufficient data - need $${MIN_SPEND_THRESHOLD}+ spend in both periods`
+      },
+      trend: {
+        current,
+        previous,
+        direction: 'stable',
+        changePercent: 0
+      }
+    }
+  }
+
+  // Calculate ROAS change - now safe because we know previous.roas is meaningful
   const roasChange = previous.roas > 0
     ? ((current.roas - previous.roas) / previous.roas) * 100
     : 0
@@ -603,11 +625,14 @@ function calculateTrendDirection(
     score = Math.round(WEIGHTS.trendDirection * 0.5 * penaltyFactor)
   }
 
+  // Show absolute ROAS values alongside percentage for context
+  const currentRoasStr = current.roas.toFixed(2)
+  const previousRoasStr = previous.roas.toFixed(2)
   const details = direction === 'improving'
-    ? `ROAS up ${roasChange.toFixed(1)}% vs previous period`
+    ? `ROAS up ${roasChange.toFixed(0)}% (${previousRoasStr}x → ${currentRoasStr}x)`
     : direction === 'stable'
-    ? `ROAS stable (${roasChange > 0 ? '+' : ''}${roasChange.toFixed(1)}%)`
-    : `ROAS down ${Math.abs(roasChange).toFixed(1)}% vs previous period`
+    ? `ROAS stable at ${currentRoasStr}x`
+    : `ROAS down ${Math.abs(roasChange).toFixed(0)}% (${previousRoasStr}x → ${currentRoasStr}x)`
 
   return {
     score: {

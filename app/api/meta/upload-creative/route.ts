@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 // Vercel serverless config - increase limits for file uploads
 export const maxDuration = 60 // 60 seconds timeout (Pro plan required for >10s)
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       const buffer = Buffer.from(bytes)
       const base64 = buffer.toString('base64')
 
-      const uploadUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/adimages`
+      const uploadUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/adimages`
 
       const uploadFormData = new FormData()
       uploadFormData.append('access_token', accessToken)
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
       const bytes = await file.arrayBuffer()
       const buffer = Buffer.from(bytes)
 
-      const baseUrl = `https://graph.facebook.com/v18.0/act_${cleanAdAccountId}/advideos`
+      const baseUrl = `${META_GRAPH_URL}/act_${cleanAdAccountId}/advideos`
       let result
 
       if (file.size <= SIMPLE_UPLOAD_THRESHOLD) {

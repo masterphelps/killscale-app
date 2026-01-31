@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
     const accessToken = connection.access_token
 
     // Fetch creative details
-    const creativeUrl = `https://graph.facebook.com/v18.0/${creativeId}?fields=id,name,thumbnail_url,image_url,image_hash,video_id,object_story_spec,asset_feed_spec,effective_object_story_id&access_token=${accessToken}`
+    const creativeUrl = `${META_GRAPH_URL}/${creativeId}?fields=id,name,thumbnail_url,image_url,image_hash,video_id,object_story_spec,asset_feed_spec,effective_object_story_id&access_token=${accessToken}`
 
     const response = await fetch(creativeUrl)
     const result = await response.json()
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
     const fetchVideoDetails = async (vId: string) => {
       try {
         // Include picture field as fallback for thumbnails
-        const videoUrl = `https://graph.facebook.com/v18.0/${vId}?fields=source,thumbnails,picture&access_token=${accessToken}`
+        const videoUrl = `${META_GRAPH_URL}/${vId}?fields=source,thumbnails,picture&access_token=${accessToken}`
         console.log('[Creative] Fetching video details for:', vId)
         const videoResponse = await fetch(videoUrl)
         const videoData = await videoResponse.json()
@@ -155,14 +156,27 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Log final result for debugging
-    console.log('[Creative] Final result:', {
-      id: result.id,
-      mediaType,
-      hasVideoSource: !!videoSource,
-      hasPreviewUrl: !!previewUrl,
-      videoId: videoId || result.video_id
-    })
+    // Cache high-quality data back to ad_data so Creative Studio can read it
+    const resolvedVideoId = videoId || result.video_id || null
+    const cacheUpdate: Record<string, string | null> = {}
+    if (previewUrl) cacheUpdate.thumbnail_url = previewUrl
+    if (result.image_url) cacheUpdate.image_url = result.image_url
+    if (resolvedVideoId) cacheUpdate.video_id = resolvedVideoId
+    if (result.image_hash) {
+      cacheUpdate.media_hash = result.image_hash
+      cacheUpdate.media_type = 'image'
+    } else if (resolvedVideoId) {
+      cacheUpdate.media_hash = resolvedVideoId
+      cacheUpdate.media_type = 'video'
+    }
+
+    if (Object.keys(cacheUpdate).length > 0) {
+      await supabase
+        .from('ad_data')
+        .update(cacheUpdate)
+        .eq('user_id', userId)
+        .eq('creative_id', creativeId)
+    }
 
     return NextResponse.json({
       success: true,

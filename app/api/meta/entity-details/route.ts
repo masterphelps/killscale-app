@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -344,9 +345,9 @@ export async function POST(request: NextRequest) {
     // Build Meta API URL based on entity type
     let url: string
     if (entityType === 'adset') {
-      url = `https://graph.facebook.com/v18.0/${entityId}?fields=targeting,optimization_goal,bid_strategy,billing_event,start_time,end_time&access_token=${accessToken}`
+      url = `${META_GRAPH_URL}/${entityId}?fields=targeting,optimization_goal,bid_strategy,billing_event,start_time,end_time&access_token=${accessToken}`
     } else {
-      url = `https://graph.facebook.com/v18.0/${entityId}?fields=creative{id,name,title,body,call_to_action_type,link_url,thumbnail_url,image_url,image_hash,video_id,object_type,object_story_spec}&access_token=${accessToken}`
+      url = `${META_GRAPH_URL}/${entityId}?fields=creative{id,name,title,body,call_to_action_type,link_url,thumbnail_url,image_url,image_hash,video_id,object_type,object_story_spec}&access_token=${accessToken}`
     }
 
     // Fetch from Meta API

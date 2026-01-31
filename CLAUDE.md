@@ -305,6 +305,25 @@ Percentage-based scaling with rate limiting to avoid Meta API issues.
 - Handles both daily and lifetime budgets
 - Tracks changes in `budget_changes` table for cooldown detection
 
+### Creative Studio Scores
+Per-asset composite scores computed in `app/api/creative-studio/media/route.ts` (lines 12–108). All require **$50 minimum spend**; below that, scores return `null`.
+
+**Hook Score** (video only): Thumbstop Rate benchmarked
+- 30%+ → 75–100 (excellent), 25–30% → 50–75 (good), 15–25% → 25–50 (average), 0–15% → 0–25 (poor)
+
+**Hold Score** (video only): 75% Hold Rate + 25% Completion Rate
+- Hold Rate: ThruPlays / 3-second views × 100 (40%+ = 75–100, 30–40% = 50–75, 20–30% = 25–50, 0–20% = 0–25)
+- Completion Rate: P100 / impressions × 100 (25%+ = 100pts, 5–25% = 50–100, 0–5% = 0–50)
+
+**Click Score** (all assets): 60% CTR + 40% CPC
+- CTR: 4%+ = 100pts, 2.5–4% = 75–100, 1.5–2.5% = 50–75, 0.8–1.5% = 25–50, 0–0.8% = 0–25
+- CPC: ≤$0.30 = 100pts, $0.30–0.80 = 75–100, $0.80–1.50 = 50–75, $1.50–3.00 = 25–50, $3.00+ = 0–25
+
+**Convert Score** (all assets): ROAS benchmarked
+- 5x+ → 100, 3–5x → 75–100, 1.5–3x → 50–75, 1–1.5x → 25–50, 0–1x → 0–25
+
+**Badge Colors:** ≥75 green, ≥50 amber, ≥25 orange, <25 red
+
 ### AI-Powered Features
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
@@ -572,10 +591,19 @@ The following code sections are critical and have been carefully tuned to avoid 
 - **Why fragile:** Carefully tuned delays (3s before batch, 1s between pages) for Meta API limits
 - **If you must modify:** Never remove delays, never increase batch sizes beyond 50
 
+### 5. Creative Thumbnails & Video Playback
+- **Thumbnails:** The sync batch request fetches `creative{id}`. To get high-quality thumbnails, expand to `creative{id,thumbnail_url,video_id}` with `thumbnail_width=1080&thumbnail_height=1080` — this is ZERO extra API calls (same batch).
+- **Video playback:** Use `/api/creative-studio/video-source` endpoint which does a SINGLE `/{video_id}?fields=source` call when the user clicks play. Never prefetch video source URLs in bulk.
+- **Creative Studio:** Reads thumbnail/video data from Supabase (populated by sync). Never calls Meta API for browsing.
+- **Meta API version:** Must stay current. Meta sunsets old versions ~2 years after release. v18.0 was sunset Jan 2026. Currently using v21.0. If thumbnails go blurry or videos stop playing, check the API version FIRST.
+- **If you must modify:** ONLY change the API version string. Do NOT remove the `fetchVideoDetails` function from the creative route. Do NOT add bulk video source fetching. Do NOT add in-memory caches that could serve stale data missing fields.
+
 ### Signs You Broke Something
 - "Error code 17" or "Rate limit exceeded" from Meta
 - Sync takes 5+ minutes
 - Campaign manager page hangs or shows spinner indefinitely
+- Thumbnails are small/blurry (64x64) — check `thumbnail_width` param or API version
+- Videos don't play on click — check API version or missing `videoSource` in creative response
 
 ---
 

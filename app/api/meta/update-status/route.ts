@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     
     // Update status on Meta
     // The API endpoint is the same for campaigns, adsets, and ads
-    const metaUrl = `https://graph.facebook.com/v18.0/${entityId}`
+    const metaUrl = `${META_GRAPH_URL}/${entityId}`
     
     const response = await fetch(metaUrl, {
       method: 'POST',

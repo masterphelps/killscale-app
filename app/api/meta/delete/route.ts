@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     // Delete entity on Meta by setting status to DELETED
     // Note: This is permanent and cascades to children (campaigns delete all adsets/ads, adsets delete all ads)
-    const metaUrl = `https://graph.facebook.com/v18.0/${entityId}`
+    const metaUrl = `${META_GRAPH_URL}/${entityId}`
 
     const response = await fetch(metaUrl, {
       method: 'POST',
@@ -79,28 +80,51 @@ export async function POST(request: NextRequest) {
     // For adsets: delete all ads in that adset
     // For ads: delete just that ad
 
+    console.log('[Delete] Removing from ad_data:', { entityType, entityId, userId })
+
+    let deleteError = null
+    let deleteCount = 0
     switch (entityType) {
       case 'campaign':
-        await supabase
+        // First count how many rows will be deleted
+        const { count: campCount } = await supabase
+          .from('ad_data')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('campaign_id', entityId)
+        console.log('[Delete] Found', campCount, 'rows to delete for campaign', entityId)
+
+        const { error: campErr } = await supabase
           .from('ad_data')
           .delete()
           .eq('user_id', userId)
           .eq('campaign_id', entityId)
+        deleteError = campErr
+        deleteCount = campCount || 0
         break
       case 'adset':
-        await supabase
+        const { error: adsetErr } = await supabase
           .from('ad_data')
           .delete()
           .eq('user_id', userId)
           .eq('adset_id', entityId)
+        deleteError = adsetErr
         break
       case 'ad':
-        await supabase
+        const { error: adErr } = await supabase
           .from('ad_data')
           .delete()
           .eq('user_id', userId)
           .eq('ad_id', entityId)
+        deleteError = adErr
         break
+    }
+
+    if (deleteError) {
+      console.error('[Delete] Failed to delete from ad_data:', deleteError)
+      // Don't fail the request - Meta delete succeeded, just local cleanup failed
+    } else {
+      console.log('[Delete] Successfully deleted', deleteCount, 'rows from ad_data')
     }
 
     // Also remove from campaign_creations if it was a KillScale-created campaign

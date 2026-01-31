@@ -1,6 +1,8 @@
 // Direct-to-Meta upload utilities
 // Uploads files directly to Meta's Graph API, bypassing our server
 
+import { META_GRAPH_URL } from '@/lib/meta-api'
+
 export interface UploadResult {
   success: boolean
   type: 'image' | 'video'
@@ -26,7 +28,7 @@ export async function uploadImageToMeta(
     // Convert file to base64
     const base64 = await fileToBase64(file)
 
-    const uploadUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/adimages`
+    const uploadUrl = `${META_GRAPH_URL}/act_${adAccountId}/adimages`
 
     const formData = new FormData()
     formData.append('access_token', accessToken)
@@ -207,7 +209,7 @@ async function uploadThumbnailToMeta(
       reader.readAsDataURL(thumbnailBlob)
     })
 
-    const uploadUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/adimages`
+    const uploadUrl = `${META_GRAPH_URL}/act_${adAccountId}/adimages`
 
     const formData = new FormData()
     formData.append('access_token', accessToken)
@@ -261,7 +263,7 @@ async function fetchVideoThumbnail(
       }
 
       const response = await fetch(
-        `https://graph.facebook.com/v18.0/${videoId}?fields=thumbnails&access_token=${accessToken}`
+        `${META_GRAPH_URL}/${videoId}?fields=thumbnails&access_token=${accessToken}`
       )
       const result = await response.json()
 
@@ -304,7 +306,7 @@ export async function uploadVideoToMeta(
   onProgress?: (progress: number) => void
 ): Promise<UploadResult> {
   try {
-    const baseUrl = `https://graph.facebook.com/v18.0/act_${adAccountId}/advideos`
+    const baseUrl = `${META_GRAPH_URL}/act_${adAccountId}/advideos`
 
     // Step 1: Generate thumbnail from video (5% of progress)
     onProgress?.(2)

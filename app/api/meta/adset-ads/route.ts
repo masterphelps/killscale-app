@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch ads with their creative data from Meta
     const adsRes = await fetch(
-      `https://graph.facebook.com/v18.0/${adsetId}/ads?fields=id,name,creative{id,body,title,link_description,object_story_spec}&limit=50&access_token=${accessToken}`
+      `${META_GRAPH_URL}/${adsetId}/ads?fields=id,name,creative{id,body,title,link_description,object_story_spec}&limit=50&access_token=${accessToken}`
     )
     const adsData = await adsRes.json()
 

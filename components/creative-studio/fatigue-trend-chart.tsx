@@ -53,7 +53,6 @@ export function FatigueTrendChart({ data, className }: FatigueTrendChartProps) {
   if (!data.length) {
     return (
       <div className={cn('bg-bg-card border border-border rounded-xl p-6', className)}>
-        <h3 className="font-semibold mb-4">Performance Over Time</h3>
         <div className="h-64 flex items-center justify-center text-zinc-500">
           No data available
         </div>
@@ -63,7 +62,6 @@ export function FatigueTrendChart({ data, className }: FatigueTrendChartProps) {
 
   return (
     <div className={cn('bg-bg-card border border-border rounded-xl p-6', className)}>
-      <h3 className="font-semibold mb-4">Performance Over Time</h3>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart

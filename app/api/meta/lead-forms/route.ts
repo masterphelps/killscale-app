@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { META_GRAPH_URL } from '@/lib/meta-api'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
     // First, get the Page access token from /me/accounts
     console.log('Fetching page access token for page:', pageId)
     const pagesResponse = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts?` +
+      `${META_GRAPH_URL}/me/accounts?` +
       `fields=id,name,access_token&` +
       `access_token=${userAccessToken}`
     )
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest) {
     // Fetch lead gen forms from the Page using the Page access token
     console.log('Fetching lead forms for page:', pageId)
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?` +
+      `${META_GRAPH_URL}/${pageId}/leadgen_forms?` +
       `fields=id,name,status,questions,created_time,locale&` +
       `access_token=${pageAccessToken}`
     )

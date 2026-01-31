@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   })).toString('base64')
   
   // Build Meta OAuth URL
-  const authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth')
+  const authUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth')
   authUrl.searchParams.set('client_id', META_APP_ID)
   authUrl.searchParams.set('redirect_uri', REDIRECT_URI)
   authUrl.searchParams.set('scope', SCOPES)
