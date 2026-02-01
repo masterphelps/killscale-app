@@ -482,7 +482,7 @@ export default function CreativeStudioPage() {
           className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
         >
           {/* Left: Funnel pills */}
-          <div className="flex-1 min-w-0">
+          <div className="w-full lg:flex-1 lg:min-w-0">
             {isLoading ? (
               <div className="h-16 bg-bg-card border border-border rounded-xl animate-pulse" />
             ) : (
@@ -521,7 +521,7 @@ export default function CreativeStudioPage() {
               </button>
 
               {showSortDropdown && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                <div className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
                   {([
                     { value: 'hookScore', label: 'Hook' },
                     { value: 'holdScore', label: 'Hold' },

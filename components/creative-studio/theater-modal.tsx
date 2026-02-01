@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils'
 import { FatigueTrendChart } from './fatigue-trend-chart'
 import { PeriodComparison } from './period-comparison'
 import { AudienceBreakdown } from './audience-breakdown'
-import { CopyVariations } from './copy-variations'
 import type { StudioAsset, StudioAssetDetail, FatigueStatus } from './types'
 
 interface TheaterModalProps {
@@ -407,12 +406,6 @@ export function TheaterModal({
                       </Section>
                     )}
 
-                    {/* COPY VARIATIONS Section */}
-                    {!isLoadingDetail && detailData && detailData.copyVariations.length > 1 && (
-                      <Section title="Copy Variations" icon={<Layers className="w-4 h-4 text-pink-400" />}>
-                        <CopyVariations variations={detailData.copyVariations} />
-                      </Section>
-                    )}
                   </>
                 )}
 
