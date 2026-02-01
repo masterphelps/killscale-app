@@ -155,12 +155,12 @@ function FunnelPill({
   }, [dropdownOpen])
 
   return (
-    <div className="flex-shrink-0" ref={pillRef}>
+    <div className="w-full lg:w-auto lg:flex-shrink-0" ref={pillRef}>
       <motion.div
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className={cn(
-          'relative flex items-center gap-2 pl-5 pr-2 py-3 rounded-xl border transition-all duration-200 min-w-[140px]',
+          'relative flex items-center gap-2 pl-5 pr-2 py-3 rounded-xl border transition-all duration-200',
           isActive
             ? [stage.activeBorder, stage.activeBg, 'shadow-lg', stage.activeShadow]
             : [stage.defaultBg, stage.defaultBorder, 'hover:border-opacity-50']
@@ -277,7 +277,7 @@ export function FunnelFilterBar({ thresholds, onToggle, onSetThreshold, onClear,
   const hasActiveFilters = Object.values(thresholds).some(v => v !== null)
 
   return (
-    <div className="flex items-center gap-4 overflow-x-auto py-1 scrollbar-hide">
+    <div className="relative grid grid-cols-2 gap-2 lg:flex lg:items-center lg:gap-4 lg:overflow-x-auto py-1 lg:scrollbar-hide">
       {stages.map((stage) => (
         <FunnelPill
           key={stage.key}
@@ -298,7 +298,7 @@ export function FunnelFilterBar({ thresholds, onToggle, onSetThreshold, onClear,
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.15 }}
             onClick={onClear}
-            className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+            className="absolute -top-1 -right-1 lg:static flex-shrink-0 flex items-center justify-center w-10 h-10 lg:w-8 lg:h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors z-10"
             title="Clear filters"
           >
             <X className="w-4 h-4" />

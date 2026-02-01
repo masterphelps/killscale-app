@@ -27,8 +27,9 @@ export function StarredMediaBar({
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           className={cn(
             'fixed bottom-6 left-1/2 -translate-x-1/2 z-50',
-            'flex items-center gap-4 px-4 py-3',
+            'flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-3',
             'bg-zinc-900/95 backdrop-blur-lg border border-zinc-700 rounded-2xl shadow-2xl',
+            'max-w-[calc(100vw-2rem)]',
             className
           )}
         >
@@ -57,7 +58,8 @@ export function StarredMediaBar({
             )}
           >
             <Sparkles className="w-4 h-4" />
-            <span>Build Ads from {starredCount} Starred</span>
+            <span className="hidden sm:inline">Build Ads from {starredCount} Starred</span>
+            <span className="sm:hidden">Build {starredCount}</span>
           </button>
 
           {/* Clear button */}
@@ -71,7 +73,7 @@ export function StarredMediaBar({
             )}
           >
             <X className="w-4 h-4" />
-            <span>Clear</span>
+            <span className="hidden sm:inline">Clear</span>
           </button>
         </motion.div>
       )}

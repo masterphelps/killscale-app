@@ -249,12 +249,42 @@ export function MediaTable({
               <div className="text-sm text-white font-medium truncate">
                 {item.name || 'Untitled'}
               </div>
-              <span className={cn(
-                'inline-block mt-0.5 px-1.5 py-0 rounded text-[9px] font-semibold uppercase tracking-wide',
-                isVideo ? 'text-purple-400 bg-purple-500/15' : 'text-blue-400 bg-blue-500/15'
-              )}>
-                {item.mediaType}
-              </span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className={cn(
+                  'inline-block px-1.5 py-0 rounded text-[9px] font-semibold uppercase tracking-wide',
+                  isVideo ? 'text-purple-400 bg-purple-500/15' : 'text-blue-400 bg-blue-500/15'
+                )}>
+                  {item.mediaType}
+                </span>
+                {/* Mobile score pills */}
+                <div className="flex items-center gap-1.5 lg:hidden">
+                  {isVideo && item.hookScore !== null && (
+                    <span className={cn('text-[10px] font-mono font-semibold', getScoreColor(item.hookScore))}>
+                      H:{item.hookScore}
+                    </span>
+                  )}
+                  {isVideo && item.holdScore !== null && (
+                    <span className={cn('text-[10px] font-mono font-semibold', getScoreColor(item.holdScore))}>
+                      Hd:{item.holdScore}
+                    </span>
+                  )}
+                  {item.clickScore !== null && (
+                    <span className={cn('text-[10px] font-mono font-semibold', getScoreColor(item.clickScore))}>
+                      Cl:{item.clickScore}
+                    </span>
+                  )}
+                  {item.convertScore !== null && (
+                    <span className={cn('text-[10px] font-mono font-semibold', getScoreColor(item.convertScore))}>
+                      Cv:{item.convertScore}
+                    </span>
+                  )}
+                  {item.hasPerformanceData && (
+                    <span className={cn('text-[10px] font-medium', getFatigueColor(item.fatigueStatus))}>
+                      {getFatigueLabel(item.fatigueStatus)}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Hook Score */}

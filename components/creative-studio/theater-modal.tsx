@@ -164,7 +164,7 @@ export function TheaterModal({
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
+            className="absolute top-4 right-4 p-3 sm:p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
           >
             <X className="w-6 h-6 text-white" />
           </button>
@@ -307,7 +307,7 @@ export function TheaterModal({
                     {/* CLICK Section (all assets) */}
                     <Section title="Click" icon={<MousePointer className="w-4 h-4 text-orange-400" />}>
                       <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <StatCard
                             icon={<MousePointer className="w-4 h-4" />}
                             label="CTR"
@@ -339,7 +339,7 @@ export function TheaterModal({
                     {/* CONVERT Section (all assets) */}
                     <Section title="Convert" icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}>
                       <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <StatCard
                             icon={<TrendingUp className="w-4 h-4" />}
                             label="ROAS"

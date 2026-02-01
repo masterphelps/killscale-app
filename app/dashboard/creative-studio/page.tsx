@@ -32,6 +32,8 @@ export default function CreativeStudioPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('gallery')
   const [sortBy, setSortBy] = useState<SortOption>('hookScore')
   const [sortDesc, setSortDesc] = useState(true)
+  const [showSortDropdown, setShowSortDropdown] = useState(false)
+  const sortDropdownRef = useRef<HTMLDivElement>(null)
 
 
   // Data state
@@ -55,6 +57,18 @@ export default function CreativeStudioPage() {
 
   // Starred items
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
+
+  // Close sort dropdown on outside click
+  useEffect(() => {
+    if (!showSortDropdown) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node)) {
+        setShowSortDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showSortDropdown])
 
   // Video source cache for hover-to-play
   const [videoSources, setVideoSources] = useState<Record<string, string>>({})
@@ -465,7 +479,7 @@ export default function CreativeStudioPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="flex items-center justify-between gap-4"
+          className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
         >
           {/* Left: Funnel pills */}
           <div className="flex-1 min-w-0">
@@ -483,28 +497,70 @@ export default function CreativeStudioPage() {
           </div>
 
           {/* Right: Sort + View Toggle */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className={cn(
-                'bg-bg-card border border-border rounded-lg px-3 py-2',
-                'text-sm text-white',
-                'focus:outline-none focus:border-accent'
+          <div className="flex items-center justify-between lg:justify-end gap-3 flex-shrink-0">
+            <div className="relative" ref={sortDropdownRef}>
+              <button
+                onClick={() => setShowSortDropdown(!showSortDropdown)}
+                className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-bg-card border-border text-zinc-300 hover:border-border/50"
+              >
+                <span className="text-zinc-500">Sort:</span>
+                <span>{
+                  sortBy === 'hookScore' ? 'Hook' :
+                  sortBy === 'holdScore' ? 'Hold' :
+                  sortBy === 'clickScore' ? 'Click' :
+                  sortBy === 'convertScore' ? 'Convert' :
+                  sortBy === 'spend' ? 'Scale' :
+                  sortBy === 'roas' ? 'ROAS' :
+                  sortBy === 'revenue' ? 'Revenue' :
+                  sortBy === 'fatigue' ? 'Fatigue' :
+                  sortBy === 'adCount' ? 'Usage' :
+                  sortBy === 'fileSize' ? 'File Size' :
+                  sortBy === 'syncedAt' ? 'Date Synced' : sortBy
+                }</span>
+                <span className="text-zinc-500">{sortDesc ? '↓' : '↑'}</span>
+              </button>
+
+              {showSortDropdown && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                  {([
+                    { value: 'hookScore', label: 'Hook' },
+                    { value: 'holdScore', label: 'Hold' },
+                    { value: 'clickScore', label: 'Click' },
+                    { value: 'convertScore', label: 'Convert' },
+                    { value: 'spend', label: 'Scale' },
+                    { value: 'roas', label: 'ROAS' },
+                    { value: 'revenue', label: 'Revenue' },
+                    { value: 'fatigue', label: 'Fatigue' },
+                    { value: 'adCount', label: 'Usage' },
+                    { value: 'fileSize', label: 'File Size' },
+                    { value: 'syncedAt', label: 'Date Synced' },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => {
+                        if (sortBy === option.value) {
+                          setSortDesc(!sortDesc)
+                        } else {
+                          setSortBy(option.value as SortOption)
+                          setSortDesc(true)
+                        }
+                        setShowSortDropdown(false)
+                      }}
+                      className={`w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors ${
+                        sortBy === option.value
+                          ? 'bg-indigo-500/20 text-indigo-400'
+                          : 'text-zinc-300 hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{option.label}</span>
+                      {sortBy === option.value && (
+                        <span className="text-xs">{sortDesc ? '↓ High to Low' : '↑ Low to High'}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               )}
-            >
-              <option value="hookScore">Hook</option>
-              <option value="holdScore">Hold</option>
-              <option value="clickScore">Click</option>
-              <option value="convertScore">Convert</option>
-              <option value="spend">Scale</option>
-              <option value="roas">ROAS</option>
-              <option value="revenue">Revenue</option>
-              <option value="fatigue">Fatigue</option>
-              <option value="adCount">Usage</option>
-              <option value="fileSize">File Size</option>
-              <option value="syncedAt">Date Synced</option>
-            </select>
+            </div>
 
             <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
               <button
