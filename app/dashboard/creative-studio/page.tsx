@@ -571,19 +571,15 @@ export default function CreativeStudioPage() {
         {/* Funnel Filters + Sort Controls */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
         >
-          {/* Left: Funnel pills */}
+          {/* Left: Funnel pills — always rendered to avoid layout flash */}
           <div className="w-full lg:flex-1 lg:min-w-0">
-            {isLoading ? (
-              <div className="h-16 bg-bg-card border border-border rounded-xl animate-pulse" />
-            ) : (
-              <FunnelFilterBar
-                thresholds={funnelThresholds}
-                onToggle={toggleFunnelFilter}
-                onSetThreshold={setFunnelThreshold}
-                onClear={clearFunnelFilters}
-                stats={funnelStats}
-              />
-            )}
+            <FunnelFilterBar
+              thresholds={funnelThresholds}
+              onToggle={toggleFunnelFilter}
+              onSetThreshold={setFunnelThreshold}
+              onClear={clearFunnelFilters}
+              stats={funnelStats}
+            />
           </div>
 
           {/* Right: Sort + View Toggle */}
