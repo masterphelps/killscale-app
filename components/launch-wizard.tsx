@@ -114,7 +114,7 @@ interface AdSet {
   optimizationGoal?: string
 }
 
-interface Creative {
+export interface Creative {
   file?: File
   preview: string
   type: 'image' | 'video'
@@ -298,9 +298,11 @@ interface LaunchWizardProps {
   // For Performance Set flow - preselect entity type and pass starred ads
   initialEntityType?: 'campaign' | 'adset' | 'ad' | 'performance-set'
   starredAds?: StarredAdForWizard[]
+  // For Creative Studio - pre-populate creatives step
+  preloadedCreatives?: Creative[]
 }
 
-export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityType, starredAds = [] }: LaunchWizardProps) {
+export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityType, starredAds = [], preloadedCreatives }: LaunchWizardProps) {
   const { user } = useAuth()
   const [step, setStep] = useState<Step>('account') // First step is now just Page selection
   const [loading, setLoading] = useState(true)
@@ -369,7 +371,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     selectedBehaviors: [],
     ageMin: 18,
     ageMax: 65,
-    creatives: [],
+    creatives: preloadedCreatives || [],
     creativeEnhancements: false,
     primaryText: '',
     headline: '',

@@ -16,7 +16,7 @@ import type {
   StudioAsset,
   StudioAssetDetail,
 } from '@/components/creative-studio/types'
-import { LaunchWizard } from '@/components/launch-wizard'
+import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 
 type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
@@ -61,7 +61,7 @@ export default function CreativeStudioPage() {
 
   // Launch Wizard state
   const [showLaunchWizard, setShowLaunchWizard] = useState(false)
-  const [wizardCreatives, setWizardCreatives] = useState<{ preview: string; type: 'image' | 'video'; uploaded: boolean; isFromLibrary: boolean; imageHash?: string; videoId?: string; thumbnailUrl?: string }[]>([])
+  const [wizardCreatives, setWizardCreatives] = useState<Creative[]>([])
 
   // Upload state
   const [isUploading, setIsUploading] = useState(false)
