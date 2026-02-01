@@ -104,18 +104,25 @@ export default function CreativeStudioPage() {
     }
   }, [user])
 
-  // Load data — only show skeletons on first load, silently refresh after
+  // Load data — stable refs prevent re-fetching on context identity changes
   const hasLoadedRef = useRef(false)
+  const userRef = useRef(user)
+  const accountRef = useRef(currentAccountId)
+  userRef.current = user
+  accountRef.current = currentAccountId
+
   const loadData = useCallback(async () => {
-    if (!user || !currentAccountId) return
+    const u = userRef.current
+    const acct = accountRef.current
+    if (!u || !acct) return
     if (!hasLoadedRef.current) {
       setIsLoading(true)
     }
 
     try {
       const params = new URLSearchParams({
-        userId: user.id,
-        adAccountId: currentAccountId,
+        userId: u.id,
+        adAccountId: acct,
       })
 
       const [assetsRes, starredRes] = await Promise.all([
@@ -144,11 +151,25 @@ export default function CreativeStudioPage() {
       setIsLoading(false)
       hasLoadedRef.current = true
     }
-  }, [user, currentAccountId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  // Load when user and account are available, or when account changes
+  const lastLoadedAccountRef = useRef<string | null>(null)
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    if (user && currentAccountId) {
+      // Only re-fetch if account actually changed (not just context identity)
+      if (lastLoadedAccountRef.current !== currentAccountId) {
+        // Reset for new account
+        if (lastLoadedAccountRef.current !== null) {
+          hasLoadedRef.current = false
+          setAssets([])
+        }
+        lastLoadedAccountRef.current = currentAccountId
+        loadData()
+      }
+    }
+  }, [user, currentAccountId, loadData])
 
   // Handle sync — two-phase
   const handleSync = async () => {
