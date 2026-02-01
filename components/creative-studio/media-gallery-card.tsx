@@ -106,18 +106,46 @@ export function MediaGalleryCard({
 
   const effectiveVideoSource = storageUrl && isVideo ? storageUrl : videoSourceUrl
 
+  // Detect touch device (mobile) for scroll-to-play vs hover-to-play
+  const isTouchDevice = useRef(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [isInView, setIsInView] = useState(false)
+
+  useEffect(() => {
+    isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+  }, [])
+
+  // Request video source on hover (desktop) or when scrolled into view (mobile)
   const hasRequestedSource = useRef(false)
   useEffect(() => {
-    if (isHovered && isVideo && !effectiveVideoSource && !hasRequestedSource.current && onRequestVideoSource) {
+    const shouldRequest = isTouchDevice.current ? isInView : isHovered
+    if (shouldRequest && isVideo && !effectiveVideoSource && !hasRequestedSource.current && onRequestVideoSource) {
       hasRequestedSource.current = true
       onRequestVideoSource()
     }
-  }, [isHovered, isVideo, effectiveVideoSource, onRequestVideoSource])
+  }, [isHovered, isInView, isVideo, effectiveVideoSource, onRequestVideoSource])
 
+  // Intersection Observer — scroll-to-play on mobile
+  useEffect(() => {
+    if (!isVideo || !isTouchDevice.current) return
+    const el = cardRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsInView(entry.isIntersecting),
+      { threshold: 0.6 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [isVideo])
+
+  // Play/pause logic — hover on desktop, scroll visibility on mobile
   useEffect(() => {
     if (!videoRef.current || !isVideo || !effectiveVideoSource) return
 
-    if (isHovered) {
+    const shouldPlay = isTouchDevice.current ? isInView : isHovered
+
+    if (shouldPlay) {
       videoRef.current.play().catch(() => {})
       setVideoPlaying(true)
     } else {
@@ -125,7 +153,7 @@ export function MediaGalleryCard({
       videoRef.current.currentTime = 0
       setVideoPlaying(false)
     }
-  }, [isHovered, isVideo, effectiveVideoSource])
+  }, [isHovered, isInView, isVideo, effectiveVideoSource])
 
   const handleStarClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -139,6 +167,7 @@ export function MediaGalleryCard({
 
   return (
     <motion.div
+      ref={cardRef}
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{
