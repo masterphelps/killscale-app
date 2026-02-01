@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { LayoutGrid, List, RefreshCw, Download, Film, Image } from 'lucide-react'
+import { LayoutGrid, List, RefreshCw, Download, Film, Image, Upload, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -17,6 +16,8 @@ import type {
   StudioAsset,
   StudioAssetDetail,
 } from '@/components/creative-studio/types'
+import { LaunchWizard } from '@/components/launch-wizard'
+import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 
 type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
 
@@ -58,6 +59,15 @@ export default function CreativeStudioPage() {
   // Starred items
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
 
+  // Launch Wizard state
+  const [showLaunchWizard, setShowLaunchWizard] = useState(false)
+  const [wizardCreatives, setWizardCreatives] = useState<{ preview: string; type: 'image' | 'video'; uploaded: boolean; isFromLibrary: boolean; imageHash?: string; videoId?: string; thumbnailUrl?: string }[]>([])
+
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   // Close sort dropdown on outside click
   useEffect(() => {
     if (!showSortDropdown) return
@@ -73,10 +83,12 @@ export default function CreativeStudioPage() {
   // Video source cache for hover-to-play
   const [videoSources, setVideoSources] = useState<Record<string, string>>({})
   const videoSourceLoadingRef = useRef<Set<string>>(new Set())
+  const videoSourcesRef = useRef<Record<string, string>>({})
+  videoSourcesRef.current = videoSources
 
   // Fetch video source on demand (for hover-to-play)
   const fetchVideoSource = useCallback(async (videoId: string) => {
-    if (!user || videoSources[videoId] || videoSourceLoadingRef.current.has(videoId)) return
+    if (!user || videoSourcesRef.current[videoId] || videoSourceLoadingRef.current.has(videoId)) return
     videoSourceLoadingRef.current.add(videoId)
 
     try {
@@ -90,12 +102,15 @@ export default function CreativeStudioPage() {
     } catch (err) {
       console.error('Failed to fetch video source:', err)
     }
-  }, [user, videoSources])
+  }, [user])
 
-  // Load data
+  // Load data — only show skeletons on first load, silently refresh after
+  const hasLoadedRef = useRef(false)
   const loadData = useCallback(async () => {
     if (!user || !currentAccountId) return
-    setIsLoading(true)
+    if (!hasLoadedRef.current) {
+      setIsLoading(true)
+    }
 
     try {
       const params = new URLSearchParams({
@@ -127,6 +142,7 @@ export default function CreativeStudioPage() {
       console.error('Failed to load creative studio data:', error)
     } finally {
       setIsLoading(false)
+      hasLoadedRef.current = true
     }
   }, [user, currentAccountId])
 
@@ -300,8 +316,20 @@ export default function CreativeStudioPage() {
 
   // Handle build from starred
   const handleBuildFromStarred = useCallback(() => {
-    // TODO: implement build from starred
-  }, [starredIds])
+    const starredAssets = assets.filter(a => starredIds.has(a.mediaHash)).slice(0, 6)
+    if (starredAssets.length === 0) return
+
+    const creatives = starredAssets.map(a => ({
+      preview: a.mediaType === 'video' ? (a.thumbnailUrl || '') : (a.imageUrl || a.storageUrl || ''),
+      type: a.mediaType as 'image' | 'video',
+      uploaded: true,
+      isFromLibrary: true,
+      ...(a.mediaType === 'image' ? { imageHash: a.mediaHash } : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || undefined }),
+    }))
+
+    setWizardCreatives(creatives)
+    setShowLaunchWizard(true)
+  }, [starredIds, assets])
 
   // Handle clear starred
   const handleClearStarred = useCallback(async () => {
@@ -322,6 +350,49 @@ export default function CreativeStudioPage() {
       console.error('Failed to clear starred:', error)
     }
   }, [user, currentAccountId])
+
+  // Handle file upload to Meta
+  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0 || !user || !currentAccountId) return
+
+    setIsUploading(true)
+    setUploadProgress('Fetching token...')
+
+    try {
+      // Get access token
+      const tokenRes = await fetch(`/api/meta/token?userId=${user.id}&adAccountId=${currentAccountId}`)
+      if (!tokenRes.ok) throw new Error('Failed to get access token')
+      const { accessToken } = await tokenRes.json()
+
+      const cleanAccountId = currentAccountId.replace(/^act_/, '')
+      let completed = 0
+
+      for (const file of Array.from(files)) {
+        const isVideo = file.type.startsWith('video/')
+        setUploadProgress(`Uploading ${completed + 1}/${files.length}: ${file.name}`)
+
+        if (isVideo) {
+          await uploadVideoToMeta(file, accessToken, cleanAccountId, (progress) => {
+            setUploadProgress(`Uploading ${completed + 1}/${files.length}: ${file.name} (${progress}%)`)
+          })
+        } else {
+          await uploadImageToMeta(file, accessToken, cleanAccountId)
+        }
+        completed++
+      }
+
+      setUploadProgress('Syncing...')
+      await handleSync()
+    } catch (error) {
+      console.error('Upload failed:', error)
+    } finally {
+      setIsUploading(false)
+      setUploadProgress('')
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }, [user, currentAccountId, handleSync])
 
   // Funnel filter handlers
   const toggleFunnelFilter = useCallback((stage: FunnelStage) => {
@@ -440,10 +511,7 @@ export default function CreativeStudioPage() {
     <div className="min-h-screen pb-24">
       <div className="max-w-[1800px] mx-auto px-4 lg:px-8 py-6 space-y-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
         >
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold text-white">Creative Studio</h1>
@@ -459,6 +527,32 @@ export default function CreativeStudioPage() {
                 Downloading... {downloadProgress.completed}/{downloadProgress.total}
               </span>
             )}
+            {isUploading && (
+              <span className="text-sm text-zinc-400">
+                <Loader2 className="w-4 h-4 inline mr-1 animate-spin" />
+                {uploadProgress}
+              </span>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={handleUpload}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                'bg-accent hover:bg-accent-hover text-white',
+                isUploading && 'opacity-50 cursor-wait'
+              )}
+            >
+              <Upload className="w-4 h-4" />
+              Upload
+            </button>
             <button
               onClick={handleSync}
               disabled={isSyncing || isDownloading}
@@ -472,14 +566,10 @@ export default function CreativeStudioPage() {
               {isSyncing ? 'Syncing...' : isDownloading ? 'Downloading...' : 'Sync Media'}
             </button>
           </div>
-        </motion.div>
+        </div>
 
         {/* Funnel Filters + Sort Controls */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
         >
           {/* Left: Funnel pills */}
           <div className="w-full lg:flex-1 lg:min-w-0">
@@ -589,26 +679,17 @@ export default function CreativeStudioPage() {
               </button>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Results Count */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="text-sm text-zinc-500"
-        >
+        <div className="text-sm text-zinc-500">
           {filteredAssets.length} assets
           {Object.entries(funnelThresholds).some(([, v]) => v !== null) &&
             ` filtered by ${Object.entries(funnelThresholds).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}+`).join(' + ')}`}
-        </motion.div>
+        </div>
 
         {/* Content — single view with Videos + Images sections */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
+        <div>
           {viewMode === 'gallery' ? (
             isLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
@@ -689,7 +770,7 @@ export default function CreativeStudioPage() {
               starredIds={starredIds}
             />
           )}
-        </motion.div>
+        </div>
       </div>
 
       {/* Starred Media Bar */}
@@ -698,6 +779,19 @@ export default function CreativeStudioPage() {
         onBuildAds={handleBuildFromStarred}
         onClear={handleClearStarred}
       />
+
+      {/* Launch Wizard */}
+      {showLaunchWizard && currentAccountId && (
+        <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
+          <LaunchWizard
+            adAccountId={currentAccountId}
+            onComplete={() => setShowLaunchWizard(false)}
+            onCancel={() => setShowLaunchWizard(false)}
+            initialEntityType="campaign"
+            preloadedCreatives={wizardCreatives}
+          />
+        </div>
+      )}
 
       {/* Theater Modal */}
       <TheaterModal
@@ -713,7 +807,19 @@ export default function CreativeStudioPage() {
           }
         }}
         onBuildNewAds={() => {
-          // TODO: implement build new ads
+          if (!selectedItem) return
+          const a = selectedItem
+          const creative = {
+            preview: a.mediaType === 'video' ? (a.thumbnailUrl || '') : (a.imageUrl || a.storageUrl || ''),
+            type: a.mediaType as 'image' | 'video',
+            uploaded: true,
+            isFromLibrary: true,
+            ...(a.mediaType === 'image' ? { imageHash: a.mediaHash } : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || undefined }),
+          }
+          setWizardCreatives([creative])
+          setSelectedItem(null)
+          setDetailData(null)
+          setShowLaunchWizard(true)
         }}
       />
     </div>
