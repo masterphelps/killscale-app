@@ -104,6 +104,21 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `components/starred-ads-popover.tsx` - Starred ad inventory view
 - Database: `starred_ads` table + `creative_star_counts` view
 
+**Creative Studio:**
+- `app/dashboard/creative-studio/page.tsx` - Main page (data loading, filters, sort, view modes)
+- `components/creative-studio/media-gallery-card.tsx` - Gallery card with score glow, hover/scroll-to-play
+- `components/creative-studio/funnel-filter-bar.tsx` - Hook/Hold/Click/Convert filter pills with threshold dropdowns
+- `components/creative-studio/media-table.tsx` - Table view with sortable columns, mobile score pills
+- `components/creative-studio/theater-modal.tsx` - Full detail modal (video player + stats panels)
+- `components/creative-studio/starred-media-bar.tsx` - Fixed bottom bar for starred items + build ads
+- `components/creative-studio/gallery-grid.tsx` - Masonry grid wrapper for gallery cards
+- `components/creative-studio/types.ts` - StudioAsset, StudioAssetDetail, FatigueStatus types
+- `app/api/creative-studio/media/route.ts` - Asset list with computed scores (lines 12-108)
+- `app/api/creative-studio/media-detail/route.ts` - Per-asset detail (hierarchy, daily data, audiences)
+- `app/api/creative-studio/video-source/route.ts` - Single video source URL fetch (on-demand)
+- `app/api/creative-studio/download-media/route.ts` - Phase 2 sync: download files to Supabase Storage
+- `app/api/creative-studio/starred/route.ts` - CRUD for starred media
+
 **Media Library:**
 - `app/api/meta/media/route.ts` - Fetch images/videos from ad account
 - `app/api/meta/token/route.ts` - Secure token for direct uploads
@@ -392,7 +407,48 @@ else → KILL
 
 ---
 
-## Recent Fixes (January 2026)
+## Recent Fixes (January–February 2026)
+
+### Creative Studio Mobile View + Stability (Feb 1)
+**Status:** COMPLETE
+
+**Problem:** Creative Studio was unusable on mobile — funnel filter pills scrolled off-screen, controls overlapped, table rows showed no scores, theater modal was cramped, and the page had severe rendering instability (content flashing, thumbnails disappearing).
+
+**Root Causes Found & Fixed:**
+1. **Funnel pills scrolled off-screen** — Changed from horizontal `overflow-x-auto` row to `grid grid-cols-2` on mobile (2x2 square), `lg:flex` on desktop
+2. **Skeleton/content flash** — `isLoading` conditional swapped between a skeleton div and FunnelFilterBar, causing unmount/remount. Fixed by always rendering FunnelFilterBar (shows `0/0` stats while loading)
+3. **Video thumbnails disappearing** — `loadData` callback had `[user, currentAccountId]` deps, which changed identity on every auth context re-render, triggering duplicate API calls and `setAssets()` with new object references. Every `<img>`/`<video>` element unmounted and remounted. Fixed with stable refs and `lastLoadedAccountRef` to only re-fetch on actual account changes
+4. **Framer Motion staggered animations** — Four `motion.div` sections animated in at 0ms/100ms/300ms delays, looking like the page was reloading in waves on mobile. Replaced with plain `div` elements
+5. **`fetchVideoSource` dep array** — Had `videoSources` state in deps, causing the callback to recreate on every video source fetch, triggering unnecessary gallery re-renders. Switched to a ref
+
+**Mobile Layout Changes:**
+- Funnel filter bar: 2x2 grid on mobile, horizontal row on desktop
+- Page controls: stack vertically on mobile (`flex-col`), side-by-side on desktop
+- Table rows: mobile score pills (`H:82 Hd:71 Cl:65 Cv:48`) + fatigue badge on second line (`lg:hidden`)
+- Theater modal: `grid-cols-2 sm:grid-cols-3` stat grids, larger close button touch target (`p-3 sm:p-2`)
+- Starred bar: compact text on mobile ("Build 5" vs "Build Ads from 5 Starred"), `max-w-[calc(100vw-2rem)]`
+- Sort dropdown: `left-0 lg:left-auto lg:right-0` to stay on-screen on mobile
+
+**Scroll-to-Play (Mobile Gallery):**
+- Videos auto-play muted when 60%+ of card is visible (IntersectionObserver, threshold 0.6)
+- Pauses and resets when scrolled away
+- Touch detection via `ontouchstart in window || navigator.maxTouchPoints > 0`
+- Desktop keeps hover-to-play behavior unchanged
+- Also pre-fetches video source URLs on scroll-into-view (previously only on hover)
+
+**Files Modified:**
+- `app/dashboard/creative-studio/page.tsx` — Removed motion.div wrappers, stabilized loadData, always-render FunnelFilterBar, stable fetchVideoSource
+- `components/creative-studio/funnel-filter-bar.tsx` — Grid layout on mobile, larger clear button
+- `components/creative-studio/media-table.tsx` — Mobile score pills on second line
+- `components/creative-studio/theater-modal.tsx` — Responsive stat grids, larger close button, added missing Layers import
+- `components/creative-studio/starred-media-bar.tsx` — Compact mobile text, overflow prevention
+- `components/creative-studio/media-gallery-card.tsx` — IntersectionObserver scroll-to-play on mobile
+- `components/launch-wizard.tsx` — Exported `Creative` interface (was causing Vercel type error)
+
+**Key Patterns (for future reference):**
+- **Never swap between skeleton and real component** — causes unmount/remount flash. Always render the component, pass loading state as prop or show zero-state.
+- **Stabilize useCallback deps for data fetching** — auth/account context objects change identity on every re-render. Use refs for values, track actual ID changes with a `lastLoadedRef`.
+- **Always clean-build before pushing** — `rm -rf .next && npm run build`. Local cached builds miss type errors that Vercel's clean build catches.
 
 ### Unified Dashboard: Campaign Manager Merged (Jan 26)
 **Status:** COMPLETE
@@ -598,12 +654,30 @@ The following code sections are critical and have been carefully tuned to avoid 
 - **Meta API version:** Must stay current. Meta sunsets old versions ~2 years after release. v18.0 was sunset Jan 2026. Currently using v21.0. If thumbnails go blurry or videos stop playing, check the API version FIRST.
 - **If you must modify:** ONLY change the API version string. Do NOT remove the `fetchVideoDetails` function from the creative route. Do NOT add bulk video source fetching. Do NOT add in-memory caches that could serve stale data missing fields.
 
+### 6. Creative Studio Data Loading (`app/dashboard/creative-studio/page.tsx`)
+- `loadData` uses refs (`userRef`, `accountRef`) so the callback has stable identity (`[]` deps)
+- `lastLoadedAccountRef` tracks which account was loaded — only re-fetches on actual account change
+- FunnelFilterBar is ALWAYS rendered (never swapped for skeleton) to prevent layout flash
+- `fetchVideoSource` uses `videoSourcesRef` (not state) in deps to prevent gallery re-renders
+- **Why fragile:** Auth/account context objects change identity on every re-render. Any `useCallback` with `[user, currentAccountId]` deps will fire the useEffect on every context update, causing duplicate API calls and full gallery unmount/remount (thumbnails flash to placeholders).
+- **If you must modify:** Never add `user` or `currentAccountId` to `loadData`'s useCallback deps. Never conditionally render FunnelFilterBar behind an `isLoading` check. Always clean-build (`rm -rf .next && npm run build`) before pushing.
+
+### 7. Creative Studio Video Playback (`components/creative-studio/media-gallery-card.tsx`)
+- Mobile: IntersectionObserver (0.6 threshold) triggers play/pause on scroll
+- Desktop: hover-to-play via `onHoverStart`/`onHoverEnd`
+- Touch detection: `ontouchstart in window || navigator.maxTouchPoints > 0`
+- Video source URLs fetched on-demand (hover on desktop, scroll-into-view on mobile)
+- **Why fragile:** Bulk-fetching video sources will hit Meta API rate limits. The on-demand pattern is intentional.
+- **If you must modify:** Never prefetch all video sources at once. Keep the IntersectionObserver threshold at 0.6 (lower = too many concurrent plays).
+
 ### Signs You Broke Something
 - "Error code 17" or "Rate limit exceeded" from Meta
 - Sync takes 5+ minutes
 - Campaign manager page hangs or shows spinner indefinitely
 - Thumbnails are small/blurry (64x64) — check `thumbnail_width` param or API version
 - Videos don't play on click — check API version or missing `videoSource` in creative response
+- Creative Studio: filter pills flash between grid/row on mobile — check `isLoading` conditionals
+- Creative Studio: video thumbnails flash to placeholders — check `loadData` deps for context objects
 
 ---
 
@@ -668,10 +742,11 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 | `linked-bubbling-wilkes.md` | Multi-Mode Attribution (E-com/Lead Gen) | IN PROGRESS |
 | `nested-meandering-spring.md` | First-Party Tracking & CAPI | PLANNED |
 
-### Recently Completed (Dec 2025 - Jan 2026)
+### Recently Completed (Dec 2025 - Feb 2026)
 
 | Plan | Topic | Date |
 |------|-------|------|
+| `nested-beaming-pearl.md` | Creative Studio Mobile View + Stability + Scroll-to-Play | Feb 01 |
 | `unified-dashboard-merge.md` | Unified Dashboard: Campaign Manager Merged | Jan 26 |
 | `eager-hatching-minsky.md` | Creative Thumbnails in Performance Table | Jan 25 |
 | Sidebar Platform Badges | M/G badges for Meta/Google accounts | Jan 25 |
