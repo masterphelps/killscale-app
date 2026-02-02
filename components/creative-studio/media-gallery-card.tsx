@@ -195,7 +195,8 @@ export function MediaGalleryCard({
       <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
         {(storageUrl || thumbnailUrl) && !imageError ? (
           <>
-            {isVideo && storageUrl ? (
+            {isVideo && storageUrl && !thumbnailUrl ? (
+              // Video with storage URL but no thumbnail — only option is <video> as poster
               <motion.div
                 initial={false}
                 animate={{
@@ -221,9 +222,11 @@ export function MediaGalleryCard({
                 />
               </motion.div>
             ) : (
+              // <img> as reliable poster frame + <video> overlay for playback
+              // Mobile browsers throttle video loading, so <img> ensures thumbnails always show
               <>
                 <motion.img
-                  src={storageUrl || thumbnailUrl!}
+                  src={isVideo ? thumbnailUrl! : (storageUrl || thumbnailUrl!)}
                   alt=""
                   onLoad={() => setImageLoaded(true)}
                   onError={() => setImageError(true)}
@@ -239,7 +242,7 @@ export function MediaGalleryCard({
                   )}
                 />
 
-                {isVideo && effectiveVideoSource && !storageUrl && (
+                {isVideo && effectiveVideoSource && (
                   <video
                     ref={videoRef}
                     src={effectiveVideoSource}
@@ -281,7 +284,7 @@ export function MediaGalleryCard({
 
         {/* Video Play Button Overlay */}
         <AnimatePresence>
-          {isVideo && !videoPlaying && imageLoaded && !storageUrl && (
+          {isVideo && !videoPlaying && imageLoaded && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
