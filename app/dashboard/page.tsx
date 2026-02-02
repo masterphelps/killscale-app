@@ -3434,8 +3434,25 @@ export default function DashboardPage() {
           parentAdsetId={duplicateModal.parentAdsetId}
           userId={user.id}
           adAccountId={selectedAccountId}
-          onComplete={() => {
+          onComplete={async (result) => {
             setDuplicateModal(null)
+            setIncludePaused(true)
+
+            try {
+              await fetch('/api/meta/hydrate-new-entity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId: user.id,
+                  adAccountId: selectedAccountId,
+                  entityType: result.entityType,
+                  entityId: result.newEntityId,
+                })
+              })
+            } catch (err) {
+              console.warn('[Dashboard] Hydrate failed:', err)
+            }
+
             loadData()
           }}
         />
@@ -3491,6 +3508,7 @@ export default function DashboardPage() {
               adAccountId={currentAccountId}
               onComplete={(performanceSetResult) => {
                 setShowLaunchWizard(false)
+                setIncludePaused(true)
                 // Refresh data after creating campaign
                 loadData()
                 // Show clear stars prompt if this was a Performance Set

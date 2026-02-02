@@ -97,7 +97,7 @@ interface InlineDuplicateModalProps {
   parentAdsetId?: string
   userId: string
   adAccountId: string
-  onComplete: () => void
+  onComplete: (result: { entityType: 'campaign' | 'adset' | 'ad'; newEntityId: string }) => void
 }
 
 export function InlineDuplicateModal({
@@ -535,7 +535,11 @@ export function InlineDuplicateModal({
         return
       }
 
-      onComplete()
+      const newEntityId = itemType === 'campaign' ? result.newCampaignId
+        : itemType === 'adset' ? result.newAdsetId
+        : result.newAdId
+
+      onComplete({ entityType: itemType, newEntityId })
       onClose()
     } catch (err) {
       console.error('Duplicate error:', err)
