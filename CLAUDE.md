@@ -119,6 +119,11 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `app/api/creative-studio/download-media/route.ts` - Phase 2 sync: download files to Supabase Storage
 - `app/api/creative-studio/starred/route.ts` - CRUD for starred media
 
+**Onboarding & Trial:**
+- `app/onboarding/page.tsx` - 3-step onboarding wizard (Profile, Connect Meta, Select Accounts)
+- `app/api/onboarding/complete/route.ts` - Server-side trial creation + onboarding completion (service role, bypasses RLS)
+- `supabase/migrations/043_onboarding_and_trial.sql` - Profile columns (first_name, last_name, timezone, onboarding_completed)
+
 **Media Library:**
 - `app/api/meta/media/route.ts` - Fetch images/videos from ad account
 - `app/api/meta/token/route.ts` - Secure token for direct uploads
@@ -342,6 +347,50 @@ Per-asset composite scores computed in `app/api/creative-studio/media/route.ts` 
 ### AI-Powered Features
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
+
+### Onboarding Wizard & Free Trial
+3-step wizard runs once after first authentication. All steps skippable. Creates a 7-day Launch trial (no credit card).
+
+**Flow:** Signup → verify/OAuth → `/dashboard` → layout redirect → `/onboarding` → wizard completes → 7-day trial starts → `/dashboard`
+
+**Steps:**
+| # | Step | What it does | Skip behavior |
+|---|------|-------------|---------------|
+| 1 | Profile | First name, last name, timezone | Keeps defaults from OAuth |
+| 2 | Connect Meta | OAuth to Meta Ads API | No Meta connection |
+| 3 | Select Accounts | Pick ad accounts to track | Auto-skipped if ≤1 account |
+
+**Trial Details:**
+- Plan: Launch (lowest tier — upsell to Scale/Pro for Shopify, Workspaces, Pixel)
+- Duration: 7 days from wizard completion
+- Status: `trialing` in subscriptions table
+- Expiry: `lib/subscription.tsx` checks `current_period_end` — expired trials treated as no subscription
+- Lockout: Redirects to `/account` page with "trial expired" messaging and subscribe CTA
+
+**Key Architecture Decisions:**
+- **Standalone page** (`app/onboarding/`) — NOT under `/dashboard/` (no sidebar, no subscription check). Gets `AuthProvider` and `SubscriptionProvider` from root layout.
+- **Server-side completion** (`app/api/onboarding/complete/route.ts`) — uses service role key to bypass RLS for `subscriptions` insert and `profiles.onboarding_completed` update. Client-side supabase can't write to these tables.
+- **Dashboard layout gate** (`app/dashboard/layout.tsx`) — async onboarding check runs BEFORE subscription check. Subscription gate waits for `onboardingChecked` state to prevent race condition (subscription redirect firing before onboarding query completes).
+- **sessionStorage flags** — `ks_onboarding_checked` and `ks_had_valid_subscription` prevent redundant DB queries on navigation and avoid redirect flicker after wizard completion.
+- **Full page reload** after completion (`window.location.href` not `router.push`) — forces subscription context to re-initialize with the new trial row.
+
+**OAuth returnTo Support:**
+Meta and Shopify OAuth routes support a `returnTo` query param (validated as safe relative path). The onboarding wizard passes `returnTo=/onboarding` so OAuth callbacks redirect back to the wizard instead of `/dashboard/connect`.
+
+**Files:**
+- `app/onboarding/page.tsx` — Wizard UI with progress indicator
+- `app/api/onboarding/complete/route.ts` — Trial creation + completion (service role)
+- `app/dashboard/layout.tsx` — Onboarding gate (lines 86-126)
+- `lib/subscription.tsx` — Trial expiry check (lines 81-89)
+- `app/api/auth/meta/route.ts` — `returnTo` param support
+- `app/api/auth/meta/callback/route.ts` — `returnTo` redirect logic
+- `app/api/auth/shopify/route.ts` — `returnTo` param support
+- `app/api/auth/shopify/callback/route.ts` — `returnTo` redirect logic
+- `app/dashboard/settings/page.tsx` — Trial badge + days remaining display
+- `app/account/page.tsx` — Trial expired messaging + subscribe CTA
+- `supabase/migrations/043_onboarding_and_trial.sql` — Profile columns + existing user backfill
+
+**Migration Note:** Migration must be applied manually via Supabase SQL Editor. It backfills all existing users with `onboarding_completed = true` so they never see the wizard.
 
 ---
 
