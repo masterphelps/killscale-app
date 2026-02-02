@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
+import { supabase } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { Sidebar } from '@/components/sidebar'
@@ -82,6 +83,11 @@ export default function DashboardLayout({
   const hadValidSubscription = useRef(
     typeof window !== 'undefined' && sessionStorage.getItem('ks_had_valid_subscription') === 'true'
   )
+  // Onboarding check - skip if already verified this session
+  const hadOnboardingChecked = useRef(
+    typeof window !== 'undefined' && sessionStorage.getItem('ks_onboarding_checked') === 'true'
+  )
+  const [onboardingChecked, setOnboardingChecked] = useState(hadOnboardingChecked.current)
 
   useEffect(() => {
     if (!loading && !user && !hadValidUser.current) {
@@ -97,10 +103,34 @@ export default function DashboardLayout({
     }
   }, [user, loading, router])
 
+  // Onboarding gate: redirect to /onboarding if not completed
+  useEffect(() => {
+    if (!loading && user && !hadOnboardingChecked.current) {
+      supabase
+        .from('profiles')
+        .select('onboarding_completed')
+        .eq('id', user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (data?.onboarding_completed === true) {
+            // Explicitly completed — let through
+            hadOnboardingChecked.current = true
+            sessionStorage.setItem('ks_onboarding_checked', 'true')
+            setOnboardingChecked(true)
+          } else {
+            // false, null, or query error (no profile row yet) — all mean onboarding needed
+            router.push('/onboarding')
+          }
+        })
+    }
+  }, [user, loading, router])
+
   // Subscription gate: redirect to account page if no active subscription
   // Only redirect if we've never had a valid subscription (prevents false redirect on refresh)
+  // MUST wait for onboarding check to complete first — otherwise this fires before the async
+  // onboarding query returns and redirects new users to /account instead of /onboarding
   useEffect(() => {
-    if (!loading && !subLoading && user) {
+    if (!loading && !subLoading && user && onboardingChecked) {
       if (plan !== 'None') {
         hadValidSubscription.current = true
         // Persist to sessionStorage to survive component remounts during navigation
@@ -110,7 +140,7 @@ export default function DashboardLayout({
         router.push('/account')
       }
     }
-  }, [user, loading, plan, subLoading, router])
+  }, [user, loading, plan, subLoading, router, onboardingChecked])
 
   useEffect(() => {
     setSidebarOpen(false)
@@ -140,6 +170,15 @@ export default function DashboardLayout({
   // The auth check will redirect to login if truly logged out
   if (!user && !hadValidUser.current) {
     return null
+  }
+
+  // Don't render dashboard until onboarding check completes (prevents flash before redirect)
+  if (!onboardingChecked && user && !loading) {
+    return (
+      <div className="min-h-screen bg-bg-dark flex items-center justify-center">
+        <div className="text-zinc-500">Loading...</div>
+      </div>
+    )
   }
 
   return (

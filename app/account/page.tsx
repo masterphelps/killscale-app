@@ -454,16 +454,22 @@ export default function AccountPage() {
 
               <div className="space-y-4">
                 {plan === 'None' ? (
-                  // Non-subscriber: Prominent CTA
+                  // Non-subscriber or expired trial: Prominent CTA
                   <div className="text-center py-4">
-                    <p className="text-zinc-400 mb-4">
-                      Start your 7-day free trial to access KillScale
-                    </p>
+                    {subscription?.status === 'trialing' && subscription?.current_period_end && new Date(subscription.current_period_end) < new Date() ? (
+                      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm mb-4">
+                        Your 7-day free trial has expired. Subscribe to continue using KillScale.
+                      </div>
+                    ) : (
+                      <p className="text-zinc-400 mb-4">
+                        Subscribe to access KillScale
+                      </p>
+                    )}
                     <Link
                       href="/pricing"
                       className="inline-block w-full px-6 py-4 text-lg font-semibold bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
                     >
-                      Try/Subscribe
+                      View Plans & Subscribe
                     </Link>
                   </div>
                 ) : (
@@ -471,16 +477,27 @@ export default function AccountPage() {
                   <>
                     <div className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg">
                       <div>
-                        <div className="text-white font-medium">{plan} Plan</div>
-                        <div className="text-sm text-zinc-500">
-                          {planFeatures[plan] || 'Basic features'}
+                        <div className="flex items-center gap-2">
+                          <span className="text-white font-medium">{plan} Plan</span>
+                          {subscription?.status === 'trialing' && (
+                            <span className="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded">Trial</span>
+                          )}
                         </div>
+                        {subscription?.status === 'trialing' && subscription?.current_period_end ? (
+                          <div className="text-sm text-amber-400">
+                            Trial: {Math.max(0, Math.ceil((new Date(subscription.current_period_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} days remaining
+                          </div>
+                        ) : (
+                          <div className="text-sm text-zinc-500">
+                            {planFeatures[plan] || 'Basic features'}
+                          </div>
+                        )}
                       </div>
                       <Link
                         href="/pricing"
                         className="px-4 py-2 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
                       >
-                        Change Plan
+                        {subscription?.status === 'trialing' ? 'Subscribe' : 'Change Plan'}
                       </Link>
                     </div>
 

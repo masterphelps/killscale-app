@@ -189,12 +189,21 @@ export default function GeneralSettingsPage() {
                     Active
                   </span>
                 )}
+                {subscription?.status === 'trialing' && (
+                  <span className="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded">
+                    Trial
+                  </span>
+                )}
               </div>
-              {subscription?.current_period_end && (
+              {subscription?.status === 'trialing' && subscription?.current_period_end ? (
+                <div className="text-sm text-amber-400 mt-1">
+                  Trial: {Math.max(0, Math.ceil((new Date(subscription.current_period_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} days remaining
+                </div>
+              ) : subscription?.current_period_end ? (
                 <div className="text-sm text-zinc-500 mt-1">
                   Renews {new Date(subscription.current_period_end).toLocaleDateString()}
                 </div>
-              )}
+              ) : null}
             </div>
             <div className="flex items-center gap-2">
               {plan !== 'Pro' && (

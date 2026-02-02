@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
   const userId = searchParams.get('user_id')
   const workspaceId = searchParams.get('workspace_id')
   const shop = searchParams.get('shop')
+  const returnTo = searchParams.get('returnTo')
 
   if (!userId) {
     return NextResponse.json({ error: 'User ID required' }, { status: 400 })
@@ -78,11 +79,15 @@ export async function GET(request: NextRequest) {
   // Normalize shop domain
   const normalizedShop = normalizeShopDomain(shop)
 
+  // Validate returnTo is safe (relative path only)
+  const safeReturnTo = returnTo && returnTo.startsWith('/') && !returnTo.includes('://') ? returnTo : null
+
   // Generate state parameter for security (includes user ID, workspace ID, and timestamp)
   const state = Buffer.from(JSON.stringify({
     userId,
     workspaceId,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    returnTo: safeReturnTo,
   })).toString('base64')
 
   // Build Shopify OAuth URL

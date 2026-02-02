@@ -18,28 +18,42 @@ export async function GET(request: NextRequest) {
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'
 
+  // Decode returnTo early for error redirects
+  let returnTo: string | null = null
+  if (state) {
+    try {
+      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
+      returnTo = stateData.returnTo || null
+    } catch {}
+  }
+
   // Handle user declining permissions
   if (error) {
     console.error('Shopify OAuth error:', error)
-    return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=declined`)
+    const errorUrl = returnTo ? `${returnTo}?shopify_error=declined` : '/dashboard/settings/workspaces?shopify_error=declined'
+    return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 
   if (!code || !shop || !state) {
-    return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=missing_params`)
+    const errorUrl = returnTo ? `${returnTo}?shopify_error=missing_params` : '/dashboard/settings/workspaces?shopify_error=missing_params'
+    return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 
   try {
     // Decode state to get user ID, workspace ID, and validate timestamp
     const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-    const { userId, workspaceId, timestamp } = stateData
+    const { userId, workspaceId, timestamp, returnTo: stateReturnTo } = stateData
+    returnTo = stateReturnTo || null
 
     if (!userId || !workspaceId) {
-      return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=invalid_state`)
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=invalid_state` : '/dashboard/settings/workspaces?shopify_error=invalid_state'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
     // Check state is not too old (10 minutes)
     if (Date.now() - timestamp > 10 * 60 * 1000) {
-      return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=expired`)
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=expired` : '/dashboard/settings/workspaces?shopify_error=expired'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
     // Verify user still has access to this workspace (owner or member)
@@ -61,7 +75,8 @@ export async function GET(request: NextRequest) {
 
       if (!membership) {
         console.error('Workspace access check failed')
-        return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?error=access_denied`)
+        const errorUrl = returnTo ? `${returnTo}?shopify_error=access_denied` : '/dashboard/settings/workspaces?error=access_denied'
+        return NextResponse.redirect(`${baseUrl}${errorUrl}`)
       }
     }
 
@@ -80,14 +95,16 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error) {
       console.error('Token exchange error:', tokenData.error, tokenData.error_description)
-      return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=token_failed`)
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=token_failed` : '/dashboard/settings/workspaces?shopify_error=token_failed'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
     const { access_token, scope } = tokenData
 
     if (!access_token) {
       console.error('No access token received from Shopify')
-      return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=no_access_token`)
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=no_access_token` : '/dashboard/settings/workspaces?shopify_error=no_access_token'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
     // Get shop info to populate shop_name
@@ -118,7 +135,8 @@ export async function GET(request: NextRequest) {
 
     if (dbError) {
       console.error('Database error:', dbError)
-      return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=db_failed`)
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=db_failed` : '/dashboard/settings/workspaces?shopify_error=db_failed'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
     // Register webhooks for real-time order updates
@@ -155,11 +173,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify=success`)
+    const successUrl = returnTo ? `${returnTo}?shopify=success` : '/dashboard/settings/workspaces?shopify=success'
+    return NextResponse.redirect(`${baseUrl}${successUrl}`)
 
   } catch (err) {
     console.error('OAuth callback error:', err)
     const errorMessage = err instanceof Error ? err.message : 'unknown'
-    return NextResponse.redirect(`${baseUrl}/dashboard/settings/workspaces?shopify_error=unknown&details=${encodeURIComponent(errorMessage)}`)
+    const errorUrl = returnTo
+      ? `${returnTo}?shopify_error=unknown&details=${encodeURIComponent(errorMessage)}`
+      : `/dashboard/settings/workspaces?shopify_error=unknown&details=${encodeURIComponent(errorMessage)}`
+    return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 }

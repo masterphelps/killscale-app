@@ -79,6 +79,16 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         isAdminGranted: true,
       })
     } else if (stripeSub && !stripeResult.error) {
+      // Check if trial has expired
+      if (stripeSub.status === 'trialing' && stripeSub.current_period_end) {
+        const trialEnd = new Date(stripeSub.current_period_end)
+        if (trialEnd < now) {
+          // Trial expired — treat as no subscription
+          setSubscription(null)
+          setLoading(false)
+          return
+        }
+      }
       setSubscription({
         ...stripeSub,
         isAdminGranted: false,

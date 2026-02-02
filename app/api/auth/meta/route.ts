@@ -18,15 +18,20 @@ const SCOPES = [
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const userId = searchParams.get('user_id')
-  
+  const returnTo = searchParams.get('returnTo')
+
   if (!userId) {
     return NextResponse.json({ error: 'User ID required' }, { status: 400 })
   }
-  
+
+  // Validate returnTo is safe (relative path only)
+  const safeReturnTo = returnTo && returnTo.startsWith('/') && !returnTo.includes('://') ? returnTo : null
+
   // Generate state parameter for security (includes user ID)
-  const state = Buffer.from(JSON.stringify({ 
+  const state = Buffer.from(JSON.stringify({
     userId,
-    timestamp: Date.now() 
+    timestamp: Date.now(),
+    returnTo: safeReturnTo,
   })).toString('base64')
   
   // Build Meta OAuth URL

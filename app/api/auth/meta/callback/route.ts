@@ -19,24 +19,36 @@ export async function GET(request: NextRequest) {
   
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'
   
+  // Decode returnTo early for error redirects
+  let returnTo: string | null = null
+  if (state) {
+    try {
+      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
+      returnTo = stateData.returnTo || null
+    } catch {}
+  }
+
   // Handle user declining permissions
   if (error) {
     console.error('Meta OAuth error:', error)
-    return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=declined`)
+    const errorUrl = returnTo ? `${returnTo}?meta_error=declined` : '/dashboard/connect?error=declined'
+    return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
-  
+
   if (!code || !state) {
-    return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=missing_params`)
+    const errorUrl = returnTo ? `${returnTo}?meta_error=missing_params` : '/dashboard/connect?error=missing_params'
+    return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
   
   try {
     // Decode state to get user ID
     const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-    const { userId, timestamp } = stateData
+    const { userId, timestamp, returnTo } = stateData
     
     // Check state is not too old (10 minutes)
     if (Date.now() - timestamp > 10 * 60 * 1000) {
-      return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=expired`)
+      const errorUrl = returnTo ? `${returnTo}?meta_error=expired` : '/dashboard/connect?error=expired'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
     
     // Exchange code for access token
@@ -51,7 +63,8 @@ export async function GET(request: NextRequest) {
     
     if (tokenData.error) {
       console.error('Token exchange error:', tokenData.error)
-      return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=token_failed`)
+      const errorUrl = returnTo ? `${returnTo}?meta_error=token_failed` : '/dashboard/connect?error=token_failed'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
     
     const { access_token, expires_in } = tokenData
@@ -83,7 +96,8 @@ export async function GET(request: NextRequest) {
     
     if (adAccountsData.error) {
       console.error('Ad accounts fetch error:', adAccountsData.error)
-      return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=no_ad_accounts`)
+      const errorUrl = returnTo ? `${returnTo}?meta_error=no_ad_accounts` : '/dashboard/connect?error=no_ad_accounts'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
     
     // Get user's Meta profile info
@@ -123,14 +137,19 @@ export async function GET(request: NextRequest) {
     
     if (dbError) {
       console.error('Database error:', dbError)
-      return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=db_failed`)
+      const errorUrl = returnTo ? `${returnTo}?meta_error=db_failed` : '/dashboard/connect?error=db_failed'
+      return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
-    
-    return NextResponse.redirect(`${baseUrl}/dashboard/connect?success=true`)
+
+    const successUrl = returnTo ? `${returnTo}?meta=success` : '/dashboard/connect?success=true'
+    return NextResponse.redirect(`${baseUrl}${successUrl}`)
     
   } catch (err) {
     console.error('OAuth callback error:', err)
     const errorMessage = err instanceof Error ? err.message : 'unknown'
-    return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=unknown&details=${encodeURIComponent(errorMessage)}`)
+    const errorUrl = returnTo
+      ? `${returnTo}?meta_error=unknown&details=${encodeURIComponent(errorMessage)}`
+      : `/dashboard/connect?error=unknown&details=${encodeURIComponent(errorMessage)}`
+    return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 }
