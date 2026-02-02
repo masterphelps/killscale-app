@@ -36,13 +36,15 @@ interface AdsetTargetingOverride {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId, sourceCampaignId, newName, copyStatus = 'PAUSED', adsetTargetingOverrides } = await request.json() as {
+    const { userId, adAccountId, sourceCampaignId, newName, copyStatus = 'PAUSED', adsetTargetingOverrides, campaignBudgetOverride, adsetBudgetOverrides } = await request.json() as {
       userId: string
       adAccountId: string
       sourceCampaignId: string
       newName?: string
       copyStatus?: 'PAUSED' | 'ACTIVE'
       adsetTargetingOverrides?: AdsetTargetingOverride[]
+      campaignBudgetOverride?: number | null  // CBO daily budget in dollars
+      adsetBudgetOverrides?: Array<{ sourceAdsetId: string; dailyBudget: number }>  // ABO per-adset daily budgets in dollars
     }
 
     // Build a map for quick lookup of per-adset targeting overrides
@@ -50,6 +52,14 @@ export async function POST(request: NextRequest) {
     if (adsetTargetingOverrides) {
       for (const override of adsetTargetingOverrides) {
         targetingOverrideMap.set(override.sourceAdsetId, override.customTargeting)
+      }
+    }
+
+    // Build a map for per-adset budget overrides (ABO)
+    const budgetOverrideMap = new Map<string, number>()
+    if (adsetBudgetOverrides) {
+      for (const override of adsetBudgetOverrides) {
+        budgetOverrideMap.set(override.sourceAdsetId, override.dailyBudget)
       }
     }
 
@@ -105,11 +115,14 @@ export async function POST(request: NextRequest) {
       createCampaignBody.buying_type = campaignData.buying_type
     }
 
-    // Copy budget if CBO
-    if (campaignData.daily_budget) {
+    // Copy budget if CBO — use override if provided, otherwise copy source
+    if (campaignBudgetOverride != null) {
+      // User set a custom budget (in dollars) — Meta API expects cents
+      createCampaignBody.daily_budget = Math.round(campaignBudgetOverride * 100)
+    } else if (campaignData.daily_budget) {
       createCampaignBody.daily_budget = campaignData.daily_budget
     }
-    if (campaignData.lifetime_budget) {
+    if (campaignData.lifetime_budget && campaignBudgetOverride == null) {
       createCampaignBody.lifetime_budget = campaignData.lifetime_budget
     }
     if (campaignData.bid_strategy) {
@@ -212,10 +225,14 @@ export async function POST(request: NextRequest) {
           access_token: accessToken
         }
 
-        if (adset.daily_budget) {
+        // Use budget override if provided, otherwise copy source
+        const adsetBudgetOverride = budgetOverrideMap.get(adset.id)
+        if (adsetBudgetOverride != null) {
+          createAdsetBody.daily_budget = Math.round(adsetBudgetOverride * 100)
+        } else if (adset.daily_budget) {
           createAdsetBody.daily_budget = adset.daily_budget
         }
-        if (adset.lifetime_budget) {
+        if (adset.lifetime_budget && adsetBudgetOverride == null) {
           createAdsetBody.lifetime_budget = adset.lifetime_budget
         }
         if (adset.promoted_object) {

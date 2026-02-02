@@ -72,36 +72,55 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Update local database to reflect the change
-    // Determine which column to update based on entity type
-    let updateColumn: string
-    let idColumn: string
-    
-    switch (entityType) {
-      case 'campaign':
-        updateColumn = 'campaign_status'
-        idColumn = 'campaign_id'
-        break
-      case 'adset':
-        updateColumn = 'adset_status'
-        idColumn = 'adset_id'
-        break
-      case 'ad':
-        updateColumn = 'status'
-        idColumn = 'ad_id'
-        break
-    }
-    
-    // Update the status in ad_data table
-    const { error: updateError } = await supabase
-      .from('ad_data')
-      .update({ [updateColumn]: status })
-      .eq('user_id', userId)
-      .eq(idColumn, entityId)
-    
-    if (updateError) {
-      console.error('Database update error:', updateError)
-      // Don't fail the request - Meta update succeeded, just log the DB error
+    // Update local database to reflect the change, including cascading to child entities.
+    // Meta uses effective_status which cascades (e.g. ads under a paused campaign get
+    // CAMPAIGN_PAUSED). We mirror that cascade locally so changes are visible immediately.
+
+    if (entityType === 'campaign') {
+      const { error: e1 } = await supabase
+        .from('ad_data')
+        .update({ campaign_status: status })
+        .eq('user_id', userId)
+        .eq('campaign_id', entityId)
+      if (e1) console.error('[update-status] campaign_status error:', e1)
+
+      if (status === 'ACTIVE') {
+        // Cascade: children that were CAMPAIGN_PAUSED become ACTIVE
+        await supabase.from('ad_data').update({ adset_status: 'ACTIVE' })
+          .eq('user_id', userId).eq('campaign_id', entityId).eq('adset_status', 'CAMPAIGN_PAUSED')
+        await supabase.from('ad_data').update({ status: 'ACTIVE' })
+          .eq('user_id', userId).eq('campaign_id', entityId).eq('status', 'CAMPAIGN_PAUSED')
+      } else {
+        // Cascade: active children become CAMPAIGN_PAUSED
+        await supabase.from('ad_data').update({ adset_status: 'CAMPAIGN_PAUSED' })
+          .eq('user_id', userId).eq('campaign_id', entityId).eq('adset_status', 'ACTIVE')
+        await supabase.from('ad_data').update({ status: 'CAMPAIGN_PAUSED' })
+          .eq('user_id', userId).eq('campaign_id', entityId).in('status', ['ACTIVE', 'ADSET_PAUSED'])
+      }
+
+    } else if (entityType === 'adset') {
+      const { error: e1 } = await supabase
+        .from('ad_data')
+        .update({ adset_status: status })
+        .eq('user_id', userId)
+        .eq('adset_id', entityId)
+      if (e1) console.error('[update-status] adset_status error:', e1)
+
+      if (status === 'ACTIVE') {
+        await supabase.from('ad_data').update({ status: 'ACTIVE' })
+          .eq('user_id', userId).eq('adset_id', entityId).eq('status', 'ADSET_PAUSED')
+      } else {
+        await supabase.from('ad_data').update({ status: 'ADSET_PAUSED' })
+          .eq('user_id', userId).eq('adset_id', entityId).eq('status', 'ACTIVE')
+      }
+
+    } else {
+      const { error: e1 } = await supabase
+        .from('ad_data')
+        .update({ status: status })
+        .eq('user_id', userId)
+        .eq('ad_id', entityId)
+      if (e1) console.error('[update-status] ad status error:', e1)
     }
     
     return NextResponse.json({ 

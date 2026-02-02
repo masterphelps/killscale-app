@@ -166,12 +166,32 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, adAccountId, mediaHash, mediaHashes } = body
+    const { userId, adAccountId, mediaHash, mediaHashes, clearAll } = body
 
     if (!userId || !adAccountId) {
       return NextResponse.json({
         error: 'Missing required fields: userId and adAccountId'
       }, { status: 400 })
+    }
+
+    // Clear all starred media for this user/account
+    if (clearAll) {
+      const { error, count } = await supabase
+        .from('starred_media')
+        .delete()
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+
+      if (error) {
+        console.error('Error clearing all starred media:', error)
+        return NextResponse.json({ error: 'Failed to clear starred media' }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        deleted: count || 0,
+        message: 'Cleared all starred media'
+      })
     }
 
     // Support both single mediaHash and array of mediaHashes

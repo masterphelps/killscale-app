@@ -104,11 +104,13 @@ export async function POST(request: NextRequest) {
         updateData.campaign_daily_budget = null
       }
 
-      await supabase
+      const { error: dbError, count } = await supabase
         .from('ad_data')
         .update(updateData)
         .eq('user_id', userId)
         .eq('campaign_id', entityId)
+
+      console.log(`[update-budget] Updated campaign ${entityId}: ${count ?? '?'} rows, budget=${budget} ${budgetType}`, dbError || '')
     } else {
       if (budgetType === 'daily') {
         updateData.adset_daily_budget = budget
@@ -118,11 +120,13 @@ export async function POST(request: NextRequest) {
         updateData.adset_daily_budget = null
       }
 
-      await supabase
+      const { error: dbError, count } = await supabase
         .from('ad_data')
         .update(updateData)
         .eq('user_id', userId)
         .eq('adset_id', entityId)
+
+      console.log(`[update-budget] Updated adset ${entityId}: ${count ?? '?'} rows, budget=${budget} ${budgetType}`, dbError || '')
     }
 
     // Log the budget change for cooldown tracking

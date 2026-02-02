@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { META_GRAPH_URL } from '@/lib/meta-api'
-import type { DailyMetrics, AudiencePerformance, CopyVariation, FatigueStatus } from '@/components/creative-studio/types'
+import type { DailyMetrics, AudiencePerformance, FatigueStatus } from '@/components/creative-studio/types'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -406,43 +406,7 @@ export async function GET(request: NextRequest) {
       }
     }).sort((a, b) => b.spend - a.spend)
 
-    // 6. Copy variations — different creatives using same media with different headlines/body
-    const creativeMap = new Map<string, {
-      creativeId: string
-      headline: string
-      body: string
-      spend: number
-      revenue: number
-    }>()
-
-    for (const row of allAdData) {
-      const creativeId = row.creative_id
-      if (!creativeId) continue
-
-      const existing = creativeMap.get(creativeId) || {
-        creativeId,
-        headline: row.headline || '',
-        body: row.body || '',
-        spend: 0,
-        revenue: 0,
-      }
-
-      existing.spend += row.spend || 0
-      existing.revenue += row.revenue || 0
-      if (!existing.headline && row.headline) existing.headline = row.headline
-      if (!existing.body && row.body) existing.body = row.body
-
-      creativeMap.set(creativeId, existing)
-    }
-
-    const copyVariations: CopyVariation[] = Array.from(creativeMap.values()).map(c => ({
-      creativeId: c.creativeId,
-      headline: c.headline,
-      body: c.body,
-      spend: c.spend,
-      revenue: c.revenue,
-      roas: c.spend > 0 ? c.revenue / c.spend : 0,
-    })).sort((a, b) => b.spend - a.spend)
+    // 6. (Removed — copy variations not applicable to media-level detail)
 
     // 7. Individual ads list
     const adsMap = new Map<string, {
@@ -545,14 +509,14 @@ export async function GET(request: NextRequest) {
         const videoRow = allAdData.find(row => row.video_id)
         if (videoRow?.video_id) {
           try {
-            const { data: connection } = await supabase
+            const { data: conn } = await supabase
               .from('meta_connections')
               .select('access_token, token_expires_at')
               .eq('user_id', userId)
               .single()
 
-            if (connection && new Date(connection.token_expires_at) > new Date()) {
-              const videoUrl = `${META_GRAPH_URL}/${videoRow.video_id}?fields=source&access_token=${connection.access_token}`
+            if (conn && new Date(conn.token_expires_at) > new Date()) {
+              const videoUrl = `${META_GRAPH_URL}/${videoRow.video_id}?fields=source&access_token=${conn.access_token}`
               const videoRes = await fetch(videoUrl)
               const videoData = await videoRes.json()
               if (videoData.source) {
@@ -584,7 +548,7 @@ export async function GET(request: NextRequest) {
       earlyPeriod,
       recentPeriod,
       audiencePerformance,
-      copyVariations,
+      copyVariations: [],
       ads,
       hierarchy,
       videoSource,

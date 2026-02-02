@@ -315,6 +315,10 @@ export default function DashboardPage() {
   const [pendingWorkspaceSync, setPendingWorkspaceSync] = useState(false) // Workspace sync on first load
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  // Entity refresh (lightweight metadata sync from Meta — no insights)
+  const lastEntityRefreshRef = useRef<number>(0)
+  const ENTITY_REFRESH_COOLDOWN_MS = 60_000
+  const isRefreshingEntitiesRef = useRef(false)
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
   const [includePaused, setIncludePaused] = useState(false)
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
@@ -659,6 +663,13 @@ export default function DashboardPage() {
       // First load data from Supabase (instant — reads stored data)
       await loadData()
 
+      // Fire lightweight entity refresh (non-blocking, 60s cooldown)
+      // Updates names/statuses/budgets from Meta without re-fetching insights
+      const accountToRefresh = currentAccountId || accounts[0]?.id
+      if (accountToRefresh) {
+        refreshEntities(accountToRefresh) // fire-and-forget
+      }
+
       // Check if we should trigger auto-sync (only once per page load)
       if (hasTriggeredInitialSync.current) return
       hasTriggeredInitialSync.current = true
@@ -742,6 +753,11 @@ export default function DashboardPage() {
       // No valid cache - reload from Supabase (silent, no loading spinner)
       console.log('[Cache] Miss for', cacheKey, '- loading from Supabase')
       loadData(false)
+    }
+
+    // Also fire entity refresh on account switch (fire-and-forget, 60s cooldown)
+    if (currentAccountId) {
+      refreshEntities(currentAccountId)
     }
   }, [currentAccountId, workspaceAccountIds, user?.id])
 
@@ -964,9 +980,37 @@ export default function DashboardPage() {
       query = query.eq('ad_account_id', currentAccountId)
     }
 
-    const { data: adData, error } = await query
+    // Entity query: fixed 30-day window to find all active/paused entities (metadata only)
+    const entitySelect = 'ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name, status, adset_status, campaign_status, campaign_daily_budget, campaign_lifetime_budget, adset_daily_budget, adset_lifetime_budget, creative_id, thumbnail_url, image_url, media_type, media_hash, storage_url, ad_account_id'
+    const entityEnd = new Date()
+    const entityStart = new Date()
+    entityStart.setDate(entityStart.getDate() - 29)
+    const formatDateLocal = (d: Date) => {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    let entityQuery = supabase
+      .from('ad_data')
+      .select(entitySelect)
+      .eq('user_id', user.id)
+      .gte('date_start', formatDateLocal(entityStart))
+      .lte('date_start', formatDateLocal(entityEnd))
       .order('date_start', { ascending: false })
-    console.log('[loadData] Supabase query took', Date.now() - startTime, 'ms, got', adData?.length || 0, 'rows')
+
+    if (workspaceAccountIds.length > 0) {
+      entityQuery = entityQuery.in('ad_account_id', workspaceAccountIds)
+    } else if (currentAccountId) {
+      entityQuery = entityQuery.eq('ad_account_id', currentAccountId)
+    }
+
+    const [{ data: adData, error }, { data: entityData }] = await Promise.all([
+      query.order('date_start', { ascending: false }),
+      entityQuery,
+    ])
+    console.log('[loadData] Supabase query took', Date.now() - startTime, 'ms, got', adData?.length || 0, 'rows, entities:', entityData?.length || 0)
 
     let rows: CSVRow[] = []
 
@@ -1010,6 +1054,58 @@ export default function DashboardPage() {
         // Platform marker for display
         _platform: 'meta' as const,
       }))
+
+      // Merge in active/paused entities missing from the date-filtered results
+      if (entityData && entityData.length > 0) {
+        const existingAdIds = new Set(rows.map(r => r.ad_id))
+        const seenEntityIds = new Set<string>()
+        const activeStatuses = new Set(['ACTIVE', 'PAUSED'])
+        let merged = 0
+        for (const ent of entityData) {
+          if (!ent.ad_id || seenEntityIds.has(ent.ad_id) || existingAdIds.has(ent.ad_id)) continue
+          // Only include active/paused entities (skip DELETED, ARCHIVED, etc.)
+          const adStatus = (ent.status || '').toUpperCase()
+          const adsetStatus = (ent.adset_status || '').toUpperCase()
+          const campaignStatus = (ent.campaign_status || '').toUpperCase()
+          if (!activeStatuses.has(adStatus) && !activeStatuses.has(adsetStatus) && !activeStatuses.has(campaignStatus)) continue
+          seenEntityIds.add(ent.ad_id)
+          rows.push({
+            ad_account_id: ent.ad_account_id,
+            date_start: dateRange.since,
+            date_end: dateRange.until,
+            campaign_name: ent.campaign_name,
+            campaign_id: ent.campaign_id,
+            adset_name: ent.adset_name,
+            adset_id: ent.adset_id,
+            ad_name: ent.ad_name,
+            ad_id: ent.ad_id,
+            impressions: 0,
+            clicks: 0,
+            spend: 0,
+            purchases: 0,
+            revenue: 0,
+            results: 0,
+            result_value: null,
+            result_type: null,
+            status: ent.status,
+            adset_status: ent.adset_status,
+            campaign_status: ent.campaign_status,
+            creative_id: ent.creative_id,
+            thumbnail_url: ent.thumbnail_url,
+            image_url: ent.image_url,
+            media_type: ent.media_type,
+            media_hash: ent.media_hash,
+            storage_url: ent.storage_url,
+            campaign_daily_budget: ent.campaign_daily_budget,
+            campaign_lifetime_budget: ent.campaign_lifetime_budget,
+            adset_daily_budget: ent.adset_daily_budget,
+            adset_lifetime_budget: ent.adset_lifetime_budget,
+            _platform: 'meta' as const,
+          })
+          merged++
+        }
+        if (merged > 0) console.log(`[loadData] Merged ${merged} missing entities with zero metrics`)
+      }
 
       // Enrich with high-quality URLs from media_library
       try {
@@ -1096,7 +1192,29 @@ export default function DashboardPage() {
         googleQuery = googleQuery.eq('customer_id', currentAccountId)
       }
 
-      const { data: googleData, error: googleError } = await googleQuery.order('date_start', { ascending: false })
+      // Google entity query: fixed 30-day window for active/paused entities
+      const googleEntitySelect = 'ad_id, ad_name, ad_group_id, ad_group_name, campaign_id, campaign_name, ad_status, ad_group_status, campaign_status, campaign_budget, campaign_budget_resource_name, customer_id'
+      let googleEntityQuery = supabase
+        .from('google_ad_data')
+        .select(googleEntitySelect)
+        .eq('user_id', user.id)
+        .gte('date_start', formatDateLocal(entityStart))
+        .lte('date_start', formatDateLocal(entityEnd))
+        .order('date_start', { ascending: false })
+
+      if (workspaceAccountIds.length > 0) {
+        const googleAccounts = workspaceAccountIds.filter(id => !id.startsWith('act_'))
+        if (googleAccounts.length > 0) {
+          googleEntityQuery = googleEntityQuery.in('customer_id', googleAccounts)
+        }
+      } else if (currentAccountId && !currentAccountId.startsWith('act_')) {
+        googleEntityQuery = googleEntityQuery.eq('customer_id', currentAccountId)
+      }
+
+      const [{ data: googleData, error: googleError }, { data: googleEntityData }] = await Promise.all([
+        googleQuery.order('date_start', { ascending: false }),
+        googleEntityQuery,
+      ])
 
       if (googleData && !googleError) {
         const googleRows = googleData.map(row => ({
@@ -1133,9 +1251,70 @@ export default function DashboardPage() {
         }))
         rows = [...rows, ...googleRows]
       }
+
+      // Merge missing Google entities with zero metrics
+      if (googleEntityData && googleEntityData.length > 0) {
+        const existingAdIds = new Set(rows.map(r => r.ad_id))
+        const seenEntityIds = new Set<string>()
+        const activeStatuses = new Set(['ACTIVE', 'PAUSED', 'ENABLED'])
+        let merged = 0
+        for (const ent of googleEntityData) {
+          if (!ent.ad_id || seenEntityIds.has(ent.ad_id) || existingAdIds.has(ent.ad_id)) continue
+          const adStatus = (ent.ad_status || '').toUpperCase()
+          const adGroupStatus = (ent.ad_group_status || '').toUpperCase()
+          const campaignStatus = (ent.campaign_status || '').toUpperCase()
+          if (!activeStatuses.has(adStatus) && !activeStatuses.has(adGroupStatus) && !activeStatuses.has(campaignStatus)) continue
+          seenEntityIds.add(ent.ad_id)
+          rows.push({
+            ad_account_id: ent.customer_id,
+            date_start: dateRange.since,
+            date_end: dateRange.until,
+            campaign_name: ent.campaign_name,
+            campaign_id: ent.campaign_id,
+            adset_name: ent.ad_group_name,
+            adset_id: ent.ad_group_id,
+            ad_name: ent.ad_name,
+            ad_id: ent.ad_id,
+            impressions: 0,
+            clicks: 0,
+            spend: 0,
+            purchases: 0,
+            revenue: 0,
+            results: 0,
+            result_value: null,
+            result_type: null,
+            status: ent.ad_status,
+            adset_status: ent.ad_group_status,
+            campaign_status: ent.campaign_status,
+            campaign_daily_budget: ent.campaign_budget,
+            campaign_lifetime_budget: null,
+            adset_daily_budget: null,
+            adset_lifetime_budget: null,
+            _platform: 'google' as const,
+            campaign_budget_resource_name: ent.campaign_budget_resource_name,
+          })
+          merged++
+        }
+        if (merged > 0) console.log(`[loadData] Merged ${merged} missing Google entities with zero metrics`)
+      }
     }
 
     setData(rows)
+
+    // Update cache so the cache-check useEffect doesn't overwrite with stale data.
+    // Previously only loadDataAndCache updated the cache — loadData did not, which meant
+    // stale sessionStorage data could overwrite fresh Supabase reads.
+    const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
+    const cacheEntry: CacheEntry = {
+      data: rows,
+      datePreset,
+      customStartDate,
+      customEndDate,
+      fetchedAt: Date.now()
+    }
+    dataCache.set(cacheKey, cacheEntry)
+    saveToSessionCache(cacheKey, cacheEntry)
+
     // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
     // This ensures selection is always for the currently selected account
     setHasLoadedOnce(true)
@@ -1167,7 +1346,36 @@ export default function DashboardPage() {
       query = query.eq('ad_account_id', accountId)
     }
 
-    const { data: adData, error } = await query.order('date_start', { ascending: false })
+    // Entity query: fixed 30-day window to find all active/paused entities (metadata only)
+    const entitySelect = 'ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name, status, adset_status, campaign_status, campaign_daily_budget, campaign_lifetime_budget, adset_daily_budget, adset_lifetime_budget, creative_id, thumbnail_url, image_url, media_type, media_hash, storage_url, ad_account_id'
+    const entityEnd = new Date()
+    const entityStart = new Date()
+    entityStart.setDate(entityStart.getDate() - 29)
+    const formatDateLocal = (d: Date) => {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    let entityQuery = supabase
+      .from('ad_data')
+      .select(entitySelect)
+      .eq('user_id', user.id)
+      .gte('date_start', formatDateLocal(entityStart))
+      .lte('date_start', formatDateLocal(entityEnd))
+      .order('date_start', { ascending: false })
+
+    if (wsAccountIds.length > 0) {
+      entityQuery = entityQuery.in('ad_account_id', wsAccountIds)
+    } else if (accountId) {
+      entityQuery = entityQuery.eq('ad_account_id', accountId)
+    }
+
+    const [{ data: adData, error }, { data: entityData }] = await Promise.all([
+      query.order('date_start', { ascending: false }),
+      entityQuery,
+    ])
 
     let rows: CSVRow[] = []
 
@@ -1208,6 +1416,57 @@ export default function DashboardPage() {
         // Platform marker for display
         _platform: 'meta' as const,
       }))
+
+      // Merge in active/paused entities missing from the date-filtered results
+      if (entityData && entityData.length > 0) {
+        const existingAdIds = new Set(rows.map(r => r.ad_id))
+        const seenEntityIds = new Set<string>()
+        const activeStatuses = new Set(['ACTIVE', 'PAUSED'])
+        let merged = 0
+        for (const ent of entityData) {
+          if (!ent.ad_id || seenEntityIds.has(ent.ad_id) || existingAdIds.has(ent.ad_id)) continue
+          const adStatus = (ent.status || '').toUpperCase()
+          const adsetStatus = (ent.adset_status || '').toUpperCase()
+          const campaignStatus = (ent.campaign_status || '').toUpperCase()
+          if (!activeStatuses.has(adStatus) && !activeStatuses.has(adsetStatus) && !activeStatuses.has(campaignStatus)) continue
+          seenEntityIds.add(ent.ad_id)
+          rows.push({
+            ad_account_id: ent.ad_account_id,
+            date_start: dateRange.since,
+            date_end: dateRange.until,
+            campaign_name: ent.campaign_name,
+            campaign_id: ent.campaign_id,
+            adset_name: ent.adset_name,
+            adset_id: ent.adset_id,
+            ad_name: ent.ad_name,
+            ad_id: ent.ad_id,
+            impressions: 0,
+            clicks: 0,
+            spend: 0,
+            purchases: 0,
+            revenue: 0,
+            results: 0,
+            result_value: null,
+            result_type: null,
+            status: ent.status,
+            adset_status: ent.adset_status,
+            campaign_status: ent.campaign_status,
+            creative_id: ent.creative_id,
+            thumbnail_url: ent.thumbnail_url,
+            image_url: ent.image_url,
+            media_type: ent.media_type,
+            media_hash: ent.media_hash,
+            storage_url: ent.storage_url,
+            campaign_daily_budget: ent.campaign_daily_budget,
+            campaign_lifetime_budget: ent.campaign_lifetime_budget,
+            adset_daily_budget: ent.adset_daily_budget,
+            adset_lifetime_budget: ent.adset_lifetime_budget,
+            _platform: 'meta' as const,
+          })
+          merged++
+        }
+        if (merged > 0) console.log(`[loadDataAndCache] Merged ${merged} missing entities with zero metrics`)
+      }
 
       // Enrich with high-quality URLs from media_library
       try {
@@ -1280,7 +1539,29 @@ export default function DashboardPage() {
         googleQuery = googleQuery.eq('customer_id', accountId)
       }
 
-      const { data: googleData, error: googleError } = await googleQuery.order('date_start', { ascending: false })
+      // Google entity query: fixed 30-day window for active/paused entities
+      const googleEntitySelect = 'ad_id, ad_name, ad_group_id, ad_group_name, campaign_id, campaign_name, ad_status, ad_group_status, campaign_status, campaign_budget, campaign_budget_resource_name, customer_id'
+      let googleEntityQuery = supabase
+        .from('google_ad_data')
+        .select(googleEntitySelect)
+        .eq('user_id', user.id)
+        .gte('date_start', formatDateLocal(entityStart))
+        .lte('date_start', formatDateLocal(entityEnd))
+        .order('date_start', { ascending: false })
+
+      if (wsAccountIds.length > 0) {
+        const googleAccounts = wsAccountIds.filter(id => !id.startsWith('act_'))
+        if (googleAccounts.length > 0) {
+          googleEntityQuery = googleEntityQuery.in('customer_id', googleAccounts)
+        }
+      } else if (accountId && !accountId.startsWith('act_')) {
+        googleEntityQuery = googleEntityQuery.eq('customer_id', accountId)
+      }
+
+      const [{ data: googleData, error: googleError }, { data: googleEntityData }] = await Promise.all([
+        googleQuery.order('date_start', { ascending: false }),
+        googleEntityQuery,
+      ])
 
       if (googleData && !googleError) {
         const googleRows = googleData.map(row => ({
@@ -1312,6 +1593,52 @@ export default function DashboardPage() {
           campaign_budget_resource_name: row.campaign_budget_resource_name,
         }))
         rows = [...rows, ...googleRows]
+      }
+
+      // Merge missing Google entities with zero metrics
+      if (googleEntityData && googleEntityData.length > 0) {
+        const existingAdIds = new Set(rows.map(r => r.ad_id))
+        const seenEntityIds = new Set<string>()
+        const activeStatuses = new Set(['ACTIVE', 'PAUSED', 'ENABLED'])
+        let merged = 0
+        for (const ent of googleEntityData) {
+          if (!ent.ad_id || seenEntityIds.has(ent.ad_id) || existingAdIds.has(ent.ad_id)) continue
+          const adStatus = (ent.ad_status || '').toUpperCase()
+          const adGroupStatus = (ent.ad_group_status || '').toUpperCase()
+          const campaignStatus = (ent.campaign_status || '').toUpperCase()
+          if (!activeStatuses.has(adStatus) && !activeStatuses.has(adGroupStatus) && !activeStatuses.has(campaignStatus)) continue
+          seenEntityIds.add(ent.ad_id)
+          rows.push({
+            ad_account_id: ent.customer_id,
+            date_start: dateRange.since,
+            date_end: dateRange.until,
+            campaign_name: ent.campaign_name,
+            campaign_id: ent.campaign_id,
+            adset_name: ent.ad_group_name,
+            adset_id: ent.ad_group_id,
+            ad_name: ent.ad_name,
+            ad_id: ent.ad_id,
+            impressions: 0,
+            clicks: 0,
+            spend: 0,
+            purchases: 0,
+            revenue: 0,
+            results: 0,
+            result_value: null,
+            result_type: null,
+            status: ent.ad_status,
+            adset_status: ent.ad_group_status,
+            campaign_status: ent.campaign_status,
+            campaign_daily_budget: ent.campaign_budget,
+            campaign_lifetime_budget: null,
+            adset_daily_budget: null,
+            adset_lifetime_budget: null,
+            _platform: 'google' as const,
+            campaign_budget_resource_name: ent.campaign_budget_resource_name,
+          })
+          merged++
+        }
+        if (merged > 0) console.log(`[loadDataAndCache] Merged ${merged} missing Google entities with zero metrics`)
       }
     }
 
@@ -1446,6 +1773,14 @@ export default function DashboardPage() {
       const result = await response.json()
 
       if (response.ok) {
+        // Entity refresh AFTER sync (bypass cooldown) to re-apply latest metadata.
+        // The sync fetches entity data at the start, but if user changed a budget/status
+        // during the sync, the sync's stale metadata overwrites it. Running refresh after
+        // ensures the DB has the latest values from Meta.
+        if (!isGoogle) {
+          await refreshEntities(accountId, true)
+        }
+
         // Silent refresh - don't show loading spinner, preserves table state
         const newData = await loadDataAndCache(accountId)
         setLastSyncTime(new Date())
@@ -1560,6 +1895,62 @@ export default function DashboardPage() {
       await handleSyncWorkspace()
     } else if (selectedAccountId) {
       await handleSyncAccount(selectedAccountId)
+    }
+  }
+
+  // Lightweight entity refresh — fetches only metadata (names, statuses, budgets, creatives)
+  // from Meta via a single Batch API call. No insights. Runs silently in the background.
+  const refreshEntities = async (accountId: string, bypassCooldown = false) => {
+    if (!user) return
+    // Skip Google accounts
+    if (isGoogleAccount(accountId)) return
+    // Guard against concurrent calls
+    if (isRefreshingEntitiesRef.current) return
+    // Check cooldown (unless bypassed by Sync button)
+    if (!bypassCooldown) {
+      const timeSinceLastRefresh = Date.now() - lastEntityRefreshRef.current
+      if (timeSinceLastRefresh < ENTITY_REFRESH_COOLDOWN_MS && lastEntityRefreshRef.current > 0) {
+        console.log(`[EntityRefresh] Cooldown active - ${Math.ceil((ENTITY_REFRESH_COOLDOWN_MS - timeSinceLastRefresh) / 1000)}s remaining`)
+        return
+      }
+    }
+
+    isRefreshingEntitiesRef.current = true
+    lastEntityRefreshRef.current = Date.now()
+    console.log('[EntityRefresh] Starting for account:', accountId)
+
+    try {
+      const response = await fetch('/api/meta/refresh-entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, adAccountId: accountId }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('[EntityRefresh] Result:', result)
+
+        // Clear cache so the next data load reads fresh values from DB
+        const cacheKey = getCacheKey(accountId, [])
+        dataCache.delete(cacheKey)
+        if (workspaceAccountIds.length > 0) {
+          dataCache.delete(getCacheKey(null, workspaceAccountIds))
+        }
+
+        // Silently reload data from DB so the user sees updated budgets/statuses.
+        // handleBudgetChange uses direct setData() (not loadData), so no conflict
+        // with the isLoadingData concurrency guard.
+        if (result.hasChanges) {
+          await loadData(false)
+        }
+      } else {
+        const err = await response.json().catch(() => ({}))
+        console.error('[EntityRefresh] Failed:', err.error || response.status)
+      }
+    } catch (err) {
+      console.error('[EntityRefresh] Error:', err)
+    } finally {
+      isRefreshingEntitiesRef.current = false
     }
   }
 
@@ -1693,8 +2084,33 @@ export default function DashboardPage() {
       throw new Error(result.error || 'Failed to update budget')
     }
 
-    // Refresh data to reflect the change
-    await loadData(false)
+    // Instantly update local state — no DB round-trip needed since we know the new values.
+    // This can't be blocked by isLoadingData concurrency guard (unlike loadData).
+    setData(prev => {
+      const updated = prev.map(row => {
+        if (entityType === 'campaign' && row.campaign_id === entityId) {
+          return {
+            ...row,
+            campaign_daily_budget: budgetType === 'daily' ? newBudget : null,
+            campaign_lifetime_budget: budgetType === 'lifetime' ? newBudget : null,
+          }
+        }
+        if (entityType === 'adset' && row.adset_id === entityId) {
+          return {
+            ...row,
+            adset_daily_budget: budgetType === 'daily' ? newBudget : null,
+            adset_lifetime_budget: budgetType === 'lifetime' ? newBudget : null,
+          }
+        }
+        return row
+      })
+      // Also update cache with the new data so cache-check useEffect doesn't overwrite
+      const cacheKey = getCacheKey(currentAccountId, workspaceAccountIds)
+      const cacheEntry: CacheEntry = { data: updated, datePreset, customStartDate, customEndDate, fetchedAt: Date.now() }
+      dataCache.set(cacheKey, cacheEntry)
+      saveToSessionCache(cacheKey, cacheEntry)
+      return updated
+    })
   }
 
   // Row action handlers
@@ -2246,13 +2662,12 @@ export default function DashboardPage() {
       // Campaign limit filter
       if (!visibleCampaigns.includes(row.campaign_name)) return false
 
-      // Paused filter
+      // Paused filter — check for direct PAUSED and inherited statuses (CAMPAIGN_PAUSED, ADSET_PAUSED)
       if (!includePaused) {
-        const isPaused =
-          row.status?.toUpperCase() === 'PAUSED' ||
-          row.adset_status?.toUpperCase() === 'PAUSED' ||
-          row.campaign_status?.toUpperCase() === 'PAUSED'
-        if (isPaused) return false
+        const s = row.status?.toUpperCase() || ''
+        const as = row.adset_status?.toUpperCase() || ''
+        const cs = row.campaign_status?.toUpperCase() || ''
+        if (s.includes('PAUSED') || as.includes('PAUSED') || cs.includes('PAUSED')) return false
       }
 
       return true
@@ -3453,7 +3868,10 @@ export default function DashboardPage() {
               console.warn('[Dashboard] Hydrate failed:', err)
             }
 
-            loadData()
+            // Force-clear the concurrency guard so loadData runs even if
+            // a background entity refresh is still in progress
+            isLoadingData.current = false
+            await loadData(false)
           }}
         />
       )}

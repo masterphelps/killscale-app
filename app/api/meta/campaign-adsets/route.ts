@@ -34,9 +34,21 @@ export async function GET(request: NextRequest) {
 
     const accessToken = connection.access_token
 
-    // Fetch adsets with targeting from Meta
+    // Fetch campaign budget info to determine CBO vs ABO
+    const campaignRes = await fetch(
+      `${META_GRAPH_URL}/${campaignId}?fields=daily_budget,lifetime_budget&access_token=${accessToken}`
+    )
+    const campaignData = await campaignRes.json()
+
+    const campaignBudget = {
+      dailyBudget: campaignData.daily_budget ? parseInt(campaignData.daily_budget) / 100 : null,
+      lifetimeBudget: campaignData.lifetime_budget ? parseInt(campaignData.lifetime_budget) / 100 : null,
+      isCBO: !!(campaignData.daily_budget || campaignData.lifetime_budget),
+    }
+
+    // Fetch adsets with targeting and budgets from Meta
     const adsetsRes = await fetch(
-      `${META_GRAPH_URL}/${campaignId}/adsets?fields=id,name,targeting&limit=100&access_token=${accessToken}`
+      `${META_GRAPH_URL}/${campaignId}/adsets?fields=id,name,targeting,daily_budget,lifetime_budget&limit=100&access_token=${accessToken}`
     )
     const adsetsData = await adsetsRes.json()
 
@@ -49,10 +61,12 @@ export async function GET(request: NextRequest) {
     const adsets = (adsetsData.data || []).map((adset: any) => ({
       id: adset.id,
       name: adset.name,
-      targeting: adset.targeting || {}
+      targeting: adset.targeting || {},
+      dailyBudget: adset.daily_budget ? parseInt(adset.daily_budget) / 100 : null,
+      lifetimeBudget: adset.lifetime_budget ? parseInt(adset.lifetime_budget) / 100 : null,
     }))
 
-    return NextResponse.json({ adsets })
+    return NextResponse.json({ adsets, campaignBudget })
 
   } catch (err) {
     console.error('Campaign adsets error:', err)

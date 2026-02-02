@@ -327,7 +327,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
   data.forEach(row => {
     // Use account-qualified keys to prevent collisions across accounts in workspace view
     const campaignKey = `${row.ad_account_id}::${row.campaign_name}`
-    const adsetKey = `${row.ad_account_id}::${row.adset_name}`
+    // Include campaign_name in adset key — different campaigns can have adsets with identical names
+    // but different budgets/statuses (e.g. "Walk and Talk" under Retargeting-2 vs Retargeting-3)
+    const adsetKey = `${row.ad_account_id}::${row.campaign_name}::${row.adset_name}`
 
     // Capture statuses and IDs from the first row we see for each entity
     if (row.campaign_status && !campaignStatuses[campaignKey]) {
@@ -504,8 +506,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       ad.manualRevenue = row._manualRevenue
       ad.manualCount = row._manualCount || 0
     }
-    // Keep the status from any row (they should all be the same for a given ad)
-    if (row.status) ad.status = row.status
+    // Keep status from the first (most recent) row only — don't overwrite with older rows
+    // After an append sync, older rows may have stale status values
+    if (row.status && !ad.status) ad.status = row.status
 
     adset.impressions += row.impressions
     adset.clicks += row.clicks
@@ -535,7 +538,7 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       
       // Use the direct adset_status from Meta API if available
       // This is the adset's OWN status, not derived from children
-      const adsetLookupKey = `${adset.accountId}::${adset.name}`
+      const adsetLookupKey = `${adset.accountId}::${campaign.name}::${adset.name}`
       const directStatus = adsetStatuses[adsetLookupKey]
       if (directStatus) {
         adset.status = directStatus

@@ -61,6 +61,14 @@ interface CampaignAdset {
     age_max?: number
     flexible_spec?: Array<{ interests?: Array<{ id: string; name: string }>; behaviors?: Array<{ id: string; name: string }> }>
   }
+  dailyBudget: number | null
+  lifetimeBudget: number | null
+}
+
+interface CampaignBudgetInfo {
+  dailyBudget: number | null
+  lifetimeBudget: number | null
+  isCBO: boolean
 }
 
 function summarizeTargeting(targeting: CampaignAdset['targeting']): string {
@@ -146,6 +154,11 @@ export function InlineDuplicateModal({
   const [loadingCampaignAdsets, setLoadingCampaignAdsets] = useState(false)
   const [expandedAdsetId, setExpandedAdsetId] = useState<string | null>(null)
 
+  // Campaign duplication: budget editing
+  const [campaignBudgetInfo, setCampaignBudgetInfo] = useState<CampaignBudgetInfo | null>(null)
+  const [newCampaignBudget, setNewCampaignBudget] = useState<string>('')
+  const [adsetBudgets, setAdsetBudgets] = useState<Record<string, string>>({})
+
   // For adset targeting search within expanded adset
   const [adsetLocationQuery, setAdsetLocationQuery] = useState('')
   const [adsetLocationResults, setAdsetLocationResults] = useState<LocationResult[]>([])
@@ -207,6 +220,11 @@ export function InlineDuplicateModal({
       setAdsetTargetingQuery('')
       setAdsetTargetingResults([])
 
+      // Reset budget states
+      setCampaignBudgetInfo(null)
+      setNewCampaignBudget('')
+      setAdsetBudgets({})
+
       // Reset ad copy states
       setAdCopy({ primaryText: '', headline: '', description: '', hasChanges: false })
       setShowAdCopy(false)
@@ -238,6 +256,24 @@ export function InlineDuplicateModal({
       const data = await res.json()
       if (data.adsets) {
         setCampaignAdsets(data.adsets)
+
+        // Store campaign budget info
+        if (data.campaignBudget) {
+          setCampaignBudgetInfo(data.campaignBudget)
+          if (data.campaignBudget.isCBO && data.campaignBudget.dailyBudget) {
+            setNewCampaignBudget(String(data.campaignBudget.dailyBudget))
+          }
+        }
+
+        // Initialize per-adset budgets (for ABO)
+        const budgets: Record<string, string> = {}
+        for (const adset of data.adsets) {
+          if (adset.dailyBudget) {
+            budgets[adset.id] = String(adset.dailyBudget)
+          }
+        }
+        setAdsetBudgets(budgets)
+
         // Initialize targeting states for each adset
         setAdsetTargetingStates(data.adsets.map((adset: CampaignAdset) => ({
           adsetId: adset.id,
@@ -449,6 +485,17 @@ export function InlineDuplicateModal({
               }
             }))
 
+          // Build budget overrides
+          const campaignBudgetOverride = campaignBudgetInfo?.isCBO && newCampaignBudget
+            ? parseFloat(newCampaignBudget)
+            : undefined
+
+          const adsetBudgetOverridesList = !campaignBudgetInfo?.isCBO
+            ? Object.entries(adsetBudgets)
+                .filter(([, val]) => val && parseFloat(val) > 0)
+                .map(([adsetId, val]) => ({ sourceAdsetId: adsetId, dailyBudget: parseFloat(val) }))
+            : undefined
+
           response = await fetch('/api/meta/duplicate-campaign', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -458,7 +505,9 @@ export function InlineDuplicateModal({
               sourceCampaignId: itemId,
               newName: newName.trim(),
               copyStatus,
-              adsetTargetingOverrides: adsetTargetingOverrides.length > 0 ? adsetTargetingOverrides : undefined
+              adsetTargetingOverrides: adsetTargetingOverrides.length > 0 ? adsetTargetingOverrides : undefined,
+              campaignBudgetOverride: campaignBudgetOverride || undefined,
+              adsetBudgetOverrides: adsetBudgetOverridesList && adsetBudgetOverridesList.length > 0 ? adsetBudgetOverridesList : undefined,
             })
           })
           break
@@ -839,6 +888,28 @@ export function InlineDuplicateModal({
             />
           </div>
 
+          {/* Campaign duplication: Budget */}
+          {itemType === 'campaign' && campaignBudgetInfo?.isCBO && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Campaign Daily Budget
+                <span className="text-xs text-zinc-500 font-normal ml-2">(CBO)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+                <input
+                  type="number"
+                  value={newCampaignBudget}
+                  onChange={(e) => setNewCampaignBudget(e.target.value)}
+                  min="1"
+                  step="1"
+                  className="w-full pl-7 pr-3 py-2 bg-bg-dark border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+                  placeholder="Daily budget..."
+                />
+              </div>
+            </div>
+          )}
+
           {/* Campaign duplication: Per-adset targeting */}
           {itemType === 'campaign' && (
             <div>
@@ -892,6 +963,25 @@ export function InlineDuplicateModal({
                           </span>
                         )}
                       </button>
+
+                      {/* ABO budget input */}
+                      {!campaignBudgetInfo?.isCBO && adsetBudgets[state.adsetId] !== undefined && (
+                        <div className="px-3 pb-2 flex items-center gap-2">
+                          <span className="text-xs text-zinc-500 whitespace-nowrap">Daily Budget:</span>
+                          <div className="relative flex-1 max-w-[140px]">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              value={adsetBudgets[state.adsetId] || ''}
+                              onChange={(e) => setAdsetBudgets(prev => ({ ...prev, [state.adsetId]: e.target.value }))}
+                              onClick={(e) => e.stopPropagation()}
+                              min="1"
+                              step="1"
+                              className="w-full pl-5 pr-2 py-1 bg-bg-dark border border-border rounded-md focus:outline-none focus:border-accent text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
 
                       {/* Expanded targeting editor */}
                       {expandedAdsetId === state.adsetId && (

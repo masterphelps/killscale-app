@@ -41,7 +41,8 @@ export async function POST(request: NextRequest) {
     }
 
     const accessToken = connection.access_token
-    const normalizedAccountId = adAccountId.replace(/^act_/, '')
+    const cleanAccountId = adAccountId.replace(/^act_/, '')
+    const normalizedAccountId = `act_${cleanAccountId}`
     const todayStr = new Date().toISOString().split('T')[0]
 
     // Collect all ads to insert as stub rows
@@ -96,10 +97,10 @@ export async function POST(request: NextRequest) {
             status: ad.status || 'PAUSED',
             adset_status: adset.status || 'PAUSED',
             campaign_status: campaign.status || 'PAUSED',
-            campaign_daily_budget: campaign.daily_budget ? Number(campaign.daily_budget) : null,
-            campaign_lifetime_budget: campaign.lifetime_budget ? Number(campaign.lifetime_budget) : null,
-            adset_daily_budget: adset.daily_budget ? Number(adset.daily_budget) : null,
-            adset_lifetime_budget: adset.lifetime_budget ? Number(adset.lifetime_budget) : null,
+            campaign_daily_budget: campaign.daily_budget ? Number(campaign.daily_budget) / 100 : null,
+            campaign_lifetime_budget: campaign.lifetime_budget ? Number(campaign.lifetime_budget) / 100 : null,
+            adset_daily_budget: adset.daily_budget ? Number(adset.daily_budget) / 100 : null,
+            adset_lifetime_budget: adset.lifetime_budget ? Number(adset.lifetime_budget) / 100 : null,
             creative_id: ad.creative?.id || null,
             thumbnail_url: ad.creative?.thumbnail_url || null,
             video_id: ad.creative?.video_id || null,
@@ -252,12 +253,13 @@ export async function POST(request: NextRequest) {
     }))
 
     // Delete any existing rows for these ads on today's date (idempotency)
+    // Handle both ad_account_id formats (with and without act_ prefix)
     const adIds = adsToInsert.map(a => a.ad_id)
     await supabase
       .from('ad_data')
       .delete()
       .eq('user_id', userId)
-      .eq('ad_account_id', normalizedAccountId)
+      .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
       .eq('date_start', todayStr)
       .in('ad_id', adIds)
 
