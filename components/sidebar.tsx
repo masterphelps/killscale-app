@@ -26,7 +26,14 @@ import {
   Building2,
   PanelLeftClose,
   PanelLeft,
-  Palette
+  Palette,
+  LayoutDashboard,
+  Zap,
+  Trophy,
+  FileText,
+  LayoutGrid,
+  Sparkles,
+  Wand2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -43,9 +50,11 @@ interface Workspace {
   account_count?: number
 }
 
-const navItems = [
+const navItemsTop = [
   { href: '/dashboard', label: 'Performance', icon: BarChart3, workspaceEnabled: true },
-  { href: '/dashboard/creative-studio', label: 'Creative Studio', icon: Palette, workspaceEnabled: false },
+]
+
+const navItemsBottom = [
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp, workspaceEnabled: false },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb, workspaceEnabled: false },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, workspaceEnabled: false },
@@ -56,6 +65,16 @@ const settingsItems = [
   { href: '/dashboard/settings/rules', label: 'Rules', icon: Scale },
   { href: '/dashboard/settings/accounts', label: 'Accounts', icon: Users },
   { href: '/dashboard/settings/workspaces', label: 'Workspaces', icon: Layers, proOnly: true },
+]
+
+const creativeStudioItems = [
+  { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/creative-studio/active', label: 'Active Ads', icon: Zap },
+  { href: '/dashboard/creative-studio/media', label: 'All Media', icon: LayoutGrid },
+  { href: '/dashboard/creative-studio/best-ads', label: 'Best Ads', icon: Trophy },
+  { href: '/dashboard/creative-studio/best-copy', label: 'Best Copy', icon: FileText },
+  { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles, proOnly: true },
+  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, proOnly: true, isNew: true },
 ]
 
 export function Sidebar() {
@@ -86,6 +105,12 @@ export function Sidebar() {
     }
     return false
   })
+  const [creativeStudioExpanded, setCreativeStudioExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.startsWith('/dashboard/creative-studio')
+    }
+    return false
+  })
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
 
   // Check if user is Scale+ (can see workspaces)
@@ -102,8 +127,16 @@ export function Sidebar() {
     }
   }, [pathname])
 
+  // Auto-expand creative studio when navigating to a creative studio page
+  useEffect(() => {
+    if (pathname?.startsWith('/dashboard/creative-studio')) {
+      setCreativeStudioExpanded(true)
+    }
+  }, [pathname])
+
   // Check if any settings page is active
   const isSettingsActive = pathname.startsWith('/dashboard/settings')
+  const isCreativeStudioActive = pathname?.startsWith('/dashboard/creative-studio')
 
   // Load alert count
   useEffect(() => {
@@ -225,12 +258,7 @@ export function Sidebar() {
       {!isCollapsed ? (
         <div className="flex items-center justify-between mb-6">
           <Link href="/dashboard" className="flex items-center gap-2 px-2">
-            <svg width="150" height="30" viewBox="0 0 280 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-            </svg>
+            <img src="/logo-white.png" alt="KillScale" className="h-8" />
           </Link>
           <button
             onClick={toggleSidebar}
@@ -243,11 +271,7 @@ export function Sidebar() {
       ) : (
         <div className="flex flex-col items-center gap-2 mb-6">
           <Link href="/dashboard" className="flex items-center justify-center">
-            <svg width="32" height="32" viewBox="0 0 50 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <img src="/favicon.png" alt="KillScale" className="w-8 h-8" />
           </Link>
           <button
             onClick={toggleSidebar}
@@ -435,13 +459,136 @@ export function Sidebar() {
             Menu
           </div>
         )}
-        {navItems.map((item) => {
+
+        {/* Performance Dashboard */}
+        {navItemsTop.map((item) => {
+          const Icon = item.icon
+          const isActive = pathname === item.href
+          const isDisabled = viewMode === 'workspace' && !item.workspaceEnabled
+
+          if (isDisabled) {
+            return (
+              <div
+                key={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg text-sm cursor-not-allowed relative',
+                  isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+                  'text-zinc-600'
+                )}
+                title={isCollapsed ? `${item.label} (not available for workspaces)` : 'Switch to an ad account to use this feature'}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              </div>
+            )
+          }
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
+                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+                isActive
+                  ? 'bg-accent text-white'
+                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+              )}
+              title={isCollapsed ? item.label : undefined}
+            >
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1">{item.label}</span>}
+            </Link>
+          )
+        })}
+
+        {/* Creative Studio - Expandable (right under Performance) */}
+        {viewMode === 'workspace' ? (
+          <div
+            className={cn(
+              'flex items-center gap-3 rounded-lg text-sm cursor-not-allowed relative',
+              isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+              'text-zinc-600'
+            )}
+            title={isCollapsed ? 'Creative Studio (not available for workspaces)' : 'Switch to an ad account to use this feature'}
+          >
+            <Palette className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && <span className="flex-1">Creative Studio</span>}
+          </div>
+        ) : isCollapsed ? (
+          <Link
+            href="/dashboard/creative-studio"
+            className={cn(
+              'flex items-center gap-3 rounded-lg text-sm transition-colors relative justify-center p-3',
+              isCreativeStudioActive
+                ? 'bg-accent text-white'
+                : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+            )}
+            title="Creative Studio"
+          >
+            <Palette className="w-5 h-5 flex-shrink-0" />
+          </Link>
+        ) : (
+          <div>
+            <button
+              onClick={() => setCreativeStudioExpanded(!creativeStudioExpanded)}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                isCreativeStudioActive
+                  ? 'bg-accent/20 text-white'
+                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+              )}
+            >
+              <Palette className="w-5 h-5" />
+              <span className="flex-1 text-left">Creative Studio</span>
+              <ChevronRight className={cn(
+                "w-4 h-4 transition-transform",
+                creativeStudioExpanded && "rotate-90"
+              )} />
+            </button>
+
+            {creativeStudioExpanded && (
+              <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
+                {creativeStudioItems.map((item) => {
+                  // Skip Pro-only items for non-Pro users
+                  if (item.proOnly && !isProPlus) return null
+
+                  const Icon = item.icon
+                  const isActive = pathname === item.href
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors',
+                        isActive
+                          ? 'bg-accent text-white'
+                          : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                      {item.isNew && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded">
+                          NEW
+                        </span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Trends, Insights, Alerts */}
+        {navItemsBottom.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
           const isAlerts = item.href === '/dashboard/alerts'
           const isDisabled = viewMode === 'workspace' && !item.workspaceEnabled
 
-          // Render disabled item (non-clickable) when in workspace mode
           if (isDisabled) {
             return (
               <div
