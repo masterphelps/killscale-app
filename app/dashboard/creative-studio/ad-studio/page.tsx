@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, Image as ImageIcon, AlertCircle } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, Image as ImageIcon, AlertCircle, Link as LinkIcon, Package, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -24,6 +24,17 @@ interface AdLibraryAd {
   publisher_platforms?: string[]
 }
 
+interface ProductInfo {
+  name: string
+  description?: string
+  price?: string
+  currency?: string
+  features?: string[]
+  brand?: string
+  category?: string
+  uniqueSellingPoint?: string
+}
+
 interface GeneratedAd {
   headline: string
   primaryText: string
@@ -39,24 +50,59 @@ export default function AdStudioPage() {
 
   const isPro = plan === 'Scale' || plan === 'Pro'
 
-  // Search state
+  // Step tracking
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
+
+  // Step 1: Product URL
+  const [productUrl, setProductUrl] = useState('')
+  const [isAnalyzingProduct, setIsAnalyzingProduct] = useState(false)
+  const [productInfo, setProductInfo] = useState<ProductInfo | null>(null)
+  const [productError, setProductError] = useState<string | null>(null)
+
+  // Step 2: Competitor search
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<AdLibraryAd[]>([])
   const [searchError, setSearchError] = useState<string | null>(null)
-
-  // Selected ad for analysis
   const [selectedAd, setSelectedAd] = useState<AdLibraryAd | null>(null)
 
-  // Generation state
+  // Step 3: Generation
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedAds, setGeneratedAds] = useState<GeneratedAd[]>([])
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
-  // Product info for generation
-  const [productName, setProductName] = useState('')
-  const [productDescription, setProductDescription] = useState('')
+  // Step 1: Analyze product URL
+  const handleAnalyzeProduct = useCallback(async () => {
+    if (!productUrl.trim()) return
 
+    setIsAnalyzingProduct(true)
+    setProductError(null)
+    setProductInfo(null)
+
+    try {
+      const res = await fetch('/api/creative-studio/analyze-product-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: productUrl }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setProductError(data.error || 'Failed to analyze product')
+        return
+      }
+
+      setProductInfo(data.product)
+      setCurrentStep(2)
+    } catch (err) {
+      setProductError('Failed to analyze product URL')
+    } finally {
+      setIsAnalyzingProduct(false)
+    }
+  }, [productUrl])
+
+  // Step 2: Search competitors
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
 
@@ -81,8 +127,14 @@ export default function AdStudioPage() {
     }
   }, [searchQuery])
 
+  const handleSelectAd = useCallback((ad: AdLibraryAd) => {
+    setSelectedAd(ad)
+    setCurrentStep(3)
+  }, [])
+
+  // Step 3: Generate
   const handleGenerate = useCallback(async () => {
-    if (!selectedAd || !productName.trim()) return
+    if (!selectedAd || !productInfo) return
 
     setIsGenerating(true)
     setGeneratedAds([])
@@ -98,8 +150,7 @@ export default function AdStudioPage() {
             headlines: selectedAd.ad_creative_link_titles,
             descriptions: selectedAd.ad_creative_link_descriptions,
           },
-          productName,
-          productDescription,
+          product: productInfo,
         }),
       })
 
@@ -115,13 +166,26 @@ export default function AdStudioPage() {
     } finally {
       setIsGenerating(false)
     }
-  }, [selectedAd, productName, productDescription])
+  }, [selectedAd, productInfo])
 
   const copyToClipboard = (ad: GeneratedAd, index: number) => {
     const text = `Headline: ${ad.headline}\n\nPrimary Text: ${ad.primaryText}\n\nDescription: ${ad.description}`
     navigator.clipboard.writeText(text)
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
+  }
+
+  const resetToStep = (step: 1 | 2 | 3) => {
+    if (step === 1) {
+      setProductInfo(null)
+      setSearchResults([])
+      setSelectedAd(null)
+      setGeneratedAds([])
+    } else if (step === 2) {
+      setSelectedAd(null)
+      setGeneratedAds([])
+    }
+    setCurrentStep(step)
   }
 
   // Not Pro - show upgrade prompt
@@ -149,7 +213,7 @@ export default function AdStudioPage() {
   return (
     <div className="min-h-screen pb-24">
       <div className="px-4 lg:px-8 py-6 space-y-6">
-        <div className="max-w-[1200px] mx-auto space-y-6">
+        <div className="max-w-[1000px] mx-auto space-y-6">
           {/* Header */}
           <div>
             <div className="flex items-center gap-2">
@@ -159,178 +223,315 @@ export default function AdStudioPage() {
               </span>
             </div>
             <p className="text-zinc-500 mt-1">
-              Search competitor ads in Meta Ad Library and generate winning ad copy
+              Generate winning ads by combining your product with competitor strategies
             </p>
           </div>
 
-          {/* Search Section */}
-          <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Search className="w-5 h-5 text-zinc-400" />
-              Search Competitor Ads
-            </h2>
-
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="Enter competitor name or keyword..."
-                className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
-              />
-              <button
-                onClick={handleSearch}
-                disabled={isSearching || !searchQuery.trim()}
-                className={cn(
-                  'px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2',
-                  'bg-accent hover:bg-accent-hover text-white',
-                  (isSearching || !searchQuery.trim()) && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                {isSearching ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4" />
-                )}
-                Search
-              </button>
+          {/* Progress Steps */}
+          <div className="flex items-center gap-2 text-sm">
+            <button
+              onClick={() => resetToStep(1)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors',
+                currentStep >= 1 ? 'text-white' : 'text-zinc-500',
+                productInfo && 'bg-emerald-500/20 text-emerald-400'
+              )}
+            >
+              <span className={cn(
+                'w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold',
+                productInfo ? 'bg-emerald-500 text-white' : currentStep === 1 ? 'bg-accent text-white' : 'bg-zinc-700'
+              )}>
+                {productInfo ? '✓' : '1'}
+              </span>
+              Your Product
+            </button>
+            <ChevronRight className="w-4 h-4 text-zinc-600" />
+            <button
+              onClick={() => productInfo && resetToStep(2)}
+              disabled={!productInfo}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors',
+                currentStep >= 2 ? 'text-white' : 'text-zinc-500',
+                selectedAd && 'bg-emerald-500/20 text-emerald-400',
+                !productInfo && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <span className={cn(
+                'w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold',
+                selectedAd ? 'bg-emerald-500 text-white' : currentStep === 2 ? 'bg-accent text-white' : 'bg-zinc-700'
+              )}>
+                {selectedAd ? '✓' : '2'}
+              </span>
+              Competitor Ad
+            </button>
+            <ChevronRight className="w-4 h-4 text-zinc-600" />
+            <div className={cn(
+              'flex items-center gap-2 px-3 py-1.5 rounded-lg',
+              currentStep === 3 ? 'text-white' : 'text-zinc-500'
+            )}>
+              <span className={cn(
+                'w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold',
+                generatedAds.length > 0 ? 'bg-emerald-500 text-white' : currentStep === 3 ? 'bg-accent text-white' : 'bg-zinc-700'
+              )}>
+                {generatedAds.length > 0 ? '✓' : '3'}
+              </span>
+              Generate
             </div>
-
-            {searchError && (
-              <div className="flex items-center gap-2 text-red-400 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                {searchError}
-              </div>
-            )}
-
-            {/* Search Results */}
-            {searchResults.length > 0 && (
-              <div className="space-y-3 pt-4">
-                <div className="text-sm text-zinc-500">{searchResults.length} ads found</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {searchResults.map((ad) => (
-                    <button
-                      key={ad.id}
-                      onClick={() => setSelectedAd(ad)}
-                      className={cn(
-                        'text-left bg-bg-dark border rounded-xl p-4 transition-all hover:border-accent/50',
-                        selectedAd?.id === ad.id ? 'border-accent ring-1 ring-accent' : 'border-border'
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                          <ImageIcon className="w-6 h-6 text-zinc-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-white truncate">{ad.page_name}</div>
-                          <div className="text-xs text-zinc-500 mt-1">
-                            Started {new Date(ad.ad_delivery_start_time).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </div>
-                      {ad.ad_creative_bodies?.[0] && (
-                        <p className="text-sm text-zinc-400 mt-3 line-clamp-3">
-                          {ad.ad_creative_bodies[0]}
-                        </p>
-                      )}
-                      <a
-                        href={ad.ad_snapshot_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 text-xs text-accent hover:underline mt-3"
-                      >
-                        View in Ad Library <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Generation Section */}
-          {selectedAd && (
+          {/* Step 1: Product URL */}
+          {currentStep === 1 && (
             <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Wand2 className="w-5 h-5 text-emerald-400" />
-                Generate Ad Copy
+                <LinkIcon className="w-5 h-5 text-accent" />
+                Enter Your Product URL
               </h2>
+              <p className="text-sm text-zinc-400">
+                Paste a link to your product page. We'll extract the product details automatically.
+              </p>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Selected Ad Preview */}
-                <div className="bg-bg-dark border border-border rounded-xl p-4">
-                  <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Inspiration Ad</div>
-                  <div className="font-medium text-white">{selectedAd.page_name}</div>
-                  {selectedAd.ad_creative_link_titles?.[0] && (
-                    <div className="text-sm text-zinc-300 mt-2 font-medium">
-                      {selectedAd.ad_creative_link_titles[0]}
-                    </div>
+              <div className="flex gap-3">
+                <input
+                  type="url"
+                  value={productUrl}
+                  onChange={(e) => setProductUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeProduct()}
+                  placeholder="https://yourstore.com/products/awesome-product"
+                  className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
+                />
+                <button
+                  onClick={handleAnalyzeProduct}
+                  disabled={isAnalyzingProduct || !productUrl.trim()}
+                  className={cn(
+                    'px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2',
+                    'bg-accent hover:bg-accent-hover text-white',
+                    (isAnalyzingProduct || !productUrl.trim()) && 'opacity-50 cursor-not-allowed'
                   )}
-                  {selectedAd.ad_creative_bodies?.[0] && (
-                    <p className="text-sm text-zinc-400 mt-2">
-                      {selectedAd.ad_creative_bodies[0]}
-                    </p>
+                >
+                  {isAnalyzingProduct ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
                   )}
-                </div>
-
-                {/* Product Info Form */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                      Your Product Name
-                    </label>
-                    <input
-                      type="text"
-                      value={productName}
-                      onChange={(e) => setProductName(e.target.value)}
-                      placeholder="e.g., AcmeFit Resistance Bands"
-                      className="w-full bg-bg-dark border border-border rounded-lg px-4 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                      Product Description (optional)
-                    </label>
-                    <textarea
-                      value={productDescription}
-                      onChange={(e) => setProductDescription(e.target.value)}
-                      placeholder="Brief description of your product and its key benefits..."
-                      rows={3}
-                      className="w-full bg-bg-dark border border-border rounded-lg px-4 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent resize-none"
-                    />
-                  </div>
-                  <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !productName.trim()}
-                    className={cn(
-                      'w-full px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
-                      'bg-emerald-500 hover:bg-emerald-600 text-white',
-                      (isGenerating || !productName.trim()) && 'opacity-50 cursor-not-allowed'
-                    )}
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        Generate Ad Variations
-                      </>
-                    )}
-                  </button>
-                </div>
+                  Analyze
+                </button>
               </div>
+
+              {productError && (
+                <div className="flex items-center gap-2 text-red-400 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {productError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Product Info Card (shows after step 1) */}
+          {productInfo && (
+            <div className="bg-bg-card border border-emerald-500/30 rounded-xl p-5">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                    <Package className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">{productInfo.name}</h3>
+                    {productInfo.brand && productInfo.brand !== productInfo.name && (
+                      <div className="text-sm text-zinc-400">by {productInfo.brand}</div>
+                    )}
+                    {productInfo.description && (
+                      <p className="text-sm text-zinc-400 mt-1">{productInfo.description}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {productInfo.price && (
+                        <span className="px-2 py-0.5 text-xs bg-emerald-500/20 text-emerald-400 rounded">
+                          {productInfo.currency || '$'}{productInfo.price}
+                        </span>
+                      )}
+                      {productInfo.category && (
+                        <span className="px-2 py-0.5 text-xs bg-zinc-700 text-zinc-300 rounded">
+                          {productInfo.category}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => resetToStep(1)}
+                  className="text-xs text-zinc-500 hover:text-white"
+                >
+                  Change
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Competitor Search */}
+          {currentStep === 2 && (
+            <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Search className="w-5 h-5 text-accent" />
+                Find Competitor Ads
+              </h2>
+              <p className="text-sm text-zinc-400">
+                Search Meta Ad Library for competitor ads to use as inspiration.
+              </p>
+
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  placeholder="Enter competitor name (e.g., Nike, Glossier, Casper)"
+                  className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
+                />
+                <button
+                  onClick={handleSearch}
+                  disabled={isSearching || !searchQuery.trim()}
+                  className={cn(
+                    'px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2',
+                    'bg-accent hover:bg-accent-hover text-white',
+                    (isSearching || !searchQuery.trim()) && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {isSearching ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                  Search
+                </button>
+              </div>
+
+              {searchError && (
+                <div className="flex items-center gap-2 text-red-400 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {searchError}
+                </div>
+              )}
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div className="space-y-3 pt-4">
+                  <div className="text-sm text-zinc-500">{searchResults.length} ads found — click one to use as inspiration</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {searchResults.map((ad) => (
+                      <button
+                        key={ad.id}
+                        onClick={() => handleSelectAd(ad)}
+                        className="text-left bg-bg-dark border border-border rounded-xl p-4 transition-all hover:border-accent/50 hover:bg-bg-dark/80"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                            <ImageIcon className="w-5 h-5 text-zinc-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-white truncate">{ad.page_name}</div>
+                            <div className="text-xs text-zinc-500 mt-0.5">
+                              Running since {new Date(ad.ad_delivery_start_time).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                        {ad.ad_creative_bodies?.[0] && (
+                          <p className="text-sm text-zinc-400 mt-3 line-clamp-3">
+                            {ad.ad_creative_bodies[0]}
+                          </p>
+                        )}
+                        <div className="flex items-center justify-between mt-3">
+                          <a
+                            href={ad.ad_snapshot_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                          >
+                            View full ad <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <span className="text-xs text-emerald-400 font-medium">
+                            Select →
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Selected Ad Card (shows after step 2) */}
+          {selectedAd && currentStep === 3 && (
+            <div className="bg-bg-card border border-border rounded-xl p-5">
+              <div className="flex items-start justify-between mb-3">
+                <h3 className="text-sm font-medium text-zinc-400">Inspiration Ad</h3>
+                <button
+                  onClick={() => resetToStep(2)}
+                  className="text-xs text-zinc-500 hover:text-white"
+                >
+                  Change
+                </button>
+              </div>
+              <div className="font-medium text-white">{selectedAd.page_name}</div>
+              {selectedAd.ad_creative_link_titles?.[0] && (
+                <div className="text-sm text-zinc-300 mt-1 font-medium">
+                  "{selectedAd.ad_creative_link_titles[0]}"
+                </div>
+              )}
+              {selectedAd.ad_creative_bodies?.[0] && (
+                <p className="text-sm text-zinc-500 mt-2 line-clamp-2">
+                  {selectedAd.ad_creative_bodies[0]}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Generate */}
+          {currentStep === 3 && !generatedAds.length && (
+            <div className="bg-bg-card border border-border rounded-xl p-6 text-center">
+              <Wand2 className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+              <h2 className="text-lg font-semibold text-white mb-2">Ready to Generate</h2>
+              <p className="text-sm text-zinc-400 mb-6 max-w-md mx-auto">
+                We'll analyze the competitor's ad strategy and create 4 unique ad variations for your product.
+              </p>
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className={cn(
+                  'px-8 py-3 rounded-lg font-medium transition-colors inline-flex items-center gap-2',
+                  'bg-emerald-500 hover:bg-emerald-600 text-white',
+                  isGenerating && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Generate Ad Variations
+                  </>
+                )}
+              </button>
             </div>
           )}
 
           {/* Generated Results */}
           {generatedAds.length > 0 && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Generated Ad Copy</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">Your Generated Ads</h2>
+                <button
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className="text-sm text-accent hover:underline flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Regenerate
+                </button>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {generatedAds.map((ad, index) => (
                   <div
@@ -338,11 +539,9 @@ export default function AdStudioPage() {
                     className="bg-bg-card border border-border rounded-xl p-5 space-y-4"
                   >
                     <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-xs font-semibold text-accent uppercase tracking-wider">
-                          {ad.angle}
-                        </span>
-                      </div>
+                      <span className="px-2 py-0.5 text-xs font-semibold bg-accent/20 text-accent rounded">
+                        {ad.angle}
+                      </span>
                       <button
                         onClick={() => copyToClipboard(ad, index)}
                         className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
@@ -357,7 +556,7 @@ export default function AdStudioPage() {
 
                     <div>
                       <div className="text-xs text-zinc-500 mb-1">Headline</div>
-                      <div className="text-white font-medium">{ad.headline}</div>
+                      <div className="text-white font-semibold">{ad.headline}</div>
                     </div>
 
                     <div>
@@ -371,26 +570,22 @@ export default function AdStudioPage() {
                     </div>
 
                     <div className="pt-3 border-t border-border">
-                      <div className="text-xs text-zinc-500 mb-1">Why it works</div>
-                      <div className="text-zinc-500 text-sm italic">{ad.whyItWorks}</div>
+                      <div className="text-xs text-emerald-400 mb-1">💡 Why it works</div>
+                      <div className="text-zinc-500 text-sm">{ad.whyItWorks}</div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
 
-          {/* Empty State */}
-          {!selectedAd && searchResults.length === 0 && !isSearching && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center mb-6">
-                <Search className="w-10 h-10 text-zinc-600" />
+              {/* Start Over */}
+              <div className="text-center pt-4">
+                <button
+                  onClick={() => resetToStep(1)}
+                  className="text-sm text-zinc-500 hover:text-white"
+                >
+                  Start over with a different product
+                </button>
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">Search for competitor ads</h3>
-              <p className="text-sm text-zinc-500 max-w-md">
-                Enter a competitor's brand name or keyword to find their ads in Meta Ad Library.
-                Then generate winning ad copy inspired by what's working.
-              </p>
             </div>
           )}
         </div>

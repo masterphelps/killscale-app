@@ -1,9 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
 
 interface CompetitorAd {
   pageName: string
@@ -12,18 +7,36 @@ interface CompetitorAd {
   descriptions?: string[]
 }
 
+interface ProductInfo {
+  name: string
+  description?: string
+  price?: string
+  currency?: string
+  features?: string[]
+  brand?: string
+  category?: string
+  uniqueSellingPoint?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { competitorAd, productName, productDescription } = body as {
+    const { competitorAd, product, productName, productDescription } = body as {
       competitorAd: CompetitorAd
-      productName: string
+      product?: ProductInfo
+      productName?: string
       productDescription?: string
     }
 
-    if (!competitorAd || !productName) {
+    // Support both new product object and legacy name/description
+    const finalProduct = product || {
+      name: productName || '',
+      description: productDescription,
+    }
+
+    if (!competitorAd || !finalProduct.name) {
       return NextResponse.json(
-        { error: 'Missing required fields: competitorAd, productName' },
+        { error: 'Missing required fields: competitorAd, product' },
         { status: 400 }
       )
     }
@@ -34,16 +47,26 @@ export async function POST(request: NextRequest) {
       competitorAd.descriptions?.[0],
     ].filter(Boolean).join('\n\n')
 
+    // Build rich product context
+    const productContext = [
+      `Name: ${finalProduct.name}`,
+      finalProduct.brand && finalProduct.brand !== finalProduct.name ? `Brand: ${finalProduct.brand}` : null,
+      finalProduct.description ? `Description: ${finalProduct.description}` : null,
+      finalProduct.price ? `Price: ${finalProduct.currency || '$'}${finalProduct.price}` : null,
+      finalProduct.category ? `Category: ${finalProduct.category}` : null,
+      finalProduct.uniqueSellingPoint ? `Unique Selling Point: ${finalProduct.uniqueSellingPoint}` : null,
+      finalProduct.features?.length ? `Key Features:\n${finalProduct.features.map(f => `- ${f}`).join('\n')}` : null,
+    ].filter(Boolean).join('\n')
+
     const prompt = `You are an expert Facebook/Instagram ad copywriter. Analyze this competitor ad and create new ad copy variations for a different product.
 
 COMPETITOR AD (from ${competitorAd.pageName}):
 ${competitorCopy}
 
 MY PRODUCT:
-Name: ${productName}
-${productDescription ? `Description: ${productDescription}` : ''}
+${productContext}
 
-Generate 4 unique ad copy variations inspired by the competitor's approach but for MY product. Each variation should use a different angle/hook.
+Generate 4 unique ad copy variations inspired by the competitor's approach but for MY product. Each variation should use a different angle/hook. Use the specific product details, features, and price point in the copy where relevant.
 
 For each variation, provide:
 1. angle: A 2-3 word description of the angle (e.g., "Social Proof", "FOMO/Urgency", "Problem-Solution", "Testimonial Style")
@@ -56,31 +79,48 @@ Respond ONLY with a valid JSON array of 4 objects with these exact fields: angle
 
 Do not include any other text, markdown, or explanation - just the JSON array.`
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [
-        { role: 'user', content: prompt }
-      ],
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+      })
     })
 
-    const content = response.content[0]
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type')
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error('Anthropic API error:', errorData)
+      return NextResponse.json({ error: 'AI service unavailable' }, { status: 500 })
     }
+
+    const result = await response.json()
+
+    if (!result.content || !result.content[0]) {
+      return NextResponse.json({ error: 'Empty response from AI' }, { status: 500 })
+    }
+
+    const content = result.content[0].text
 
     // Parse the JSON response
     let ads
     try {
       // Try to extract JSON from the response (in case there's any wrapper text)
-      const jsonMatch = content.text.match(/\[[\s\S]*\]/)
+      const jsonMatch = content.match(/\[[\s\S]*\]/)
       if (jsonMatch) {
         ads = JSON.parse(jsonMatch[0])
       } else {
-        ads = JSON.parse(content.text)
+        ads = JSON.parse(content)
       }
     } catch (parseError) {
-      console.error('Failed to parse AI response:', content.text)
+      console.error('Failed to parse AI response:', content)
       throw new Error('Failed to parse generated ads')
     }
 
