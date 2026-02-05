@@ -25,13 +25,16 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Search by page name for better results
     const params = new URLSearchParams({
       access_token: accessToken,
       search_terms: query,
+      search_page_ids: '', // Will be empty for text search
       ad_type: 'ALL',
       ad_reached_countries: "['US']",
-      fields: 'id,page_name,page_id,ad_snapshot_url,ad_creative_bodies,ad_creative_link_titles,ad_creative_link_descriptions,ad_delivery_start_time,ad_delivery_stop_time,currency,spend,impressions,publisher_platforms',
-      limit: '25',
+      ad_active_status: 'ACTIVE', // Only active ads
+      fields: 'id,page_name,page_id,ad_snapshot_url,ad_creative_bodies,ad_creative_link_titles,ad_creative_link_descriptions,ad_creative_link_captions,ad_delivery_start_time,ad_delivery_stop_time,currency,spend,impressions,publisher_platforms,byline,languages',
+      limit: '100', // Get up to 100 results
     })
 
     const res = await fetch(`${META_AD_LIBRARY_URL}?${params}`)
