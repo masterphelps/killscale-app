@@ -9,7 +9,7 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { base64, mimeType, adAccountId, name, userId } = await request.json()
+    const { base64, mimeType, adAccountId, name, userId, saveToLibrary = true } = await request.json()
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
@@ -23,6 +23,49 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanAccountId = adAccountId.replace(/^act_/, '')
+    const imageName = name || `AI Generated - ${new Date().toLocaleDateString()}`
+
+    // Convert base64 to buffer
+    const fileBuffer = Buffer.from(base64, 'base64')
+
+    // Determine extension from mimeType
+    let ext = 'png'
+    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg'
+    else if (mimeType.includes('webp')) ext = 'webp'
+
+    // ─── Storage-only mode: just persist to Supabase for AI Tasks ─────────────
+    if (!saveToLibrary) {
+      const tempId = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      const storagePath = `${userId}/${cleanAccountId}/generated/${tempId}.${ext}`
+
+      const { error: uploadError } = await supabase
+        .storage
+        .from('media')
+        .upload(storagePath, fileBuffer, {
+          contentType: mimeType,
+          upsert: true,
+        })
+
+      if (uploadError) {
+        console.error('[SaveGeneratedImage] Supabase upload error:', uploadError)
+        return NextResponse.json({ error: 'Failed to upload to storage' }, { status: 500 })
+      }
+
+      const { data: publicUrlData } = supabase
+        .storage
+        .from('media')
+        .getPublicUrl(storagePath)
+
+      console.log('[SaveGeneratedImage] Stored to Supabase only (not in media library)')
+
+      return NextResponse.json({
+        success: true,
+        storageUrl: publicUrlData?.publicUrl || null,
+        storagePath,
+      })
+    }
+
+    // ─── Full save mode: Meta upload + Supabase + media_library ───────────────
 
     // Get user's Meta connection for upload
     const { data: connection, error: connError } = await supabase
@@ -39,9 +82,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Meta token expired, please reconnect' }, { status: 401 })
     }
 
-    // ─── Step 1: Upload to Meta to get real image hash ─────────────────────────
-    const imageName = name || `AI Generated - ${new Date().toLocaleDateString()}`
-
+    // Step 1: Upload to Meta to get real image hash
     const metaFormData = new FormData()
     metaFormData.append('access_token', connection.access_token)
     metaFormData.append('bytes', base64)
@@ -78,20 +119,9 @@ export async function POST(request: NextRequest) {
     const metaHash = imageData.hash
     console.log('[SaveGeneratedImage] Uploaded to Meta with hash:', metaHash)
 
-    // ─── Step 2: Upload to Supabase Storage for local access ───────────────────
-
-    // Determine extension from mimeType
-    let ext = 'png'
-    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg'
-    else if (mimeType.includes('webp')) ext = 'webp'
-
-    // Storage path uses Meta's hash for consistency
+    // Step 2: Upload to Supabase Storage for local access
     const storagePath = `${userId}/${cleanAccountId}/generated/${metaHash}.${ext}`
 
-    // Convert base64 to buffer
-    const fileBuffer = Buffer.from(base64, 'base64')
-
-    // Upload to Supabase Storage
     const { error: uploadError } = await supabase
       .storage
       .from('media')
@@ -102,11 +132,8 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error('[SaveGeneratedImage] Supabase upload error:', uploadError)
-      // Don't fail - Meta upload succeeded, which is the critical part
-      // The image will work for ads, just won't have local storage backup
     }
 
-    // Get the public URL
     const { data: publicUrlData } = supabase
       .storage
       .from('media')
@@ -114,16 +141,15 @@ export async function POST(request: NextRequest) {
 
     const storageUrl = publicUrlData?.publicUrl || null
 
-    // ─── Step 3: Insert into media_library with Meta's real hash ───────────────
-
+    // Step 3: Insert into media_library with Meta's real hash
     const { data: mediaRow, error: insertError } = await supabase
       .from('media_library')
       .insert({
         user_id: userId,
         ad_account_id: cleanAccountId,
-        media_hash: metaHash, // Use Meta's real hash!
+        media_hash: metaHash,
         media_type: 'image',
-        url: imageData.url || storageUrl, // Prefer Meta's URL if available
+        url: imageData.url || storageUrl,
         storage_path: storagePath,
         storage_url: storageUrl,
         download_status: 'complete',
@@ -135,16 +161,14 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('[SaveGeneratedImage] Insert error:', insertError)
-      // Don't fail - Meta upload succeeded, which is the critical part
-      // The image will work for ads, just won't show in Creative Studio
     }
 
-    console.log('[SaveGeneratedImage] Saved image with Meta hash:', metaHash)
+    console.log('[SaveGeneratedImage] Saved image to library with Meta hash:', metaHash)
 
     return NextResponse.json({
       success: true,
       mediaId: mediaRow?.id,
-      mediaHash: metaHash, // Return Meta's real hash
+      mediaHash: metaHash,
       storageUrl,
     })
   } catch (err) {

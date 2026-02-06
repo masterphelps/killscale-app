@@ -26,6 +26,7 @@ import {
   Copy,
   Check,
   X,
+  FileText,
   Wand2,
   Package,
   ImagePlus,
@@ -651,6 +652,10 @@ function AdSessionDetailPanel({
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
+  // Save copy state
+  const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
+  const [savedCopyIds, setSavedCopyIds] = useState<Record<number, boolean>>({})
+
   // Image generation state - stores array of versions per ad
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null)
   const [generatedImages, setGeneratedImages] = useState<Record<number, GeneratedImage[]>>({})
@@ -739,6 +744,36 @@ function AdSessionDetailPanel({
     setTimeout(() => setCopiedIndex(null), 2000)
   }
 
+  const handleSaveCopy = useCallback(async (ad: AdStudioSession['generated_ads'][0], index: number) => {
+    if (!user?.id || !currentAccountId) return
+    if (savedCopyIds[index]) return
+
+    setSavingCopyIndex(index)
+    try {
+      const res = await fetch('/api/creative-studio/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          headline: ad.headline,
+          primaryText: ad.primaryText,
+          description: ad.description,
+          angle: ad.angle,
+          sessionId: session.id,
+        }),
+      })
+
+      if (res.ok) {
+        setSavedCopyIds(prev => ({ ...prev, [index]: true }))
+      }
+    } catch (err) {
+      console.error('Failed to save copy:', err)
+    } finally {
+      setSavingCopyIndex(null)
+    }
+  }, [user?.id, currentAccountId, savedCopyIds, session.id])
+
   // Generate image for an ad
   const handleGenerateImage = useCallback(async (ad: AdStudioSession['generated_ads'][0], index: number) => {
     if (!session.product_info || !user?.id || !currentAccountId) return
@@ -779,7 +814,7 @@ function AdSessionDetailPanel({
         mimeType: data.image.mimeType,
       }
 
-      // 2. Upload to storage to get a persistent URL
+      // 2. Upload to storage for persistence (NOT to media library)
       const saveRes = await fetch('/api/creative-studio/save-generated-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -789,6 +824,7 @@ function AdSessionDetailPanel({
           adAccountId: currentAccountId,
           name: `AI Ad - ${ad.angle} - ${session.id}`,
           userId: user.id,
+          saveToLibrary: false,
         }),
       })
 
@@ -872,7 +908,7 @@ function AdSessionDetailPanel({
         mimeType: data.image.mimeType,
       }
 
-      // Upload to storage
+      // Upload to storage for persistence (NOT to media library)
       const saveRes = await fetch('/api/creative-studio/save-generated-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -882,6 +918,7 @@ function AdSessionDetailPanel({
           adAccountId: currentAccountId,
           name: `AI Ad Adjusted - ${session.id}`,
           userId: user.id,
+          saveToLibrary: false,
         }),
       })
 
@@ -934,7 +971,7 @@ function AdSessionDetailPanel({
     setCurrentImageVersion(prev => ({ ...prev, [adIndex]: newVersion }))
   }
 
-  // Save image to media library
+  // Save image to media library (explicit user action - uploads to Meta + media_library)
   const handleSaveToLibrary = useCallback(async (adIndex: number, ad: AdStudioSession['generated_ads'][0]) => {
     if (!currentAccountId || !user?.id) return
 
@@ -946,15 +983,14 @@ function AdSessionDetailPanel({
     const saveKey = `${adIndex}-${versionIndex}`
     if (savedToLibrary[saveKey]) return
 
-    // If already has storageUrl and mediaHash, it's already saved
-    if (image.storageUrl && image.mediaHash) {
+    // If already has mediaHash, it was already saved to Meta/library
+    if (image.mediaHash) {
       setSavedToLibrary(prev => ({ ...prev, [saveKey]: true }))
       return
     }
 
-    // Need base64 to save
     if (!image.base64) {
-      setImageErrors(prev => ({ ...prev, [adIndex]: 'Image already saved' }))
+      setImageErrors(prev => ({ ...prev, [adIndex]: 'Image data not available - please regenerate' }))
       return
     }
 
@@ -970,6 +1006,7 @@ function AdSessionDetailPanel({
           adAccountId: currentAccountId,
           name: `AI Ad - ${ad.angle} - ${new Date().toLocaleDateString()}`,
           userId: user.id,
+          saveToLibrary: true,
         }),
       })
 
@@ -978,6 +1015,15 @@ function AdSessionDetailPanel({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to save')
       }
+
+      // Update image with Meta hash so Create Ad can use it
+      setGeneratedImages(prev => {
+        const imgs = [...(prev[adIndex] || [])]
+        if (imgs[versionIndex]) {
+          imgs[versionIndex] = { ...imgs[versionIndex], mediaHash: data.mediaHash, storageUrl: data.storageUrl }
+        }
+        return { ...prev, [adIndex]: imgs }
+      })
 
       setSavedToLibrary(prev => ({ ...prev, [saveKey]: true }))
     } catch (err) {
@@ -1004,7 +1050,7 @@ function AdSessionDetailPanel({
     document.body.removeChild(link)
   }
 
-  // Create ad - use existing or save to library first, then open wizard
+  // Create ad - save to library first (needs Meta hash), then open wizard
   const handleCreateAd = useCallback(async (adIndex: number, ad: AdStudioSession['generated_ads'][0]) => {
     if (!currentAccountId || !user?.id) return
 
@@ -1019,12 +1065,12 @@ function AdSessionDetailPanel({
       let storageUrl: string
       let mediaHash: string
 
-      // If image already has storageUrl and mediaHash (loaded from session), use them
-      if (image.storageUrl && image.mediaHash) {
+      // If already saved to library (has Meta hash), reuse it
+      if (image.mediaHash && image.storageUrl) {
         storageUrl = image.storageUrl
         mediaHash = image.mediaHash
       } else if (image.base64) {
-        // Otherwise upload the new image
+        // Upload to Meta + media library for ad creation
         const res = await fetch('/api/creative-studio/save-generated-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1034,6 +1080,7 @@ function AdSessionDetailPanel({
             adAccountId: currentAccountId,
             name: `AI Ad - ${ad.angle} - ${new Date().toLocaleDateString()}`,
             userId: user.id,
+            saveToLibrary: true,
           }),
         })
 
@@ -1046,7 +1093,7 @@ function AdSessionDetailPanel({
         const saveKey = `${adIndex}-${versionIndex}`
         setSavedToLibrary(prev => ({ ...prev, [saveKey]: true }))
       } else {
-        throw new Error('No image data available')
+        throw new Error('No image data available - please regenerate')
       }
 
       const creative: Creative = {
@@ -1180,17 +1227,38 @@ function AdSessionDetailPanel({
                   <span className="text-xs px-2 py-1 rounded-full bg-accent/20 text-accent font-semibold">
                     {ad.angle}
                   </span>
-                  <button
-                    onClick={() => copyToClipboard(ad, index)}
-                    className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
-                    title="Copy ad copy"
-                  >
-                    {copiedIndex === index ? (
-                      <Check className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleSaveCopy(ad, index)}
+                      disabled={savingCopyIndex === index || savedCopyIds[index]}
+                      className={cn(
+                        'p-2 rounded-lg transition-colors',
+                        savedCopyIds[index]
+                          ? 'text-emerald-400'
+                          : 'hover:bg-white/5 text-zinc-400 hover:text-white'
+                      )}
+                      title={savedCopyIds[index] ? 'Saved to Copy library' : 'Save to Copy library'}
+                    >
+                      {savingCopyIndex === index ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : savedCopyIds[index] ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        <FileText className="w-4 h-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(ad, index)}
+                      className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
+                      title="Copy ad copy"
+                    >
+                      {copiedIndex === index ? (
+                        <Check className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Headline */}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
-import { FileText, X, Copy, Check } from 'lucide-react'
+import { FileText, X, Copy, Check, Sparkles, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -30,11 +30,12 @@ const formatCurrency = (val: number) => {
 export default function BestCopyPage() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
-  const { copyVariations, isLoadingCopy } = useCreativeStudio()
+  const { copyVariations, isLoadingCopy, refresh } = useCreativeStudio()
 
   const [scoreField, setScoreField] = useState<ScoreField>('convertScore')
   const [selectedVariation, setSelectedVariation] = useState<CopyVariation | null>(null)
   const [copiedField, setCopiedField] = useState<'headline' | 'primaryText' | null>(null)
+  const [isDeletingSavedCopy, setIsDeletingSavedCopy] = useState(false)
 
   const [funnelThresholds, setFunnelThresholds] = useState<Record<FunnelStage, number | null>>({
     hook: null, hold: null, click: null, convert: null, scale: null,
@@ -105,11 +106,15 @@ export default function BestCopyPage() {
 
   const getCustomMetrics = useCallback((item: StudioAsset) => {
     const variation = filteredVariations.find(v => v.key === item.id)
-    return [
-      { label: 'Ads', value: `${variation?.adCount ?? item.adCount}` },
-      { label: 'ROAS', value: `${item.roas.toFixed(2)}x` },
-      { label: 'Spend', value: formatCurrency(item.spend) },
-    ]
+    const metrics = []
+    if (variation?.source === 'saved') {
+      metrics.push({ label: 'Source', value: 'AI Generated' })
+    } else {
+      metrics.push({ label: 'Ads', value: `${variation?.adCount ?? item.adCount}` })
+    }
+    metrics.push({ label: 'ROAS', value: `${item.roas.toFixed(2)}x` })
+    metrics.push({ label: 'Spend', value: formatCurrency(item.spend) })
+    return metrics
   }, [filteredVariations])
 
   const getTextContent = useCallback((item: StudioAsset) => {
@@ -131,6 +136,23 @@ export default function BestCopyPage() {
       console.error('Failed to copy:', err)
     }
   }, [])
+
+  const handleDeleteSavedCopy = useCallback(async (savedCopyId: string) => {
+    if (!user) return
+    setIsDeletingSavedCopy(true)
+    try {
+      const params = new URLSearchParams({ id: savedCopyId, userId: user.id })
+      const res = await fetch(`/api/creative-studio/copy?${params}`, { method: 'DELETE' })
+      if (res.ok) {
+        setSelectedVariation(null)
+        await refresh()
+      }
+    } catch (err) {
+      console.error('Failed to delete saved copy:', err)
+    } finally {
+      setIsDeletingSavedCopy(false)
+    }
+  }, [user, refresh])
 
   if (!user || !currentAccountId) {
     return <div className="min-h-screen flex items-center justify-center"><div className="text-zinc-500">Loading...</div></div>
@@ -204,13 +226,35 @@ export default function BestCopyPage() {
                 <div className="flex items-center gap-3">
                   <FileText className="w-5 h-5 text-accent" />
                   <h2 className="text-lg font-semibold text-white">Copy Details</h2>
+                  {selectedVariation.source === 'saved' && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 text-xs font-medium">
+                      <Sparkles className="w-3 h-3" />
+                      AI
+                    </span>
+                  )}
                 </div>
-                <button
-                  onClick={() => setSelectedVariation(null)}
-                  className="p-2 hover:bg-bg-hover rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5 text-zinc-400" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {selectedVariation.savedCopyId && (
+                    <button
+                      onClick={() => handleDeleteSavedCopy(selectedVariation.savedCopyId!)}
+                      disabled={isDeletingSavedCopy}
+                      className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-zinc-400 hover:text-red-400"
+                      title="Delete saved copy"
+                    >
+                      {isDeletingSavedCopy ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-5 h-5" />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedVariation(null)}
+                    className="p-2 hover:bg-bg-hover rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-zinc-400" />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
@@ -325,14 +369,27 @@ export default function BestCopyPage() {
 
                 {/* Status Badge */}
                 <div className="flex items-center gap-2">
-                  <span className={cn(
-                    'px-2 py-1 rounded-full text-xs font-medium',
-                    selectedVariation.isActive
-                      ? 'bg-green-500/20 text-green-400'
-                      : 'bg-zinc-500/20 text-zinc-400'
-                  )}>
-                    {selectedVariation.isActive ? 'Active' : 'Paused'}
-                  </span>
+                  {selectedVariation.source === 'saved' ? (
+                    <>
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400">
+                        AI Generated
+                      </span>
+                      {selectedVariation.angle && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-accent/20 text-accent">
+                          {selectedVariation.angle}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className={cn(
+                      'px-2 py-1 rounded-full text-xs font-medium',
+                      selectedVariation.isActive
+                        ? 'bg-green-500/20 text-green-400'
+                        : 'bg-zinc-500/20 text-zinc-400'
+                    )}>
+                      {selectedVariation.isActive ? 'Active' : 'Paused'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

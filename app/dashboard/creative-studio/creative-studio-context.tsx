@@ -72,6 +72,9 @@ export interface CopyVariation {
   holdScore: number | null
   clickScore: number | null
   convertScore: number | null
+  savedCopyId?: string
+  source?: 'ad_data' | 'saved'
+  angle?: string
 }
 
 export interface CreativeStudioContextValue {

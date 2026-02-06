@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -188,6 +188,10 @@ export default function AdStudioPage() {
     mediaHash?: string
     mimeType?: string
   }>>([])
+
+  // Save copy state
+  const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
+  const [savedCopyIds, setSavedCopyIds] = useState<Record<number, boolean>>({})
 
   // Save image to session for persistence
   const saveImageToSession = useCallback(async (
@@ -563,6 +567,36 @@ export default function AdStudioPage() {
     setTimeout(() => setCopiedIndex(null), 2000)
   }
 
+  const handleSaveCopy = useCallback(async (ad: GeneratedAd, index: number) => {
+    if (!user?.id || !currentAccountId) return
+    if (savedCopyIds[index]) return
+
+    setSavingCopyIndex(index)
+    try {
+      const res = await fetch('/api/creative-studio/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          headline: ad.headline,
+          primaryText: ad.primaryText,
+          description: ad.description,
+          angle: ad.angle,
+          sessionId: sessionId || undefined,
+        }),
+      })
+
+      if (res.ok) {
+        setSavedCopyIds(prev => ({ ...prev, [index]: true }))
+      }
+    } catch (err) {
+      console.error('Failed to save copy:', err)
+    } finally {
+      setSavingCopyIndex(null)
+    }
+  }, [user?.id, currentAccountId, savedCopyIds, sessionId])
+
   const handleGenerateImage = useCallback(async (ad: GeneratedAd, index: number) => {
     if (!productInfo || !user?.id || !currentAccountId) return
 
@@ -613,7 +647,7 @@ export default function AdStudioPage() {
       const existingImages = generatedImages[index] || []
       const versionIndex = existingImages.length
 
-      // Upload to Supabase Storage for persistence
+      // Upload to Supabase Storage for session persistence (NOT to media library)
       const saveRes = await fetch('/api/creative-studio/save-generated-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -623,6 +657,7 @@ export default function AdStudioPage() {
           adAccountId: currentAccountId,
           name: `AI Ad - ${ad.angle} - ${sessionId || 'new'}`,
           userId: user.id,
+          saveToLibrary: false,
         }),
       })
 
@@ -690,7 +725,7 @@ export default function AdStudioPage() {
       // Calculate version index for the new image
       const versionIndex = (generatedImages[adIndex] || []).length
 
-      // Upload adjusted image to Supabase Storage
+      // Upload adjusted image to Supabase Storage (NOT to media library)
       const saveRes = await fetch('/api/creative-studio/save-generated-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -700,6 +735,7 @@ export default function AdStudioPage() {
           adAccountId: currentAccountId,
           name: `AI Ad Adjusted - ${sessionId || 'new'}`,
           userId: user.id,
+          saveToLibrary: false,
         }),
       })
 
@@ -755,7 +791,7 @@ export default function AdStudioPage() {
     setCurrentImageVersion(prev => ({ ...prev, [adIndex]: newVersion }))
   }
 
-  // Save image to media library
+  // Save image to media library (explicit user action)
   const handleSaveToLibrary = useCallback(async (adIndex: number, ad: GeneratedAd) => {
     if (!currentAccountId || !user?.id) return
 
@@ -766,6 +802,11 @@ export default function AdStudioPage() {
 
     const saveKey = `${adIndex}-${versionIndex}`
     if (savedToLibrary[saveKey]) return // Already saved
+
+    if (!image.base64) {
+      setImageErrors(prev => ({ ...prev, [adIndex]: 'Image data not available - please regenerate' }))
+      return
+    }
 
     setSavingToLibrary(prev => ({ ...prev, [adIndex]: true }))
 
@@ -779,6 +820,7 @@ export default function AdStudioPage() {
           adAccountId: currentAccountId,
           name: `AI Ad - ${ad.angle} - ${new Date().toLocaleDateString()}`,
           userId: user.id,
+          saveToLibrary: true,
         }),
       })
 
@@ -787,6 +829,15 @@ export default function AdStudioPage() {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to save')
       }
+
+      // Update image with Meta hash so Create Ad can use it
+      setGeneratedImages(prev => {
+        const imgs = [...(prev[adIndex] || [])]
+        if (imgs[versionIndex]) {
+          imgs[versionIndex] = { ...imgs[versionIndex], mediaHash: data.mediaHash, storageUrl: data.storageUrl }
+        }
+        return { ...prev, [adIndex]: imgs }
+      })
 
       setSavedToLibrary(prev => ({ ...prev, [saveKey]: true }))
     } catch (err) {
@@ -818,14 +869,16 @@ export default function AdStudioPage() {
     setCreatingAd(prev => ({ ...prev, [adIndex]: true }))
 
     try {
-      // First save to library to get the storage URL and hash
       const saveKey = `${adIndex}-${versionIndex}`
       let storageUrl: string
       let imageHash: string
 
-      // Check if already saved
-      if (savedToLibrary[saveKey]) {
-        // Need to re-upload to get the URL, or we could track it - for simplicity, re-upload
+      // If already saved to library (has Meta hash), reuse it
+      if (image.mediaHash && image.storageUrl) {
+        storageUrl = image.storageUrl
+        imageHash = image.mediaHash
+      } else if (image.base64) {
+        // Upload to Meta + media library for ad creation
         const res = await fetch('/api/creative-studio/save-generated-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -835,23 +888,7 @@ export default function AdStudioPage() {
             adAccountId: currentAccountId,
             name: `AI Ad - ${ad.angle} - ${new Date().toLocaleDateString()}`,
             userId: user.id,
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Failed to save')
-        storageUrl = data.storageUrl
-        imageHash = data.mediaHash
-      } else {
-        // Save to library
-        const res = await fetch('/api/creative-studio/save-generated-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            base64: image.base64,
-            mimeType: image.mimeType,
-            adAccountId: currentAccountId,
-            name: `AI Ad - ${ad.angle} - ${new Date().toLocaleDateString()}`,
-            userId: user.id,
+            saveToLibrary: true,
           }),
         })
         const data = await res.json()
@@ -859,6 +896,8 @@ export default function AdStudioPage() {
         storageUrl = data.storageUrl
         imageHash = data.mediaHash
         setSavedToLibrary(prev => ({ ...prev, [saveKey]: true }))
+      } else {
+        throw new Error('No image data available')
       }
 
       // Set up wizard with pre-populated creative and copy
@@ -1985,17 +2024,38 @@ export default function AdStudioPage() {
                       <span className="px-2 py-0.5 text-xs font-semibold bg-accent/20 text-accent rounded">
                         {ad.angle}
                       </span>
-                      <button
-                        onClick={() => copyToClipboard(ad, index)}
-                        className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
-                        title="Copy ad copy"
-                      >
-                        {copiedIndex === index ? (
-                          <Check className="w-4 h-4 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleSaveCopy(ad, index)}
+                          disabled={savingCopyIndex === index || savedCopyIds[index]}
+                          className={cn(
+                            'p-2 rounded-lg transition-colors',
+                            savedCopyIds[index]
+                              ? 'text-emerald-400'
+                              : 'hover:bg-white/5 text-zinc-400 hover:text-white'
+                          )}
+                          title={savedCopyIds[index] ? 'Saved to Copy library' : 'Save to Copy library'}
+                        >
+                          {savingCopyIndex === index ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : savedCopyIds[index] ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <FileText className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => copyToClipboard(ad, index)}
+                          className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
+                          title="Copy ad copy"
+                        >
+                          {copiedIndex === index ? (
+                            <Check className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
 
                     <div>

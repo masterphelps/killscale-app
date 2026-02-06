@@ -493,6 +493,25 @@ CREATE TABLE ad_studio_sessions (
 
 **Why Meta upload is required:** AI-generated images saved only to Supabase have fake MD5 hashes. Meta requires real `imageHash` from their API to use images in ads. The save flow now uploads to Meta FIRST.
 
+### Saved Copy (Copy Library)
+Save AI-generated ad copy from Ad Studio / AI Tasks to the Copy library for reuse.
+
+**User Flow:**
+1. Generate ad copy in Ad Studio or AI Tasks
+2. Click FileText icon (Save Copy) on any ad copy card → saves to `saved_copy` table
+3. Navigate to Creative Suite > Copy → saved copy appears with "AI" badge and zero metrics
+4. Click saved copy → detail modal shows angle badge + delete button (trash icon)
+
+**Deduplication:** If saved copy's `primaryText|||headline` key matches an existing ad_data variation, only the ad_data version shows (with real metrics).
+
+**Key Files:**
+- `supabase/migrations/048_saved_copy.sql` - Table + RLS + index
+- `app/api/creative-studio/copy/route.ts` - GET (merged), POST (save), DELETE (remove)
+- `app/dashboard/creative-studio/best-copy/page.tsx` - AI badge, delete in modal
+- `app/dashboard/creative-studio/ad-studio/page.tsx` - Save Copy button per card
+- `app/dashboard/creative-studio/ai-tasks/page.tsx` - Save Copy button per card
+- `app/dashboard/creative-studio/creative-studio-context.tsx` - CopyVariation type extended
+
 ### AI-Powered Features
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
@@ -572,6 +591,7 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 - `uppromote_referrals` - Affiliate referral/commission data
 - `starred_ads` - Bookmarked ads for Performance Sets
 - `budget_changes` - Tracking for Andromeda-safe scaling
+- `saved_copy` - AI-generated ad copy saved from Ad Studio/AI Tasks
 
 **Views:**
 - `creative_star_counts` - Aggregates stars by creative (deduplication)
@@ -608,6 +628,21 @@ else → KILL
 ---
 
 ## Recent Fixes (January–February 2026)
+
+### Save Copy to Copy Library (Feb 6)
+**Status:** COMPLETE
+
+Added ability to save AI-generated ad copy from Ad Studio and AI Tasks to the Creative Suite Copy page. Saved copies appear with "AI" badge, zero metrics, and can be deleted from the detail modal. Deduplication ensures saved copies don't duplicate existing ad_data variations.
+
+**Files Created:**
+- `supabase/migrations/048_saved_copy.sql` - New table with RLS
+
+**Files Modified:**
+- `app/api/creative-studio/copy/route.ts` - Added POST, DELETE handlers; GET merges saved copies
+- `app/dashboard/creative-studio/creative-studio-context.tsx` - Extended CopyVariation type
+- `app/dashboard/creative-studio/best-copy/page.tsx` - AI badge, delete button in modal
+- `app/dashboard/creative-studio/ad-studio/page.tsx` - Save Copy button per ad card
+- `app/dashboard/creative-studio/ai-tasks/page.tsx` - Save Copy button per ad card
 
 ### Launch Wizard Hydration + Ad Studio Fixes (Feb 6)
 **Status:** COMPLETE

@@ -232,6 +232,9 @@ export async function GET(request: NextRequest) {
           holdScore: scores.holdScore,
           clickScore: scores.clickScore,
           convertScore: scores.convertScore,
+          savedCopyId: undefined as string | undefined,
+          source: 'ad_data' as 'ad_data' | 'saved',
+          angle: undefined as string | undefined,
         }
       })
       .sort((a, b) => {
@@ -241,11 +244,122 @@ export async function GET(request: NextRequest) {
         return b.adCount - a.adCount
       })
 
-    console.log(`[Copy API] ${rawData.length} raw rows -> ${adMap.size} ads -> ${copyMap.size} copy groups, ${variations.filter(v => v.spend > 0).length} with spend, top spend: $${variations[0]?.spend.toFixed(2) || 0}`)
+    // STEP 4: Merge saved copies (from saved_copy table)
+    const { data: savedCopies } = await supabase
+      .from('saved_copy')
+      .select('id, headline, primary_text, description, angle, source, session_id, created_at')
+      .eq('user_id', userId)
+      .eq('ad_account_id', adAccountId)
+      .order('created_at', { ascending: false })
+
+    if (savedCopies && savedCopies.length > 0) {
+      for (const sc of savedCopies) {
+        const key = `${sc.primary_text || ''}|||${sc.headline || ''}`
+
+        // Only add if not already present from ad_data
+        if (!copyMap.has(key)) {
+          variations.push({
+            key,
+            primaryText: sc.primary_text,
+            headline: sc.headline,
+            description: sc.description,
+            adCount: 0,
+            adNames: [],
+            isActive: false,
+            representativeThumbnail: null,
+            mediaType: null,
+            spend: 0,
+            revenue: 0,
+            impressions: 0,
+            clicks: 0,
+            roas: 0,
+            ctr: 0,
+            cpc: 0,
+            hookScore: null,
+            holdScore: null,
+            clickScore: null,
+            convertScore: null,
+            savedCopyId: sc.id,
+            source: 'saved' as const,
+            angle: sc.angle,
+          })
+        }
+      }
+    }
+
+    console.log(`[Copy API] ${rawData.length} raw rows -> ${adMap.size} ads -> ${copyMap.size} copy groups, ${savedCopies?.length || 0} saved copies, ${variations.filter(v => v.spend > 0).length} with spend, top spend: $${variations[0]?.spend.toFixed(2) || 0}`)
 
     return NextResponse.json({ variations })
   } catch (err) {
     console.error('Copy variations GET error:', err)
     return NextResponse.json({ error: 'Failed to fetch copy variations' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { userId, adAccountId, headline, primaryText, description, angle, sessionId } = body
+
+    if (!userId || !adAccountId) {
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
+    }
+
+    if (!headline && !primaryText) {
+      return NextResponse.json({ error: 'At least headline or primary text is required' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('saved_copy')
+      .insert({
+        user_id: userId,
+        ad_account_id: adAccountId,
+        headline: headline || null,
+        primary_text: primaryText || null,
+        description: description || null,
+        angle: angle || null,
+        source: 'ai_studio',
+        session_id: sessionId || null,
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      console.error('Error saving copy:', error)
+      return NextResponse.json({ error: 'Failed to save copy' }, { status: 500 })
+    }
+
+    return NextResponse.json({ id: data.id })
+  } catch (err) {
+    console.error('Copy POST error:', err)
+    return NextResponse.json({ error: 'Failed to save copy' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    const userId = searchParams.get('userId')
+
+    if (!id || !userId) {
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
+    }
+
+    const { error } = await supabase
+      .from('saved_copy')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Error deleting saved copy:', error)
+      return NextResponse.json({ error: 'Failed to delete' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('Copy DELETE error:', err)
+    return NextResponse.json({ error: 'Failed to delete copy' }, { status: 500 })
   }
 }
