@@ -111,8 +111,8 @@ export function Sidebar() {
   })
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
 
-  // Check if user is Scale+ (can see workspaces)
-  const isProPlus = plan === 'Scale' || plan === 'Pro'
+  // Check if user has Pro access (all paid users)
+  const isProPlus = ['Scale', 'Pro', 'pro', 'Launch', 'launch', 'scale'].includes(plan)
   console.log('Sidebar plan:', plan, 'isProPlus:', isProPlus)
 
   const rawUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
@@ -242,8 +242,11 @@ export function Sidebar() {
     router.push('/dashboard')
   }
 
-  const upgradeText = plan === 'Launch'
-    ? { title: 'Upgrade to Scale', subtitle: 'More ad accounts' }
+  // Show upgrade CTA for trial users or non-subscribers
+  const { subscription } = useSubscription()
+  const isTrialing = subscription?.status === 'trialing'
+  const upgradeText = isTrialing
+    ? { title: 'Activate Pro', subtitle: 'Keep your access' }
     : null
 
   return (
@@ -738,7 +741,7 @@ export function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium truncate">{userName}</div>
-            <div className="text-xs text-zinc-500">{plan} Plan</div>
+            <div className="text-xs text-zinc-500">{isTrialing ? 'Trial' : plan ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` : 'Free'}</div>
           </div>
         </Link>
       )}

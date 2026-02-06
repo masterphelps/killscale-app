@@ -78,10 +78,8 @@ type Usage = {
   adAccountCount: number
 }
 
-const PLAN_LIMITS: Record<string, { campaigns: number | null; adAccounts: number | null }> = {
-  Launch: { campaigns: null, adAccounts: 1 },
-  Scale: { campaigns: null, adAccounts: 2 },
-  Pro: { campaigns: null, adAccounts: null },
+const PLAN_LIMITS: Record<string, { campaigns: number | null; adAccounts: number }> = {
+  Pro: { campaigns: null, adAccounts: 3 },
 }
 
 export default function AccountPage() {
@@ -333,12 +331,10 @@ export default function AccountPage() {
   }
 
   const planFeatures: Record<string, string> = {
-    Launch: 'Meta API, 1 ad account, Campaign Launcher, Alerts',
-    Scale: 'First Party Pixel, Dynamic Attribution, 2 ad accounts, Workspaces',
-    Pro: 'Unlimited ad accounts, Workspace reporting, Priority support',
+    Pro: '3 ad accounts, 50 AI generations/mo, First-party pixel, Campaign Launcher',
   }
 
-  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.Launch
+  const limits = PLAN_LIMITS.Pro
 
   if (!user) {
     return (
@@ -353,7 +349,7 @@ export default function AccountPage() {
       {/* Navigation */}
       <nav className="border-b border-border">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          {['Launch', 'Scale', 'Pro'].includes(plan) ? (
+          {['Launch', 'Scale', 'Pro', 'pro'].includes(plan) ? (
             <Link href="/dashboard" className="flex items-center gap-2 text-zinc-400 hover:text-white">
               <ArrowLeft className="w-4 h-4" />
               Back to Dashboard
@@ -473,7 +469,7 @@ export default function AccountPage() {
                     <div className="flex items-center justify-between p-4 bg-bg-dark border border-border rounded-lg">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-white font-medium">{plan} Plan</span>
+                          <span className="text-white font-medium">Pro Plan</span>
                           {subscription?.status === 'trialing' && (
                             <span className="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded">Trial</span>
                           )}
@@ -484,7 +480,7 @@ export default function AccountPage() {
                           </div>
                         ) : (
                           <div className="text-sm text-zinc-500">
-                            {planFeatures[plan] || 'Basic features'}
+                            {planFeatures.Pro}
                           </div>
                         )}
                       </div>
@@ -514,7 +510,7 @@ export default function AccountPage() {
             </div>
 
             {/* Usage & Limits Section - Only for subscribers */}
-            {['Launch', 'Scale', 'Pro'].includes(plan) && (
+            {['Launch', 'Scale', 'Pro', 'pro'].includes(plan) && (
               <div className="bg-bg-card border border-border rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <BarChart3 className="w-5 h-5 text-accent" />
@@ -576,7 +572,7 @@ export default function AccountPage() {
             )}
 
             {/* Preferences Section - Only for subscribers */}
-            {['Launch', 'Scale', 'Pro'].includes(plan) && (
+            {['Launch', 'Scale', 'Pro', 'pro'].includes(plan) && (
               <div className="bg-bg-card border border-border rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <Settings className="w-5 h-5 text-accent" />
@@ -640,7 +636,7 @@ export default function AccountPage() {
             )}
 
             {/* Email & Notification Preferences Section - Only for subscribers */}
-            {['Launch', 'Scale', 'Pro'].includes(plan) && (
+            {['Launch', 'Scale', 'Pro', 'pro'].includes(plan) && (
               <div className="bg-bg-card border border-border rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <Bell className="w-5 h-5 text-accent" />
