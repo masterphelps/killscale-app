@@ -1059,11 +1059,12 @@ export default function DashboardPage() {
       if (entityData && entityData.length > 0) {
         const existingAdIds = new Set(rows.map(r => r.ad_id))
         const seenEntityIds = new Set<string>()
-        const activeStatuses = new Set(['ACTIVE', 'PAUSED'])
+        // Include review statuses so newly created ads appear before Meta approves them
+        const activeStatuses = new Set(['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'WITH_ISSUES'])
         let merged = 0
         for (const ent of entityData) {
           if (!ent.ad_id || seenEntityIds.has(ent.ad_id) || existingAdIds.has(ent.ad_id)) continue
-          // Only include active/paused entities (skip DELETED, ARCHIVED, etc.)
+          // Only include active/paused/review entities (skip DELETED, ARCHIVED, etc.)
           const adStatus = (ent.status || '').toUpperCase()
           const adsetStatus = (ent.adset_status || '').toUpperCase()
           const campaignStatus = (ent.campaign_status || '').toUpperCase()
@@ -1421,10 +1422,12 @@ export default function DashboardPage() {
       if (entityData && entityData.length > 0) {
         const existingAdIds = new Set(rows.map(r => r.ad_id))
         const seenEntityIds = new Set<string>()
-        const activeStatuses = new Set(['ACTIVE', 'PAUSED'])
+        // Include review statuses so newly created ads appear before Meta approves them
+        const activeStatuses = new Set(['ACTIVE', 'PAUSED', 'PENDING_REVIEW', 'WITH_ISSUES'])
         let merged = 0
         for (const ent of entityData) {
           if (!ent.ad_id || seenEntityIds.has(ent.ad_id) || existingAdIds.has(ent.ad_id)) continue
+          // Only include active/paused/review entities (skip DELETED, ARCHIVED, etc.)
           const adStatus = (ent.status || '').toUpperCase()
           const adsetStatus = (ent.adset_status || '').toUpperCase()
           const campaignStatus = (ent.campaign_status || '').toUpperCase()
@@ -1809,6 +1812,45 @@ export default function DashboardPage() {
             })
             return updated
           })
+        }
+
+        // Hydrate missing campaigns IF date range includes today (for newly created campaigns)
+        // This catches campaigns created outside KillScale (directly in Ads Manager)
+        if (!isGoogle && result.campaignIds && Array.isArray(result.campaignIds)) {
+          const todayStr = new Date().toISOString().split('T')[0]
+          const dateIncludesToday = datePreset !== 'yesterday' && datePreset !== 'last_month' &&
+            (datePreset !== 'custom' || customEndDate === todayStr)
+
+          if (dateIncludesToday) {
+            // Find campaigns returned by sync that aren't in our loaded data
+            const loadedCampaignIds = new Set((newData || []).map(r => r.campaign_id))
+            const missingCampaignIds = (result.campaignIds as string[]).filter(id => !loadedCampaignIds.has(id))
+
+            // Hydrate each missing campaign (they may be paused with no insights)
+            for (const campaignId of missingCampaignIds) {
+              try {
+                await fetch('/api/meta/hydrate-new-entity', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    userId: user.id,
+                    adAccountId: accountId,
+                    entityType: 'campaign',
+                    entityId: campaignId,
+                  })
+                })
+              } catch (err) {
+                console.warn('[Sync] Failed to hydrate campaign:', campaignId, err)
+              }
+            }
+
+            // If we hydrated any campaigns, reload data to show them
+            if (missingCampaignIds.length > 0) {
+              console.log(`[Sync] Hydrated ${missingCampaignIds.length} missing campaigns`)
+              dataCache.delete(accountId)
+              await loadDataAndCache(accountId)
+            }
+          }
         }
       } else {
         alert(result.error || 'Sync failed')
@@ -3924,14 +3966,36 @@ export default function DashboardPage() {
           <div className="min-h-screen px-4 py-8">
             <LaunchWizard
               adAccountId={currentAccountId}
-              onComplete={(performanceSetResult) => {
+              onComplete={async (result) => {
                 setShowLaunchWizard(false)
                 setIncludePaused(true)
-                // Refresh data after creating campaign
-                loadData()
+
+                // Hydrate the newly created entity so it appears immediately in the table
+                // This inserts stub rows into ad_data (same pattern as duplicate flow)
+                if (result?.createdEntity && user?.id) {
+                  try {
+                    await fetch('/api/meta/hydrate-new-entity', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        userId: user.id,
+                        adAccountId: currentAccountId,
+                        entityType: result.createdEntity.entityType,
+                        entityId: result.createdEntity.entityId,
+                      })
+                    })
+                  } catch (err) {
+                    console.warn('[Dashboard] Hydrate failed:', err)
+                  }
+                }
+
+                // Force-clear the concurrency guard so loadData runs
+                isLoadingData.current = false
+                await loadData(false)
+
                 // Show clear stars prompt if this was a Performance Set
-                if (performanceSetResult?.usedAdIds && performanceSetResult.usedAdIds.length > 0) {
-                  setPerformanceSetAdIds(performanceSetResult.usedAdIds)
+                if (result?.performanceSet?.usedAdIds && result.performanceSet.usedAdIds.length > 0) {
+                  setPerformanceSetAdIds(result.performanceSet.usedAdIds)
                   setShowClearStarsPrompt(true)
                 }
               }}

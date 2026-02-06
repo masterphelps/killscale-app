@@ -45,6 +45,7 @@ interface CreateAdsetRequest {
   specialAdCategory?: 'HOUSING' | 'CREDIT' | 'EMPLOYMENT' | null
   locationTarget: LocationTarget
   creatives: Creative[]
+  creativeMode?: 'separate' | 'carousel' // separate = N ads, carousel = 1 ad with N cards
   primaryText: string
   headline: string
   description?: string
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
       specialAdCategory,
       locationTarget,
       creatives,
+      creativeMode,
       primaryText,
       headline,
       description,
@@ -288,6 +290,85 @@ export async function POST(request: NextRequest) {
     const adsetId = adsetResult.id
 
     // ========== Create Ads ==========
+    if (creativeMode === 'carousel' && creatives.length >= 2) {
+      // ========== CAROUSEL: Create single ad with multiple cards ==========
+      const carouselCards = creatives.map((creative) => ({
+        image_hash: creative.imageHash,
+        link: websiteUrl,
+        name: headline,
+        description: description || undefined
+      }))
+
+      let ctaLink = websiteUrl
+      if (urlTags) {
+        const separator = websiteUrl.includes('?') ? '&' : '?'
+        ctaLink = `${websiteUrl}${separator}${urlTags}`
+      }
+
+      const carouselStorySpec: Record<string, unknown> = {
+        page_id: pageId,
+        link_data: {
+          link: websiteUrl,
+          message: primaryText,
+          child_attachments: carouselCards,
+          call_to_action: objective === 'leads' && formId
+            ? { type: ctaType, value: { lead_gen_form_id: formId } }
+            : { type: ctaType, value: { link: ctaLink } }
+        }
+      }
+
+      const carouselCreativePayload: Record<string, unknown> = {
+        name: `${adsetName} - Carousel`,
+        object_story_spec: carouselStorySpec,
+        access_token: accessToken
+      }
+
+      const creativeResponse = await fetch(
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/adcreatives`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(carouselCreativePayload)
+        }
+      )
+
+      const creativeResult = await creativeResponse.json()
+      if (creativeResult.error) {
+        console.error('Carousel creative creation error:', creativeResult.error)
+        return NextResponse.json({
+          error: creativeResult.error.message || 'Failed to create carousel creative',
+          details: creativeResult.error.error_user_msg
+        }, { status: 400 })
+      }
+
+      const adPayload: Record<string, unknown> = {
+        name: `${adsetName} - Carousel Ad`,
+        adset_id: adsetId,
+        creative: { creative_id: creativeResult.id },
+        status: 'PAUSED',
+        access_token: accessToken
+      }
+
+      const adResponse = await fetch(
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/ads`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adPayload)
+        }
+      )
+
+      const adResult = await adResponse.json()
+      if (adResult.error) {
+        console.error('Carousel ad creation error:', adResult.error)
+        return NextResponse.json({
+          error: adResult.error.message || 'Failed to create carousel ad'
+        }, { status: 400 })
+      }
+
+      adIds.push(adResult.id)
+    } else {
+      // ========== SEPARATE: Create individual ads ==========
     for (let i = 0; i < creatives.length; i++) {
       const creative = creatives[i]
 
@@ -414,6 +495,7 @@ export async function POST(request: NextRequest) {
 
       adIds.push(adResult.id)
     }
+    } // End of else block (separate ads)
 
     if (adIds.length === 0) {
       return NextResponse.json({

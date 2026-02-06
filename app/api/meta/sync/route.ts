@@ -205,7 +205,7 @@ type AdData = {
   name: string
   adset_id: string
   effective_status: string
-  creative?: { id: string; thumbnail_url?: string; image_url?: string; video_id?: string; image_hash?: string }
+  creative?: { id: string; thumbnail_url?: string; image_url?: string; video_id?: string; image_hash?: string; object_story_spec?: { link_data?: { message?: string; name?: string; description?: string }; video_data?: { message?: string; title?: string; description?: string } } }
 }
 
 // Map our UI presets to valid Meta API date_preset values
@@ -440,7 +440,7 @@ export async function POST(request: NextRequest) {
 
     const adsUrl = new URL(`${META_GRAPH_URL}/${adAccountId}/ads`)
     adsUrl.searchParams.set('access_token', accessToken)
-    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status,creative{id,thumbnail_url,image_url,video_id,image_hash}')
+    adsUrl.searchParams.set('fields', 'id,name,adset_id,effective_status,creative{id,thumbnail_url,image_url,video_id,image_hash,object_story_spec}')
     adsUrl.searchParams.set('effective_status', entityStatusFilter)
     adsUrl.searchParams.set('thumbnail_width', '1080')
     adsUrl.searchParams.set('thumbnail_height', '1080')
@@ -498,7 +498,7 @@ export async function POST(request: NextRequest) {
     const batchUrl = `${META_GRAPH_URL}/?batch=${encodeURIComponent(JSON.stringify([
       { method: 'GET', relative_url: `${adAccountId}/campaigns?fields=id,name,effective_status,daily_budget,lifetime_budget&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&limit=500` },
       { method: 'GET', relative_url: `${adAccountId}/adsets?fields=id,name,campaign_id,effective_status,daily_budget,lifetime_budget&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&limit=500` },
-      { method: 'GET', relative_url: `${adAccountId}/ads?fields=id,name,adset_id,effective_status,creative{id,thumbnail_url,image_url,video_id,image_hash}&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&thumbnail_width=1080&thumbnail_height=1080&limit=500` }
+      { method: 'GET', relative_url: `${adAccountId}/ads?fields=id,name,adset_id,effective_status,creative{id,thumbnail_url,image_url,video_id,image_hash,object_story_spec}&effective_status=["ACTIVE","PAUSED","CAMPAIGN_PAUSED","ADSET_PAUSED"]&thumbnail_width=1080&thumbnail_height=1080&limit=500` }
     ]))}&access_token=${accessToken}&include_headers=false`
 
     try {
@@ -698,7 +698,7 @@ export async function POST(request: NextRequest) {
     const campaignMap: Record<string, { name: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adsetMap: Record<string, { name: string; campaign_id: string; status: string; daily_budget: number | null; lifetime_budget: number | null }> = {}
     const adStatusMap: Record<string, string> = {}
-    const adCreativeMap: Record<string, { id: string; thumbnail_url?: string; image_url?: string; video_id?: string; image_hash?: string } | null> = {}  // ad_id -> creative object
+    const adCreativeMap: Record<string, { id: string; thumbnail_url?: string; image_url?: string; video_id?: string; image_hash?: string; object_story_spec?: { link_data?: { message?: string; name?: string; description?: string }; video_data?: { message?: string; title?: string; description?: string } } } | null> = {}  // ad_id -> creative object
 
     allCampaigns.forEach((c) => {
       campaignMap[c.id] = {
@@ -936,6 +936,9 @@ export async function POST(request: NextRequest) {
         video_id: adCreativeMap[insight.ad_id]?.video_id || null,
         media_hash: extractMedia(adCreativeMap[insight.ad_id]).mediaHash,
         media_type: extractMedia(adCreativeMap[insight.ad_id]).mediaType,
+        primary_text: (() => { const oss = adCreativeMap[insight.ad_id]?.object_story_spec; return oss?.link_data?.message || oss?.video_data?.message || null })(),
+        headline: (() => { const oss = adCreativeMap[insight.ad_id]?.object_story_spec; return oss?.link_data?.name || oss?.video_data?.title || null })(),
+        description: (() => { const oss = adCreativeMap[insight.ad_id]?.object_story_spec; return oss?.link_data?.description || oss?.video_data?.description || null })(),
         impressions: parseInt(insight.impressions) || 0,
         clicks: parseInt(insight.clicks) || 0,
         spend: parseFloat(insight.spend) || 0,
@@ -1005,6 +1008,9 @@ export async function POST(request: NextRequest) {
           video_id: adCreativeMap[adId]?.video_id || null,
           media_hash: extractMedia(adCreativeMap[adId]).mediaHash,
           media_type: extractMedia(adCreativeMap[adId]).mediaType,
+          primary_text: (() => { const oss = adCreativeMap[adId]?.object_story_spec; return oss?.link_data?.message || oss?.video_data?.message || null })(),
+          headline: (() => { const oss = adCreativeMap[adId]?.object_story_spec; return oss?.link_data?.name || oss?.video_data?.title || null })(),
+          description: (() => { const oss = adCreativeMap[adId]?.object_story_spec; return oss?.link_data?.description || oss?.video_data?.description || null })(),
           impressions: 0,
           clicks: 0,
           spend: 0,
@@ -1186,7 +1192,9 @@ export async function POST(request: NextRequest) {
       adsWithoutActivity: adsWithoutInsights.length,
       filteredDeletedInsights: allInsights.length - activeInsights.length,
       syncType: isInitialSync ? 'initial' : 'append',
-      dateRange: isInitialSync ? { since: 'maximum', until: todayStr } : { since: appendStartDate, until: appendEndDate }
+      dateRange: isInitialSync ? { since: 'maximum', until: todayStr } : { since: appendStartDate, until: appendEndDate },
+      // Return campaign IDs so dashboard can hydrate any missing campaigns (created outside KillScale)
+      campaignIds: allCampaigns.map(c => c.id)
     })
     
   } catch (err) {

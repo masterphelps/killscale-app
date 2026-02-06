@@ -68,7 +68,7 @@ function generateEmailHtml(alerts: Alert[], userName: string): string {
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 32px;">
           <h1 style="color: #ffffff; font-size: 24px; margin: 0;">
-            <span style="color: #ef4444;">Kill</span><span style="color: #10b981;">Scale</span>
+            <span style="color: #8b5cf6;">Kill</span><span style="color: #ffffff;">Scale</span>
           </h1>
           <p style="color: #71717a; font-size: 14px; margin-top: 8px;">Ad Performance Alerts</p>
         </div>

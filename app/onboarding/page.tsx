@@ -399,10 +399,7 @@ function OnboardingContent() {
             <ChevronRight className="w-4 h-4 text-zinc-500 absolute -top-2 -right-2" />
           </div>
           <div className="w-14 h-14 bg-bg-dark border border-border rounded-2xl flex items-center justify-center">
-            <svg width="28" height="20" viewBox="0 0 280 50">
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <img src="/favicon.png" alt="KillScale" className="w-8 h-8" />
           </div>
         </div>
 
@@ -509,12 +506,7 @@ function OnboardingContent() {
       <div className="max-w-xl mx-auto py-8 px-4">
         {/* Logo */}
         <div className="text-center mb-8">
-          <svg width="200" height="45" viewBox="0 0 280 50" className="inline-block">
-            <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-            <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-          </svg>
+          <img src="/logo-white.png" alt="KillScale" className="h-11 inline-block" />
         </div>
 
         {/* Step Progress Indicator */}

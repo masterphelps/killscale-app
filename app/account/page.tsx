@@ -362,12 +362,7 @@ export default function AccountPage() {
             <div /> // Empty div for flex spacing
           )}
           <div className="flex items-center gap-2">
-            <svg width="160" height="36" viewBox="0 0 280 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a" />
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-            </svg>
+            <img src="/logo-white.png" alt="KillScale" className="h-9" />
           </div>
         </div>
       </nav>

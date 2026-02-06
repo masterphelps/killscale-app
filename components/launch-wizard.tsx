@@ -185,6 +185,7 @@ interface WizardState {
   ageMin: number
   ageMax: number
   creatives: Creative[]
+  creativeMode: 'separate' | 'carousel'
   creativeEnhancements: boolean
   primaryText: string
   headline: string
@@ -291,18 +292,34 @@ interface PerformanceSetResult {
   usedAdIds: string[]  // The starred ad IDs that were used to build the Performance Set
 }
 
+interface CreatedEntityResult {
+  entityType: 'campaign' | 'adset' | 'ad'
+  entityId: string
+}
+
+interface LaunchWizardResult {
+  performanceSet?: PerformanceSetResult
+  createdEntity?: CreatedEntityResult
+}
+
 interface LaunchWizardProps {
   adAccountId: string  // Passed from context - the currently selected ad account
-  onComplete: (performanceSetResult?: PerformanceSetResult) => void
+  onComplete: (result?: LaunchWizardResult) => void
   onCancel: () => void
   // For Performance Set flow - preselect entity type and pass starred ads
   initialEntityType?: 'campaign' | 'adset' | 'ad' | 'performance-set'
   starredAds?: StarredAdForWizard[]
   // For Creative Studio - pre-populate creatives step
   preloadedCreatives?: Creative[]
+  // For Ad Studio - pre-populate ad copy fields
+  initialCopy?: {
+    primaryText?: string
+    headline?: string
+    description?: string
+  }
 }
 
-export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityType, starredAds = [], preloadedCreatives }: LaunchWizardProps) {
+export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityType, starredAds = [], preloadedCreatives, initialCopy }: LaunchWizardProps) {
   const { user } = useAuth()
   const [step, setStep] = useState<Step>('account') // First step is now just Page selection
   const [loading, setLoading] = useState(true)
@@ -372,10 +389,11 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     ageMin: 18,
     ageMax: 65,
     creatives: preloadedCreatives || [],
+    creativeMode: 'separate',
     creativeEnhancements: false,
-    primaryText: '',
-    headline: '',
-    description: '',
+    primaryText: initialCopy?.primaryText || '',
+    headline: initialCopy?.headline || '',
+    description: initialCopy?.description || '',
     websiteUrl: '',
     ctaType: 'GET_QUOTE',
     autoInjectUTMs: true
@@ -678,7 +696,17 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       setError(`Files too large: ${skippedFiles.join(', ')}`)
     }
 
-    setState(s => ({ ...s, creatives: [...s.creatives, ...newCreatives] }))
+    setState(s => {
+      const updatedCreatives = [...s.creatives, ...newCreatives]
+      // Auto-reset to 'separate' if any videos are added or less than 2 creatives
+      const hasVideos = updatedCreatives.some(c => c.type === 'video')
+      const shouldResetCarousel = hasVideos || updatedCreatives.length < 2
+      return {
+        ...s,
+        creatives: updatedCreatives,
+        creativeMode: shouldResetCarousel ? 'separate' : s.creativeMode
+      }
+    })
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -702,10 +730,15 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
   }
 
   const removeCreative = (index: number) => {
-    setState(s => ({
-      ...s,
-      creatives: s.creatives.filter((_, i) => i !== index)
-    }))
+    setState(s => {
+      const updatedCreatives = s.creatives.filter((_, i) => i !== index)
+      // Auto-reset to 'separate' if less than 2 creatives remain
+      return {
+        ...s,
+        creatives: updatedCreatives,
+        creativeMode: updatedCreatives.length < 2 ? 'separate' : s.creativeMode
+      }
+    })
   }
 
   // Handle library selection
@@ -738,10 +771,17 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     })
 
     // Add to existing creatives (up to 6 max)
-    setState(s => ({
-      ...s,
-      creatives: [...s.creatives, ...newCreatives].slice(0, 6)
-    }))
+    setState(s => {
+      const updatedCreatives = [...s.creatives, ...newCreatives].slice(0, 6)
+      // Auto-reset to 'separate' if any videos are added or less than 2 creatives
+      const hasVideos = updatedCreatives.some(c => c.type === 'video')
+      const shouldResetCarousel = hasVideos || updatedCreatives.length < 2
+      return {
+        ...s,
+        creatives: updatedCreatives,
+        creativeMode: shouldResetCarousel ? 'separate' : s.creativeMode
+      }
+    })
   }
 
   // Upload creatives directly to Meta
@@ -861,6 +901,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             objective: state.selectedCampaignObjective || 'conversions',
             formId: state.selectedCampaignObjective === 'leads' ? state.selectedFormId : undefined,
             creatives: creativesWithHashes,
+            creativeMode: state.creativeMode,
             primaryText: state.primaryText,
             headline: state.headline,
             description: state.description,
@@ -903,6 +944,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                   countries: ['US']
                 },
             creatives: creativesWithHashes,
+            creativeMode: state.creativeMode,
             primaryText: state.primaryText,
             headline: state.headline,
             description: state.description,
@@ -1038,6 +1080,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                   countries: ['US']
                 },
             creatives: creativesWithHashes,
+            creativeMode: state.creativeMode,
             primaryText: state.primaryText,
             headline: state.headline,
             description: state.description,
@@ -1060,32 +1103,25 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
         throw new Error(data.error || `Failed to create ${entityLabel}`)
       }
 
-      // Sync data so the new campaign shows up immediately
-      // Append sync will pick up the newly created entity (entity endpoints always run)
-      setDeploymentPhase('Syncing new campaign data...')
-      try {
-        const syncRes = await fetch('/api/meta/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: state.adAccountId,
-          })
-        })
-        if (!syncRes.ok) {
-          console.warn('Post-creation sync failed, but campaign was created successfully')
-        }
-      } catch (syncErr) {
-        console.warn('Post-creation sync error:', syncErr)
-        // Don't fail the whole operation if sync fails - campaign was created
+      // Build result with created entity info for hydration
+      // The dashboard will call hydrate-new-entity to insert stub rows into ad_data
+      // This is more reliable than calling /api/meta/sync which may fail for new entities
+      const createdEntity: CreatedEntityResult = {
+        entityType: state.entityType === 'performance-set' ? 'campaign' : state.entityType as 'campaign' | 'adset' | 'ad',
+        entityId: (state.entityType === 'campaign' || state.entityType === 'performance-set')
+          ? data.campaignId
+          : state.entityType === 'adset'
+            ? data.adsetId
+            : data.adIds[0] // For single ad creation
       }
 
-      // Pass Performance Set result if applicable
-      if (state.entityType === 'performance-set') {
-        onComplete({ usedAdIds: state.selectedStarredAds })
-      } else {
-        onComplete()
-      }
+      // Pass result with both performance set info (if applicable) and created entity
+      onComplete({
+        performanceSet: state.entityType === 'performance-set'
+          ? { usedAdIds: state.selectedStarredAds }
+          : undefined,
+        createdEntity
+      })
     } catch (err) {
       console.error('Submit error:', err)
       setError(err instanceof Error ? err.message : 'Failed to create')
@@ -2546,6 +2582,43 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
               </div>
             </div>
 
+            {/* Ad Format Selector - only show when 2+ image creatives */}
+            {state.creatives.length >= 2 && state.creatives.every(c => c.type === 'image') && (
+              <div className="space-y-3">
+                <label className="block text-sm font-medium">Ad Format</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setState(s => ({ ...s, creativeMode: 'separate' }))}
+                    className={cn(
+                      "p-4 rounded-lg border text-left transition-all",
+                      state.creativeMode === 'separate'
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <span className="font-medium block mb-1">Separate Ads</span>
+                    <span className="text-xs text-zinc-400">
+                      {state.creatives.length} ads for A/B testing
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setState(s => ({ ...s, creativeMode: 'carousel' }))}
+                    className={cn(
+                      "p-4 rounded-lg border text-left transition-all",
+                      state.creativeMode === 'carousel'
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <span className="font-medium block mb-1">Carousel Ad</span>
+                    <span className="text-xs text-zinc-400">
+                      1 swipeable ad with {state.creatives.length} cards
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Previews */}
             {state.creatives.length > 0 && (
               <div>
@@ -2926,8 +2999,13 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
               {/* Creatives - campaign, adset, ad paths (not performance-set, already shown above) */}
               {state.entityType !== 'performance-set' && (
                 <div className="flex justify-between">
-                  <span className="text-zinc-400">Creatives</span>
-                  <span className="font-medium">{state.creatives.length} {state.creatives.length === 1 ? 'creative' : 'creatives'}</span>
+                  <span className="text-zinc-400">Ad Format</span>
+                  <span className="font-medium">
+                    {state.creativeMode === 'carousel'
+                      ? `Carousel (${state.creatives.length} cards)`
+                      : `${state.creatives.length} separate ${state.creatives.length === 1 ? 'ad' : 'ads'}`
+                    }
+                  </span>
                 </div>
               )}
 
@@ -2986,7 +3064,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                 <span>
                   {state.entityType === 'performance-set'
                     ? `${state.selectedStarredAds.length} ${state.selectedStarredAds.length === 1 ? 'Ad' : 'Ads'} - Winning creatives with original copy`
-                    : `${state.creatives.length} ${state.creatives.length === 1 ? 'Ad' : 'Ads'} - Your creatives + copy`
+                    : state.creativeMode === 'carousel'
+                      ? `1 Carousel Ad - ${state.creatives.length} swipeable cards`
+                      : `${state.creatives.length} ${state.creatives.length === 1 ? 'Ad' : 'Ads'} - Your creatives + copy`
                   }
                 </span>
               </div>

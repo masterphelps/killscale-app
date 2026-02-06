@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Star, MoreHorizontal, Image, Film } from 'lucide-react'
+import { Play, Star, MoreHorizontal, Image, Film, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { StudioAsset, FatigueStatus } from './types'
 
@@ -10,10 +10,14 @@ interface MediaGalleryCardProps {
   item: StudioAsset
   index: number
   onSelect: () => void
-  onStar: () => void
-  onMenuClick: () => void
+  onStar?: () => void
+  onMenuClick?: (e: React.MouseEvent) => void
   videoSourceUrl?: string
   onRequestVideoSource?: () => void
+  customMetrics?: { label: string; value: string }[]
+  subtitle?: string
+  rankBadge?: number
+  textContent?: string
 }
 
 // Score-based glow styling — uses hook score for videos, click score for images
@@ -78,6 +82,10 @@ export function MediaGalleryCard({
   onMenuClick,
   videoSourceUrl,
   onRequestVideoSource,
+  customMetrics,
+  subtitle,
+  rankBadge,
+  textContent,
 }: MediaGalleryCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [videoPlaying, setVideoPlaying] = useState(false)
@@ -90,10 +98,8 @@ export function MediaGalleryCard({
   const isVideo = item.mediaType === 'video'
   const fatigueStyles = hasPerf ? getFatigueStyles(item.fatigueStatus) : null
 
-  // Primary score: hook for videos, click for images
-  const primaryScore = isVideo ? item.hookScore : item.clickScore
-  const primaryLabel = isVideo ? 'Hook' : 'Click'
-  const scoreStyles = hasPerf ? getScoreStyles(primaryScore) : null
+  // Glow based on convertScore (ROAS-based) since revenue is the primary metric
+  const scoreStyles = hasPerf ? getScoreStyles(item.convertScore) : null
 
   const storageUrl = item.storageUrl || null
   const thumbnailUrl = item.imageUrl || item.thumbnailUrl
@@ -157,6 +163,7 @@ export function MediaGalleryCard({
 
   const handleStarClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!onStar) return
     setIsStarAnimating(true)
     onStar()
     setTimeout(() => setIsStarAnimating(false), 400)
@@ -191,8 +198,8 @@ export function MediaGalleryCard({
         'group'
       )}
     >
-      {/* Media Container - 4:3 aspect ratio */}
-      <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
+      {/* Media Container - 4:3 aspect ratio (hidden for copy-only cards) */}
+      {!textContent && <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
         {(storageUrl || thumbnailUrl) && !imageError ? (
           <>
             {isVideo && storageUrl && !thumbnailUrl ? (
@@ -307,9 +314,25 @@ export function MediaGalleryCard({
           )}
         </AnimatePresence>
 
-        {/* Top-left: Fatigue Ring Badge (with perf data) OR Media Type Icon (no data) */}
+        {/* Top-left: Rank Badge OR Fatigue Ring Badge (with perf data) OR Media Type Icon (no data) */}
         <div className="absolute top-3 left-3 z-10">
-          {hasPerf && fatigueStyles ? (
+          {rankBadge ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
+              className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg',
+                'bg-gradient-to-br shadow-lg border',
+                rankBadge === 1 ? 'from-amber-400 to-yellow-500 text-black border-amber-300' :
+                rankBadge === 2 ? 'from-zinc-300 to-zinc-400 text-black border-zinc-200' :
+                rankBadge === 3 ? 'from-orange-400 to-orange-600 text-white border-orange-300' :
+                'from-zinc-600 to-zinc-700 text-white border-zinc-500'
+              )}
+            >
+              {rankBadge}
+            </motion.div>
+          ) : hasPerf && fatigueStyles ? (
             <motion.div
               animate={fatigueStyles.pulse ? { scale: [1, 1.05, 1] } : {}}
               transition={fatigueStyles.pulse ? { duration: 2, repeat: Infinity } : {}}
@@ -373,100 +396,55 @@ export function MediaGalleryCard({
           </motion.span>
         </div>
 
-        {/* Bottom: Hover overlay */}
-        <AnimatePresence>
-          {isHovered && (
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-              className={cn(
-                'absolute bottom-0 left-0 right-0 p-4',
-                'bg-gradient-to-t from-black/90 via-black/70 to-transparent',
-                'backdrop-blur-sm'
-              )}
-            >
-              {hasPerf ? (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-zinc-500 text-[10px] uppercase tracking-wide font-medium">Spend</span>
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.05 }}
-                        className="text-white font-bold font-mono text-lg"
-                      >
-                        {formatCurrency(item.spend)}
-                      </motion.div>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 text-[10px] uppercase tracking-wide font-medium">Impressions</span>
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="text-white font-bold font-mono text-lg"
-                      >
-                        {item.impressions >= 1000000 ? `${(item.impressions / 1000000).toFixed(1)}M` : item.impressions >= 1000 ? `${(item.impressions / 1000).toFixed(1)}k` : item.impressions}
-                      </motion.div>
-                    </div>
-                  </div>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.15 }}
-                    className="mt-3 pt-3 border-t border-white/10 text-xs text-zinc-400"
-                  >
-                    <span className="font-medium text-zinc-300">{item.adCount}</span> ads across{' '}
-                    <span className="font-medium text-zinc-300">{item.adsetCount}</span> audiences
-                  </motion.div>
-                </>
-              ) : (
-                <>
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.05 }}
-                    className="text-white font-medium text-sm truncate"
-                  >
-                    {item.name || 'Untitled'}
-                  </motion.div>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.1 }}
-                    className="mt-2 flex items-center gap-3 text-xs text-zinc-400"
-                  >
-                    {item.width && item.height && (
-                      <span>{item.width}x{item.height}</span>
-                    )}
-                    {item.fileSize && (
-                      <span>{formatFileSize(item.fileSize)}</span>
-                    )}
-                  </motion.div>
-                </>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      </div>}
 
       {/* Card Footer */}
       <div className="p-4 space-y-3">
         {hasPerf ? (
           <>
-            {/* Primary score — large and prominent */}
+            {/* Text content (for Best Copy page) - show more lines when no media */}
+            {textContent && (
+              <div className="min-h-[120px]">
+                <div className="flex items-start gap-3 mb-3">
+                  {rankBadge && (
+                    <div className={cn(
+                      'flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm',
+                      'bg-gradient-to-br shadow-lg border',
+                      rankBadge === 1 ? 'from-amber-400 to-yellow-500 text-black border-amber-300' :
+                      rankBadge === 2 ? 'from-zinc-300 to-zinc-400 text-black border-zinc-200' :
+                      rankBadge === 3 ? 'from-orange-400 to-orange-600 text-white border-orange-300' :
+                      'from-zinc-600 to-zinc-700 text-white border-zinc-500'
+                    )}>
+                      {rankBadge}
+                    </div>
+                  )}
+                  {item.name && (
+                    <h3 className="text-base font-semibold text-white leading-tight">{item.name}</h3>
+                  )}
+                </div>
+                <p className="text-sm text-zinc-400 line-clamp-6 leading-relaxed">{textContent}</p>
+              </div>
+            )}
+
+            {/* Name and subtitle */}
+            {(item.name || subtitle) && !textContent && (
+              <div className="space-y-0.5">
+                {item.name && (
+                  <p className="text-sm font-medium text-white truncate">{item.name}</p>
+                )}
+                {subtitle && (
+                  <p className="text-xs text-zinc-500 truncate">{subtitle}</p>
+                )}
+              </div>
+            )}
+
+            {/* Revenue — large and prominent in green */}
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-baseline gap-2">
-                <span className={cn(
-                  'text-2xl font-bold font-mono tabular-nums',
-                  scoreStyles ? scoreStyles.text : 'text-zinc-500'
-                )}>
-                  {primaryScore !== null ? primaryScore : '—'}
+                <span className="text-2xl font-bold font-mono tabular-nums text-emerald-400">
+                  {formatCurrency(item.revenue)}
                 </span>
-                <span className="text-xs text-zinc-500 font-medium">{primaryLabel}</span>
+                <span className="text-xs text-zinc-500 font-medium">Revenue</span>
               </div>
 
               <span className="text-xs text-zinc-500 font-mono">
@@ -474,9 +452,16 @@ export function MediaGalleryCard({
               </span>
             </div>
 
-            {/* Metrics row: Video → Thumbstop | Hold, Image → CTR | CPC */}
-            <div className={cn('grid gap-2', isVideo ? 'grid-cols-2' : 'grid-cols-2')}>
-              {item.thumbstopRate !== null && item.thumbstopRate !== undefined ? (
+            {/* Metrics row: Custom metrics OR default (Thumbstop/Hold or CTR/CPC) */}
+            <div className={cn('grid gap-2', customMetrics && customMetrics.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+              {customMetrics ? (
+                customMetrics.map((metric, i) => (
+                  <div key={i}>
+                    <div className="text-[10px] text-zinc-600 uppercase tracking-wide">{metric.label}</div>
+                    <div className="text-xs font-mono text-zinc-300">{metric.value}</div>
+                  </div>
+                ))
+              ) : item.thumbstopRate !== null && item.thumbstopRate !== undefined ? (
                 <>
                   <div>
                     <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Thumbstop</div>
@@ -501,19 +486,20 @@ export function MediaGalleryCard({
               )}
             </div>
 
-            {/* Composite score pills — skip the primary since it's already shown large */}
-            {(item.hookScore !== null || item.holdScore !== null || item.clickScore !== null || item.convertScore !== null) && (
-              <div className="flex flex-wrap gap-1.5">
-                {isVideo && item.holdScore !== null && <ScorePill label="Hold" value={item.holdScore} />}
-                {item.clickScore !== null && (isVideo ? <ScorePill label="Click" value={item.clickScore} /> : null)}
-                {item.convertScore !== null && <ScorePill label="Conv" value={item.convertScore} />}
-                {!isVideo && item.hookScore !== null && <ScorePill label="Hook" value={item.hookScore} />}
-              </div>
-            )}
+            {/* Composite score pills — always show all 4, grey when null */}
+            <div className="flex flex-wrap gap-1.5">
+              <ScorePill label="Hook" value={item.hookScore} />
+              <ScorePill label="Hold" value={item.holdScore} />
+              <ScorePill label="Click" value={item.clickScore} />
+              <ScorePill label="Conv" value={item.convertScore} />
+            </div>
           </>
         ) : (
           <>
             {/* No performance data — show metadata */}
+            {item.name && (
+              <p className="text-sm font-medium text-white truncate">{item.name}</p>
+            )}
             <p className="text-sm text-zinc-500">Not used in any ads</p>
             <div className="flex items-center gap-2 text-xs">
               {item.width && item.height && (
@@ -531,7 +517,7 @@ export function MediaGalleryCard({
           </>
         )}
 
-        {/* Bottom Row: Stats + Actions */}
+        {/* Bottom Row: Stats + AI Analysis indicator + Actions */}
         <div className="flex items-center justify-between pt-3 border-t border-border">
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             {hasPerf ? (
@@ -549,35 +535,54 @@ export function MediaGalleryCard({
             )}
           </div>
 
-          <div className="flex items-center gap-0.5">
-            <motion.button
-              whileTap={{ scale: 0.85 }}
-              animate={isStarAnimating ? {
-                scale: [1, 1.3, 1],
-                rotate: [0, 10, -10, 0]
-              } : {}}
-              transition={{ duration: 0.4 }}
-              onClick={handleStarClick}
-              className={cn(
-                'p-2 rounded-lg transition-all duration-200',
-                item.isStarred
-                  ? 'text-amber-400 bg-amber-500/20'
-                  : 'text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10'
-              )}
-            >
-              <Star
-                className="w-4 h-4"
-                fill={item.isStarred ? 'currentColor' : 'none'}
-                strokeWidth={item.isStarred ? 0 : 2}
-              />
-            </motion.button>
+          <div className="flex items-center gap-1">
+            {/* AI Analysis indicator (videos only) - grey when not analyzed, purple when complete */}
+            {isVideo && (
+              <div
+                title={item.analysisStatus === 'complete' ? 'AI Analysis available' : 'No AI analysis yet'}
+                className={cn(
+                  'p-2 rounded-lg transition-all duration-200',
+                  item.analysisStatus === 'complete'
+                    ? 'text-purple-400 bg-purple-500/20'
+                    : 'text-zinc-600 bg-transparent'
+                )}
+              >
+                <Sparkles className="w-4 h-4" />
+              </div>
+            )}
 
-            <button
-              onClick={(e) => { e.stopPropagation(); onMenuClick() }}
-              className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
+            {onStar && (
+              <motion.button
+                whileTap={{ scale: 0.85 }}
+                animate={isStarAnimating ? {
+                  scale: [1, 1.3, 1],
+                  rotate: [0, 10, -10, 0]
+                } : {}}
+                transition={{ duration: 0.4 }}
+                onClick={handleStarClick}
+                className={cn(
+                  'p-2 rounded-lg transition-all duration-200',
+                  item.isStarred
+                    ? 'text-amber-400 bg-amber-500/20'
+                    : 'text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10'
+                )}
+              >
+                <Star
+                  className="w-4 h-4"
+                  fill={item.isStarred ? 'currentColor' : 'none'}
+                  strokeWidth={item.isStarred ? 0 : 2}
+                />
+              </motion.button>
+            )}
+
+            {onMenuClick && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onMenuClick(e) }}
+                className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -587,8 +592,10 @@ export function MediaGalleryCard({
   )
 }
 
-function ScorePill({ label, value }: { label: string; value: number }) {
-  const color = value >= 75
+function ScorePill({ label, value }: { label: string; value: number | null }) {
+  const color = value === null
+    ? 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20'
+    : value >= 75
     ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30'
     : value >= 50
     ? 'text-amber-400 bg-amber-500/15 border-amber-500/30'
@@ -601,7 +608,7 @@ function ScorePill({ label, value }: { label: string; value: number }) {
       'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border',
       color
     )}>
-      {label} {value}
+      {label} {value !== null ? value : '—'}
     </span>
   )
 }

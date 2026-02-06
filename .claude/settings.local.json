@@ -45,7 +45,11 @@
       "WebFetch(domain:docs.supermetrics.com)",
       "WebFetch(domain:www.foreplay.co)",
       "Bash(SB_URL=\"https://uzaudqeqwmihnxcccipv.supabase.co\")",
-      "Bash(SB_KEY=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6YXVkcWVxd21paG54Y2NjaXB2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDI4ODQ3NSwiZXhwIjoyMDc5ODY0NDc1fQ.Zh59EYLefYJOsINIY2oCtT9Q3cehxrms6b6NP8vKmjo\")"
+      "Bash(SB_KEY=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6YXVkcWVxd21paG54Y2NjaXB2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDI4ODQ3NSwiZXhwIjoyMDc5ODY0NDc1fQ.Zh59EYLefYJOsINIY2oCtT9Q3cehxrms6b6NP8vKmjo\")",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:apify.com)",
+      "WebFetch(domain:swipekit.app)",
+      "WebFetch(domain:scrapecreators.com)"
     ]
   }
 }

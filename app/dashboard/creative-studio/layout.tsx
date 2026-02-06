@@ -339,6 +339,17 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
     }
   }, [])
 
+  // Remove asset from local state (for optimistic delete)
+  const removeAsset = useCallback((mediaHash: string) => {
+    setAssets(prev => prev.filter(a => a.mediaHash !== mediaHash))
+    // Also remove from starred if present
+    setStarredIds(prev => {
+      const next = new Set(prev)
+      next.delete(mediaHash)
+      return next
+    })
+  }, [])
+
   // Theater modal state (shared across all sub-pages)
   const [theaterItem, setTheaterItem] = useState<StudioAsset | null>(null)
   const [theaterDetail, setTheaterDetail] = useState<StudioAssetDetail | null>(null)
@@ -528,6 +539,7 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
     closeTheater,
     refresh: loadData,
     handleSync,
+    removeAsset,
   }
 
   const getDateLabel = () => {

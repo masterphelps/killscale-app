@@ -99,17 +99,23 @@ export default function SignupPage() {
     }
   }
 
+  const inputStyle = { background: '#FAF8FF', border: '1px solid #E4DFF0', color: '#1A1A1A' }
+
   if (success) {
     return (
-      <div className="min-h-screen bg-bg-dark flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#FAF8FF', fontFamily: 'Inter, sans-serif' }}>
         <div className="w-full max-w-md text-center">
-          <div className="bg-bg-card border border-border rounded-xl p-8">
-            <div className="text-3xl mb-4">✉️</div>
-            <h1 className="text-2xl font-bold mb-2">Check your email</h1>
-            <p className="text-zinc-500 mb-6">
+          <div className="bg-white rounded-2xl p-8 shadow-sm" style={{ border: '1px solid #E4DFF0' }}>
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: '#F0EDFA' }}>
+              <span className="text-3xl">✉️</span>
+            </div>
+            <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+              Check your email
+            </h1>
+            <p className="mb-6 text-base" style={{ color: '#6B7280' }}>
               We sent a confirmation link to {email}
             </p>
-            <Link href="/login" className="text-accent hover:underline">
+            <Link href="/login" className="font-medium hover:underline" style={{ color: '#7c3aed' }}>
               Back to login
             </Link>
           </div>
@@ -119,70 +125,76 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-dark flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#FAF8FF', fontFamily: 'Inter, sans-serif' }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <svg width="200" height="45" viewBox="0 0 280 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-            </svg>
+            <img src="/logo.png" alt="KillScale" className="h-12" />
           </Link>
         </div>
 
-        <div className="bg-bg-card border border-border rounded-xl p-8">
-          <h1 className="text-2xl font-bold mb-2">Create an account</h1>
-          <p className="text-zinc-500 mb-6">Start optimizing your Meta Ads</p>
+        <div className="bg-white rounded-2xl p-8 shadow-sm" style={{ border: '1px solid #E4DFF0' }}>
+          <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+            Create an account
+          </h1>
+          <p className="mb-6 text-base" style={{ color: '#6B7280' }}>Start optimizing your Meta Ads</p>
 
           <form onSubmit={handleSignup} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Name</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: '#1A1A1A' }}>Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                className="w-full px-4 py-3 rounded-lg text-sm transition-colors focus:outline-none"
+                style={inputStyle}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = '#E4DFF0'}
                 placeholder="Your name"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: '#1A1A1A' }}>Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                className="w-full px-4 py-3 rounded-lg text-sm transition-colors focus:outline-none"
+                style={inputStyle}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = '#E4DFF0'}
                 placeholder="you@example.com"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Password</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: '#1A1A1A' }}>Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                className="w-full px-4 py-3 rounded-lg text-sm transition-colors focus:outline-none"
+                style={inputStyle}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = '#E4DFF0'}
                 placeholder="••••••••"
                 required
               />
               {password.length > 0 && (
                 <div className="mt-2 space-y-1 text-xs">
-                  <div className={hasMinLength ? 'text-green-500' : 'text-zinc-500'}>
+                  <div style={{ color: hasMinLength ? '#10b981' : '#9CA3AF' }}>
                     {hasMinLength ? '✓' : '○'} At least 8 characters
                   </div>
-                  <div className={hasUppercase ? 'text-green-500' : 'text-zinc-500'}>
+                  <div style={{ color: hasUppercase ? '#10b981' : '#9CA3AF' }}>
                     {hasUppercase ? '✓' : '○'} One uppercase letter
                   </div>
-                  <div className={hasLowercase ? 'text-green-500' : 'text-zinc-500'}>
+                  <div style={{ color: hasLowercase ? '#10b981' : '#9CA3AF' }}>
                     {hasLowercase ? '✓' : '○'} One lowercase letter
                   </div>
-                  <div className={hasNumber ? 'text-green-500' : 'text-zinc-500'}>
+                  <div style={{ color: hasNumber ? '#10b981' : '#9CA3AF' }}>
                     {hasNumber ? '✓' : '○'} One number
                   </div>
                 </div>
@@ -190,24 +202,28 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Confirm Password</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: '#1A1A1A' }}>Confirm Password</label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className={`w-full px-4 py-3 bg-bg-dark border rounded-lg text-white focus:outline-none focus:border-accent ${
-                  confirmPassword.length > 0 && !passwordsMatch ? 'border-red-500' : 'border-border'
-                }`}
+                className="w-full px-4 py-3 rounded-lg text-sm transition-colors focus:outline-none"
+                style={{
+                  ...inputStyle,
+                  borderColor: confirmPassword.length > 0 && !passwordsMatch ? '#ef4444' : '#E4DFF0'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = confirmPassword.length > 0 && !passwordsMatch ? '#ef4444' : '#E4DFF0'}
                 placeholder="••••••••"
                 required
               />
               {confirmPassword.length > 0 && !passwordsMatch && (
-                <div className="mt-1 text-xs text-red-400">Passwords do not match</div>
+                <div className="mt-1 text-xs" style={{ color: '#DC2626' }}>Passwords do not match</div>
               )}
             </div>
 
             {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              <div className="p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
                 {error}
               </div>
             )}
@@ -215,7 +231,10 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              className="w-full py-3 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+              style={{ background: '#7c3aed' }}
+              onMouseEnter={(e) => { if (!loading) (e.target as HTMLButtonElement).style.background = '#6d28d9' }}
+              onMouseLeave={(e) => (e.target as HTMLButtonElement).style.background = '#7c3aed'}
             >
               {loading ? 'Creating account...' : 'Sign Up'}
             </button>
@@ -223,9 +242,9 @@ export default function SignupPage() {
 
           {/* OAuth Divider */}
           <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-border"></div>
-            <span className="text-zinc-500 text-sm">or continue with</span>
-            <div className="flex-1 h-px bg-border"></div>
+            <div className="flex-1 h-px" style={{ background: '#E4DFF0' }}></div>
+            <span className="text-sm" style={{ color: '#9CA3AF' }}>or continue with</span>
+            <div className="flex-1 h-px" style={{ background: '#E4DFF0' }}></div>
           </div>
 
           {/* OAuth Buttons */}
@@ -233,7 +252,10 @@ export default function SignupPage() {
             <button
               onClick={() => handleOAuthSignIn('google')}
               disabled={oauthLoading !== null}
-              className="w-full py-3 bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-900 font-medium rounded-lg transition-colors flex items-center justify-center gap-3"
+              className="w-full py-3 font-medium rounded-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              style={{ background: '#FFFFFF', border: '1px solid #E4DFF0', color: '#1A1A1A' }}
+              onMouseEnter={(e) => (e.target as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)'}
+              onMouseLeave={(e) => (e.target as HTMLButtonElement).style.boxShadow = 'none'}
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -256,9 +278,9 @@ export default function SignupPage() {
             </button>
           </div>
 
-          <p className="mt-6 text-center text-zinc-500 text-sm">
+          <p className="mt-6 text-center text-sm" style={{ color: '#6B7280' }}>
             Already have an account?{' '}
-            <Link href="/login" className="text-accent hover:underline">
+            <Link href="/login" className="font-medium hover:underline" style={{ color: '#7c3aed' }}>
               Sign in
             </Link>
           </p>

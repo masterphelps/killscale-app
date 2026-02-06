@@ -10,12 +10,17 @@ interface GalleryGridProps {
   items: StudioAsset[]
   isLoading: boolean
   onSelect: (id: string) => void
-  onStar: (id: string) => void
-  onMenu: (id: string) => void
+  onStar?: (id: string) => void
+  onMenu?: (id: string, e: React.MouseEvent) => void
   onSync?: () => void
   onUpload?: () => void
   videoSources?: Record<string, string>
   onRequestVideoSource?: (videoId: string) => void
+  // Optional props for customization (used by Active Ads, Best Ads pages)
+  rankMode?: boolean
+  customMetrics?: (item: StudioAsset) => { label: string; value: string }[]
+  textContent?: (item: StudioAsset) => string | undefined
+  subtitle?: (item: StudioAsset) => string | undefined
 }
 
 const breakpointColumns = {
@@ -37,13 +42,19 @@ export function GalleryGrid({
   onUpload,
   videoSources,
   onRequestVideoSource,
+  rankMode,
+  customMetrics,
+  textContent,
+  subtitle,
 }: GalleryGridProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <SkeletonCard key={i} index={i} />
-        ))}
+      <div className="max-w-[1200px] mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <SkeletonCard key={i} index={i} />
+          ))}
+        </div>
       </div>
     )
   }
@@ -53,24 +64,30 @@ export function GalleryGrid({
   }
 
   return (
-    <Masonry
-      breakpointCols={breakpointColumns}
-      className="flex -ml-6 w-auto"
-      columnClassName="pl-6 bg-clip-padding"
-    >
-      {items.map((item, index) => (
-        <div key={item.id} className="mb-6">
-          <MediaGalleryCard
-            item={item}
-            index={index}
-            onSelect={() => onSelect(item.id)}
-            onStar={() => onStar(item.id)}
-            onMenuClick={() => onMenu(item.id)}
-            videoSourceUrl={item.mediaType === 'video' ? videoSources?.[item.mediaHash] : undefined}
-            onRequestVideoSource={item.mediaType === 'video' ? () => onRequestVideoSource?.(item.mediaHash) : undefined}
-          />
-        </div>
-      ))}
-    </Masonry>
+    <div className="max-w-[1200px] mx-auto">
+      <Masonry
+        breakpointCols={breakpointColumns}
+        className="flex -ml-6 w-auto"
+        columnClassName="pl-6 bg-clip-padding"
+      >
+        {items.map((item, index) => (
+          <div key={item.id} className="mb-6">
+            <MediaGalleryCard
+              item={item}
+              index={index}
+              onSelect={() => onSelect(item.id)}
+              onStar={onStar ? () => onStar(item.id) : undefined}
+              onMenuClick={onMenu ? (e) => onMenu(item.id, e) : undefined}
+              videoSourceUrl={item.mediaType === 'video' ? videoSources?.[item.mediaHash] : undefined}
+              onRequestVideoSource={item.mediaType === 'video' ? () => onRequestVideoSource?.(item.mediaHash) : undefined}
+              rankBadge={rankMode ? index + 1 : undefined}
+              customMetrics={customMetrics ? customMetrics(item) : undefined}
+              textContent={textContent ? textContent(item) : undefined}
+              subtitle={subtitle ? subtitle(item) : undefined}
+            />
+          </div>
+        ))}
+      </Masonry>
+    </div>
   )
 }

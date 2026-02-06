@@ -43,7 +43,11 @@ export async function POST(request: NextRequest) {
     const accessToken = connection.access_token
     const cleanAccountId = adAccountId.replace(/^act_/, '')
     const normalizedAccountId = `act_${cleanAccountId}`
-    const todayStr = new Date().toISOString().split('T')[0]
+
+    // Use local date format (not UTC) to match dashboard queries
+    // Dashboard entity query uses local dates, so hydrated rows must match
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 
     // Collect all ads to insert as stub rows
     const adsToInsert: Array<{
@@ -142,10 +146,10 @@ export async function POST(request: NextRequest) {
           status: ad.status || 'PAUSED',
           adset_status: adset.status || 'PAUSED',
           campaign_status: campaign.status || 'PAUSED',
-          campaign_daily_budget: campaign.daily_budget ? Number(campaign.daily_budget) : null,
-          campaign_lifetime_budget: campaign.lifetime_budget ? Number(campaign.lifetime_budget) : null,
-          adset_daily_budget: adset.daily_budget ? Number(adset.daily_budget) : null,
-          adset_lifetime_budget: adset.lifetime_budget ? Number(adset.lifetime_budget) : null,
+          campaign_daily_budget: campaign.daily_budget ? Number(campaign.daily_budget) / 100 : null,
+          campaign_lifetime_budget: campaign.lifetime_budget ? Number(campaign.lifetime_budget) / 100 : null,
+          adset_daily_budget: adset.daily_budget ? Number(adset.daily_budget) / 100 : null,
+          adset_lifetime_budget: adset.lifetime_budget ? Number(adset.lifetime_budget) / 100 : null,
           creative_id: ad.creative?.id || null,
           thumbnail_url: ad.creative?.thumbnail_url || null,
           video_id: ad.creative?.video_id || null,
@@ -188,10 +192,10 @@ export async function POST(request: NextRequest) {
         status: ad.status || 'PAUSED',
         adset_status: adset.status || 'PAUSED',
         campaign_status: campaign.status || 'PAUSED',
-        campaign_daily_budget: campaign.daily_budget ? Number(campaign.daily_budget) : null,
-        campaign_lifetime_budget: campaign.lifetime_budget ? Number(campaign.lifetime_budget) : null,
-        adset_daily_budget: adset.daily_budget ? Number(adset.daily_budget) : null,
-        adset_lifetime_budget: adset.lifetime_budget ? Number(adset.lifetime_budget) : null,
+        campaign_daily_budget: campaign.daily_budget ? Number(campaign.daily_budget) / 100 : null,
+        campaign_lifetime_budget: campaign.lifetime_budget ? Number(campaign.lifetime_budget) / 100 : null,
+        adset_daily_budget: adset.daily_budget ? Number(adset.daily_budget) / 100 : null,
+        adset_lifetime_budget: adset.lifetime_budget ? Number(adset.lifetime_budget) / 100 : null,
         creative_id: ad.creative?.id || null,
         thumbnail_url: ad.creative?.thumbnail_url || null,
         video_id: ad.creative?.video_id || null,

@@ -7,7 +7,9 @@ import { cn } from '@/lib/utils'
 import { FatigueTrendChart } from './fatigue-trend-chart'
 import { PeriodComparison } from './period-comparison'
 import { AudienceBreakdown } from './audience-breakdown'
-import type { StudioAsset, StudioAssetDetail, FatigueStatus } from './types'
+import { TheaterTabs, type TheaterTab } from './theater-tabs'
+import { VideoAnalysisPanel } from './video-analysis-panel'
+import type { StudioAsset, StudioAssetDetail, FatigueStatus, VideoAnalysis, ScriptSuggestion, AnalysisStatus } from './types'
 
 interface TheaterModalProps {
   item: StudioAsset | null
@@ -18,6 +20,16 @@ interface TheaterModalProps {
   isStarred: boolean
   onToggleStar: () => Promise<void>
   onBuildNewAds?: () => void
+  // AI Analysis props
+  analysisStatus: AnalysisStatus
+  analysis: VideoAnalysis | null
+  scriptSuggestions: ScriptSuggestion[] | null
+  analyzedAt: string | null
+  analysisError: string | null
+  isPro: boolean
+  isAnalyzing: boolean
+  onAnalyze: () => void
+  onReanalyze: () => void
 }
 
 const fatigueStatusConfig: Record<FatigueStatus, { label: string; color: string; bgColor: string }> = {
@@ -78,11 +90,21 @@ export function TheaterModal({
   isStarred,
   onToggleStar,
   onBuildNewAds,
+  analysisStatus,
+  analysis,
+  scriptSuggestions,
+  analyzedAt,
+  analysisError,
+  isPro,
+  isAnalyzing,
+  onAnalyze,
+  onReanalyze,
 }: TheaterModalProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isTogglingStarred, setIsTogglingStarred] = useState(false)
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
+  const [activeTab, setActiveTab] = useState<TheaterTab>('performance')
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -105,6 +127,7 @@ export function TheaterModal({
       setIsPlaying(false)
       setExpandedCampaigns(new Set())
       setExpandedAdsets(new Set())
+      setActiveTab('performance')
     }
   }, [isOpen])
 
@@ -214,368 +237,421 @@ export function TheaterModal({
               )}
             </motion.div>
 
-            {/* Right side - Scrollable sections */}
+            {/* Right side - Tabbed sections */}
             <motion.div
               initial={{ x: 50, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 0.15 }}
-              className="w-full lg:w-[450px] xl:w-[500px] bg-bg-sidebar border-l border-border overflow-y-auto"
+              className="w-full lg:w-[450px] xl:w-[500px] bg-bg-sidebar border-l border-border flex flex-col"
             >
-              <div className="p-6 space-y-6">
+              {/* Tabs - outside scrollable area */}
+              <TheaterTabs
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                isVideo={isVideo}
+                isPro={isPro}
+                hasAnalysis={analysisStatus === 'complete'}
+              />
 
-                {/* ========== ASSET WITH PERFORMANCE DATA ========== */}
-                {hasPerf && (
-                  <>
-                    {/* PERFORMANCE OVER TIME Section */}
-                    {!isLoadingDetail && detailData && (
-                      <Section title="Performance Over Time" icon={<Calendar className="w-4 h-4 text-zinc-400" />}>
-                        <div className="space-y-3">
-                          {detailData.dailyData.length > 0 && (
-                            <FatigueTrendChart data={detailData.dailyData} />
+              {/* Scrollable content */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-6 space-y-6">
+
+                  {/* ========== PERFORMANCE TAB ========== */}
+                  {activeTab === 'performance' && (
+                    <>
+                      {/* ASSET WITH PERFORMANCE DATA */}
+                      {hasPerf && (
+                        <>
+                          {/* PERFORMANCE OVER TIME Section */}
+                          {!isLoadingDetail && detailData && (
+                            <Section title="Performance Over Time" icon={<Calendar className="w-4 h-4 text-zinc-400" />}>
+                              <div className="space-y-3">
+                                {detailData.dailyData.length > 0 && (
+                                  <FatigueTrendChart data={detailData.dailyData} />
+                                )}
+                                <PeriodComparison
+                                  earlyPeriod={detailData.earlyPeriod}
+                                  recentPeriod={detailData.recentPeriod}
+                                />
+                              </div>
+                            </Section>
                           )}
-                          <PeriodComparison
-                            earlyPeriod={detailData.earlyPeriod}
-                            recentPeriod={detailData.recentPeriod}
-                          />
-                        </div>
-                      </Section>
-                    )}
 
-                    {/* HOOK Section (video only) */}
-                    {isVideo && (
-                      <Section title="Hook" icon={<Eye className="w-4 h-4 text-purple-400" />}>
-                        {item.thumbstopRate !== null ? (
-                          <div className="space-y-3">
-                            <MetricBar
-                              label="Thumbstop Rate"
-                              value={`${item.thumbstopRate.toFixed(1)}%`}
-                              progress={Math.min(100, item.thumbstopRate * 2)}
-                              color="bg-purple-500"
-                            />
-                            {item.hookScore !== null && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500">Hook Score</span>
-                                <ScoreBadge value={item.hookScore} />
+                          {/* HOOK Section (video only) */}
+                          {isVideo && (
+                            <Section title="Hook" icon={<Eye className="w-4 h-4 text-purple-400" />}>
+                              {item.thumbstopRate !== null ? (
+                                <div className="space-y-3">
+                                  <MetricBar
+                                    label="Thumbstop Rate"
+                                    value={`${item.thumbstopRate.toFixed(1)}%`}
+                                    progress={Math.min(100, item.thumbstopRate * 2)}
+                                    color="bg-purple-500"
+                                  />
+                                  {item.hookScore !== null && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-zinc-500">Hook Score</span>
+                                      <ScoreBadge value={item.hookScore} />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-zinc-500 italic">Sync video metrics to unlock Hook data</p>
+                              )}
+                            </Section>
+                          )}
+
+                          {/* HOLD Section (video only) */}
+                          {isVideo && (
+                            <Section title="Hold" icon={<Play className="w-4 h-4 text-blue-400" />}>
+                              {item.holdRate !== null ? (
+                                <div className="space-y-3">
+                                  <MetricBar
+                                    label="Hold Rate"
+                                    value={`${item.holdRate.toFixed(1)}%`}
+                                    progress={Math.min(100, item.holdRate * 1.5)}
+                                    color="bg-blue-500"
+                                  />
+                                  {item.completionRate !== null && (
+                                    <MetricBar
+                                      label="Completion Rate"
+                                      value={`${item.completionRate.toFixed(1)}%`}
+                                      progress={Math.min(100, item.completionRate * 4)}
+                                      color="bg-cyan-500"
+                                    />
+                                  )}
+                                  {item.avgWatchTime !== null && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-zinc-500">Avg Watch Time</span>
+                                      <span className="text-sm font-mono text-white">{item.avgWatchTime.toFixed(1)}s</span>
+                                    </div>
+                                  )}
+                                  {item.holdScore !== null && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-zinc-500">Hold Score</span>
+                                      <ScoreBadge value={item.holdScore} />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-zinc-500 italic">Sync video metrics to unlock Hold data</p>
+                              )}
+                            </Section>
+                          )}
+
+                          {/* CLICK Section (all assets) */}
+                          <Section title="Click" icon={<MousePointer className="w-4 h-4 text-orange-400" />}>
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <StatCard
+                                  icon={<MousePointer className="w-4 h-4" />}
+                                  label="CTR"
+                                  value={`${item.ctr.toFixed(2)}%`}
+                                  iconColor="text-orange-400"
+                                />
+                                <StatCard
+                                  icon={<DollarSign className="w-4 h-4" />}
+                                  label="CPC"
+                                  value={`$${item.cpc.toFixed(2)}`}
+                                  iconColor="text-zinc-400"
+                                />
+                                <StatCard
+                                  icon={<Layers className="w-4 h-4" />}
+                                  label="Ads"
+                                  value={item.adCount.toString()}
+                                  iconColor="text-zinc-400"
+                                />
+                              </div>
+                              {item.clickScore !== null && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-zinc-500">Click Score</span>
+                                  <ScoreBadge value={item.clickScore} />
+                                </div>
+                              )}
+                            </div>
+                          </Section>
+
+                          {/* CONVERT Section (all assets) */}
+                          <Section title="Convert" icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}>
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <StatCard
+                                  icon={<TrendingUp className="w-4 h-4" />}
+                                  label="ROAS"
+                                  value={`${item.roas.toFixed(2)}x`}
+                                  iconColor={item.roas >= 2 ? 'text-verdict-scale' : item.roas >= 1 ? 'text-verdict-watch' : 'text-verdict-kill'}
+                                  valueColor={item.roas >= 2 ? 'text-verdict-scale' : item.roas >= 1 ? 'text-verdict-watch' : 'text-verdict-kill'}
+                                />
+                                <StatCard
+                                  icon={<TrendingUp className="w-4 h-4" />}
+                                  label="Revenue"
+                                  value={`$${item.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                                  iconColor="text-verdict-scale"
+                                />
+                                <StatCard
+                                  icon={<DollarSign className="w-4 h-4" />}
+                                  label="Spend"
+                                  value={`$${item.spend.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                                  iconColor="text-zinc-400"
+                                />
+                              </div>
+                              {item.convertScore !== null && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-zinc-500">Convert Score</span>
+                                  <ScoreBadge value={item.convertScore} />
+                                </div>
+                              )}
+                            </div>
+                          </Section>
+
+                          {/* SCALE Section (fatigue) */}
+                          <Section title="Scale" icon={<AlertTriangle className="w-4 h-4 text-amber-400" />}>
+                            {statusConfig && (
+                              <div className="space-y-3">
+                                {/* Fatigue status banner */}
+                                <div className={cn('rounded-xl p-4', statusConfig.bgColor)}>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className={cn('text-sm font-medium', statusConfig.color)}>
+                                      {statusConfig.label}
+                                    </span>
+                                    <span className="text-xs text-zinc-500">
+                                      {item.daysActive} days active
+                                    </span>
+                                  </div>
+                                  <div className="h-2 bg-black/30 rounded-full overflow-hidden">
+                                    <motion.div
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${fatigueProgress}%` }}
+                                      transition={{ duration: 0.5, delay: 0.3 }}
+                                      className={cn('h-full rounded-full', progressColor)}
+                                    />
+                                  </div>
+                                  <div className="flex justify-between mt-1 text-[10px] text-zinc-500">
+                                    <span>Fresh</span>
+                                    <span>Fatigued</span>
+                                  </div>
+                                </div>
                               </div>
                             )}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-zinc-500 italic">Sync video metrics to unlock Hook data</p>
-                        )}
-                      </Section>
-                    )}
+                          </Section>
 
-                    {/* HOLD Section (video only) */}
-                    {isVideo && (
-                      <Section title="Hold" icon={<Play className="w-4 h-4 text-blue-400" />}>
-                        {item.holdRate !== null ? (
-                          <div className="space-y-3">
-                            <MetricBar
-                              label="Hold Rate"
-                              value={`${item.holdRate.toFixed(1)}%`}
-                              progress={Math.min(100, item.holdRate * 1.5)}
-                              color="bg-blue-500"
-                            />
-                            {item.completionRate !== null && (
-                              <MetricBar
-                                label="Completion Rate"
-                                value={`${item.completionRate.toFixed(1)}%`}
-                                progress={Math.min(100, item.completionRate * 4)}
-                                color="bg-cyan-500"
-                              />
-                            )}
-                            {item.avgWatchTime !== null && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500">Avg Watch Time</span>
-                                <span className="text-sm font-mono text-white">{item.avgWatchTime.toFixed(1)}s</span>
-                              </div>
-                            )}
-                            {item.holdScore !== null && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500">Hold Score</span>
-                                <ScoreBadge value={item.holdScore} />
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-zinc-500 italic">Sync video metrics to unlock Hold data</p>
-                        )}
-                      </Section>
-                    )}
+                          {/* AUDIENCES Section */}
+                          {!isLoadingDetail && detailData && detailData.audiencePerformance.length > 0 && (
+                            <Section title="Audiences" icon={<Users className="w-4 h-4 text-indigo-400" />}>
+                              <AudienceBreakdown audiences={detailData.audiencePerformance} />
+                            </Section>
+                          )}
+                        </>
+                      )}
 
-                    {/* CLICK Section (all assets) */}
-                    <Section title="Click" icon={<MousePointer className="w-4 h-4 text-orange-400" />}>
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          <StatCard
-                            icon={<MousePointer className="w-4 h-4" />}
-                            label="CTR"
-                            value={`${item.ctr.toFixed(2)}%`}
-                            iconColor="text-orange-400"
-                          />
-                          <StatCard
-                            icon={<DollarSign className="w-4 h-4" />}
-                            label="CPC"
-                            value={`$${item.cpc.toFixed(2)}`}
-                            iconColor="text-zinc-400"
-                          />
-                          <StatCard
-                            icon={<Layers className="w-4 h-4" />}
-                            label="Ads"
-                            value={item.adCount.toString()}
-                            iconColor="text-zinc-400"
-                          />
-                        </div>
-                        {item.clickScore !== null && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-zinc-500">Click Score</span>
-                            <ScoreBadge value={item.clickScore} />
-                          </div>
-                        )}
-                      </div>
-                    </Section>
-
-                    {/* CONVERT Section (all assets) */}
-                    <Section title="Convert" icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}>
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          <StatCard
-                            icon={<TrendingUp className="w-4 h-4" />}
-                            label="ROAS"
-                            value={`${item.roas.toFixed(2)}x`}
-                            iconColor={item.roas >= 2 ? 'text-verdict-scale' : item.roas >= 1 ? 'text-verdict-watch' : 'text-verdict-kill'}
-                            valueColor={item.roas >= 2 ? 'text-verdict-scale' : item.roas >= 1 ? 'text-verdict-watch' : 'text-verdict-kill'}
-                          />
-                          <StatCard
-                            icon={<TrendingUp className="w-4 h-4" />}
-                            label="Revenue"
-                            value={`$${item.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-                            iconColor="text-verdict-scale"
-                          />
-                          <StatCard
-                            icon={<DollarSign className="w-4 h-4" />}
-                            label="Spend"
-                            value={`$${item.spend.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-                            iconColor="text-zinc-400"
-                          />
-                        </div>
-                        {item.convertScore !== null && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-zinc-500">Convert Score</span>
-                            <ScoreBadge value={item.convertScore} />
-                          </div>
-                        )}
-                      </div>
-                    </Section>
-
-                    {/* SCALE Section (fatigue) */}
-                    <Section title="Scale" icon={<AlertTriangle className="w-4 h-4 text-amber-400" />}>
-                      {statusConfig && (
-                        <div className="space-y-3">
-                          {/* Fatigue status banner */}
-                          <div className={cn('rounded-xl p-4', statusConfig.bgColor)}>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className={cn('text-sm font-medium', statusConfig.color)}>
-                                {statusConfig.label}
-                              </span>
-                              <span className="text-xs text-zinc-500">
-                                {item.daysActive} days active
-                              </span>
-                            </div>
-                            <div className="h-2 bg-black/30 rounded-full overflow-hidden">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${fatigueProgress}%` }}
-                                transition={{ duration: 0.5, delay: 0.3 }}
-                                className={cn('h-full rounded-full', progressColor)}
-                              />
-                            </div>
-                            <div className="flex justify-between mt-1 text-[10px] text-zinc-500">
-                              <span>Fresh</span>
-                              <span>Fatigued</span>
-                            </div>
-                          </div>
+                      {/* No performance data message */}
+                      {!hasPerf && (
+                        <div className="text-center py-8">
+                          <p className="text-zinc-500">This asset has no performance data yet.</p>
+                          <p className="text-zinc-600 text-sm mt-1">Use it in an ad to see metrics here.</p>
                         </div>
                       )}
-                    </Section>
 
-                    {/* AUDIENCES Section */}
-                    {!isLoadingDetail && detailData && detailData.audiencePerformance.length > 0 && (
-                      <Section title="Audiences" icon={<Users className="w-4 h-4 text-indigo-400" />}>
-                        <AudienceBreakdown audiences={detailData.audiencePerformance} />
-                      </Section>
-                    )}
-
-                  </>
-                )}
-
-                {/* ========== ASSET INFO Section (always shown) ========== */}
-                <Section title="Asset Info" icon={isVideo ? <Film className="w-4 h-4 text-purple-400" /> : <Image className="w-4 h-4 text-blue-400" />}>
-                  <div className="space-y-2">
-                    <InfoRow
-                      icon={<span className="text-xs font-medium text-zinc-400">Name</span>}
-                      value={(detailData?.media?.name || item.name) || 'Untitled'}
-                    />
-                    <InfoRow
-                      icon={isVideo ? <Film className="w-3.5 h-3.5 text-purple-400" /> : <Image className="w-3.5 h-3.5 text-blue-400" />}
-                      label="Type"
-                      value={item.mediaType === 'video' ? 'Video' : 'Image'}
-                    />
-                    {(detailData?.media?.width || item.width) && (detailData?.media?.height || item.height) && (
-                      <InfoRow
-                        icon={<Ruler className="w-3.5 h-3.5 text-zinc-400" />}
-                        label="Dimensions"
-                        value={`${detailData?.media?.width || item.width} x ${detailData?.media?.height || item.height}`}
-                      />
-                    )}
-                    {(detailData?.media?.fileSize || item.fileSize) && (
-                      <InfoRow
-                        icon={<HardDrive className="w-3.5 h-3.5 text-zinc-400" />}
-                        label="File Size"
-                        value={formatFileSize(detailData?.media?.fileSize || item.fileSize)}
-                      />
-                    )}
-                    <InfoRow
-                      icon={<Calendar className="w-3.5 h-3.5 text-zinc-400" />}
-                      label="Synced"
-                      value={formatDate(detailData?.media?.syncedAt || item.syncedAt)}
-                    />
-                    {hasPerf && (
-                      <InfoRow
-                        icon={<Layers className="w-3.5 h-3.5 text-zinc-400" />}
-                        label="Used in"
-                        value={`${item.adCount} ads, ${item.adsetCount} ad sets, ${item.campaignCount} campaigns`}
-                      />
-                    )}
-                    {!hasPerf && (
-                      <p className="text-sm text-zinc-500 py-2">Not used in any ads</p>
-                    )}
-                  </div>
-                </Section>
-
-                {/* WHERE IS THIS USED? Hierarchy (from detail data) */}
-                {!isLoadingDetail && detailData && detailData.hierarchy.length > 0 && (
-                  <Section title="Where is this used?" icon={<Eye className="w-4 h-4 text-zinc-400" />}>
-                    <div className="space-y-1">
-                      {detailData.hierarchy.map(campaign => {
-                        const isCampaignOpen = expandedCampaigns.has(campaign.campaignId)
-                        const totalAds = campaign.adsets.reduce((sum, as) => sum + as.ads.length, 0)
-
-                        return (
-                          <div key={campaign.campaignId}>
-                            <button
-                              onClick={() => toggleCampaign(campaign.campaignId)}
-                              className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-bg-hover transition-colors text-left"
-                            >
-                              {isCampaignOpen ? (
-                                <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                              ) : (
-                                <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                              )}
-                              <span className="text-xs font-medium text-hierarchy-campaign truncate flex-1">
-                                {campaign.campaignName}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 shrink-0">
-                                {campaign.adsets.length} set{campaign.adsets.length !== 1 ? 's' : ''}, {totalAds} ad{totalAds !== 1 ? 's' : ''}
-                              </span>
-                            </button>
-
-                            {isCampaignOpen && (
-                              <div className="ml-4 space-y-0.5">
-                                {campaign.adsets.map(adset => {
-                                  const isAdsetOpen = expandedAdsets.has(adset.adsetId)
-                                  return (
-                                    <div key={adset.adsetId}>
-                                      <button
-                                        onClick={() => toggleAdset(adset.adsetId)}
-                                        className="w-full flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-bg-hover transition-colors text-left"
-                                      >
-                                        {isAdsetOpen ? (
-                                          <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
-                                        ) : (
-                                          <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />
-                                        )}
-                                        <span className="text-xs text-hierarchy-adset truncate flex-1">
-                                          {adset.adsetName}
-                                        </span>
-                                        <span className="text-[10px] text-zinc-500 shrink-0">
-                                          {adset.ads.length} ad{adset.ads.length !== 1 ? 's' : ''}
-                                        </span>
-                                      </button>
-
-                                      {isAdsetOpen && (
-                                        <div className="ml-6 space-y-0.5">
-                                          {adset.ads.map(ad => (
-                                            <div
-                                              key={ad.adId}
-                                              className="flex items-center gap-2 py-1 px-2 text-xs"
-                                            >
-                                              <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0" />
-                                              <span className="text-zinc-300 truncate flex-1">
-                                                {ad.adName}
-                                              </span>
-                                              <span className={cn(
-                                                'text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0',
-                                                getStatusColor(ad.status)
-                                              )}>
-                                                {ad.status}
-                                              </span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </Section>
-                )}
-
-                {/* Loading state for detail sections */}
-                {isLoadingDetail && (
-                  <div className="space-y-4">
-                    <div className="h-64 bg-bg-card rounded-xl animate-pulse" />
-                    <div className="h-32 bg-bg-card rounded-xl animate-pulse" />
-                    <div className="h-48 bg-bg-card rounded-xl animate-pulse" />
-                  </div>
-                )}
-
-                {/* Footer actions */}
-                <div className="pt-4 border-t border-border flex gap-3">
-                  <button
-                    onClick={handleToggleStar}
-                    disabled={isTogglingStarred}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border',
-                      isTogglingStarred && 'opacity-50 cursor-wait',
-                      isStarred
-                        ? 'border-yellow-500/50 text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20'
-                        : 'border-zinc-600 text-zinc-400 hover:border-yellow-500/30 hover:text-yellow-500/70 hover:bg-yellow-500/10'
-                    )}
-                  >
-                    <Star className={cn('w-5 h-5', isStarred && 'fill-yellow-500')} />
-                    {isStarred ? 'Starred' : 'Star'}
-                  </button>
-
-                  {onBuildNewAds && (
-                    <button
-                      onClick={onBuildNewAds}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all bg-accent hover:bg-accent-hover text-white"
-                    >
-                      <Rocket className="w-5 h-5" />
-                      Build New Ads
-                    </button>
+                      {/* Loading state for detail sections */}
+                      {isLoadingDetail && (
+                        <div className="space-y-4">
+                          <div className="h-64 bg-bg-card rounded-xl animate-pulse" />
+                          <div className="h-32 bg-bg-card rounded-xl animate-pulse" />
+                          <div className="h-48 bg-bg-card rounded-xl animate-pulse" />
+                        </div>
+                      )}
+                    </>
                   )}
-                </div>
 
-                <p className="text-xs text-zinc-600 text-center">
-                  Press Esc to close{isVideo ? ', Space to play/pause' : ''}
-                </p>
+                  {/* ========== AI ANALYSIS TAB ========== */}
+                  {activeTab === 'analysis' && (
+                    <VideoAnalysisPanel
+                      mediaHash={item.mediaHash}
+                      analysisStatus={analysisStatus}
+                      analysis={analysis}
+                      scriptSuggestions={scriptSuggestions}
+                      analyzedAt={analyzedAt}
+                      errorMessage={analysisError}
+                      isPro={isPro}
+                      isAnalyzing={isAnalyzing}
+                      onAnalyze={onAnalyze}
+                      onReanalyze={onReanalyze}
+                    />
+                  )}
+
+                  {/* ========== DETAILS TAB ========== */}
+                  {activeTab === 'details' && (
+                    <>
+                      {/* ASSET INFO Section */}
+                      <Section title="Asset Info" icon={isVideo ? <Film className="w-4 h-4 text-purple-400" /> : <Image className="w-4 h-4 text-blue-400" />}>
+                        <div className="space-y-2">
+                          <InfoRow
+                            icon={<span className="text-xs font-medium text-zinc-400">Name</span>}
+                            value={(detailData?.media?.name || item.name) || 'Untitled'}
+                          />
+                          <InfoRow
+                            icon={isVideo ? <Film className="w-3.5 h-3.5 text-purple-400" /> : <Image className="w-3.5 h-3.5 text-blue-400" />}
+                            label="Type"
+                            value={item.mediaType === 'video' ? 'Video' : 'Image'}
+                          />
+                          {(detailData?.media?.width || item.width) && (detailData?.media?.height || item.height) && (
+                            <InfoRow
+                              icon={<Ruler className="w-3.5 h-3.5 text-zinc-400" />}
+                              label="Dimensions"
+                              value={`${detailData?.media?.width || item.width} x ${detailData?.media?.height || item.height}`}
+                            />
+                          )}
+                          {(detailData?.media?.fileSize || item.fileSize) && (
+                            <InfoRow
+                              icon={<HardDrive className="w-3.5 h-3.5 text-zinc-400" />}
+                              label="File Size"
+                              value={formatFileSize(detailData?.media?.fileSize || item.fileSize)}
+                            />
+                          )}
+                          <InfoRow
+                            icon={<Calendar className="w-3.5 h-3.5 text-zinc-400" />}
+                            label="Synced"
+                            value={formatDate(detailData?.media?.syncedAt || item.syncedAt)}
+                          />
+                          {hasPerf && (
+                            <InfoRow
+                              icon={<Layers className="w-3.5 h-3.5 text-zinc-400" />}
+                              label="Used in"
+                              value={`${item.adCount} ads, ${item.adsetCount} ad sets, ${item.campaignCount} campaigns`}
+                            />
+                          )}
+                          {!hasPerf && (
+                            <p className="text-sm text-zinc-500 py-2">Not used in any ads</p>
+                          )}
+                        </div>
+                      </Section>
+
+                      {/* WHERE IS THIS USED? Hierarchy (from detail data) */}
+                      {!isLoadingDetail && detailData && detailData.hierarchy.length > 0 && (
+                        <Section title="Where is this used?" icon={<Eye className="w-4 h-4 text-zinc-400" />}>
+                          <div className="space-y-1">
+                            {detailData.hierarchy.map(campaign => {
+                              const isCampaignOpen = expandedCampaigns.has(campaign.campaignId)
+                              const totalAds = campaign.adsets.reduce((sum, as) => sum + as.ads.length, 0)
+
+                              return (
+                                <div key={campaign.campaignId}>
+                                  <button
+                                    onClick={() => toggleCampaign(campaign.campaignId)}
+                                    className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-bg-hover transition-colors text-left"
+                                  >
+                                    {isCampaignOpen ? (
+                                      <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                    ) : (
+                                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                    )}
+                                    <span className="text-xs font-medium text-hierarchy-campaign truncate flex-1">
+                                      {campaign.campaignName}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 shrink-0">
+                                      {campaign.adsets.length} set{campaign.adsets.length !== 1 ? 's' : ''}, {totalAds} ad{totalAds !== 1 ? 's' : ''}
+                                    </span>
+                                  </button>
+
+                                  {isCampaignOpen && (
+                                    <div className="ml-4 space-y-0.5">
+                                      {campaign.adsets.map(adset => {
+                                        const isAdsetOpen = expandedAdsets.has(adset.adsetId)
+                                        return (
+                                          <div key={adset.adsetId}>
+                                            <button
+                                              onClick={() => toggleAdset(adset.adsetId)}
+                                              className="w-full flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-bg-hover transition-colors text-left"
+                                            >
+                                              {isAdsetOpen ? (
+                                                <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
+                                              ) : (
+                                                <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />
+                                              )}
+                                              <span className="text-xs text-hierarchy-adset truncate flex-1">
+                                                {adset.adsetName}
+                                              </span>
+                                              <span className="text-[10px] text-zinc-500 shrink-0">
+                                                {adset.ads.length} ad{adset.ads.length !== 1 ? 's' : ''}
+                                              </span>
+                                            </button>
+
+                                            {isAdsetOpen && (
+                                              <div className="ml-6 space-y-0.5">
+                                                {adset.ads.map(ad => (
+                                                  <div
+                                                    key={ad.adId}
+                                                    className="flex items-center gap-2 py-1 px-2 text-xs"
+                                                  >
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0" />
+                                                    <span className="text-zinc-300 truncate flex-1">
+                                                      {ad.adName}
+                                                    </span>
+                                                    <span className={cn(
+                                                      'text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0',
+                                                      getStatusColor(ad.status)
+                                                    )}>
+                                                      {ad.status}
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </Section>
+                      )}
+
+                      {/* Loading state for hierarchy */}
+                      {isLoadingDetail && (
+                        <div className="space-y-4">
+                          <div className="h-32 bg-bg-card rounded-xl animate-pulse" />
+                          <div className="h-48 bg-bg-card rounded-xl animate-pulse" />
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Footer actions - shown on all tabs */}
+                  <div className="pt-4 border-t border-border flex gap-3">
+                    <button
+                      onClick={handleToggleStar}
+                      disabled={isTogglingStarred}
+                      className={cn(
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border',
+                        isTogglingStarred && 'opacity-50 cursor-wait',
+                        isStarred
+                          ? 'border-yellow-500/50 text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20'
+                          : 'border-zinc-600 text-zinc-400 hover:border-yellow-500/30 hover:text-yellow-500/70 hover:bg-yellow-500/10'
+                      )}
+                    >
+                      <Star className={cn('w-5 h-5', isStarred && 'fill-yellow-500')} />
+                      {isStarred ? 'Starred' : 'Star'}
+                    </button>
+
+                    {onBuildNewAds && (
+                      <button
+                        onClick={onBuildNewAds}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all bg-accent hover:bg-accent-hover text-white"
+                      >
+                        <Rocket className="w-5 h-5" />
+                        Build New Ads
+                      </button>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-zinc-600 text-center">
+                    Press Esc to close{isVideo ? ', Space to play/pause' : ''}
+                  </p>
+                </div>
               </div>
             </motion.div>
           </div>

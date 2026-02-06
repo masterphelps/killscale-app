@@ -60,50 +60,53 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-dark flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#FAF8FF', fontFamily: 'Inter, sans-serif' }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <svg width="200" height="45" viewBox="0 0 280 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-            </svg>
+            <img src="/logo.png" alt="KillScale" className="h-12" />
           </Link>
         </div>
 
-        <div className="bg-bg-card border border-border rounded-xl p-8">
-          <h1 className="text-2xl font-bold mb-2">Welcome back</h1>
-          <p className="text-zinc-500 mb-6">Sign in to your account</p>
+        <div className="bg-white rounded-2xl p-8 shadow-sm" style={{ border: '1px solid #E4DFF0' }}>
+          <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+            Welcome back
+          </h1>
+          <p className="mb-6 text-base" style={{ color: '#6B7280' }}>Sign in to your account</p>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: '#1A1A1A' }}>Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                className="w-full px-4 py-3 rounded-lg text-sm transition-colors focus:outline-none"
+                style={{ background: '#FAF8FF', border: '1px solid #E4DFF0', color: '#1A1A1A' }}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = '#E4DFF0'}
                 placeholder="you@example.com"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Password</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: '#1A1A1A' }}>Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-bg-dark border border-border rounded-lg text-white focus:outline-none focus:border-accent"
+                className="w-full px-4 py-3 rounded-lg text-sm transition-colors focus:outline-none"
+                style={{ background: '#FAF8FF', border: '1px solid #E4DFF0', color: '#1A1A1A' }}
+                onFocus={(e) => e.target.style.borderColor = '#7c3aed'}
+                onBlur={(e) => e.target.style.borderColor = '#E4DFF0'}
                 placeholder="••••••••"
                 required
               />
             </div>
 
             {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              <div className="p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
                 {error}
               </div>
             )}
@@ -111,7 +114,10 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              className="w-full py-3 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+              style={{ background: '#7c3aed' }}
+              onMouseEnter={(e) => { if (!loading) (e.target as HTMLButtonElement).style.background = '#6d28d9' }}
+              onMouseLeave={(e) => (e.target as HTMLButtonElement).style.background = '#7c3aed'}
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
@@ -119,9 +125,9 @@ export default function LoginPage() {
 
           {/* OAuth Divider */}
           <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-border"></div>
-            <span className="text-zinc-500 text-sm">or continue with</span>
-            <div className="flex-1 h-px bg-border"></div>
+            <div className="flex-1 h-px" style={{ background: '#E4DFF0' }}></div>
+            <span className="text-sm" style={{ color: '#9CA3AF' }}>or continue with</span>
+            <div className="flex-1 h-px" style={{ background: '#E4DFF0' }}></div>
           </div>
 
           {/* OAuth Buttons */}
@@ -129,7 +135,10 @@ export default function LoginPage() {
             <button
               onClick={() => handleOAuthSignIn('google')}
               disabled={oauthLoading !== null}
-              className="w-full py-3 bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-900 font-medium rounded-lg transition-colors flex items-center justify-center gap-3"
+              className="w-full py-3 font-medium rounded-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              style={{ background: '#FFFFFF', border: '1px solid #E4DFF0', color: '#1A1A1A' }}
+              onMouseEnter={(e) => (e.target as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)'}
+              onMouseLeave={(e) => (e.target as HTMLButtonElement).style.boxShadow = 'none'}
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -152,9 +161,9 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <p className="mt-6 text-center text-zinc-500 text-sm">
+          <p className="mt-6 text-center text-sm" style={{ color: '#6B7280' }}>
             Don't have an account?{' '}
-            <Link href="/signup" className="text-accent hover:underline">
+            <Link href="/signup" className="font-medium hover:underline" style={{ color: '#7c3aed' }}>
               Sign up
             </Link>
           </p>

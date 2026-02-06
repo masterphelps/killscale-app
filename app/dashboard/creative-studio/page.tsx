@@ -1,525 +1,131 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { LayoutGrid, List, RefreshCw, Download, Film, Image, Upload, Loader2 } from 'lucide-react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import { LayoutGrid, Zap, Trophy, FileText, ArrowRight, Film, Image as ImageIcon, Sparkles, Eye, MousePointer, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
-import {
-  GalleryGrid,
-  FunnelFilterBar,
-  StarredMediaBar,
-  TheaterModal,
-  MediaTable,
-} from '@/components/creative-studio'
-import type {
-  StudioAsset,
-  StudioAssetDetail,
-} from '@/components/creative-studio/types'
-import { LaunchWizard, type Creative } from '@/components/launch-wizard'
-import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
+import { useCreativeStudio } from './creative-studio-context'
+import { ScoreDistributionChart } from '@/components/creative-studio/score-distribution-chart'
+import { AIInsightsCard } from '@/components/creative-studio/ai-insights-card'
+import type { VideoAnalysis } from '@/components/creative-studio/types'
 
-type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
+function ScoreBadge({ score, size = 'md' }: { score: number | null; size?: 'sm' | 'md' }) {
+  if (score === null) return <span className="text-zinc-600">--</span>
+  const cls = score >= 75 ? 'bg-emerald-500/20 text-emerald-400' :
+    score >= 50 ? 'bg-amber-500/20 text-amber-400' :
+    score >= 25 ? 'bg-orange-500/20 text-orange-400' :
+    'bg-red-500/20 text-red-400'
+  return (
+    <span className={cn(
+      'inline-flex items-center justify-center rounded-md font-bold',
+      cls,
+      size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm'
+    )}>
+      {score}
+    </span>
+  )
+}
 
-type ViewMode = 'gallery' | 'table'
-type SortOption = 'hookScore' | 'holdScore' | 'clickScore' | 'convertScore' | 'spend' | 'roas' | 'revenue' | 'fatigue' | 'adCount' | 'fileSize' | 'syncedAt' | 'name' | 'thumbstopRate' | 'holdRate' | 'ctr' | 'cpc' | 'impressions'
+interface AnalysisItem {
+  id: string
+  mediaHash: string
+  status: string
+  analysis: VideoAnalysis | null
+}
 
-export default function CreativeStudioPage() {
-  // Auth & Account
+export default function CreativeStudioOverview() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
+  const { assets, isLoading, activeAds, activeDailyBudget, copyVariations } = useCreativeStudio()
 
-  // View state
-  const [viewMode, setViewMode] = useState<ViewMode>('gallery')
-  const [sortBy, setSortBy] = useState<SortOption>('hookScore')
-  const [sortDesc, setSortDesc] = useState(true)
-  const [showSortDropdown, setShowSortDropdown] = useState(false)
-  const sortDropdownRef = useRef<HTMLDivElement>(null)
+  // AI Analyses state
+  const [analyses, setAnalyses] = useState<AnalysisItem[]>([])
+  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true)
 
-
-  // Data state
-  const [assets, setAssets] = useState<StudioAsset[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSyncing, setIsSyncing] = useState(false)
-
-  // Funnel filter state — null = inactive, number = score threshold for that stage
-  const [funnelThresholds, setFunnelThresholds] = useState<Record<FunnelStage, number | null>>({
-    hook: null, hold: null, click: null, convert: null, scale: null,
-  })
-
-  // Download state (Phase 2 of sync)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState({ completed: 0, total: 0 })
-
-  // Modal state
-  const [selectedItem, setSelectedItem] = useState<StudioAsset | null>(null)
-  const [detailData, setDetailData] = useState<StudioAssetDetail | null>(null)
-  const [isDetailLoading, setIsDetailLoading] = useState(false)
-
-  // Starred items
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
-
-  // Launch Wizard state
-  const [showLaunchWizard, setShowLaunchWizard] = useState(false)
-  const [wizardCreatives, setWizardCreatives] = useState<Creative[]>([])
-
-  // Upload state
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Close sort dropdown on outside click
-  useEffect(() => {
-    if (!showSortDropdown) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node)) {
-        setShowSortDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showSortDropdown])
-
-  // Video source cache for hover-to-play
-  const [videoSources, setVideoSources] = useState<Record<string, string>>({})
-  const videoSourceLoadingRef = useRef<Set<string>>(new Set())
-  const videoSourcesRef = useRef<Record<string, string>>({})
-  videoSourcesRef.current = videoSources
-
-  // Fetch video source on demand (for hover-to-play)
-  const fetchVideoSource = useCallback(async (videoId: string) => {
-    if (!user || videoSourcesRef.current[videoId] || videoSourceLoadingRef.current.has(videoId)) return
-    videoSourceLoadingRef.current.add(videoId)
-
-    try {
-      const res = await fetch(`/api/creative-studio/video-source?userId=${user.id}&videoId=${videoId}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.source) {
-          setVideoSources(prev => ({ ...prev, [videoId]: data.source }))
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch video source:', err)
-    }
-  }, [user])
-
-  // Load data — stable refs prevent re-fetching on context identity changes
-  const hasLoadedRef = useRef(false)
-  const userRef = useRef(user)
-  const accountRef = useRef(currentAccountId)
-  userRef.current = user
-  accountRef.current = currentAccountId
-
-  const loadData = useCallback(async () => {
-    const u = userRef.current
-    const acct = accountRef.current
-    if (!u || !acct) return
-    if (!hasLoadedRef.current) {
-      setIsLoading(true)
-    }
-
-    try {
-      const params = new URLSearchParams({
-        userId: u.id,
-        adAccountId: acct,
-      })
-
-      const [assetsRes, starredRes] = await Promise.all([
-        fetch(`/api/creative-studio/media?${params}`),
-        fetch(`/api/creative-studio/starred?${params}`),
-      ])
-
-      if (assetsRes.ok) {
-        const data = await assetsRes.json()
-        const transformed: StudioAsset[] = (data.assets || []).map((a: Record<string, unknown>) => ({
-          ...a,
-          isStarred: false,
-        }))
-        setAssets(transformed)
-      }
-      if (starredRes.ok) {
-        const data = await starredRes.json()
-        const starredSet = new Set<string>(
-          (data.starred || []).map((s: { media_hash: string }) => s.media_hash)
-        )
-        setStarredIds(starredSet)
-      }
-    } catch (error) {
-      console.error('Failed to load creative studio data:', error)
-    } finally {
-      setIsLoading(false)
-      hasLoadedRef.current = true
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Load when user and account are available, or when account changes
-  const lastLoadedAccountRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (user && currentAccountId) {
-      // Only re-fetch if account actually changed (not just context identity)
-      if (lastLoadedAccountRef.current !== currentAccountId) {
-        // Reset for new account
-        if (lastLoadedAccountRef.current !== null) {
-          hasLoadedRef.current = false
-          setAssets([])
-        }
-        lastLoadedAccountRef.current = currentAccountId
-        loadData()
-      }
-    }
-  }, [user, currentAccountId, loadData])
-
-  // Handle sync — two-phase
-  const handleSync = async () => {
-    if (!user || !currentAccountId || isSyncing || isDownloading) return
-    setIsSyncing(true)
-
-    try {
-      const cleanAccountId = currentAccountId.replace(/^act_/, '')
-      await fetch('/api/meta/sync-media', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, adAccountId: cleanAccountId }),
-      })
-      await loadData()
-    } catch (error) {
-      console.error('Phase 1 sync failed:', error)
-    } finally {
-      setIsSyncing(false)
-    }
-
-    // Phase 2: Download files to Supabase Storage (polling loop)
-    setIsDownloading(true)
-    setDownloadProgress({ completed: 0, total: 0 })
-
-    try {
-      let done = false
-      let isFirstBatch = true
-      while (!done) {
-        const res = await fetch('/api/creative-studio/download-media', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: currentAccountId,
-            batchSize: 5,
-            ...(isFirstBatch && { retryFailed: true }),
-          }),
-        })
-        isFirstBatch = false
-
-        if (!res.ok) {
-          console.error('Download media failed:', res.status)
-          break
-        }
-
-        const result = await res.json()
-        setDownloadProgress({ completed: result.completed, total: result.totalItems })
-        done = result.done
-
-        if (done) {
-          await loadData()
-        }
-      }
-    } catch (error) {
-      console.error('Phase 2 download failed:', error)
-    } finally {
-      setIsDownloading(false)
-    }
-  }
-
-  // Toggle star
-  const handleToggleStar = useCallback(async (id: string) => {
+  // Fetch AI analyses
+  const loadAnalyses = useCallback(async () => {
     if (!user || !currentAccountId) return
-
-    // Find asset — id is always the media_library id
-    const asset = assets.find(a => a.id === id)
-    if (!asset) return
-
-    const mediaHash = asset.mediaHash
-    const isCurrentlyStarred = starredIds.has(mediaHash)
-
-    // Optimistic update
-    const newStarred = new Set(starredIds)
-    if (isCurrentlyStarred) {
-      newStarred.delete(mediaHash)
-    } else {
-      newStarred.add(mediaHash)
-    }
-    setStarredIds(newStarred)
-
-    try {
-      if (isCurrentlyStarred) {
-        await fetch('/api/creative-studio/starred', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: currentAccountId,
-            mediaHash,
-          }),
-        })
-      } else {
-        await fetch('/api/creative-studio/starred', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: currentAccountId,
-            mediaHash,
-            mediaType: asset.mediaType,
-            thumbnailUrl: asset.thumbnailUrl,
-            mediaName: asset.name,
-          }),
-        })
-      }
-    } catch (error) {
-      console.error('Failed to toggle star:', error)
-      setStarredIds(starredIds)
-    }
-  }, [user, currentAccountId, starredIds, assets])
-
-  // Load detail data for selected asset
-  const loadDetailData = useCallback(async (asset: StudioAsset) => {
-    if (!user || !currentAccountId) return
-    setIsDetailLoading(true)
-    setDetailData(null)
-
+    setIsLoadingAnalyses(true)
     try {
       const params = new URLSearchParams({
         userId: user.id,
         adAccountId: currentAccountId,
-        mediaHash: asset.mediaHash,
+        status: 'complete',
+        limit: '100'
       })
-      const res = await fetch(`/api/creative-studio/media-detail?${params}`)
-      if (res.ok) {
-        const data: StudioAssetDetail = await res.json()
-        setDetailData(data)
+      const res = await fetch(`/api/creative-studio/video-analyses?${params}`)
+      const data = await res.json()
+      if (data.analyses) {
+        setAnalyses(data.analyses)
       }
-    } catch (error) {
-      console.error('Failed to load detail data:', error)
+    } catch (err) {
+      console.error('Failed to load analyses:', err)
     } finally {
-      setIsDetailLoading(false)
+      setIsLoadingAnalyses(false)
     }
   }, [user, currentAccountId])
 
-  // Handle select item
-  const handleSelect = useCallback((id: string) => {
-    const asset = assets.find(a => a.id === id)
-    if (asset) {
-      setSelectedItem(asset)
-      loadDetailData(asset)
+  useEffect(() => {
+    loadAnalyses()
+  }, [loadAnalyses])
+
+  // Aggregate AI scores from completed analyses
+  const aiScores = useMemo(() => {
+    const complete = analyses.filter(a => a.status === 'complete' && a.analysis)
+    if (complete.length === 0) return null
+
+    const hookScores = complete.map(a => a.analysis!.hook.score).filter(s => s !== null && s !== undefined)
+    const holdScores = complete.map(a => a.analysis!.hold.score).filter(s => s !== null && s !== undefined)
+    const clickScores = complete.map(a => a.analysis!.click.score).filter(s => s !== null && s !== undefined)
+    const convertScores = complete.map(a => a.analysis!.convert.score).filter(s => s !== null && s !== undefined)
+
+    const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null
+
+    return {
+      hook: avg(hookScores),
+      hold: avg(holdScores),
+      click: avg(clickScores),
+      convert: avg(convertScores),
+      analyzedCount: complete.length
     }
-  }, [assets, loadDetailData])
+  }, [analyses])
 
-  // Handle table sort (from column header clicks)
-  const handleTableSort = useCallback((field: string) => {
-    if (field === sortBy) {
-      setSortDesc(prev => !prev)
-    } else {
-      setSortBy(field as SortOption)
-      setSortDesc(true)
+  // Stats
+  const stats = useMemo(() => {
+    const withData = assets.filter(a => a.hasPerformanceData)
+    const videos = assets.filter(a => a.mediaType === 'video')
+    const images = assets.filter(a => a.mediaType === 'image')
+
+    return {
+      totalAssets: assets.length,
+      videoCount: videos.length,
+      imageCount: images.length,
+      withDataCount: withData.length,
+      totalSpend: Math.round(withData.reduce((s, a) => s + a.spend, 0) * 100) / 100,
+      totalRevenue: Math.round(withData.reduce((s, a) => s + a.revenue, 0) * 100) / 100,
     }
-  }, [sortBy])
-
-  // Handle menu click
-  const handleMenuClick = useCallback((id: string) => {
-    // TODO: implement menu actions
-  }, [])
-
-  // Handle close detail
-  const handleCloseDetail = useCallback(() => {
-    setSelectedItem(null)
-    setDetailData(null)
-  }, [])
-
-  // Handle build from starred
-  const handleBuildFromStarred = useCallback(() => {
-    const starredAssets = assets.filter(a => starredIds.has(a.mediaHash)).slice(0, 6)
-    if (starredAssets.length === 0) return
-
-    const creatives = starredAssets.map(a => ({
-      preview: a.mediaType === 'video' ? (a.thumbnailUrl || '') : (a.imageUrl || a.storageUrl || ''),
-      type: a.mediaType as 'image' | 'video',
-      uploaded: true,
-      isFromLibrary: true,
-      ...(a.mediaType === 'image' ? { imageHash: a.mediaHash } : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || undefined }),
-    }))
-
-    setWizardCreatives(creatives)
-    setShowLaunchWizard(true)
-  }, [starredIds, assets])
-
-  // Handle clear starred
-  const handleClearStarred = useCallback(async () => {
-    if (!user || !currentAccountId) return
-
-    try {
-      await fetch('/api/creative-studio/starred', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: currentAccountId,
-          clearAll: true,
-        }),
-      })
-      setStarredIds(new Set())
-    } catch (error) {
-      console.error('Failed to clear starred:', error)
-    }
-  }, [user, currentAccountId])
-
-  // Handle file upload to Meta
-  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0 || !user || !currentAccountId) return
-
-    setIsUploading(true)
-    setUploadProgress('Fetching token...')
-
-    try {
-      // Get access token
-      const tokenRes = await fetch(`/api/meta/token?userId=${user.id}&adAccountId=${currentAccountId}`)
-      if (!tokenRes.ok) throw new Error('Failed to get access token')
-      const { accessToken } = await tokenRes.json()
-
-      const cleanAccountId = currentAccountId.replace(/^act_/, '')
-      let completed = 0
-
-      for (const file of Array.from(files)) {
-        const isVideo = file.type.startsWith('video/')
-        setUploadProgress(`Uploading ${completed + 1}/${files.length}: ${file.name}`)
-
-        if (isVideo) {
-          await uploadVideoToMeta(file, accessToken, cleanAccountId, (progress) => {
-            setUploadProgress(`Uploading ${completed + 1}/${files.length}: ${file.name} (${progress}%)`)
-          })
-        } else {
-          await uploadImageToMeta(file, accessToken, cleanAccountId)
-        }
-        completed++
-      }
-
-      setUploadProgress('Syncing...')
-      await handleSync()
-    } catch (error) {
-      console.error('Upload failed:', error)
-    } finally {
-      setIsUploading(false)
-      setUploadProgress('')
-      // Reset file input
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }, [user, currentAccountId, handleSync])
-
-  // Funnel filter handlers
-  const toggleFunnelFilter = useCallback((stage: FunnelStage) => {
-    setFunnelThresholds(prev => ({
-      ...prev,
-      [stage]: prev[stage] !== null ? null : 75, // default to 75 when activating
-    }))
-  }, [])
-
-  const setFunnelThreshold = useCallback((stage: FunnelStage, value: number) => {
-    setFunnelThresholds(prev => ({
-      ...prev,
-      [stage]: value, // setting a threshold also activates the filter
-    }))
-  }, [])
-
-  const clearFunnelFilters = useCallback(() => {
-    setFunnelThresholds({ hook: null, hold: null, click: null, convert: null, scale: null })
-  }, [])
-
-  // Compute scale threshold (median spend x 2) from assets with spend data
-  const scaleThreshold = useMemo(() => {
-    const spends = assets
-      .filter(a => a.hasPerformanceData && a.spend > 0)
-      .map(a => a.spend)
-      .sort((a, b) => a - b)
-    if (spends.length === 0) return 0
-    const mid = Math.floor(spends.length / 2)
-    const median = spends.length % 2 === 0
-      ? (spends[mid - 1] + spends[mid]) / 2
-      : spends[mid]
-    return median * 2
   }, [assets])
 
-  // Funnel stats — computed from pre-funnel-filtered assets (respects search/type/fatigue/hasData filters but NOT funnel filters)
-  const preFunnelAssets = useMemo(() => assets, [assets])
+  // Top 3 per category
+  const topHook = useMemo(() =>
+    [...assets].filter(a => a.hookScore !== null).sort((a, b) => (b.hookScore ?? 0) - (a.hookScore ?? 0)).slice(0, 3),
+    [assets]
+  )
+  const topHold = useMemo(() =>
+    [...assets].filter(a => a.holdScore !== null).sort((a, b) => (b.holdScore ?? 0) - (a.holdScore ?? 0)).slice(0, 3),
+    [assets]
+  )
+  const topClick = useMemo(() =>
+    [...assets].filter(a => a.clickScore !== null).sort((a, b) => (b.clickScore ?? 0) - (a.clickScore ?? 0)).slice(0, 3),
+    [assets]
+  )
+  const topConvert = useMemo(() =>
+    [...assets].filter(a => a.convertScore !== null).sort((a, b) => (b.convertScore ?? 0) - (a.convertScore ?? 0)).slice(0, 3),
+    [assets]
+  )
 
-  const funnelStats = useMemo(() => {
-    const withData = preFunnelAssets.filter(a => a.hasPerformanceData)
-    const total = withData.length
-    const t = (stage: FunnelStage) => funnelThresholds[stage] ?? 75
-    return {
-      hook: { good: withData.filter(a => (a.hookScore ?? 0) >= t('hook')).length, total },
-      hold: { good: withData.filter(a => (a.holdScore ?? 0) >= t('hold')).length, total },
-      click: { good: withData.filter(a => (a.clickScore ?? 0) >= t('click')).length, total },
-      convert: { good: withData.filter(a => (a.convertScore ?? 0) >= t('convert')).length, total },
-      scale: { good: withData.filter(a => a.spend >= scaleThreshold).length, total },
-    }
-  }, [preFunnelAssets, scaleThreshold, funnelThresholds])
-
-  // Filter and sort all assets
-  const filteredAssets = useMemo(() => {
-    let items = [...assets]
-
-    // Funnel stage filters (additive AND, per-stage thresholds)
-    const activeStages = (Object.entries(funnelThresholds) as [FunnelStage, number | null][])
-      .filter(([, v]) => v !== null)
-    if (activeStages.length > 0) {
-      items = items.filter(item => {
-        for (const [stage, threshold] of activeStages) {
-          if (stage === 'hook' && (item.hookScore ?? 0) < threshold!) return false
-          if (stage === 'hold' && (item.holdScore ?? 0) < threshold!) return false
-          if (stage === 'click' && (item.clickScore ?? 0) < threshold!) return false
-          if (stage === 'convert' && (item.convertScore ?? 0) < threshold!) return false
-          if (stage === 'scale' && item.spend < scaleThreshold) return false
-        }
-        return true
-      })
-    }
-
-    // Sort
-    items.sort((a, b) => {
-      let comparison = 0
-      switch (sortBy) {
-        case 'hookScore': comparison = (a.hookScore ?? -1) - (b.hookScore ?? -1); break
-        case 'holdScore': comparison = (a.holdScore ?? -1) - (b.holdScore ?? -1); break
-        case 'clickScore': comparison = (a.clickScore ?? -1) - (b.clickScore ?? -1); break
-        case 'convertScore': comparison = (a.convertScore ?? -1) - (b.convertScore ?? -1); break
-        case 'spend': comparison = a.spend - b.spend; break
-        case 'roas': comparison = a.roas - b.roas; break
-        case 'revenue': comparison = a.revenue - b.revenue; break
-        case 'fatigue': comparison = a.fatigueScore - b.fatigueScore; break
-        case 'adCount': comparison = a.adCount - b.adCount; break
-        case 'fileSize': comparison = (a.fileSize || 0) - (b.fileSize || 0); break
-        case 'syncedAt': comparison = (a.syncedAt || '').localeCompare(b.syncedAt || ''); break
-        case 'name': comparison = (a.name || '').localeCompare(b.name || ''); break
-        case 'thumbstopRate': comparison = (a.thumbstopRate ?? -1) - (b.thumbstopRate ?? -1); break
-        case 'holdRate': comparison = (a.holdRate ?? -1) - (b.holdRate ?? -1); break
-        case 'ctr': comparison = a.ctr - b.ctr; break
-        case 'cpc': comparison = a.cpc - b.cpc; break
-        case 'impressions': comparison = a.impressions - b.impressions; break
-      }
-      return sortDesc ? -comparison : comparison
-    })
-
-    return items.map(item => ({
-      ...item,
-      isStarred: starredIds.has(item.mediaHash),
-    }))
-  }, [assets, funnelThresholds, scaleThreshold, sortBy, sortDesc, starredIds])
-
-  // Split filtered assets into videos and images for sectioned display
-  const videos = useMemo(() => filteredAssets.filter(a => a.mediaType === 'video'), [filteredAssets])
-  const images = useMemo(() => filteredAssets.filter(a => a.mediaType === 'image'), [filteredAssets])
-
-  // Show loading state while waiting for auth/account
   if (!user || !currentAccountId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -529,316 +135,358 @@ export default function CreativeStudioPage() {
   }
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen">
       <div className="max-w-[1800px] mx-auto px-4 lg:px-8 py-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-        >
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-bold text-white">Creative Studio</h1>
-            <p className="text-zinc-500 mt-1">
-              Analyze creative performance and build from your winners
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {isDownloading && (
-              <span className="text-sm text-zinc-400">
-                <Download className="w-4 h-4 inline mr-1 animate-pulse" />
-                Downloading... {downloadProgress.completed}/{downloadProgress.total}
-              </span>
-            )}
-            {isUploading && (
-              <span className="text-sm text-zinc-400">
-                <Loader2 className="w-4 h-4 inline mr-1 animate-spin" />
-                {uploadProgress}
-              </span>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,video/*"
-              className="hidden"
-              onChange={handleUpload}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                'bg-accent hover:bg-accent-hover text-white',
-                isUploading && 'opacity-50 cursor-wait'
-              )}
-            >
-              <Upload className="w-4 h-4" />
-              Upload
-            </button>
-            <button
-              onClick={handleSync}
-              disabled={isSyncing || isDownloading}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                'bg-bg-card border border-border hover:border-zinc-600',
-                (isSyncing || isDownloading) && 'opacity-50 cursor-wait'
-              )}
-            >
-              <RefreshCw className={cn('w-4 h-4', isSyncing && 'animate-spin')} />
-              {isSyncing ? 'Syncing...' : isDownloading ? 'Downloading...' : 'Sync Media'}
-            </button>
-          </div>
-        </div>
-
-        {/* Funnel Filters + Sort Controls */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
-        >
-          {/* Left: Funnel pills — always rendered to avoid layout flash */}
-          <div className="w-full lg:flex-1 lg:min-w-0">
-            <FunnelFilterBar
-              thresholds={funnelThresholds}
-              onToggle={toggleFunnelFilter}
-              onSetThreshold={setFunnelThreshold}
-              onClear={clearFunnelFilters}
-              stats={funnelStats}
-            />
-          </div>
-
-          {/* Right: Sort + View Toggle */}
-          <div className="flex items-center justify-between lg:justify-end gap-3 flex-shrink-0">
-            <div className="relative" ref={sortDropdownRef}>
-              <button
-                onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-bg-card border-border text-zinc-300 hover:border-border/50"
-              >
-                <span className="text-zinc-500">Sort:</span>
-                <span>{
-                  sortBy === 'hookScore' ? 'Hook' :
-                  sortBy === 'holdScore' ? 'Hold' :
-                  sortBy === 'clickScore' ? 'Click' :
-                  sortBy === 'convertScore' ? 'Convert' :
-                  sortBy === 'spend' ? 'Scale' :
-                  sortBy === 'roas' ? 'ROAS' :
-                  sortBy === 'revenue' ? 'Revenue' :
-                  sortBy === 'fatigue' ? 'Fatigue' :
-                  sortBy === 'adCount' ? 'Usage' :
-                  sortBy === 'fileSize' ? 'File Size' :
-                  sortBy === 'syncedAt' ? 'Date Synced' : sortBy
-                }</span>
-                <span className="text-zinc-500">{sortDesc ? '↓' : '↑'}</span>
-              </button>
-
-              {showSortDropdown && (
-                <div className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
-                  {([
-                    { value: 'hookScore', label: 'Hook' },
-                    { value: 'holdScore', label: 'Hold' },
-                    { value: 'clickScore', label: 'Click' },
-                    { value: 'convertScore', label: 'Convert' },
-                    { value: 'spend', label: 'Scale' },
-                    { value: 'roas', label: 'ROAS' },
-                    { value: 'revenue', label: 'Revenue' },
-                    { value: 'fatigue', label: 'Fatigue' },
-                    { value: 'adCount', label: 'Usage' },
-                    { value: 'fileSize', label: 'File Size' },
-                    { value: 'syncedAt', label: 'Date Synced' },
-                  ] as const).map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => {
-                        if (sortBy === option.value) {
-                          setSortDesc(!sortDesc)
-                        } else {
-                          setSortBy(option.value as SortOption)
-                          setSortDesc(true)
-                        }
-                        setShowSortDropdown(false)
-                      }}
-                      className={`w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors ${
-                        sortBy === option.value
-                          ? 'bg-indigo-500/20 text-indigo-400'
-                          : 'text-zinc-300 hover:bg-white/5'
-                      }`}
-                    >
-                      <span>{option.label}</span>
-                      {sortBy === option.value && (
-                        <span className="text-xs">{sortDesc ? '↓ High to Low' : '↑ Low to High'}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
-              <button
-                onClick={() => setViewMode('gallery')}
-                className={cn(
-                  'p-2 rounded-md transition-colors',
-                  viewMode === 'gallery'
-                    ? 'bg-accent text-white'
-                    : 'text-zinc-400 hover:text-white'
-                )}
-                title="Gallery view"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={cn(
-                  'p-2 rounded-md transition-colors',
-                  viewMode === 'table'
-                    ? 'bg-accent text-white'
-                    : 'text-zinc-400 hover:text-white'
-                )}
-                title="Table view"
-              >
-                <List className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Results Count */}
-        <div className="text-sm text-zinc-500">
-          {filteredAssets.length} assets
-          {Object.entries(funnelThresholds).some(([, v]) => v !== null) &&
-            ` filtered by ${Object.entries(funnelThresholds).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}+`).join(' + ')}`}
-        </div>
-
-        {/* Content — single view with Videos + Images sections */}
         <div>
-          {viewMode === 'gallery' ? (
-            isLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
-                ))}
+          <h1 className="text-2xl lg:text-3xl font-bold text-white">Creative Studio</h1>
+          <p className="text-zinc-500 mt-1">
+            Overview of your creative performance
+          </p>
+        </div>
+
+        {/* System Status Bar */}
+        {isLoading ? (
+          <div className="h-16 bg-bg-card border border-border rounded-xl animate-pulse" />
+        ) : (
+          <div className="bg-bg-card border border-border rounded-xl px-6 py-4">
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500">Total Assets</span>
+                <span className="text-white font-bold">{stats.totalAssets}</span>
+                <span className="flex items-center gap-2 text-zinc-400">
+                  <Film className="w-3 h-3 text-purple-400" /> {stats.videoCount}
+                  <ImageIcon className="w-3 h-3 text-blue-400 ml-1" /> {stats.imageCount}
+                </span>
               </div>
-            ) : filteredAssets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-bg-card flex items-center justify-center mb-4">
-                  <Image className="w-8 h-8 text-zinc-600" />
-                </div>
-                <h3 className="text-lg font-medium text-white mb-2">No media assets</h3>
-                <p className="text-sm text-zinc-500 mb-4">
-                  Sync your ad account to load media from Meta
+              <div className="hidden sm:block w-px h-4 bg-border" />
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500">With Performance Data</span>
+                <span className="text-white font-bold">{stats.withDataCount}</span>
+              </div>
+              <div className="hidden sm:block w-px h-4 bg-border" />
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500">Total Spend</span>
+                <span className="text-white font-bold">${stats.totalSpend.toLocaleString()}</span>
+              </div>
+              <div className="hidden sm:block w-px h-4 bg-border" />
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500">Ads</span>
+                <span className="text-white font-bold">{activeAds.length}</span>
+              </div>
+              {aiScores && (
+                <>
+                  <div className="hidden sm:block w-px h-4 bg-border" />
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-3 h-3 text-accent" />
+                    <span className="text-zinc-500">AI Analyzed</span>
+                    <span className="text-white font-bold">{aiScores.analyzedCount}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* AI Score Cards */}
+        {!isLoadingAnalyses && aiScores && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Hook Score */}
+            <div className={cn(
+              'rounded-xl border p-5 transition-all',
+              aiScores.hook !== null && aiScores.hook >= 75 ? 'border-emerald-500/30 bg-emerald-500/5' :
+              aiScores.hook !== null && aiScores.hook >= 50 ? 'border-amber-500/30 bg-amber-500/5' :
+              aiScores.hook !== null && aiScores.hook >= 25 ? 'border-orange-500/30 bg-orange-500/5' :
+              'border-border bg-bg-card'
+            )}>
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="w-5 h-5 text-emerald-400" />
+                <span className="text-sm font-medium text-zinc-400">Hook</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className={cn(
+                  'text-4xl font-bold',
+                  aiScores.hook !== null && aiScores.hook >= 75 ? 'text-emerald-400' :
+                  aiScores.hook !== null && aiScores.hook >= 50 ? 'text-amber-400' :
+                  aiScores.hook !== null && aiScores.hook >= 25 ? 'text-orange-400' :
+                  'text-red-400'
+                )}>
+                  {aiScores.hook ?? '--'}
+                </span>
+                <span className="text-xs text-zinc-500">avg score</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">First 3 seconds attention</p>
+            </div>
+
+            {/* Hold Score */}
+            <div className={cn(
+              'rounded-xl border p-5 transition-all',
+              aiScores.hold !== null && aiScores.hold >= 75 ? 'border-blue-500/30 bg-blue-500/5' :
+              aiScores.hold !== null && aiScores.hold >= 50 ? 'border-amber-500/30 bg-amber-500/5' :
+              aiScores.hold !== null && aiScores.hold >= 25 ? 'border-orange-500/30 bg-orange-500/5' :
+              'border-border bg-bg-card'
+            )}>
+              <div className="flex items-center gap-2 mb-3">
+                <Eye className="w-5 h-5 text-blue-400" />
+                <span className="text-sm font-medium text-zinc-400">Hold</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className={cn(
+                  'text-4xl font-bold',
+                  aiScores.hold !== null && aiScores.hold >= 75 ? 'text-blue-400' :
+                  aiScores.hold !== null && aiScores.hold >= 50 ? 'text-amber-400' :
+                  aiScores.hold !== null && aiScores.hold >= 25 ? 'text-orange-400' :
+                  'text-red-400'
+                )}>
+                  {aiScores.hold ?? '--'}
+                </span>
+                <span className="text-xs text-zinc-500">avg score</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">Viewer retention quality</p>
+            </div>
+
+            {/* Click Score */}
+            <div className={cn(
+              'rounded-xl border p-5 transition-all',
+              aiScores.click !== null && aiScores.click >= 75 ? 'border-violet-500/30 bg-violet-500/5' :
+              aiScores.click !== null && aiScores.click >= 50 ? 'border-amber-500/30 bg-amber-500/5' :
+              aiScores.click !== null && aiScores.click >= 25 ? 'border-orange-500/30 bg-orange-500/5' :
+              'border-border bg-bg-card'
+            )}>
+              <div className="flex items-center gap-2 mb-3">
+                <MousePointer className="w-5 h-5 text-violet-400" />
+                <span className="text-sm font-medium text-zinc-400">Click</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className={cn(
+                  'text-4xl font-bold',
+                  aiScores.click !== null && aiScores.click >= 75 ? 'text-violet-400' :
+                  aiScores.click !== null && aiScores.click >= 50 ? 'text-amber-400' :
+                  aiScores.click !== null && aiScores.click >= 25 ? 'text-orange-400' :
+                  'text-red-400'
+                )}>
+                  {aiScores.click ?? '--'}
+                </span>
+                <span className="text-xs text-zinc-500">avg score</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">CTA effectiveness</p>
+            </div>
+
+            {/* Convert Score */}
+            <div className={cn(
+              'rounded-xl border p-5 transition-all',
+              aiScores.convert !== null && aiScores.convert >= 75 ? 'border-amber-500/30 bg-amber-500/5' :
+              aiScores.convert !== null && aiScores.convert >= 50 ? 'border-amber-500/30 bg-amber-500/5' :
+              aiScores.convert !== null && aiScores.convert >= 25 ? 'border-orange-500/30 bg-orange-500/5' :
+              'border-border bg-bg-card'
+            )}>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="w-5 h-5 text-amber-400" />
+                <span className="text-sm font-medium text-zinc-400">Convert</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className={cn(
+                  'text-4xl font-bold',
+                  aiScores.convert !== null && aiScores.convert >= 75 ? 'text-amber-400' :
+                  aiScores.convert !== null && aiScores.convert >= 50 ? 'text-amber-400' :
+                  aiScores.convert !== null && aiScores.convert >= 25 ? 'text-orange-400' :
+                  'text-red-400'
+                )}>
+                  {aiScores.convert ?? '--'}
+                </span>
+                <span className="text-xs text-zinc-500">avg score</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">Purchase persuasion</p>
+            </div>
+          </div>
+        )}
+
+        {/* No analyses yet prompt */}
+        {!isLoadingAnalyses && !aiScores && (
+          <Link
+            href="/dashboard/creative-studio/ai-tasks"
+            className="block bg-gradient-to-r from-accent/10 to-purple-500/10 border border-accent/30 rounded-xl p-6 hover:border-accent/50 transition-colors"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-6 h-6 text-accent" />
+              </div>
+              <div>
+                <h3 className="text-white font-semibold">Get AI Creative Insights</h3>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Analyze your videos with AI to get Hook, Hold, Click, and Convert scores plus script suggestions.
                 </p>
-                <button
-                  onClick={handleSync}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-accent hover:bg-accent-hover text-white transition-colors"
-                >
-                  Sync Media
-                </button>
               </div>
-            ) : (
-              <div className="space-y-8">
-                {/* Videos Section */}
-                {videos.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Film className="w-5 h-5 text-purple-400" />
-                      <h2 className="text-lg font-semibold text-white">
-                        Videos ({videos.length})
-                      </h2>
-                    </div>
-                    <GalleryGrid
-                      items={videos}
-                      isLoading={false}
-                      onSelect={handleSelect}
-                      onStar={handleToggleStar}
-                      onMenu={handleMenuClick}
-                      videoSources={videoSources}
-                      onRequestVideoSource={fetchVideoSource}
-                    />
-                  </div>
-                )}
+              <ArrowRight className="w-5 h-5 text-zinc-500 ml-auto" />
+            </div>
+          </Link>
+        )}
 
-                {/* Images Section */}
-                {images.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Image className="w-5 h-5 text-blue-400" />
-                      <h2 className="text-lg font-semibold text-white">
-                        Images ({images.length})
-                      </h2>
-                    </div>
-                    <GalleryGrid
-                      items={images}
-                      isLoading={false}
-                      onSelect={handleSelect}
-                      onStar={handleToggleStar}
-                      onMenu={handleMenuClick}
-                      videoSources={videoSources}
-                      onRequestVideoSource={fetchVideoSource}
-                    />
-                  </div>
-                )}
-              </div>
-            )
-          ) : (
-            <MediaTable
-              items={filteredAssets}
-              isLoading={isLoading}
-              sortField={sortBy}
-              sortDirection={sortDesc ? 'desc' : 'asc'}
-              onSort={handleTableSort}
-              onSelect={(id) => handleSelect(id)}
-              onStar={(id) => handleToggleStar(id)}
-              starredIds={starredIds}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Starred Media Bar */}
-      <StarredMediaBar
-        starredCount={starredIds.size}
-        onBuildAds={handleBuildFromStarred}
-        onClear={handleClearStarred}
-      />
-
-      {/* Launch Wizard */}
-      {showLaunchWizard && currentAccountId && (
-        <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
-          <LaunchWizard
+        {/* AI Creative Insights */}
+        {!isLoading && user && currentAccountId && (
+          <AIInsightsCard
+            userId={user.id}
             adAccountId={currentAccountId}
-            onComplete={() => setShowLaunchWizard(false)}
-            onCancel={() => setShowLaunchWizard(false)}
-            initialEntityType="campaign"
-            preloadedCreatives={wizardCreatives}
+            assets={assets}
+            copyVariations={copyVariations}
+            activeAdsCount={activeAds.length}
           />
-        </div>
-      )}
+        )}
 
-      {/* Theater Modal */}
-      <TheaterModal
-        item={selectedItem}
-        isOpen={!!selectedItem}
-        onClose={handleCloseDetail}
-        detailData={detailData}
-        isLoadingDetail={isDetailLoading}
-        isStarred={selectedItem ? starredIds.has(selectedItem.mediaHash) : false}
-        onToggleStar={async () => {
-          if (selectedItem) {
-            await handleToggleStar(selectedItem.id)
-          }
-        }}
-        onBuildNewAds={() => {
-          if (!selectedItem) return
-          const a = selectedItem
-          const creative = {
-            preview: a.mediaType === 'video' ? (a.thumbnailUrl || '') : (a.imageUrl || a.storageUrl || ''),
-            type: a.mediaType as 'image' | 'video',
-            uploaded: true,
-            isFromLibrary: true,
-            ...(a.mediaType === 'image' ? { imageHash: a.mediaHash } : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || undefined }),
-          }
-          setWizardCreatives([creative])
-          setSelectedItem(null)
-          setDetailData(null)
-          setShowLaunchWizard(true)
-        }}
-      />
+        {/* Score Distribution Charts */}
+        {!isLoading && assets.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <ScoreDistributionChart items={assets} scoreField="hookScore" color="#10b981" label="Hook" />
+            <ScoreDistributionChart items={assets} scoreField="holdScore" color="#3b82f6" label="Hold" />
+            <ScoreDistributionChart items={assets} scoreField="clickScore" color="#8b5cf6" label="Click" />
+            <ScoreDistributionChart items={assets} scoreField="convertScore" color="#f59e0b" label="Convert" />
+          </div>
+        )}
+
+        {/* Mini Leaderboards */}
+        {!isLoading && assets.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Top Hook */}
+            <div className="bg-bg-card border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-emerald-400">Top Hook</h3>
+                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                  See all <ArrowRight className="w-3 h-3 inline" />
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {topHook.map((item, i) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
+                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
+                    <ScoreBadge score={item.hookScore} size="sm" />
+                  </div>
+                ))}
+                {topHook.length === 0 && <p className="text-xs text-zinc-600">No video data yet</p>}
+              </div>
+            </div>
+
+            {/* Top Hold */}
+            <div className="bg-bg-card border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-blue-400">Top Hold</h3>
+                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                  See all <ArrowRight className="w-3 h-3 inline" />
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {topHold.map((item, i) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
+                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
+                    <ScoreBadge score={item.holdScore} size="sm" />
+                  </div>
+                ))}
+                {topHold.length === 0 && <p className="text-xs text-zinc-600">No video data yet</p>}
+              </div>
+            </div>
+
+            {/* Top Click */}
+            <div className="bg-bg-card border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-violet-400">Top Click</h3>
+                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                  See all <ArrowRight className="w-3 h-3 inline" />
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {topClick.map((item, i) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
+                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
+                    <ScoreBadge score={item.clickScore} size="sm" />
+                  </div>
+                ))}
+                {topClick.length === 0 && <p className="text-xs text-zinc-600">No scored data yet</p>}
+              </div>
+            </div>
+
+            {/* Top Convert */}
+            <div className="bg-bg-card border border-border rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-amber-400">Top Convert</h3>
+                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                  See all <ArrowRight className="w-3 h-3 inline" />
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {topConvert.map((item, i) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
+                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
+                    <ScoreBadge score={item.convertScore} size="sm" />
+                  </div>
+                ))}
+                {topConvert.length === 0 && <p className="text-xs text-zinc-600">No scored data yet</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Links */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Link
+            href="/dashboard/creative-studio/active"
+            className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+          >
+            <Zap className="w-5 h-5 text-amber-400 mb-2" />
+            <h3 className="text-sm font-medium text-white group-hover:text-accent transition-colors">Ads</h3>
+            <p className="text-xs text-zinc-500 mt-1">View all active individual ads with scores</p>
+          </Link>
+          <Link
+            href="/dashboard/creative-studio/media"
+            className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+          >
+            <LayoutGrid className="w-5 h-5 text-blue-400 mb-2" />
+            <h3 className="text-sm font-medium text-white group-hover:text-accent transition-colors">Media</h3>
+            <p className="text-xs text-zinc-500 mt-1">Browse assets grouped by media</p>
+          </Link>
+          <Link
+            href="/dashboard/creative-studio/best-ads"
+            className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+          >
+            <Trophy className="w-5 h-5 text-emerald-400 mb-2" />
+            <h3 className="text-sm font-medium text-white group-hover:text-accent transition-colors">Best Ads</h3>
+            <p className="text-xs text-zinc-500 mt-1">Top performing ads leaderboard</p>
+          </Link>
+          <Link
+            href="/dashboard/creative-studio/best-copy"
+            className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+          >
+            <FileText className="w-5 h-5 text-violet-400 mb-2" />
+            <h3 className="text-sm font-medium text-white group-hover:text-accent transition-colors">Copy</h3>
+            <p className="text-xs text-zinc-500 mt-1">Top ad copy variations</p>
+          </Link>
+        </div>
+
+        {/* Loading placeholder */}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-zinc-500 text-sm">Loading creative data...</div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

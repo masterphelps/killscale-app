@@ -45,6 +45,7 @@ interface CreateCampaignRequest {
   specialAdCategory?: 'HOUSING' | 'CREDIT' | 'EMPLOYMENT' | null
   locationTarget: LocationTarget
   creatives: Creative[]
+  creativeMode?: 'separate' | 'carousel' // separate = N ads, carousel = 1 ad with N cards
   primaryText: string
   headline: string
   description?: string
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
       specialAdCategory,
       locationTarget,
       creatives,
+      creativeMode,
       primaryText,
       headline,
       description,
@@ -417,8 +419,167 @@ export async function POST(request: NextRequest) {
           await delay(100)
         }
       }
+    } else if (creativeMode === 'carousel' && creatives.length >= 2) {
+      // ========== CAROUSEL: Create single ad with multiple cards ==========
+      // Carousel ads require images only (no videos)
+      const carouselCards = creatives.map((creative) => ({
+        image_hash: creative.imageHash,
+        link: websiteUrl,
+        name: headline,  // Meta uses 'name' for card title in carousel
+        description: description || undefined
+      }))
+
+      const carouselStorySpec: Record<string, unknown> = {
+        page_id: pageId,
+        link_data: {
+          link: websiteUrl,
+          message: primaryText,
+          child_attachments: carouselCards,
+          call_to_action: objective === 'leads' && formId
+            ? { type: ctaType, value: { lead_gen_form_id: formId } }
+            : { type: ctaType, value: { link: websiteUrl } }
+        }
+      }
+
+      const carouselCreativePayload: Record<string, unknown> = {
+        name: `${campaignName} - Carousel`,
+        object_story_spec: carouselStorySpec,
+        access_token: accessToken
+      }
+
+      console.log('[create-campaign] Creating carousel creative with payload:', JSON.stringify(carouselCreativePayload, null, 2))
+
+      const creativeResponse = await fetch(
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/adcreatives`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(carouselCreativePayload)
+        }
+      )
+
+      const creativeResult = await creativeResponse.json()
+      if (creativeResult.error) {
+        console.error('[create-campaign] Carousel creative creation error:', creativeResult.error)
+        return NextResponse.json({
+          error: creativeResult.error.message || 'Failed to create carousel creative',
+          details: creativeResult.error.error_user_msg
+        }, { status: 400 })
+      }
+
+      // Create single carousel ad
+      const adPayload: Record<string, unknown> = {
+        name: `${campaignName} - Carousel Ad`,
+        adset_id: adsetId,
+        creative: { creative_id: creativeResult.id },
+        status: 'PAUSED',
+        access_token: accessToken
+      }
+
+      const adResponse = await fetch(
+        `${META_GRAPH_URL}/act_${cleanAdAccountId}/ads`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adPayload)
+        }
+      )
+
+      const adResult = await adResponse.json()
+      if (adResult.error) {
+        console.error('[create-campaign] Carousel ad creation error:', adResult.error)
+        return NextResponse.json({
+          error: adResult.error.message || 'Failed to create carousel ad'
+        }, { status: 400 })
+      }
+
+      adIds.push(adResult.id)
+
+      // UTM update for carousel ad
+      if (urlTags && adResult.id) {
+        try {
+          const actualUrlTags = urlTags
+            .replace('{{ad.id}}', adResult.id)
+            .replace('{{campaign.name}}', campaignName.replace(/\s+/g, '_'))
+
+          console.log(`[create-campaign] Updating carousel ad ${adResult.id} with UTM: ${actualUrlTags}`)
+
+          // Fetch the creative we just created
+          const creativeUrl = `${META_GRAPH_URL}/${creativeResult.id}?fields=id,name,object_story_spec&access_token=${accessToken}`
+          const creativeResponse = await fetch(creativeUrl)
+          const creativeData = await creativeResponse.json()
+
+          if (creativeData.error || !creativeData.object_story_spec) {
+            console.error('[create-campaign] Failed to fetch carousel creative for UTM update:', creativeData.error)
+          } else {
+            const newObjectStorySpec = { ...creativeData.object_story_spec }
+
+            // Update carousel link_data CTA with UTM
+            if (newObjectStorySpec.link_data) {
+              const baseLink = newObjectStorySpec.link_data.call_to_action?.value?.link || websiteUrl
+              const cleanBaseLink = baseLink.split('?')[0]
+              newObjectStorySpec.link_data.call_to_action = {
+                ...newObjectStorySpec.link_data.call_to_action,
+                value: { link: `${cleanBaseLink}?${actualUrlTags}` }
+              }
+
+              // Also update child_attachments links
+              if (newObjectStorySpec.link_data.child_attachments) {
+                newObjectStorySpec.link_data.child_attachments = newObjectStorySpec.link_data.child_attachments.map(
+                  (card: Record<string, unknown>) => ({
+                    ...card,
+                    link: `${(card.link as string || websiteUrl).split('?')[0]}?${actualUrlTags}`
+                  })
+                )
+              }
+            }
+
+            // Create new creative with UTM
+            const newCreativeResponse = await fetch(
+              `${META_GRAPH_URL}/act_${cleanAdAccountId}/adcreatives`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: `${campaignName} - Carousel (with UTM)`,
+                  object_story_spec: newObjectStorySpec,
+                  access_token: accessToken
+                })
+              }
+            )
+
+            const newCreativeResult = await newCreativeResponse.json()
+
+            if (newCreativeResult.error) {
+              console.error('[create-campaign] Failed to create UTM carousel creative:', newCreativeResult.error)
+            } else {
+              // Update ad to use new creative with UTM
+              const updateAdResponse = await fetch(
+                `${META_GRAPH_URL}/${adResult.id}`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    creative: { creative_id: newCreativeResult.id },
+                    access_token: accessToken
+                  })
+                }
+              )
+
+              const updateAdResult = await updateAdResponse.json()
+              if (updateAdResult.error) {
+                console.error('[create-campaign] Failed to update carousel ad with UTM creative:', updateAdResult.error)
+              } else {
+                console.log(`[create-campaign] Successfully updated carousel ad ${adResult.id} with UTM tracking`)
+              }
+            }
+          }
+        } catch (utmError) {
+          console.error('[create-campaign] Error updating carousel UTM:', utmError)
+        }
+      }
     } else {
-      // ========== REGULAR: Create new ad creatives and ads ==========
+      // ========== SEPARATE: Create new ad creatives and ads ==========
       for (let i = 0; i < creatives.length; i++) {
       const creative = creatives[i]
 

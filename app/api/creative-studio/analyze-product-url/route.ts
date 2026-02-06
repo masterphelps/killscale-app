@@ -1,5 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+    })
+
+    if (!response.ok) {
+      console.error('[Analyze] Failed to download image:', response.status)
+      return null
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg'
+    const arrayBuffer = await response.arrayBuffer()
+    const base64 = Buffer.from(arrayBuffer).toString('base64')
+
+    return {
+      base64,
+      mimeType: contentType.split(';')[0], // Remove charset if present
+    }
+  } catch (err) {
+    console.error('[Analyze] Error downloading image:', err)
+    return null
+  }
+}
+
+function resolveImageUrl(imageUrl: string, pageUrl: string): string {
+  // If already absolute URL, return as-is
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    return imageUrl
+  }
+
+  // If protocol-relative URL
+  if (imageUrl.startsWith('//')) {
+    return 'https:' + imageUrl
+  }
+
+  // Resolve relative URL against page URL
+  try {
+    return new URL(imageUrl, pageUrl).href
+  } catch {
+    return imageUrl
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json()
@@ -21,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     const html = await pageRes.text()
 
-    // Use Claude to extract product info from the HTML
+    // Use Claude to extract product info AND image URL from the HTML
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -51,6 +97,7 @@ Extract and return a JSON object with these fields:
 - brand: Brand name if different from product name
 - category: Product category (e.g., "fitness equipment", "skincare", "clothing")
 - uniqueSellingPoint: The main thing that makes this product special
+- imageUrl: The main product image URL (look for og:image meta tag, or the primary product image in the HTML - return the highest quality image URL you can find)
 
 Respond ONLY with the JSON object, no other text.`
           }
@@ -84,6 +131,21 @@ Respond ONLY with the JSON object, no other text.`
     } catch (parseError) {
       console.error('Failed to parse product info:', content)
       throw new Error('Failed to analyze product page')
+    }
+
+    // Download the product image if we found one
+    if (productInfo.imageUrl) {
+      const resolvedUrl = resolveImageUrl(productInfo.imageUrl, url)
+      console.log('[Analyze] Downloading product image from:', resolvedUrl)
+
+      const imageData = await downloadImageAsBase64(resolvedUrl)
+      if (imageData) {
+        productInfo.imageBase64 = imageData.base64
+        productInfo.imageMimeType = imageData.mimeType
+        console.log('[Analyze] Product image downloaded successfully, size:', Math.round(imageData.base64.length / 1024), 'KB')
+      } else {
+        console.log('[Analyze] Failed to download product image')
+      }
     }
 
     return NextResponse.json({ product: productInfo })

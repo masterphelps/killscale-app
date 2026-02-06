@@ -29,7 +29,6 @@ import {
   Palette,
   LayoutDashboard,
   Zap,
-  Trophy,
   FileText,
   LayoutGrid,
   Sparkles,
@@ -69,10 +68,9 @@ const settingsItems = [
 
 const creativeStudioItems = [
   { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/creative-studio/active', label: 'Active Ads', icon: Zap },
-  { href: '/dashboard/creative-studio/media', label: 'All Media', icon: LayoutGrid },
-  { href: '/dashboard/creative-studio/best-ads', label: 'Best Ads', icon: Trophy },
-  { href: '/dashboard/creative-studio/best-copy', label: 'Best Copy', icon: FileText },
+  { href: '/dashboard/creative-studio/active', label: 'Ads', icon: Zap },
+  { href: '/dashboard/creative-studio/media', label: 'Media', icon: LayoutGrid },
+  { href: '/dashboard/creative-studio/best-copy', label: 'Copy', icon: FileText },
   { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles, proOnly: true },
   { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, proOnly: true, isNew: true },
 ]

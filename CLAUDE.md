@@ -6,7 +6,7 @@ KillScale is a SaaS app for Meta and Google Ads advertisers. Users connect via M
 
 **Live URLs:** Landing at killscale.com, App at app.killscale.com
 
-**Stats (as of Jan 2026):** 45K+ LOC, 67 API endpoints, 35+ React components, 33+ database migrations
+**Stats (as of Feb 2026):** 48K+ LOC, 73 API endpoints, 42+ React components, 33+ database migrations
 
 ---
 
@@ -112,12 +112,28 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `components/creative-studio/theater-modal.tsx` - Full detail modal (video player + stats panels)
 - `components/creative-studio/starred-media-bar.tsx` - Fixed bottom bar for starred items + build ads
 - `components/creative-studio/gallery-grid.tsx` - Masonry grid wrapper for gallery cards
-- `components/creative-studio/types.ts` - StudioAsset, StudioAssetDetail, FatigueStatus types
+- `components/creative-studio/types.ts` - StudioAsset, StudioAssetDetail, FatigueStatus, CompetitorAd types
 - `app/api/creative-studio/media/route.ts` - Asset list with computed scores (lines 12-108)
 - `app/api/creative-studio/media-detail/route.ts` - Per-asset detail (hierarchy, daily data, audiences)
 - `app/api/creative-studio/video-source/route.ts` - Single video source URL fetch (on-demand)
 - `app/api/creative-studio/download-media/route.ts` - Phase 2 sync: download files to Supabase Storage
 - `app/api/creative-studio/starred/route.ts` - CRUD for starred media
+
+**Ad Studio (Competitor Research):**
+- `app/dashboard/creative-studio/ad-studio/page.tsx` - 3-step wizard (Product URL → Competitor Ads → Generate)
+- `app/api/creative-studio/competitor-search/route.ts` - ScrapeCreators company search API
+- `app/api/creative-studio/competitor-ads/route.ts` - Fetch competitor ads with stats (media mix, landing pages)
+- `app/api/creative-studio/competitor-ad/route.ts` - Single ad detail endpoint
+- `app/api/creative-studio/analyze-product-url/route.ts` - Extract product info + download image for AI
+- `app/api/creative-studio/generate-from-competitor/route.ts` - Claude API for ad copy generation
+- `app/api/creative-studio/generate-image/route.ts` - Gemini 2.5 Flash Image for ad image generation
+- `components/creative-studio/competitor-search-input.tsx` - Debounced autocomplete with keyboard nav
+- `components/creative-studio/competitor-ad-card.tsx` - Ad preview card with hover-to-play
+- `components/creative-studio/competitor-ads-grid.tsx` - Masonry grid with infinite scroll
+- `components/creative-studio/competitor-ad-modal.tsx` - Full ad detail modal with "Use as Inspiration"
+- `components/creative-studio/competitor-media-mix-chart.tsx` - Recharts donut chart for media types
+- `components/creative-studio/competitor-landing-pages.tsx` - Top landing pages with percentage bars
+- `components/creative-studio/competitor-filters.tsx` - Media type, days active, status filters
 
 **Onboarding & Trial:**
 - `app/onboarding/page.tsx` - 3-step onboarding wizard (Profile, Connect Meta, Select Accounts)
@@ -344,9 +360,144 @@ Per-asset composite scores computed in `app/api/creative-studio/media/route.ts` 
 
 **Badge Colors:** ≥75 green, ≥50 amber, ≥25 orange, <25 red
 
+### Ad Studio (Competitor Research & AI Generation)
+Research competitor ads and generate new ad copy/images using AI.
+
+**User Flow:**
+1. **Step 1:** Enter product URL → Claude extracts product info + downloads product image
+2. **Step 2:** Search competitor name → autocomplete dropdown → select company → view ads grid
+3. **Step 3:** Click ad → "Use as Inspiration" → Claude generates ad copy → Gemini generates image
+
+**API Integrations:**
+| Service | Purpose | API Key |
+|---------|---------|---------|
+| ScrapeCreators | Facebook Ad Library data | `SCRAPECREATORS_API_KEY` |
+| Claude (Anthropic) | Product analysis, ad copy generation | `ANTHROPIC_API_KEY` |
+| Gemini 2.5 Flash Image | Image generation with product reference | `GOOGLE_GEMINI_API_KEY` |
+
+**Competitor Search (`/api/creative-studio/competitor-search`):**
+- Calls ScrapeCreators company search API
+- Returns `{ companies: Array<{ name, pageId, logoUrl }> }`
+- Note: Response uses `data.searchResults` not `data.data`
+
+**Competitor Ads (`/api/creative-studio/competitor-ads`):**
+- Calls ScrapeCreators company ads endpoint
+- Computes stats: media mix (video/image/carousel %), top landing pages, earliest ad date
+- Response structure: `data.results` contains ads, ad data nested in `snapshot` object
+- Timestamps are Unix (convert with `new Date(ad.start_date * 1000)`)
+
+**Product Analysis (`/api/creative-studio/analyze-product-url`):**
+- Fetches product page HTML
+- Claude extracts: name, description, price, features, imageUrl
+- Downloads product image and stores as base64 for Gemini
+- Returns `imageBase64` and `imageMimeType` fields
+
+**Image Generation (`/api/creative-studio/generate-image`):**
+- **Dual-Image Mode:** Sends BOTH product image AND competitor ad image to Gemini
+- Gemini creates ad using YOUR product in the STYLE of the competitor ad
+- Fallback: Imagen text-to-image if no product image
+- Uses `responseModalities: ['IMAGE']` config
+
+**Image Download (`/api/creative-studio/download-image`):**
+- Downloads competitor ad image server-side (avoids CORS)
+- Returns base64 + mimeType for Gemini input
+
+**Key Implementation Details:**
+```typescript
+// Dual-image Gemini call - product image + reference ad
+const response = await genAI.models.generateContent({
+  model: 'gemini-2.5-flash-image',
+  contents: [{
+    role: 'user',
+    parts: [
+      { inlineData: { mimeType: productMimeType, data: productBase64 } },  // Your product
+      { inlineData: { mimeType: refAdMimeType, data: refAdBase64 } },       // Competitor ad style
+      { text: prompt }  // "Make an ad using my product that looks like this ad format"
+    ]
+  }],
+  config: { responseModalities: ['IMAGE'] }
+})
+```
+
+**Bold Style Prompt:**
+When "bold" style is selected, the prompt instructs Gemini to create a scroll-stopping, pattern-interrupting ad with:
+- Headline text overlaid (spelled exactly as provided)
+- Minimal text - only headline + brief supporting copy
+- Vibrant colors, high contrast, dynamic angles
+- Bold typography that demands attention
+
+**UI Components:**
+- `competitor-search-input.tsx` - Debounced (300ms) autocomplete with keyboard navigation
+- `competitor-ad-card.tsx` - 4:3 media preview, days active badge, hover-to-play videos
+- `competitor-ads-grid.tsx` - Masonry layout, IntersectionObserver infinite scroll
+- `competitor-ad-modal.tsx` - Left media player, right ad details, "Use as Inspiration" CTA
+- `competitor-media-mix-chart.tsx` - Recharts PieChart for video/image/carousel/text %
+- `competitor-filters.tsx` - Media type, days active (0-7, 7-30, 30-90, 90+), status toggles
+
+**Types Added to `components/creative-studio/types.ts`:**
+- `CompetitorAd` - Full ad data structure
+- `CompetitorCarouselCard` - Carousel card within ad
+- `CompetitorStats` - Aggregated stats (totalAds, mediaMix, topLandingPages)
+- `CompetitorSearchResult` - Company search result (name, pageId, logoUrl)
+
+**Files:** `app/dashboard/creative-studio/ad-studio/page.tsx`, `app/api/creative-studio/competitor-*.ts`, `app/api/creative-studio/generate-image/route.ts`
+
+### AI Tasks (Ad Studio Session Persistence)
+Allows users to revisit generated ad copy and generate images later from saved sessions.
+
+**User Flow:**
+1. Use Ad Studio to generate ad copy → session automatically saved
+2. Navigate to AI Tasks page → see all saved sessions
+3. Click session → view generated copy, generate images, adjust images, create ads
+
+**Session Data Structure (`ad_studio_sessions` table):**
+```sql
+CREATE TABLE ad_studio_sessions (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  ad_account_id TEXT,
+  product_url TEXT,
+  product_info JSONB,          -- {name, description, price, features, imageUrl}
+  competitor_company JSONB,    -- {name, pageId, logoUrl}
+  competitor_ad JSONB,         -- Full ad object used as inspiration
+  generated_ads JSONB,         -- Array of {headline, primaryText, description, angle, whyItWorks}
+  image_style TEXT,            -- lifestyle, product, minimal, bold
+  generated_images JSONB,      -- Array of {adIndex, versionIndex, storageUrl, mediaHash, mimeType}
+  status TEXT DEFAULT 'complete',
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+);
+```
+
+**Image Persistence Flow:**
+1. Generate image via Gemini → get base64
+2. Upload to Meta via `/api/creative-studio/save-generated-image` → get real `mediaHash` + Supabase `storageUrl`
+3. PATCH session to append `{adIndex, versionIndex, storageUrl, mediaHash}` to `generated_images`
+4. On page reload, images load from `storageUrl` (persisted)
+
+**Image Generation Options:**
+- **Style selector:** Lifestyle, Product, Minimal, Bold
+- **HD Text toggle:** Uses Gemini 3 Pro for better text rendering (slower)
+
+**Key Files:**
+- `app/dashboard/creative-studio/ai-tasks/page.tsx` - AI Tasks page with collapsible sections
+- `app/api/creative-studio/ad-session/route.ts` - CRUD for sessions (GET, POST, PATCH, DELETE)
+- `app/api/creative-studio/save-generated-image/route.ts` - Uploads to Meta first, then Supabase Storage
+- `supabase/migrations/046_ad_studio_sessions.sql` - Session table + RLS policies
+
+**Save Generated Image Flow (`/api/creative-studio/save-generated-image`):**
+1. Upload base64 to Meta Ads API → get real `imageHash` (required for ads)
+2. Upload to Supabase Storage → get `storageUrl` (for display)
+3. Insert into `media_library` table with both hashes
+4. Return `{storageUrl, mediaHash}` for client use
+
+**Why Meta upload is required:** AI-generated images saved only to Supabase have fake MD5 hashes. Meta requires real `imageHash` from their API to use images in ads. The save flow now uploads to Meta FIRST.
+
 ### AI-Powered Features
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
+- **Ad Studio Copy Generation:** Claude generates ad copy inspired by competitor ads
+- **Ad Studio Image Generation:** Gemini 2.5 Flash Image creates ad images using product reference
 
 ### Onboarding Wizard & Free Trial
 3-step wizard runs once after first authentication. All steps skippable. Creates a 7-day Launch trial (no credit card).
@@ -457,6 +608,35 @@ else → KILL
 ---
 
 ## Recent Fixes (January–February 2026)
+
+### Launch Wizard Hydration + Ad Studio Fixes (Feb 6)
+**Status:** COMPLETE
+
+**Problem:** Newly created campaigns/ads from Launch Wizard didn't appear in dashboard until manual sync.
+
+**Root Causes Found & Fixed:**
+
+1. **Timezone mismatch in hydrate API** — `hydrate-new-entity/route.ts` used UTC date (`new Date().toISOString().split('T')[0]`) but dashboard queries used local date. At 8pm EST, hydrate inserted rows for "tomorrow" (UTC) that the dashboard's "today" (local) query missed.
+   - **Fix:** Changed to local date format matching dashboard queries
+
+2. **Budget conversion missing for adset/ad flows** — Campaign hydration divided budgets by 100 (cents→dollars) but adset and ad flows didn't, showing budgets 100x too high.
+   - **Fix:** Added `/100` to budget fields in adset and ad entity type handlers
+
+3. **Ads in review not shown** — Dashboard filtered entities to only `ACTIVE` or `PAUSED` status. Newly created ads start in `PENDING_REVIEW` until Meta approves them.
+   - **Fix:** Added `PENDING_REVIEW` and `WITH_ISSUES` to allowed statuses in both `loadData` and `loadDataAndCache` functions
+
+4. **Ad Studio image prompt not passed to API** — `handleGenerateImage` callback was missing `imagePrompts` in its `useCallback` dependency array, causing stale closure that always saw empty `{}`.
+   - **Fix:** Added `imagePrompts` to the dependency array
+
+**Files Modified:**
+- `app/api/meta/hydrate-new-entity/route.ts` — Local date format, budget `/100` for all entity types
+- `app/dashboard/page.tsx` — Added `PENDING_REVIEW`, `WITH_ISSUES` to `activeStatuses` (lines ~1062 and ~1424)
+- `app/dashboard/creative-studio/ad-studio/page.tsx` — Added `imagePrompts` to `handleGenerateImage` deps
+- `components/sidebar.tsx` — Removed "Best Ads" nav item
+
+**Key Pattern:**
+- When hydrating/inserting data that will be queried by the dashboard, ensure date formats match (both should use local dates, not UTC)
+- Meta returns budgets in cents — always divide by 100 when storing for display
 
 ### Creative Studio Mobile View + Stability (Feb 1)
 **Status:** COMPLETE
@@ -719,6 +899,40 @@ The following code sections are critical and have been carefully tuned to avoid 
 - **Why fragile:** Bulk-fetching video sources will hit Meta API rate limits. The on-demand pattern is intentional.
 - **If you must modify:** Never prefetch all video sources at once. Keep the IntersectionObserver threshold at 0.6 (lower = too many concurrent plays).
 
+### 8. Active Ads Video Resolution (`app/api/creative-studio/active-ads/route.ts`)
+**DO NOT modify the media resolution logic without understanding this completely.**
+
+**Account ID formats are DIFFERENT between tables:**
+| Table | Format | Example |
+|-------|--------|---------|
+| `ad_data` | WITH prefix | `act_719655752315840` |
+| `media_library` | WITHOUT prefix | `719655752315840` |
+
+The API uses `cleanAccountId = adAccountId.replace(/^act_/, '')` for media_library queries.
+
+**Storage URL Resolution Waterfall (order matters):**
+1. `media_hash` lookup in `media_library`
+2. `creative_id` fallback (if original media_hash exists in media_library)
+3. `ad.storage_url` from `ad_data` (populated by download-media process)
+4. `video_id` fallback from other ad_data rows with same video_id
+
+**Why derivatives break:** Meta assigns different `media_hash` per ad placement. Only the "original" is in `media_library`. Derivatives need the fallback chain.
+
+**The `media_library` table does NOT have a `video_id` column.** Do NOT add `video_id` to any media_library SELECT query — it will cause error 42703 (undefined column) and return 0 rows, breaking ALL video resolution.
+
+**If Active Ads videos stop playing:**
+1. Check server logs for `error: { code: '42703'` — means invalid column in query
+2. Verify `cleanAccountId` is being used for media_library (not `adAccountId`)
+3. Check that `videoIdToStorageUrl` fallback map is being built from ad_data
+4. Ensure the enrichment uses `resolvedStorageUrl` which includes all fallbacks
+
+**Related files that must stay in sync:**
+- `app/api/creative-studio/active-ads/route.ts` — resolution logic
+- `app/api/creative-studio/media/route.ts` — uses same account ID stripping
+- `app/api/creative-studio/download-media/route.ts` — pushes storage_url to ad_data
+- `app/dashboard/creative-studio/active/page.tsx` — `resolveMedia()` function
+- `components/creative-studio/media-gallery-card.tsx` — renders video with storageUrl
+
 ### Signs You Broke Something
 - "Error code 17" or "Rate limit exceeded" from Meta
 - Sync takes 5+ minutes
@@ -727,6 +941,8 @@ The following code sections are critical and have been carefully tuned to avoid 
 - Videos don't play on click — check API version or missing `videoSource` in creative response
 - Creative Studio: filter pills flash between grid/row on mobile — check `isLoading` conditionals
 - Creative Studio: video thumbnails flash to placeholders — check `loadData` deps for context objects
+- **Active Ads: SOME videos play, others show blurry thumbnails** — check active-ads API for invalid column in media_library query (error 42703), or account ID format mismatch
+- **Active Ads: NO videos play** — media_library query is failing completely. Check for Supabase error in logs, verify `cleanAccountId` is used (not `adAccountId`)
 
 ---
 
@@ -765,6 +981,10 @@ GOOGLE_ADS_DEVELOPER_TOKEN=...
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
+
+# Ad Studio (Competitor Research + Image Generation)
+SCRAPECREATORS_API_KEY=...          # ScrapeCreators Facebook Ad Library API
+GOOGLE_GEMINI_API_KEY=...           # Gemini 2.5 Flash Image for ad generation
 ```
 
 ---
@@ -795,6 +1015,8 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| Launch Wizard Hydration Fix | Timezone, budget conversion, review status filtering | Feb 06 |
+| `prancy-moseying-pancake.md` | Ad Studio: ScrapeCreators + Gemini Image Generation | Feb 05 |
 | `nested-beaming-pearl.md` | Creative Studio Mobile View + Stability + Scroll-to-Play | Feb 01 |
 | `unified-dashboard-merge.md` | Unified Dashboard: Campaign Manager Merged | Jan 26 |
 | `eager-hatching-minsky.md` | Creative Thumbnails in Performance Table | Jan 25 |

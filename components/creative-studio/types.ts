@@ -63,6 +63,9 @@ export interface StudioAsset {
 
   // UI state
   isStarred: boolean
+
+  // AI Analysis status (videos only)
+  analysisStatus?: AnalysisStatus
 }
 
 // Detail data returned by media-detail endpoint (unified: inventory + performance)
@@ -162,4 +165,161 @@ export interface CreativeHealthScore {
     freshPipeline: { score: number; detail: string }
   }
   recommendations: string[]
+}
+
+// Video Analysis Types (AI-powered)
+export interface VideoAnalysisHookData {
+  score: number
+  timestamp: string
+  assessment: string
+  elements: string[]
+  improvement: string
+}
+
+export interface VideoAnalysisHoldData {
+  score: number
+  assessment: string
+  elements: string[]
+  improvement: string
+}
+
+export interface VideoAnalysisClickData {
+  score: number
+  assessment: string
+  elements: string[]
+  improvement: string
+}
+
+export interface VideoAnalysisConvertData {
+  score: number
+  assessment: string
+  elements: string[]
+  improvement: string
+}
+
+export interface VideoAnalysis {
+  // Overall assessment
+  overallScore: number
+  summary: string
+
+  // Transcript
+  transcript: string
+  duration: number
+
+  // Funnel stage breakdown
+  hook: VideoAnalysisHookData
+  hold: VideoAnalysisHoldData
+  click: VideoAnalysisClickData
+  convert: VideoAnalysisConvertData
+
+  // Content analysis
+  speakerStyle: 'talking_head' | 'voiceover' | 'text_only' | 'mixed' | 'none'
+  visualStyle: 'ugc' | 'polished' | 'product_demo' | 'lifestyle' | 'mixed'
+  emotionalTone: string
+  keyMessages: string[]
+  targetAudience: string
+
+  // Top-level recommendations
+  topStrength: string
+  topWeakness: string
+  quickWins: string[]
+}
+
+export interface ScriptSuggestion {
+  title: string
+  approach: string
+  script: {
+    hook: string
+    body: string
+    cta: string
+  }
+  estimatedDuration: string
+  whyItWorks: string
+}
+
+export type AnalysisStatus = 'none' | 'pending' | 'processing' | 'complete' | 'error'
+
+// Competitor Ad Types (from ScrapeCreators API)
+export interface CompetitorAd {
+  id: string
+  pageId: string
+  pageName: string
+  startDate: string
+  endDate: string | null
+  isActive: boolean
+  platforms: string[]
+  body: string | null
+  headline: string | null
+  linkUrl: string | null
+  ctaText: string | null
+  mediaType: 'image' | 'video' | 'carousel' | 'text'
+  imageUrl: string | null
+  videoUrl: string | null
+  videoThumbnail: string | null
+  carouselCards: CompetitorCarouselCard[] | null
+  daysActive: number
+  collationCount: number
+}
+
+export interface CompetitorCarouselCard {
+  imageUrl: string | null
+  headline: string | null
+  body: string | null
+  linkUrl: string | null
+  videoUrl?: string | null
+}
+
+export interface CompetitorStats {
+  totalAds: number
+  activeAds: number
+  earliestAdDate: string | null
+  mediaMix: { video: number; image: number; carousel: number; text: number }
+  topLandingPages: Array<{ url: string; domain: string; count: number; percentage: number }>
+}
+
+export interface CompetitorSearchResult {
+  name: string
+  pageId: string
+  logoUrl: string | null
+  adCount?: number
+}
+
+// Inspiration Gallery Types
+export type AdFormat = 'ugc' | 'product_hero' | 'lifestyle' | 'bold' | 'testimonial' | 'before_after'
+
+export interface InspirationExample {
+  id: string
+  adFormat: AdFormat
+  industryCategory: string | null
+  pageName: string
+  pageId: string | null
+  mediaType: 'image' | 'video' | 'carousel'
+  body: string | null
+  headline: string | null
+  imageUrl: string | null
+  videoUrl: string | null
+  videoThumbnail: string | null
+  carouselCards: CompetitorCarouselCard[] | null
+  daysActive: number
+  isActive: boolean
+  description: string | null
+  isFeatured: boolean
+}
+
+export const AD_FORMAT_LABELS: Record<AdFormat, string> = {
+  ugc: 'UGC',
+  product_hero: 'Product Hero',
+  lifestyle: 'Lifestyle',
+  bold: 'Bold',
+  testimonial: 'Testimonial',
+  before_after: 'Before/After',
+}
+
+export const AD_FORMAT_COLORS: Record<AdFormat, { bg: string; text: string }> = {
+  ugc: { bg: 'bg-pink-500/20', text: 'text-pink-400' },
+  product_hero: { bg: 'bg-blue-500/20', text: 'text-blue-400' },
+  lifestyle: { bg: 'bg-amber-500/20', text: 'text-amber-400' },
+  bold: { bg: 'bg-red-500/20', text: 'text-red-400' },
+  testimonial: { bg: 'bg-emerald-500/20', text: 'text-emerald-400' },
+  before_after: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
 }

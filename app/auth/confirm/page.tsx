@@ -46,29 +46,34 @@ function ConfirmContent() {
   }, [searchParams])
 
   return (
-    <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
+    <div className="bg-white rounded-2xl p-8 text-center shadow-sm" style={{ border: '1px solid #E4DFF0' }}>
       {status === 'loading' && (
         <>
-          <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Loader2 className="w-8 h-8 text-accent animate-spin" />
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: '#F0EDFA' }}>
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#7c3aed' }} />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Confirming your email...</h1>
-          <p className="text-zinc-500">Please wait a moment.</p>
+          <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+            Confirming your email...
+          </h1>
+          <p style={{ color: '#6B7280' }}>Please wait a moment.</p>
         </>
       )}
 
       {status === 'success' && (
         <>
-          <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-8 h-8 text-green-500" />
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: '#ECFDF5' }}>
+            <CheckCircle className="w-8 h-8" style={{ color: '#10b981' }} />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Email Confirmed!</h1>
-          <p className="text-zinc-500 mb-8">
+          <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+            Email Confirmed!
+          </h1>
+          <p className="mb-8 text-base" style={{ color: '#6B7280' }}>
             Your account is ready to go. Log in to start optimizing your Meta Ads.
           </p>
           <Link
             href="/login"
-            className="inline-block w-full py-3 bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-colors"
+            className="inline-block w-full py-3 text-white font-semibold rounded-lg transition-colors"
+            style={{ background: '#7c3aed' }}
           >
             Log In →
           </Link>
@@ -77,16 +82,19 @@ function ConfirmContent() {
 
       {status === 'error' && (
         <>
-          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <XCircle className="w-8 h-8 text-red-500" />
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: '#FEF2F2' }}>
+            <XCircle className="w-8 h-8" style={{ color: '#ef4444' }} />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Confirmation Failed</h1>
-          <p className="text-zinc-500 mb-8">
+          <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+            Confirmation Failed
+          </h1>
+          <p className="mb-8 text-base" style={{ color: '#6B7280' }}>
             {errorMessage || 'The confirmation link may have expired. Please try signing up again.'}
           </p>
           <Link
             href="/signup"
-            className="inline-block w-full py-3 bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-colors"
+            className="inline-block w-full py-3 text-white font-semibold rounded-lg transition-colors"
+            style={{ background: '#7c3aed' }}
           >
             Try Again
           </Link>
@@ -98,28 +106,25 @@ function ConfirmContent() {
 
 function LoadingState() {
   return (
-    <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
-      <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-6">
-        <Loader2 className="w-8 h-8 text-accent animate-spin" />
+    <div className="bg-white rounded-2xl p-8 text-center shadow-sm" style={{ border: '1px solid #E4DFF0' }}>
+      <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: '#F0EDFA' }}>
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#7c3aed' }} />
       </div>
-      <h1 className="text-2xl font-bold mb-2">Loading...</h1>
-      <p className="text-zinc-500">Please wait a moment.</p>
+      <h1 className="text-3xl font-normal mb-2" style={{ fontFamily: "'DM Serif Display', serif", color: '#1A1A1A' }}>
+        Loading...
+      </h1>
+      <p style={{ color: '#6B7280' }}>Please wait a moment.</p>
     </div>
   )
 }
 
 export default function ConfirmPage() {
   return (
-    <div className="min-h-screen bg-bg-dark flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#FAF8FF', fontFamily: 'Inter, sans-serif' }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <svg width="200" height="45" viewBox="0 0 280 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-            </svg>
+            <img src="/logo.png" alt="KillScale" className="h-12" />
           </Link>
         </div>
 
