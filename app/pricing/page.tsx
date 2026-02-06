@@ -8,65 +8,44 @@ import { useSubscription } from '@/lib/subscription'
 
 const plans = [
   {
-    name: 'Launch',
-    monthlyPrice: '$29',
-    yearlyPrice: '$24',
-    yearlyTotal: '$290',
+    name: 'Pro',
+    featured: true,
+    monthlyPrice: '$129',
+    yearlyPrice: '$83',
+    yearlyTotal: '$999',
     period: '/mo',
     description: '7-day free trial',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_LAUNCH_PRICE_ID,
-    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_LAUNCH_YEARLY_PRICE_ID,
-    features: [
-      'Meta API sync',
-      'Unlimited campaigns',
-      '1 ad account',
-      'Campaign Launcher',
-      'Insights & Trends',
-      'Alerts',
-    ],
-  },
-  {
-    name: 'Scale',
-    featured: true,
-    monthlyPrice: '$49',
-    yearlyPrice: '$41',
-    yearlyTotal: '$490',
-    period: '/mo',
-    description: 'Most popular',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_SCALE_PRICE_ID,
-    yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_SCALE_YEARLY_PRICE_ID,
-    features: [
-      'Everything in Launch',
-      'First Party Pixel',
-      'Dynamic Attribution',
-      '2 ad accounts',
-      'Workspaces',
-      'Manual Events',
-    ],
-  },
-  {
-    name: 'Pro',
-    monthlyPrice: '$99',
-    yearlyPrice: '$82',
-    yearlyTotal: '$990',
-    period: '/mo',
-    description: 'For agencies & teams',
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
     yearlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRO_YEARLY_PRICE_ID,
     features: [
-      'Everything in Scale',
-      'Unlimited ad accounts',
-      'Workspace reporting portal',
-      'Priority support',
+      '3 ad accounts',
+      '50 AI image generations/mo',
+      'Unlimited AI copy generation',
+      'Unlimited AI reviews',
+      'First-party pixel & attribution',
+      'Campaign Launcher',
+      'Meta Ad Library search',
+      'Up to $100k tracked spend',
     ],
   },
 ]
+
+const agencyPlan = {
+  name: 'Agency',
+  features: [
+    '10+ ad accounts',
+    'Custom AI generation limits',
+    'Unlimited tracked spend',
+    'Dedicated support + Slack',
+    'White-label options',
+  ],
+}
 
 export default function PricingPage() {
   const { user } = useAuth()
   const { plan: currentPlan } = useSubscription()
   const [loading, setLoading] = useState<string | null>(null)
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('yearly')
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly')
 
   const handleCheckout = async (plan: typeof plans[0]) => {
     const priceId = billingPeriod === 'yearly' ? plan.yearlyPriceId : plan.monthlyPriceId
@@ -111,12 +90,7 @@ export default function PricingPage() {
       <nav className="border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <svg width="180" height="36" viewBox="0 0 280 50">
-              <rect x="5" y="8" width="40" height="34" rx="8" fill="#1a1a1a"/>
-              <path d="M15 18 L15 32 L10 27 M15 32 L20 27" stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M30 32 L30 18 L25 23 M30 18 L35 23" stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="55" y="33" fill="white" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="24">KillScale</text>
-            </svg>
+            <img src="/logo-white.png" alt="KillScale" className="h-9" />
           </Link>
           {user ? (
             <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-white">
@@ -132,8 +106,8 @@ export default function PricingPage() {
 
       <div className="max-w-6xl mx-auto px-4 py-16">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-4">Simple, honest pricing</h1>
-          <p className="text-zinc-500 text-lg">Try free for 7 days. Cancel anytime.</p>
+          <h1 className="text-4xl font-bold mb-4">One plan. Everything you need.</h1>
+          <p className="text-zinc-500 text-lg">7-day free trial. No credit card required.</p>
         </div>
 
         {/* Billing Toggle */}
@@ -152,14 +126,14 @@ export default function PricingPage() {
           <span className={`text-sm font-medium transition-colors flex items-center gap-2 ${billingPeriod === 'yearly' ? 'text-white' : 'text-zinc-500'}`}>
             Yearly
             <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold">
-              2 months free
+              Save 35%
             </span>
           </span>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
           {plans.map((plan) => {
-            const isCurrentPlan = user && currentPlan === plan.name
+            const isCurrentPlan = user && currentPlan === plan.name.toLowerCase()
             const displayPrice = billingPeriod === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice
             const showYearlyTotal = billingPeriod === 'yearly' && plan.yearlyTotal
 
@@ -177,12 +151,6 @@ export default function PricingPage() {
                 {isCurrentPlan && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full">
                     CURRENT PLAN
-                  </div>
-                )}
-
-                {!isCurrentPlan && plan.featured && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-accent text-white text-xs font-bold rounded-full">
-                    POPULAR
                   </div>
                 )}
 
@@ -217,29 +185,50 @@ export default function PricingPage() {
                   <button
                     onClick={() => handleCheckout(plan)}
                     disabled={loading !== null}
-                    className={`w-full py-3 rounded-lg font-semibold transition-colors text-sm ${
-                      plan.featured
-                        ? 'bg-accent hover:bg-accent-hover text-white'
-                        : 'bg-bg-dark border border-border hover:border-accent text-white'
-                    } disabled:opacity-50`}
+                    className="w-full py-3 rounded-lg font-semibold transition-colors text-sm bg-accent hover:bg-accent-hover text-white disabled:opacity-50"
                   >
-                    {loading === plan.name
-                      ? 'Loading...'
-                      : plan.name === 'Launch'
-                        ? 'Start 7-Day Trial'
-                        : 'Sign Up'}
+                    {loading === plan.name ? 'Loading...' : 'Start 7-Day Free Trial'}
                   </button>
                 ) : (
                   <Link
                     href={user ? '/dashboard' : '/signup'}
-                    className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
+                    className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-accent hover:bg-accent-hover text-white transition-colors"
                   >
-                    Start Free Trial
+                    Start 7-Day Free Trial
                   </Link>
                 )}
               </div>
             )
           })}
+
+          {/* Agency Card */}
+          <div className="bg-bg-card border border-border rounded-2xl p-6 relative">
+            <div className="mb-6">
+              <div className="text-sm text-zinc-500 uppercase tracking-wide mb-1">
+                {agencyPlan.name}
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-3xl font-bold">Custom</span>
+              </div>
+              <p className="text-zinc-500 mt-2 text-sm">For agencies & teams</p>
+            </div>
+
+            <ul className="space-y-3 mb-6">
+              {agencyPlan.features.map((feature) => (
+                <li key={feature} className="flex items-center gap-2 text-sm">
+                  <Check className="w-4 h-4 text-accent flex-shrink-0" />
+                  {feature}
+                </li>
+              ))}
+            </ul>
+
+            <a
+              href="mailto:sales@killscale.com"
+              className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-bg-dark border border-border hover:border-accent text-white transition-colors"
+            >
+              Contact Sales
+            </a>
+          </div>
         </div>
 
         <div className="mt-12 text-center text-zinc-500 text-sm">

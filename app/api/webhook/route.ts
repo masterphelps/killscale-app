@@ -10,15 +10,20 @@ const supabase = createClient(
 )
 
 const PRICE_TO_PLAN: Record<string, string> = {
-  // Launch ($29/mo)
-  'price_1Sf2JjLEX79epwdhXY0l5qJf': 'launch',   // monthly
-  'price_1SbocjLEX79epwdhFZhRCOKb': 'launch',   // yearly
-  // Scale ($49/mo)
-  'price_1SYcIELEX79epwdhuRMs2lge': 'scale',    // monthly
-  'price_1SbodCLEX79epwdhgYsuS0pz': 'scale',    // yearly
-  // Pro ($99/mo)
-  'price_1SYcIZLEX79epwdhlJu1JS0z': 'pro',      // monthly
-  'price_1SbodULEX79epwdh3yvUhyC6': 'pro',      // yearly
+  // New Pro ($129/mo, $999/yr) - add new Stripe price IDs here
+  // 'price_NEW_PRO_MONTHLY': 'pro',
+  // 'price_NEW_PRO_YEARLY': 'pro',
+
+  // Legacy plans - keep mapping for existing subscribers
+  // Old Launch ($29/mo)
+  'price_1Sf2JjLEX79epwdhXY0l5qJf': 'pro',   // monthly (legacy)
+  'price_1SbocjLEX79epwdhFZhRCOKb': 'pro',   // yearly (legacy)
+  // Old Scale ($49/mo)
+  'price_1SYcIELEX79epwdhuRMs2lge': 'pro',   // monthly (legacy)
+  'price_1SbodCLEX79epwdhgYsuS0pz': 'pro',   // yearly (legacy)
+  // Old Pro ($99/mo)
+  'price_1SYcIZLEX79epwdhlJu1JS0z': 'pro',   // monthly (legacy)
+  'price_1SbodULEX79epwdh3yvUhyC6': 'pro',   // yearly (legacy)
 }
 
 export async function POST(request: NextRequest) {
