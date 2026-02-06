@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
+import Anthropic from '@anthropic-ai/sdk'
+
+// Claude client for text curation
+let anthropic: Anthropic | null = null
+function getAnthropic() {
+  if (!anthropic && process.env.ANTHROPIC_API_KEY) {
+    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  }
+  return anthropic
+}
 
 // Lazy initialization to avoid build-time errors when env var is missing
 let genAI: GoogleGenAI | null = null
@@ -43,9 +53,77 @@ const TEXT_REQUIREMENTS = `
 - Ensure no cutoff sentences or words
 - Any text must be spelled correctly`
 
+// Use Claude to pick the best text for the ad image
+interface CuratedAdText {
+  headline: string
+  supportingLine: string
+}
+
+async function curateAdText(headline: string, primaryText: string): Promise<CuratedAdText> {
+  const claude = getAnthropic()
+
+  // If no Claude available, fall back to simple extraction
+  if (!claude) {
+    console.log('[Imagen] No Claude API, using fallback text extraction')
+    return {
+      headline,
+      supportingLine: extractBestLine(primaryText)
+    }
+  }
+
+  try {
+    const response = await claude.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 150,
+      messages: [{
+        role: 'user',
+        content: `You're creating an ad image. Pick the BEST single supporting line from this ad copy to pair with the headline.
+
+HEADLINE: ${headline}
+
+FULL COPY:
+${primaryText}
+
+Rules:
+- Pick ONE short, punchy line (under 60 characters ideal)
+- It should be impactful and work visually on an ad image
+- Don't pick the first line if there's a better hook deeper in the copy
+- Look for lines with rhythm, power words, or emotional punch
+
+Reply with ONLY the supporting line, nothing else. No quotes, no explanation.`
+      }]
+    })
+
+    const supportingLine = (response.content[0] as { text: string }).text.trim()
+    console.log('[Imagen] Claude picked supporting line:', supportingLine)
+
+    return {
+      headline,
+      supportingLine: supportingLine.length > 80 ? supportingLine.slice(0, 77) + '...' : supportingLine
+    }
+  } catch (err) {
+    console.error('[Imagen] Claude text curation failed:', err)
+    return {
+      headline,
+      supportingLine: extractBestLine(primaryText)
+    }
+  }
+}
+
+// Fallback: extract a good line without Claude
+function extractBestLine(text: string): string {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 10 && l.length < 80)
+  // Prefer lines with power indicators
+  const powerLine = lines.find(l =>
+    l.includes('Every') || l.includes('That\'s why') || l.includes('Your') ||
+    l.includes('100%') || l.includes('fresh') || l.includes('difference')
+  )
+  return powerLine || lines[0] || ''
+}
+
 // Prompt when we have BOTH product image AND reference ad image
-function buildDualImagePrompt(req: GenerateImageRequest): string {
-  const { adCopy, product, style = 'clone' } = req
+function buildDualImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdText): string {
+  const { product, style = 'clone' } = req
 
   // Clone style (default) - pure format matching, no creative interpretation
   if (style === 'clone') {
@@ -54,11 +132,14 @@ function buildDualImagePrompt(req: GenerateImageRequest): string {
 2. SECOND IMAGE: A reference ad - CLONE this exact visual format and style
 
 CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
-- The headline text MUST be EXACTLY: "${adCopy.headline}"
-- The supporting text MUST be: "${adCopy.primaryText.slice(0, 80)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
+
+- Use ONLY the headline and supporting line above
 - DO NOT use any text from the reference ad image
-- DO NOT copy the reference ad's headline or copy
-- ONLY use the text I provided above
+- DO NOT copy the reference ad's text - only its visual style
+- Spell the text EXACTLY as provided - no changes
 
 Create an advertisement that is a FAITHFUL CLONE of the reference ad's FORMAT (not its text):
 - Use MY PRODUCT from the first image (not the product in the reference ad)
@@ -90,18 +171,16 @@ Create a BOLD, scroll-stopping, pattern-interrupting advertisement that:
 - Takes inspiration from the reference but makes it MORE bold and attention-grabbing
 - Uses vibrant colors, high contrast, and dynamic composition
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 100)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
 Requirements:
 - Make it impossible to scroll past
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
-- Keep text minimal - only the headline and brief supporting copy
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Feature MY product from the first image prominently
 - Professional quality suitable for Facebook/Instagram ads${TEXT_REQUIREMENTS}
-
-Ad concept: ${adCopy.angle}
 
 Generate a bold, attention-grabbing ad using my product photo.`
   }
@@ -121,19 +200,18 @@ Generate a bold, attention-grabbing ad using my product photo.`
 
 Create an advertisement with this style: ${styleGuide}
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 100)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
 The ad should:
 - Feature MY PRODUCT from the first image (not the product in the reference ad)
 - Use the ${style} visual style
 - Take general inspiration from the reference ad's approach
 
-Ad concept: ${adCopy.angle}
-
 Requirements:
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Feature MY product from the first image prominently
 - Apply the ${style} style to the image
 - Professional quality suitable for Facebook/Instagram ads
@@ -143,8 +221,8 @@ Generate a ${style} style ad with text overlay using my product photo.`
 }
 
 // Prompt when we only have product image (no reference ad)
-function buildImagePrompt(req: GenerateImageRequest): string {
-  const { adCopy, product, style = 'lifestyle' } = req
+function buildImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdText): string {
+  const { product, style = 'lifestyle' } = req
 
   // Bold style gets a completely different prompt
   if (style === 'bold') {
@@ -152,20 +230,18 @@ function buildImagePrompt(req: GenerateImageRequest): string {
 
 Use the provided product image as reference - the generated image MUST feature this same product accurately.
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 100)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
 Requirements:
 - Make it impossible to scroll past - use vibrant colors, high contrast, dynamic angles
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
-- Keep text minimal - only the headline and brief supporting copy, no extra words
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Feature the product from the reference image prominently
 - Professional quality suitable for Facebook/Instagram ads
 - Eye-catching graphic design style, not just photography
 - Bold typography that demands attention${TEXT_REQUIREMENTS}
-
-Ad concept: ${adCopy.angle}
 
 Generate a scroll-stopping advertisement that makes people stop and look.`
   }
@@ -178,32 +254,30 @@ Generate a scroll-stopping advertisement that makes people stop and look.`
 
   const styleGuide = styleDescriptions[style] || styleDescriptions.lifestyle
 
-  const prompt = `Create a high-quality advertisement image featuring this exact product: ${product.name}
+  return `Create a high-quality advertisement image featuring this exact product: ${product.name}
 
 Use the provided product image as reference - the generated image MUST feature this same product accurately.
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 100)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
-Ad concept: ${adCopy.angle}
 Visual style: ${styleGuide}
 
 Requirements:
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Feature the product from the reference image prominently
 - Professional quality suitable for Facebook/Instagram ads
 - ${style === 'lifestyle' ? 'Show the product being used or in an appealing lifestyle context' : 'Focus on the product itself'}
 - Photorealistic, high resolution${TEXT_REQUIREMENTS}
 
 Generate an advertisement image with text overlay for this product.`
-
-  return prompt
 }
 
 // Prompt when user provides custom image direction (Create mode)
-function buildCustomPrompt(req: GenerateImageRequest): string {
-  const { adCopy, product, imagePrompt } = req
+function buildCustomPrompt(req: GenerateImageRequest, curatedText: CuratedAdText): string {
+  const { product, imagePrompt } = req
 
   return `Create an advertisement image for this product: ${product.name}
 
@@ -212,15 +286,14 @@ Use the provided product image as reference - the generated image MUST feature t
 USER'S CREATIVE DIRECTION:
 "${imagePrompt}"
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 150)}"
-
-Ad concept: ${adCopy.angle}
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
 Requirements:
 - Follow the user's creative direction above
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Feature the product from the reference image prominently
 - Professional quality suitable for Facebook/Instagram ads
 - High resolution output${TEXT_REQUIREMENTS}
@@ -228,8 +301,8 @@ Requirements:
 Generate an advertisement image with text overlay.`
 }
 
-function buildTextOnlyPrompt(req: GenerateImageRequest): string {
-  const { adCopy, product, style = 'lifestyle' } = req
+function buildTextOnlyPrompt(req: GenerateImageRequest, curatedText: CuratedAdText): string {
+  const { product, style = 'lifestyle' } = req
 
   // Bold style gets a completely different prompt with text included
   if (style === 'bold') {
@@ -240,20 +313,18 @@ Product details:
 - Brand: ${product.brand || product.name}
 ${product.description ? `- Description: ${product.description}` : ''}
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 100)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
 Requirements:
 - Make it impossible to scroll past - use vibrant colors, high contrast, dynamic angles
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
-- Keep text minimal - only the headline and brief supporting copy, no extra words
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Feature or represent the product prominently
 - Professional quality suitable for Facebook/Instagram ads
 - Eye-catching graphic design style, not just photography
 - Bold typography that demands attention${TEXT_REQUIREMENTS}
-
-Ad concept: ${adCopy.angle}
 
 Generate a scroll-stopping advertisement that makes people stop and look.`
   }
@@ -266,28 +337,26 @@ Generate a scroll-stopping advertisement that makes people stop and look.`
 
   const styleGuide = styleDescriptions[style] || styleDescriptions.lifestyle
 
-  const prompt = `Create a high-quality advertisement image for: ${product.name}
+  return `Create a high-quality advertisement image for: ${product.name}
 
 Product details:
 - Category: ${product.category || 'consumer product'}
 - Brand: ${product.brand || product.name}
 ${product.description ? `- Description: ${product.description}` : ''}
 
-IMPORTANT: This ad MUST include text overlaid on the image:
-- Headline: "${adCopy.headline}"
-- Supporting copy: "${adCopy.primaryText.slice(0, 100)}"
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
 
-Ad concept: ${adCopy.angle}
 Visual style: ${styleGuide}
 
 Requirements:
-- Include the headline text prominently - spell it EXACTLY as provided, no typos
+- Include ONLY the headline and supporting line above - no other text
+- Spell the text EXACTLY as provided
 - Professional quality suitable for Facebook/Instagram ads
 - Photorealistic, high resolution${TEXT_REQUIREMENTS}
 
 Generate an advertisement image with text overlay.`
-
-  return prompt
 }
 
 export async function POST(request: NextRequest) {
@@ -314,6 +383,11 @@ export async function POST(request: NextRequest) {
 
     console.log('[Imagen] Has product image:', hasProductImage, 'imageBase64 length:', body.product.imageBase64?.length || 0)
     console.log('[Imagen] Has reference ad:', hasReferenceAd, 'referenceAd length:', body.referenceAd?.imageBase64?.length || 0)
+
+    // Use Claude to intelligently pick the best text for the ad image
+    console.log('[Imagen] Curating ad text with Claude...')
+    const curatedText = await curateAdText(body.adCopy.headline, body.adCopy.primaryText)
+    console.log('[Imagen] Curated text:', curatedText)
 
     if (hasProductImage) {
       // Build the parts array - product image first, then optionally reference ad
@@ -342,10 +416,10 @@ export async function POST(request: NextRequest) {
       // 2. Custom imagePrompt (Create mode) -> custom prompt with user's direction
       // 3. Neither -> default single-image prompt
       const prompt = hasReferenceAd
-        ? buildDualImagePrompt(body)
+        ? buildDualImagePrompt(body, curatedText)
         : body.imagePrompt
-          ? buildCustomPrompt(body)
-          : buildImagePrompt(body)
+          ? buildCustomPrompt(body, curatedText)
+          : buildImagePrompt(body, curatedText)
       parts.push({ text: prompt })
 
       console.log('[Imagen] Using model:', MODEL_NAME)
@@ -406,7 +480,7 @@ export async function POST(request: NextRequest) {
     // Fallback: Use Imagen (text-to-image) without reference image
     console.log('[Imagen] Generating with Imagen text-only...')
 
-    const prompt = buildTextOnlyPrompt(body)
+    const prompt = buildTextOnlyPrompt(body, curatedText)
 
     const response = await client.models.generateImages({
       model: 'imagen-4.0-generate-001',
