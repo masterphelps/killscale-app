@@ -53,25 +53,30 @@ function buildDualImagePrompt(req: GenerateImageRequest): string {
 1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
 2. SECOND IMAGE: A reference ad - CLONE this exact visual format and style
 
-Create an advertisement that is a FAITHFUL CLONE of the reference ad's format:
+CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
+- The headline text MUST be EXACTLY: "${adCopy.headline}"
+- The supporting text MUST be: "${adCopy.primaryText.slice(0, 80)}"
+- DO NOT use any text from the reference ad image
+- DO NOT copy the reference ad's headline or copy
+- ONLY use the text I provided above
+
+Create an advertisement that is a FAITHFUL CLONE of the reference ad's FORMAT (not its text):
 - Use MY PRODUCT from the first image (not the product in the reference ad)
 - EXACTLY match the reference ad's layout, composition, and visual approach
 - Copy the same camera angle, lighting style, background treatment, and framing
-- If the reference has text, include text in the same style and positioning
+- Match the reference ad's text STYLING and POSITIONING, but use MY text provided above
 - If the reference is minimal, keep it minimal
 - If the reference has bold graphics, match that graphic style
-
-Headline for text (if reference has text): "${adCopy.headline}"
-Supporting copy: "${adCopy.primaryText.slice(0, 80)}"
 
 Requirements:
 - The output should look like it came from the same ad campaign as the reference
 - Feature MY product from the first image
 - Match the reference ad's format EXACTLY - this is a clone, not an interpretation
+- Use ONLY the headline and copy text I provided - never the reference ad's text
 - Professional quality suitable for Facebook/Instagram ads
 - High resolution output${TEXT_REQUIREMENTS}
 
-Generate an ad that clones the reference ad's visual format using my product.`
+Generate an ad that clones the reference ad's visual format using my product and MY provided text.`
   }
 
   // Bold style with reference ad
