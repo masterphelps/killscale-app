@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY || '' })
+// Lazy initialization to avoid build-time errors when env var is missing
+let genAI: GoogleGenAI | null = null
+function getGenAI() {
+  if (!genAI && process.env.GOOGLE_GEMINI_API_KEY) {
+    genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY })
+  }
+  return genAI
+}
 
 // Always use Gemini 3 Pro - it's the only model that works reliably
 const MODEL_NAME = 'gemini-3-pro-image-preview'
@@ -289,7 +296,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!process.env.GOOGLE_GEMINI_API_KEY) {
+    const client = getGenAI()
+    if (!client) {
       return NextResponse.json(
         { error: 'Image generation not configured' },
         { status: 503 }
@@ -338,7 +346,7 @@ export async function POST(request: NextRequest) {
       console.log('[Imagen] Using model:', MODEL_NAME)
 
       try {
-        const response = await genAI.models.generateContent({
+        const response = await client.models.generateContent({
           model: MODEL_NAME,
           contents: [
             {
@@ -395,7 +403,7 @@ export async function POST(request: NextRequest) {
 
     const prompt = buildTextOnlyPrompt(body)
 
-    const response = await genAI.models.generateImages({
+    const response = await client.models.generateImages({
       model: 'imagen-4.0-generate-001',
       prompt,
       config: {
