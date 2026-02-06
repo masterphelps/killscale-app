@@ -139,7 +139,7 @@ export default function CreativeStudioOverview() {
       <div className="max-w-[1800px] mx-auto px-4 lg:px-8 py-6 space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-white">Creative Studio</h1>
+          <h1 className="text-2xl lg:text-3xl font-bold text-white">Creative Suite</h1>
           <p className="text-zinc-500 mt-1">
             Overview of your creative performance
           </p>

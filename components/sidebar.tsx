@@ -503,7 +503,7 @@ export function Sidebar() {
           )
         })}
 
-        {/* Creative Studio - Expandable (right under Performance) */}
+        {/* Creative Suite - Expandable (right under Performance) */}
         {viewMode === 'workspace' ? (
           <div
             className={cn(
@@ -511,10 +511,10 @@ export function Sidebar() {
               isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
               'text-zinc-600'
             )}
-            title={isCollapsed ? 'Creative Studio (not available for workspaces)' : 'Switch to an ad account to use this feature'}
+            title={isCollapsed ? 'Creative Suite (not available for workspaces)' : 'Switch to an ad account to use this feature'}
           >
             <Palette className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && <span className="flex-1">Creative Studio</span>}
+            {!isCollapsed && <span className="flex-1">Creative Suite</span>}
           </div>
         ) : isCollapsed ? (
           <Link
@@ -525,7 +525,7 @@ export function Sidebar() {
                 ? 'bg-accent text-white'
                 : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
             )}
-            title="Creative Studio"
+            title="Creative Suite"
           >
             <Palette className="w-5 h-5 flex-shrink-0" />
           </Link>
@@ -541,7 +541,7 @@ export function Sidebar() {
               )}
             >
               <Palette className="w-5 h-5" />
-              <span className="flex-1 text-left">Creative Studio</span>
+              <span className="flex-1 text-left">Creative Suite</span>
               <ChevronRight className={cn(
                 "w-4 h-4 transition-transform",
                 creativeStudioExpanded && "rotate-90"

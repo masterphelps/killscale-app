@@ -1614,7 +1614,7 @@ export default function AITasksPage() {
           </div>
           <h3 className="text-lg font-semibold text-white mb-2">No AI tasks yet</h3>
           <p className="text-sm text-zinc-500 mb-6 max-w-sm">
-            Use Ad Studio to generate ad copy or analyze videos in Creative Studio.
+            Use Ad Studio to generate ad copy or analyze videos in Creative Suite.
           </p>
           <Link
             href="/dashboard/creative-studio/ad-studio"
