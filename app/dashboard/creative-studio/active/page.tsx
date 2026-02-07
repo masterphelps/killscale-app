@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { Zap } from 'lucide-react'
+import { Zap, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { FunnelFilterBar, GalleryGrid, StarredMediaBar } from '@/components/creative-studio'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
+import { LaunchWizard } from '@/components/launch-wizard'
 import { useCreativeStudio } from '../creative-studio-context'
 import type { ActiveAd } from '../creative-studio-context'
 import { activeAdToStudioAsset } from '@/lib/creative-studio-mappers'
@@ -97,6 +98,7 @@ export default function ActiveAdsPage() {
   const [showSortDropdown, setShowSortDropdown] = useState(false)
   const sortDropdownRef = useRef<HTMLDivElement>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [showLaunchWizard, setShowLaunchWizard] = useState(false)
 
   // Close sort dropdown on outside click
   useEffect(() => {
@@ -250,9 +252,18 @@ export default function ActiveAdsPage() {
       <div className="px-4 lg:px-8 py-6 space-y-6">
         {/* Constrained content area - matches gallery width */}
         <div className="max-w-[1200px] mx-auto space-y-6">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-bold text-white">Ads</h1>
-            <p className="text-zinc-500 mt-1">Individual ads with performance scores</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold text-white">Ads</h1>
+              <p className="text-zinc-500 mt-1">Individual ads with performance scores</p>
+            </div>
+            <button
+              onClick={() => setShowLaunchWizard(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Create
+            </button>
           </div>
 
           {/* Funnel Filters + Sort Controls */}
@@ -415,6 +426,20 @@ export default function ActiveAdsPage() {
         }}
         onClear={clearStarred}
       />
+
+      {/* Launch Wizard - Full Screen Overlay */}
+      {showLaunchWizard && currentAccountId && (
+        <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
+          <div className="min-h-screen px-4 py-8">
+            <LaunchWizard
+              adAccountId={currentAccountId}
+              onComplete={() => setShowLaunchWizard(false)}
+              onCancel={() => setShowLaunchWizard(false)}
+              initialEntityType="campaign"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

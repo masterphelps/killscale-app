@@ -15,7 +15,8 @@ import {
   AlertTriangle,
   FolderOpen,
   Image as ImageIcon,
-  Video
+  Video,
+  FileText
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { cn, formatFileSize } from '@/lib/utils'
@@ -25,6 +26,7 @@ import { AdPreviewPanel } from '@/components/ad-preview-panel'
 import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import type { MediaImage, MediaVideo } from '@/app/api/meta/media/route'
 import { supabase } from '@/lib/supabase-browser'
+import type { CopyVariation } from '@/app/dashboard/creative-studio/creative-studio-context'
 
 // Generate thumbnail from video file using canvas
 const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {
@@ -349,6 +351,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(null)
 
+  // Copy Library modal state
+  const [showCopyLibrary, setShowCopyLibrary] = useState(false)
+  const [copyVariations, setCopyVariations] = useState<CopyVariation[]>([])
+  const [isLoadingCopy, setIsLoadingCopy] = useState(false)
+  const [selectedCopyKey, setSelectedCopyKey] = useState<string | null>(null)
+
   // Form state - adAccountId comes from prop (sidebar context)
   const [state, setState] = useState<WizardState>({
     adAccountId: adAccountId, // Use the prop from sidebar context
@@ -448,6 +456,34 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     } catch (err) {
       console.error('Failed to load campaigns:', err)
     }
+  }
+
+  // Load copy library variations
+  const loadCopyLibrary = useCallback(async () => {
+    if (!user?.id || !adAccountId) return
+    setIsLoadingCopy(true)
+    try {
+      const params = new URLSearchParams({ userId: user.id, adAccountId })
+      const res = await fetch(`/api/creative-studio/copy?${params}`)
+      const data = await res.json()
+      if (data.variations) setCopyVariations(data.variations)
+    } catch (err) {
+      console.error('Failed to load copy library:', err)
+    } finally {
+      setIsLoadingCopy(false)
+    }
+  }, [user?.id, adAccountId])
+
+  // Insert copy from library into wizard fields
+  const handleInsertCopy = (variation: CopyVariation) => {
+    setState(s => ({
+      ...s,
+      primaryText: variation.primaryText || s.primaryText,
+      headline: variation.headline || s.headline,
+      description: variation.description || s.description,
+    }))
+    setShowCopyLibrary(false)
+    setSelectedCopyKey(null)
   }
 
   // Load ad sets for a specific campaign (for Ad path)
@@ -2778,6 +2814,16 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       case 'copy':
         return (
           <div className="space-y-6">
+            {/* Copy Library picker */}
+            <button
+              type="button"
+              onClick={() => { loadCopyLibrary(); setShowCopyLibrary(true) }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-bg-card hover:bg-bg-hover text-zinc-300 hover:text-white transition-colors text-sm"
+            >
+              <FileText className="w-4 h-4" />
+              Select from Copy Library
+            </button>
+
             <div>
               <label className="block text-sm font-medium mb-2">Primary Text</label>
               <textarea
@@ -3280,6 +3326,131 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
           onSelectionChange={handleLibrarySelection}
           maxSelection={6 - state.creatives.length}
         />
+      )}
+
+      {/* Copy Library Modal */}
+      {showCopyLibrary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => { setShowCopyLibrary(false); setSelectedCopyKey(null) }} />
+          <div className="relative bg-bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col mx-4">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h3 className="text-lg font-semibold">Copy Library</h3>
+              <button
+                type="button"
+                onClick={() => { setShowCopyLibrary(false); setSelectedCopyKey(null) }}
+                className="p-2 hover:bg-bg-hover rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {isLoadingCopy ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+                </div>
+              ) : copyVariations.length === 0 ? (
+                <div className="text-center py-12 text-zinc-500">
+                  <FileText className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p className="font-medium">No copy variations found</p>
+                  <p className="text-sm mt-1">Create ads or save copy from Ad Studio first</p>
+                </div>
+              ) : (
+                copyVariations.map((v) => {
+                  const isExpanded = selectedCopyKey === v.key
+                  return (
+                    <div
+                      key={v.key}
+                      className={cn(
+                        "border rounded-xl p-4 cursor-pointer transition-colors",
+                        isExpanded ? "border-accent bg-accent/5" : "border-border hover:border-zinc-600"
+                      )}
+                      onClick={() => setSelectedCopyKey(isExpanded ? null : v.key)}
+                    >
+                      {/* Collapsed view */}
+                      {!isExpanded && (
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-sm truncate">{v.headline || 'No headline'}</p>
+                              {v.source === 'saved' && (
+                                <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-400">AI</span>
+                              )}
+                              {v.angle && (
+                                <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-zinc-700 text-zinc-300">{v.angle}</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-1 truncate">{v.primaryText || 'No primary text'}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {v.spend > 0 && (
+                              <span className="text-xs text-zinc-500">${v.spend >= 1000 ? `${(v.spend / 1000).toFixed(1)}k` : v.spend.toFixed(0)}</span>
+                            )}
+                            {v.roas > 0 && (
+                              <span className={cn("text-xs font-medium", v.roas >= 3 ? "text-green-400" : v.roas >= 1.5 ? "text-yellow-400" : "text-red-400")}>
+                                {v.roas.toFixed(1)}x
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Expanded view */}
+                      {isExpanded && (
+                        <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2">
+                            {v.source === 'saved' && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-400">AI</span>
+                            )}
+                            {v.angle && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-zinc-700 text-zinc-300">{v.angle}</span>
+                            )}
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-zinc-500 mb-1">Headline</p>
+                            <p className="text-sm font-medium">{v.headline || '—'}</p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-zinc-500 mb-1">Primary Text</p>
+                            <p className="text-sm whitespace-pre-wrap text-zinc-300">{v.primaryText || '—'}</p>
+                          </div>
+
+                          {v.description && (
+                            <div>
+                              <p className="text-xs text-zinc-500 mb-1">Description</p>
+                              <p className="text-sm text-zinc-300">{v.description}</p>
+                            </div>
+                          )}
+
+                          {/* Metrics row */}
+                          {v.spend > 0 && (
+                            <div className="flex items-center gap-4 text-xs text-zinc-400">
+                              <span>Spend: <span className="text-zinc-300">${v.spend >= 1000 ? `${(v.spend / 1000).toFixed(1)}k` : v.spend.toFixed(0)}</span></span>
+                              <span>ROAS: <span className={cn("font-medium", v.roas >= 3 ? "text-green-400" : v.roas >= 1.5 ? "text-yellow-400" : "text-red-400")}>{v.roas.toFixed(1)}x</span></span>
+                              {v.adCount > 0 && <span>Ads: <span className="text-zinc-300">{v.adCount}</span></span>}
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleInsertCopy(v)}
+                            className="w-full py-2.5 rounded-lg bg-accent hover:bg-accent/90 text-white font-medium text-sm transition-colors"
+                          >
+                            Insert Copy
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
