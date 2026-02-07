@@ -644,15 +644,16 @@ export async function POST(request: NextRequest) {
                 base64: base64Data,
                 mimeType: part.inlineData.mimeType || 'image/png',
               },
+              model: MODEL_NAME,
               prompt: prompt.slice(0, 500),
             })
           }
         }
 
-        console.log('[Imagen] No image in Gemini response, falling back to Imagen')
+        console.error('[Imagen] WARNING: Gemini returned response but no image part. Parts:', JSON.stringify(responseParts.map(p => ({ hasImage: !!p.inlineData, hasText: !!p.text, text: p.text?.slice(0, 100) }))))
       } catch (geminiError) {
-        console.error('[Imagen] Gemini image generation failed:', geminiError)
-        console.log('[Imagen] Falling back to Imagen text-to-image')
+        const errMsg = geminiError instanceof Error ? geminiError.message : String(geminiError)
+        console.error('[Imagen] GEMINI FAILED — falling back to Imagen. Error:', errMsg)
       }
     }
 
@@ -704,6 +705,7 @@ export async function POST(request: NextRequest) {
         base64: imageBytes,
         mimeType: 'image/png',
       },
+      model: 'imagen-4.0-generate-001',
       prompt: prompt.slice(0, 500),
     })
 
