@@ -112,9 +112,10 @@ export async function POST(request: NextRequest) {
     const stripePlan = stripeSub?.plan?.toLowerCase()
     const stripeActive = stripeSub?.status === 'active'
 
-    // Determine effective plan
+    // Determine effective plan - any active subscription gets full access
     const effectivePlan = adminPlan || (stripeActive ? stripePlan : null) || 'free'
-    const hasAccess = effectivePlan === 'pro' || effectivePlan === 'agency'
+    const isTrialing = stripeSub?.status === 'trialing'
+    const hasAccess = !!adminPlan || stripeActive || isTrialing
 
     console.log('[AI Recommendations] Plan check:', {
       userId,
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
 
     if (!hasAccess) {
       return NextResponse.json(
-        { error: `AI recommendations require Pro plan. Your plan: ${effectivePlan}` },
+        { error: `AI recommendations require an active subscription. Your plan: ${effectivePlan}` },
         { status: 403 }
       )
     }

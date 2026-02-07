@@ -35,9 +35,8 @@ export default function AllMediaPage() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
   const { plan, loading: subscriptionLoading } = useSubscription()
-  // Scale and Pro users both get access to Pro features
-  // If still loading, assume Pro (don't show upgrade prompt until we know)
-  const isPro = subscriptionLoading || plan === 'Scale' || plan === 'Pro'
+  // Any paid user (including trial) gets full access
+  const isPro = subscriptionLoading || !!plan
   const {
     assets,
     isLoading,

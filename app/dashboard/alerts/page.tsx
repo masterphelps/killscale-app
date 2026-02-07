@@ -174,7 +174,7 @@ export default function AlertsPage() {
     }
   }, [viewMode, router])
 
-  const canManageAds = plan === 'Scale' || plan === 'Pro'
+  const canManageAds = !!plan
 
   const handleViewInDashboard = (alert: Alert) => {
     if (!alert.entity_type || !alert.entity_name) return

@@ -60,22 +60,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Case-insensitive check for Pro or Scale
-    const planLower = plan?.toLowerCase()
-    const isPro = planLower === 'pro' || planLower === 'scale'
-
     console.log('[Analyze Video] Subscription check:', {
       plan,
-      planLower,
       stripeStatus: stripeSub?.status,
       adminSubValid,
       isActive,
-      isPro
     })
 
-    if (!isPro || !isActive) {
+    if (!isActive) {
       return NextResponse.json(
-        { error: 'Video analysis requires Pro plan' },
+        { error: 'Video analysis requires an active subscription' },
         { status: 403 }
       )
     }

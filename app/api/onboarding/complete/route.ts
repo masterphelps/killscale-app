@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       // Create trial subscription
       const { error: subError } = await supabase.from('subscriptions').upsert({
         user_id: userId,
-        plan: 'launch',
+        plan: 'pro',
         status: 'trialing',
         current_period_end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       }, { onConflict: 'user_id' })

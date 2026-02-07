@@ -206,14 +206,14 @@ export default function GeneralSettingsPage() {
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              {plan !== 'Pro' && (
+              {!subscription?.status || subscription?.status === 'canceled' || subscription?.status === 'expired' ? (
                 <Link
                   href="/pricing"
                   className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg font-medium transition-colors"
                 >
-                  Upgrade
+                  Subscribe
                 </Link>
-              )}
+              ) : null}
               {(subscription?.status === 'active' || subscription?.status === 'trialing') && (
                 <button
                   onClick={handleOpenBillingPortal}
@@ -240,20 +240,16 @@ export default function GeneralSettingsPage() {
               </div>
               <div className="flex items-center gap-2 text-zinc-400">
                 <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                {plan === 'Launch' ? '1 ad account' : plan === 'Scale' ? '2 ad accounts' : 'Unlimited accounts'}
+                3 ad accounts
               </div>
-              {(plan === 'Scale' || plan === 'Pro') && (
-                <>
-                  <div className="flex items-center gap-2 text-zinc-400">
-                    <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                    First Party Pixel
-                  </div>
-                  <div className="flex items-center gap-2 text-zinc-400">
-                    <CheckCircle className="w-4 h-4 text-verdict-scale" />
-                    Workspaces
-                  </div>
-                </>
-              )}
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                First Party Pixel
+              </div>
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                Workspaces
+              </div>
             </div>
           </div>
         </div>

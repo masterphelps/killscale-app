@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { cn } from '@/lib/utils'
@@ -107,7 +107,7 @@ export default function AdStudioPage() {
   const { currentAccountId } = useAccount()
   const { plan } = useSubscription()
 
-  const isPro = plan === 'Scale' || plan === 'Pro'
+  const isPro = !!plan
 
   // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image
   const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | null>(null)
@@ -192,6 +192,18 @@ export default function AdStudioPage() {
   // Save copy state
   const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
   const [savedCopyIds, setSavedCopyIds] = useState<Record<number, boolean>>({})
+
+  // AI generation usage tracking
+  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number; status: string } | null>(null)
+
+  // Fetch AI generation usage
+  useEffect(() => {
+    if (!user?.id) return
+    fetch(`/api/ai/usage?userId=${user.id}`)
+      .then(res => res.json())
+      .then(data => { if (data.limit !== undefined) setAiUsage(data) })
+      .catch(() => {})
+  }, [user?.id])
 
   // Save image to session for persistence
   const saveImageToSession = useCallback(async (
@@ -606,6 +618,7 @@ export default function AdStudioPage() {
     try {
       // Build request body - include reference ad image if available
       const requestBody: Record<string, unknown> = {
+        userId: user.id,
         adCopy: {
           headline: ad.headline,
           primaryText: ad.primaryText,
@@ -639,9 +652,15 @@ export default function AdStudioPage() {
       const data = await res.json()
 
       if (!res.ok) {
+        if (res.status === 429 && data.limit) {
+          setAiUsage({ used: data.used, limit: data.limit, status: data.status })
+        }
         setImageErrors(prev => ({ ...prev, [index]: data.error || 'Failed to generate image' }))
         return
       }
+
+      // Optimistically update usage counter
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + 1 } : prev)
 
       // Calculate version index
       const existingImages = generatedImages[index] || []
@@ -2014,6 +2033,21 @@ export default function AdStudioPage() {
                   </button>
                 </div>
               </div>
+              {/* AI Generation Usage */}
+              {aiUsage && (
+                <div className={cn(
+                  'flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg w-fit',
+                  aiUsage.used >= aiUsage.limit
+                    ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    : 'bg-zinc-800 text-zinc-400'
+                )}>
+                  <ImagePlus className="w-3 h-3" />
+                  {aiUsage.used >= aiUsage.limit
+                    ? `Image generation limit reached (${aiUsage.limit}${aiUsage.status === 'active' ? '/mo' : ' total'})`
+                    : `${aiUsage.limit - aiUsage.used} image generation${aiUsage.limit - aiUsage.used !== 1 ? 's' : ''} remaining${aiUsage.status === 'active' ? ' this month' : ''}`
+                  }
+                </div>
+              )}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {generatedAds.map((ad, index) => (
                   <div
@@ -2269,13 +2303,13 @@ export default function AdStudioPage() {
                           )}
                           <button
                             onClick={() => handleGenerateImage(ad, index)}
-                            disabled={generatingImageIndex !== null || ((mode === 'create' || mode === 'upload') && !imagePrompts[index]?.trim())}
+                            disabled={generatingImageIndex !== null || ((mode === 'create' || mode === 'upload') && !imagePrompts[index]?.trim()) || (aiUsage != null && aiUsage.used >= aiUsage.limit)}
                             className={cn(
                               'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
                               mode === 'upload'
                                 ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30'
                                 : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30',
-                              (generatingImageIndex !== null || ((mode === 'create' || mode === 'upload') && !imagePrompts[index]?.trim())) && 'opacity-50 cursor-not-allowed'
+                              (generatingImageIndex !== null || ((mode === 'create' || mode === 'upload') && !imagePrompts[index]?.trim()) || (aiUsage != null && aiUsage.used >= aiUsage.limit)) && 'opacity-50 cursor-not-allowed'
                             )}
                           >
                             {generatingImageIndex === index ? (

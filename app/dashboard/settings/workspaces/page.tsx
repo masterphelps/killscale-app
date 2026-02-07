@@ -77,14 +77,7 @@ type PixelEvent = {
   event_metadata?: { notes?: string }
 }
 
-// Workspace limits per tier
-// Launch: Hidden default workspace only (no visible workspaces)
-// Scale: 2 workspaces, Pro: unlimited
-const WORKSPACE_LIMITS: Record<string, number> = {
-  'Launch': 0,
-  'Scale': 2,
-  'Pro': 100,
-}
+const MAX_WORKSPACES = 5
 
 export default function WorkspacesPage() {
   const { user } = useAuth()
@@ -191,7 +184,7 @@ export default function WorkspacesPage() {
   // Manual Event Modal
   const [showManualEventModal, setShowManualEventModal] = useState<string | null>(null)
 
-  const workspaceLimit = WORKSPACE_LIMITS[plan] || 0
+  const workspaceLimit = MAX_WORKSPACES
   const canCreateWorkspace = workspaces.length < workspaceLimit
 
   // Load workspaces
@@ -268,7 +261,7 @@ export default function WorkspacesPage() {
     if (!user || !newWorkspaceName.trim()) return
 
     if (!canCreateWorkspace) {
-      setError(`${plan} plan allows ${workspaceLimit} workspace${workspaceLimit !== 1 ? 's' : ''}. Upgrade to create more.`)
+      setError(`Workspace limit reached (${workspaceLimit} max).`)
       return
     }
 
@@ -406,9 +399,9 @@ export default function WorkspacesPage() {
     return accounts.filter(a => !existingIds.includes(a.id))
   }
 
-  // Pro-only: Load members and invites for a workspace
+  // Load members and invites for a workspace
   const loadTeamData = async (workspaceId: string) => {
-    if (!user?.id || plan !== 'Pro') return
+    if (!user?.id) return
 
     try {
       // Load members
@@ -1139,60 +1132,12 @@ ks('pageview');
     return diffHours < 24
   }
 
-  const isAgency = plan === 'Pro'
+  const isAgency = !!plan
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
-      </div>
-    )
-  }
-
-  // Check if user is Scale+ (can access workspaces)
-  const isProPlus = plan === 'Scale' || plan === 'Pro'
-
-  // Show upgrade prompt for Launch tier
-  if (!isProPlus) {
-    return (
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-1">Workspaces</h1>
-          <p className="text-zinc-500">Group ad accounts from multiple platforms into unified views</p>
-        </div>
-
-        <div className="bg-bg-card border border-border rounded-xl p-8 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-purple-500/20 to-accent/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-8 h-8 text-purple-400" />
-          </div>
-          <h2 className="text-xl font-semibold mb-2">Unlock Workspaces</h2>
-          <p className="text-zinc-500 mb-6 max-w-md mx-auto">
-            Combine metrics from multiple ad accounts (Meta + Google) into unified views.
-            Upgrade to Pro to create workspaces.
-          </p>
-          <div className="space-y-4">
-            <ul className="text-sm text-left max-w-xs mx-auto space-y-2 text-zinc-400">
-              <li className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-accent" />
-                Aggregate data across platforms
-              </li>
-              <li className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-accent" />
-                See blended ROAS metrics
-              </li>
-              <li className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-accent" />
-                One pixel per workspace
-              </li>
-            </ul>
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-accent to-purple-500 hover:from-accent-hover hover:to-purple-400 text-white rounded-lg font-medium transition-all"
-            >
-              Upgrade to Pro
-            </Link>
-          </div>
-        </div>
       </div>
     )
   }

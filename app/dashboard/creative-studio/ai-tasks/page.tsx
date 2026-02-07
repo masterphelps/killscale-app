@@ -656,6 +656,17 @@ function AdSessionDetailPanel({
   const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
   const [savedCopyIds, setSavedCopyIds] = useState<Record<number, boolean>>({})
 
+  // AI generation usage tracking
+  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number; status: string } | null>(null)
+
+  useEffect(() => {
+    if (!user?.id) return
+    fetch(`/api/ai/usage?userId=${user.id}`)
+      .then(res => res.json())
+      .then(data => { if (data.limit !== undefined) setAiUsage(data) })
+      .catch(() => {})
+  }, [user?.id])
+
   // Image generation state - stores array of versions per ad
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null)
   const [generatedImages, setGeneratedImages] = useState<Record<number, GeneratedImage[]>>({})
@@ -784,6 +795,7 @@ function AdSessionDetailPanel({
     try {
       // 1. Generate image
       const requestBody: Record<string, unknown> = {
+        userId: user.id,
         adCopy: {
           headline: ad.headline,
           primaryText: ad.primaryText,
@@ -805,9 +817,15 @@ function AdSessionDetailPanel({
       const data = await res.json()
 
       if (!res.ok) {
+        if (res.status === 429 && data.limit) {
+          setAiUsage({ used: data.used, limit: data.limit, status: data.status })
+        }
         setImageErrors(prev => ({ ...prev, [index]: data.error || 'Failed to generate image' }))
         return
       }
+
+      // Optimistically update usage counter
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + 1 } : prev)
 
       const newImage: GeneratedImage = {
         base64: data.image.base64,
@@ -1211,6 +1229,22 @@ function AdSessionDetailPanel({
         </div>
       </div>
 
+      {/* AI Generation Usage */}
+      {aiUsage && (
+        <div className={cn(
+          'flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg w-fit',
+          aiUsage.used >= aiUsage.limit
+            ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+            : 'bg-zinc-800 text-zinc-400'
+        )}>
+          <ImagePlus className="w-3 h-3" />
+          {aiUsage.used >= aiUsage.limit
+            ? `Image generation limit reached (${aiUsage.limit}${aiUsage.status === 'active' ? '/mo' : ' total'})`
+            : `${aiUsage.limit - aiUsage.used} image generation${aiUsage.limit - aiUsage.used !== 1 ? 's' : ''} remaining${aiUsage.status === 'active' ? ' this month' : ''}`
+          }
+        </div>
+      )}
+
       {/* Generated Ads Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {session.generated_ads?.map((ad, index) => {
@@ -1443,11 +1477,11 @@ function AdSessionDetailPanel({
                     <div className="space-y-2">
                       <button
                         onClick={() => handleGenerateImage(ad, index)}
-                        disabled={generatingImageIndex !== null}
+                        disabled={generatingImageIndex !== null || (aiUsage != null && aiUsage.used >= aiUsage.limit)}
                         className={cn(
                           'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
                           'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30',
-                          generatingImageIndex !== null && 'opacity-50 cursor-not-allowed'
+                          (generatingImageIndex !== null || (aiUsage != null && aiUsage.used >= aiUsage.limit)) && 'opacity-50 cursor-not-allowed'
                         )}
                       >
                         {generatingImageIndex === index ? (
@@ -1538,7 +1572,7 @@ export default function AITasksPage() {
   // Mobile expanded view
   const [mobileExpandedItem, setMobileExpandedItem] = useState<{ type: SelectedItemType; id: string } | null>(null)
 
-  const isPro = plan === 'Scale' || plan === 'Pro'
+  const isPro = !!plan
 
   const selectedAnalysis = analyses.find(a => a.id === selectedAnalysisId) || null
   const selectedSession = sessions.find(s => s.id === selectedSessionId) || null

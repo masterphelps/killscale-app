@@ -63,7 +63,7 @@ const settingsItems = [
   { href: '/dashboard/settings', label: 'General', icon: SlidersHorizontal },
   { href: '/dashboard/settings/rules', label: 'Rules', icon: Scale },
   { href: '/dashboard/settings/accounts', label: 'Accounts', icon: Users },
-  { href: '/dashboard/settings/workspaces', label: 'Workspaces', icon: Layers, proOnly: true },
+  { href: '/dashboard/settings/workspaces', label: 'Workspaces', icon: Layers },
 ]
 
 const creativeStudioItems = [
@@ -71,8 +71,8 @@ const creativeStudioItems = [
   { href: '/dashboard/creative-studio/active', label: 'Ads', icon: Zap },
   { href: '/dashboard/creative-studio/media', label: 'Media', icon: LayoutGrid },
   { href: '/dashboard/creative-studio/best-copy', label: 'Copy', icon: FileText },
-  { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles, proOnly: true },
-  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, proOnly: true, isNew: true },
+  { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles },
+  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, isNew: true },
 ]
 
 export function Sidebar() {
@@ -551,9 +551,6 @@ export function Sidebar() {
             {creativeStudioExpanded && (
               <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
                 {creativeStudioItems.map((item) => {
-                  // Skip Pro-only items for non-Pro users
-                  if (item.proOnly && !isProPlus) return null
-
                   const Icon = item.icon
                   const isActive = pathname === item.href
 
@@ -678,9 +675,6 @@ export function Sidebar() {
             {settingsExpanded && (
               <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
                 {settingsItems.map((item) => {
-                  // Skip Pro+ only items (Pixel, Workspaces) for Free and Starter tiers
-                  if (item.proOnly && !isProPlus) return null
-
                   const Icon = item.icon
                   const isActive = pathname === item.href
 
@@ -758,20 +752,18 @@ export function Sidebar() {
         >
           <HelpCircle className="w-4 h-4" />
         </a>
-        {plan === 'Pro' && (
-          <button
-            onClick={togglePrivacyMode}
-            className={cn(
-              "flex items-center justify-center w-9 h-9 rounded-lg transition-colors",
-              isPrivacyMode
-                ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
-                : "text-zinc-500 hover:text-white hover:bg-bg-hover"
-            )}
-            title={isPrivacyMode ? "Privacy mode ON" : "Privacy mode OFF"}
-          >
-            {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        )}
+        <button
+          onClick={togglePrivacyMode}
+          className={cn(
+            "flex items-center justify-center w-9 h-9 rounded-lg transition-colors",
+            isPrivacyMode
+              ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+              : "text-zinc-500 hover:text-white hover:bg-bg-hover"
+          )}
+          title={isPrivacyMode ? "Privacy mode ON" : "Privacy mode OFF"}
+        >
+          {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
         <button
           onClick={signOut}
           className={cn(

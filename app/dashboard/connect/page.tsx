@@ -58,11 +58,7 @@ const DATE_PRESETS = [
   { value: 'last_month', label: 'Last Month' },
 ]
 
-const ACCOUNT_LIMITS: Record<string, number> = {
-  'Launch': 1,
-  'Scale': 2,
-  'Pro': 100,
-}
+const MAX_ACCOUNTS = 3
 
 export default function ConnectPage() {
   const { user } = useAuth()
@@ -78,7 +74,7 @@ export default function ConnectPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
   const isPro = true // All plans can connect Meta API
-  const accountLimit = ACCOUNT_LIMITS[plan] || 1
+  const accountLimit = MAX_ACCOUNTS
   const dashboardAccountCount = connection?.ad_accounts?.filter(a => a.in_dashboard).length || 0
   
   useEffect(() => {
@@ -282,7 +278,7 @@ export default function ConnectPage() {
     if (!isCurrentlyInDashboard && dashboardAccountCount >= accountLimit) {
       setMessage({ 
         type: 'error', 
-        text: `${plan} plan is limited to ${accountLimit} dashboard account${accountLimit > 1 ? 's' : ''}. Upgrade to add more.` 
+        text: `Account limit reached (${accountLimit} max). Contact support for more.` 
       })
       return
     }

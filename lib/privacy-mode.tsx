@@ -18,11 +18,11 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
   const { plan } = useSubscription()
   const [storedPrivacyMode, setStoredPrivacyMode] = useState(false)
 
-  // Privacy mode is only available for Pro plan
-  const isAgency = plan === 'Pro'
+  // Privacy mode available for any paid user
+  const hasPlan = !!plan && plan !== 'free' && plan !== ''
 
-  // Effective privacy mode: only true if Agency plan AND user has it enabled
-  const isPrivacyMode = isAgency && storedPrivacyMode
+  // Effective privacy mode: only true if paid plan AND user has it enabled
+  const isPrivacyMode = hasPlan && storedPrivacyMode
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -46,8 +46,7 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
   }, [storedPrivacyMode])
 
   const togglePrivacyMode = () => {
-    // Only allow toggling for Agency plan
-    if (isAgency) {
+    if (hasPlan) {
       setStoredPrivacyMode(prev => !prev)
     }
   }

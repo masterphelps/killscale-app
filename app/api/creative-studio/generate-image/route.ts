@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 // Claude client for text curation
 let anthropic: Anthropic | null = null
@@ -24,6 +30,7 @@ function getGenAI() {
 const MODEL_NAME = 'gemini-3-pro-image-preview'
 
 interface GenerateImageRequest {
+  userId?: string
   adCopy: {
     headline: string
     primaryText: string
@@ -370,6 +377,53 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check AI generation limits if userId provided
+    if (body.userId) {
+      const { data: sub } = await supabaseAdmin
+        .from('subscriptions')
+        .select('plan, status')
+        .eq('user_id', body.userId)
+        .single()
+
+      const isTrial = sub?.status === 'trialing'
+      const isActive = sub?.status === 'active' || isTrial
+
+      if (isActive) {
+        let used = 0
+        let limit = 50
+
+        if (isTrial) {
+          limit = 10
+          const { count } = await supabaseAdmin
+            .from('ai_generation_usage')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', body.userId)
+          used = count || 0
+        } else {
+          const now = new Date()
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+          const { count } = await supabaseAdmin
+            .from('ai_generation_usage')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', body.userId)
+            .gte('created_at', monthStart)
+          used = count || 0
+        }
+
+        if (used >= limit) {
+          return NextResponse.json(
+            {
+              error: 'AI generation limit reached',
+              limit,
+              used,
+              status: isTrial ? 'trial' : 'active',
+            },
+            { status: 429 }
+          )
+        }
+      }
+    }
+
     const client = getGenAI()
     if (!client) {
       return NextResponse.json(
@@ -460,6 +514,14 @@ export async function POST(request: NextRequest) {
               base64Data = Buffer.from(rawData as ArrayBuffer).toString('base64')
             }
 
+            // Track usage
+            if (body.userId) {
+              await supabaseAdmin.from('ai_generation_usage').insert({
+                user_id: body.userId,
+                generation_type: 'image',
+              })
+            }
+
             return NextResponse.json({
               image: {
                 base64: base64Data,
@@ -511,6 +573,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[Imagen] Image generated successfully with Imagen (text-only)')
+
+    // Track usage
+    if (body.userId) {
+      await supabaseAdmin.from('ai_generation_usage').insert({
+        user_id: body.userId,
+        generation_type: 'image',
+      })
+    }
 
     return NextResponse.json({
       image: {

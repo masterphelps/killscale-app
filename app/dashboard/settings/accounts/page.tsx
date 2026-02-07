@@ -40,11 +40,7 @@ type GoogleConnection = {
   selected_account_id: string | null
 }
 
-const ACCOUNT_LIMITS: Record<string, number> = {
-  'Launch': 1,
-  'Scale': 2,
-  'Pro': 100,
-}
+const MAX_ACCOUNTS = 3
 
 export default function AccountsPage() {
   const { user } = useAuth()
@@ -66,7 +62,7 @@ export default function AccountsPage() {
   const [csvUploading, setCsvUploading] = useState(false)
   const [accountCsvCounts, setAccountCsvCounts] = useState<Record<string, number>>({})
 
-  const accountLimit = ACCOUNT_LIMITS[plan] || 1
+  const accountLimit = MAX_ACCOUNTS
   const metaAccountCount = metaConnection?.ad_accounts?.filter(a => a.in_dashboard).length || 0
   const googleAccountCount = googleConnection?.ad_accounts?.filter(a => a.in_dashboard).length || 0
   const totalDashboardCount = metaAccountCount + googleAccountCount
@@ -268,7 +264,7 @@ export default function AccountsPage() {
     if (!isCurrentlyIn && totalDashboardCount >= accountLimit) {
       setMessage({
         type: 'error',
-        text: `${plan} plan is limited to ${accountLimit} account${accountLimit > 1 ? 's' : ''}. Upgrade to add more.`
+        text: `Account limit reached (${accountLimit} max). Contact support for more.`
       })
       return
     }
@@ -637,24 +633,16 @@ export default function AccountsPage() {
 
       {/* Limit warning */}
       {totalDashboardCount >= accountLimit && (
-        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-amber-500">
-            <Lock className="w-4 h-4" />
-            Account limit reached
-          </div>
-          <Link
-            href="/pricing"
-            className="text-sm text-amber-500 hover:text-amber-400 font-medium"
-          >
-            Upgrade for more →
-          </Link>
+        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-2 text-sm text-amber-500">
+          <Lock className="w-4 h-4" />
+          Account limit reached ({accountLimit} max)
         </div>
       )}
 
       {/* Help text */}
       <div className="mt-6 text-sm text-zinc-500 space-y-2">
         <p>Click the <Eye className="w-4 h-4 inline" /> icon to show or hide accounts in the sidebar dropdown.</p>
-        <p>Visible accounts count against your plan's limit and their data is shown in the dashboard.</p>
+        <p>Visible accounts count against your limit ({accountLimit} max) and their data is shown in the dashboard.</p>
       </div>
     </div>
   )

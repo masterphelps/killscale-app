@@ -40,8 +40,8 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
   const { plan, loading: subscriptionLoading } = useSubscription()
   const pathname = usePathname()
 
-  // Scale and Pro users get access to Pro features
-  const isPro = subscriptionLoading || plan === 'Scale' || plan === 'Pro'
+  // Any paid user (including trial) gets full access
+  const isPro = subscriptionLoading || !!plan
 
   // Hide date picker on Best Copy page (always shows all-time data)
   // Also hide on Media page (has its own date picker in the controls section)

@@ -653,7 +653,7 @@ export default function DashboardPage() {
   
   const canSync = true // All plans can sync via Meta API
   const planLower = plan?.toLowerCase() || ''
-  const isProPlus = planLower === 'pro' || planLower === 'agency'
+  const isProPlus = !!planLower
   
   // Initial data load - checks last_sync_at to decide if sync is needed
   useEffect(() => {
