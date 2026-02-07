@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
 
       if (imagesData.data && Array.isArray(imagesData.data)) {
         for (const img of imagesData.data) {
+          // Skip images with no real name — these are tiny fragments, not real assets
+          const imgName = (img.name || '').trim().toLowerCase()
+          if (!imgName || imgName === 'untitled') continue
           images.push({
             id: img.id || img.hash,
             hash: img.hash,
@@ -94,6 +97,9 @@ export async function GET(request: NextRequest) {
 
       if (videosData.data && Array.isArray(videosData.data)) {
         for (const vid of videosData.data) {
+          // Skip videos with no real title — these are fragments, not real assets
+          const vidTitle = (vid.title || '').trim().toLowerCase()
+          if (!vidTitle || vidTitle === 'untitled' || vidTitle === 'untitled video') continue
           // Get the best thumbnail
           let thumbnailUrl = ''
           if (vid.thumbnails && vid.thumbnails.data && vid.thumbnails.data.length > 0) {

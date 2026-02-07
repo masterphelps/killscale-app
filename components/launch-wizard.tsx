@@ -16,7 +16,8 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Video,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { cn, formatFileSize } from '@/lib/utils'
@@ -82,6 +83,14 @@ type Step =
   | 'creatives'         // Campaign/Ad Set/Ad paths (NOT Performance Set)
   | 'copy'              // Campaign/Ad Set/Ad paths (NOT Performance Set)
   | 'review'            // All paths
+
+interface GeneratedAd {
+  headline: string
+  primaryText: string
+  description: string
+  angle: string
+  whyItWorks: string
+}
 
 interface LeadForm {
   id: string
@@ -374,6 +383,11 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
   const [isLoadingCopy, setIsLoadingCopy] = useState(false)
   const [selectedCopyKey, setSelectedCopyKey] = useState<string | null>(null)
 
+  // AI Copy Generation state
+  const [generatingCopy, setGeneratingCopy] = useState(false)
+  const [generatedCopyAds, setGeneratedCopyAds] = useState<GeneratedAd[]>([])
+  const [showGeneratedCopyModal, setShowGeneratedCopyModal] = useState(false)
+
   // Form state - adAccountId comes from prop (sidebar context)
   const [state, setState] = useState<WizardState>({
     adAccountId: adAccountId, // Use the prop from sidebar context
@@ -503,6 +517,52 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     }))
     setShowCopyLibrary(false)
     setSelectedCopyKey(null)
+  }
+
+  // Generate ad copy with AI from the website URL
+  const handleGenerateCopy = async () => {
+    if (!state.websiteUrl) return
+    setGeneratingCopy(true)
+    try {
+      // Step 1: Analyze the product URL
+      const analyzeRes = await fetch('/api/creative-studio/analyze-product-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: state.websiteUrl })
+      })
+      if (!analyzeRes.ok) throw new Error('Failed to analyze URL')
+      const { product } = await analyzeRes.json()
+
+      // Step 2: Generate copy variations (pass minimal competitorAd since API requires it)
+      const generateRes = await fetch('/api/creative-studio/generate-from-competitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product,
+          competitorAd: { pageName: product.name || 'Product' }
+        })
+      })
+      if (!generateRes.ok) throw new Error('Failed to generate copy')
+      const { ads } = await generateRes.json()
+
+      setGeneratedCopyAds(ads)
+      setShowGeneratedCopyModal(true)
+    } catch (err) {
+      console.error('AI copy generation failed:', err)
+    } finally {
+      setGeneratingCopy(false)
+    }
+  }
+
+  // Select a generated copy variation and populate the wizard fields
+  const handleSelectGeneratedCopy = (ad: GeneratedAd) => {
+    setState(s => ({
+      ...s,
+      primaryText: ad.primaryText,
+      headline: ad.headline,
+      description: ad.description,
+    }))
+    setShowGeneratedCopyModal(false)
   }
 
   // Load ad sets for a specific campaign (for Ad path)
@@ -3081,15 +3141,36 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       case 'copy':
         return (
           <div className="space-y-6">
-            {/* Copy Library picker */}
-            <button
-              type="button"
-              onClick={() => { loadCopyLibrary(); setShowCopyLibrary(true) }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-bg-card hover:bg-bg-hover text-zinc-300 hover:text-white transition-colors text-sm"
-            >
-              <FileText className="w-4 h-4" />
-              Select from Copy Library
-            </button>
+            {/* Copy Library + AI Generate buttons */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { loadCopyLibrary(); setShowCopyLibrary(true) }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-bg-card hover:bg-bg-hover text-zinc-300 hover:text-white transition-colors text-sm"
+              >
+                <FileText className="w-4 h-4" />
+                Copy Library
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateCopy}
+                disabled={!state.websiteUrl || generatingCopy}
+                title={!state.websiteUrl ? 'Enter a website URL first' : undefined}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm transition-colors",
+                  !state.websiteUrl || generatingCopy
+                    ? "border-border bg-bg-card text-zinc-600 cursor-not-allowed"
+                    : "border-purple-500/50 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-purple-200"
+                )}
+              >
+                {generatingCopy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {generatingCopy ? 'Generating...' : 'Generate with AI'}
+              </button>
+            </div>
 
             <div>
               <label className="block text-sm font-medium mb-2">Primary Text</label>
@@ -3593,6 +3674,71 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
           onSelectionChange={handleLibrarySelection}
           maxSelection={6 - state.creatives.length}
         />
+      )}
+
+      {/* AI Generated Copy Modal */}
+      {showGeneratedCopyModal && generatedCopyAds.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowGeneratedCopyModal(false)} />
+          <div className="relative bg-bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col mx-4">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div>
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                  AI-Generated Ad Copy
+                </h3>
+                <p className="text-sm text-zinc-400 mt-0.5">Based on your website URL</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGeneratedCopyModal(false)}
+                className="p-2 hover:bg-bg-hover rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Grid of variations */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {generatedCopyAds.map((ad, i) => (
+                  <div
+                    key={i}
+                    className="border border-border rounded-xl p-4 hover:border-purple-500/40 transition-colors flex flex-col"
+                  >
+                    {/* Angle badge */}
+                    <span className="self-start px-2 py-0.5 text-xs font-medium rounded-full bg-purple-500/20 text-purple-300 mb-3">
+                      {ad.angle}
+                    </span>
+
+                    {/* Headline */}
+                    <p className="font-semibold text-white mb-2">{ad.headline}</p>
+
+                    {/* Primary text */}
+                    <p className="text-sm text-zinc-300 whitespace-pre-wrap mb-2 flex-1">{ad.primaryText}</p>
+
+                    {/* Description */}
+                    {ad.description && (
+                      <p className="text-xs text-zinc-500 mb-3">{ad.description}</p>
+                    )}
+
+                    {/* Why it works */}
+                    <p className="text-xs text-green-400/80 italic mb-4">{ad.whyItWorks}</p>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectGeneratedCopy(ad)}
+                      className="w-full py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm transition-colors"
+                    >
+                      Use This Copy
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Copy Library Modal */}

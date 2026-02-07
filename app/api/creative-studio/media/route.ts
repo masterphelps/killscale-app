@@ -50,6 +50,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ assets: [], videoCount: 0, imageCount: 0 })
     }
 
+    // Filter out items with no real name — these are tiny fragments, not real assets
+    const filteredMediaItems = mediaItems.filter(item => {
+      const name = (item.name || '').trim().toLowerCase()
+      return name && name !== 'untitled' && name !== 'untitled video'
+    })
+
     // 2. Query ad_data for this account to aggregate performance by media_hash
     // With append-only sync (date_preset=maximum), ad_data can have tens of thousands of daily rows.
     // Supabase PostgREST defaults to 1000 rows — must override to get full dataset.
@@ -85,7 +91,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Build a map of media_hash → original hashes from media_library
-    const inventoryHashes = new Set(mediaItems.map(m => m.media_hash))
+    const inventoryHashes = new Set(filteredMediaItems.map(m => m.media_hash))
 
     // 4. Handle video derivatives: map derivative hashes to original via creative_id linkage
     // ad_data may have derivative hashes (Meta assigns per placement).
@@ -315,7 +321,7 @@ export async function GET(request: NextRequest) {
 
       if (remainingUnmatched.size > 0) {
         // Find media_library video items with no perf data
-        const unmatchedLibraryVideos = mediaItems.filter(
+        const unmatchedLibraryVideos = filteredMediaItems.filter(
           m => m.media_type === 'video' && !perfMap.has(m.media_hash)
         )
 
@@ -344,7 +350,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 5c. Query video_analysis for analysis status (for sparkle indicators)
-    const videoMediaHashes = mediaItems
+    const videoMediaHashes = filteredMediaItems
       .filter(m => m.media_type === 'video')
       .map(m => m.media_hash)
 
@@ -365,7 +371,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 6. Build unified StudioAsset[] response
-    const assets = mediaItems.map(item => {
+    const assets = filteredMediaItems.map(item => {
       const perf = perfMap.get(item.media_hash)
       const hasPerformanceData = !!perf && perf.spend > 0
 
