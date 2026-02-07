@@ -198,12 +198,20 @@ export default function InsightsPage() {
         setHealthScore(null)
       }
 
-      // Load ad data
-      const { data: adData, error: adError } = await supabase
+      // Load ad data (filtered to 30-day window + account)
+      let adQuery = supabase
         .from('ad_data')
         .select('*')
         .eq('user_id', user.id)
+        .gte('date_start', dateRange.start)
+        .lte('date_start', dateRange.end)
         .order('date_start', { ascending: false })
+
+      if (selectedAccountId) {
+        adQuery = adQuery.eq('ad_account_id', selectedAccountId)
+      }
+
+      const { data: adData, error: adError } = await adQuery
 
       if (adData && !adError) {
         // Transform data to use result_value for revenue when available
