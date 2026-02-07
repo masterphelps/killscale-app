@@ -196,7 +196,8 @@ Respond ONLY with the JSON object, no other text.`
     // Download the product image if we found one
     if (productInfo.imageUrl) {
       const resolvedUrl = resolveImageUrl(productInfo.imageUrl, url)
-      console.log('[Analyze] Downloading product image from:', resolvedUrl)
+      console.log('[Analyze] Claude extracted imageUrl:', productInfo.imageUrl)
+      console.log('[Analyze] Resolved to:', resolvedUrl)
 
       const imageData = await downloadImageAsBase64(resolvedUrl)
       if (imageData) {
@@ -204,8 +205,10 @@ Respond ONLY with the JSON object, no other text.`
         productInfo.imageMimeType = imageData.mimeType
         console.log('[Analyze] Product image downloaded successfully, size:', Math.round(imageData.base64.length / 1024), 'KB')
       } else {
-        console.log('[Analyze] Failed to download product image')
+        console.log('[Analyze] Failed to download product image from:', resolvedUrl)
       }
+    } else {
+      console.log('[Analyze] Claude did NOT extract an imageUrl from the page')
     }
 
     return NextResponse.json({ product: productInfo })

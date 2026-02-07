@@ -311,6 +311,135 @@ Requirements:
 Generate a ${style} style ad with text overlay using my product photo.`
 }
 
+// Prompt when we only have reference ad (no product image)
+function buildReferenceOnlyPrompt(req: GenerateImageRequest, curatedText: CuratedAdText, styleDescription?: string | null): string {
+  const { product, style = 'clone' } = req
+
+  if (style === 'clone') {
+    const styleBlock = styleDescription
+      ? `\nTHE REFERENCE AD'S VISUAL STYLE (analyzed):\n${styleDescription}\n\nYou MUST replicate this exact visual style. If it's a graphic design ad, create a graphic design ad — NOT a lifestyle photo. If it uses solid color backgrounds, use solid color backgrounds. Match the style precisely.`
+      : ''
+
+    return `I'm providing ONE image: a reference ad. CLONE this exact visual format and style for a new product.
+${styleBlock}
+
+PRODUCT TO ADVERTISE: ${product.name}
+${product.description ? `Product description: ${product.description}` : ''}
+${product.category ? `Category: ${product.category}` : ''}
+
+CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
+The ad text MUST be exactly:
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+
+- Use ONLY the two lines of text above
+- DO NOT use any text from the reference ad image
+- DO NOT copy the reference ad's text - only its visual style
+- Spell the text EXACTLY as provided - no changes
+
+Create an advertisement that is a FAITHFUL CLONE of the reference ad's VISUAL FORMAT (not its text):
+- EXACTLY match the reference ad's visual approach: if it's a graphic design ad with solid colors and bold typography, create the same. If it's photography-based, match that. Do NOT default to lifestyle photography.
+- Copy the same layout, composition, color palette, background treatment, and typography style
+- Match the reference ad's text STYLING and POSITIONING, but use MY text provided above
+- Represent the product "${product.name}" — use your knowledge of this product type
+
+Requirements:
+- The output MUST look like it came from the same ad campaign as the reference
+- Match the reference ad's format EXACTLY - this is a clone, not a reinterpretation
+- If the reference uses graphic design (solid backgrounds, bold text, no photography), do NOT add lifestyle photography
+- If the reference uses photography, match the photography style
+- Professional quality suitable for Facebook/Instagram ads
+- High resolution output${TEXT_REQUIREMENTS}
+
+Generate an ad that clones the reference ad's visual format for "${product.name}" using MY provided text.`
+  }
+
+  if (style === 'refresh' || req.isRefresh) {
+    return `I'm providing ONE image: the current ad that needs a fresh version.
+
+PRODUCT: ${product.name}
+${product.description ? `Description: ${product.description}` : ''}
+
+The ad text MUST be exactly:
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+
+- Use ONLY the two lines of text above
+- Spell the text EXACTLY as provided - no changes
+
+Create a FRESH advertisement that looks noticeably different from the reference:
+- Create a DIFFERENT composition, angle, color treatment, or background
+- The goal is to look fresh and new while maintaining brand consistency
+- Do NOT clone the reference ad's layout — change it deliberately
+- If the reference uses warm tones, try cool tones. If centered, try off-center.
+
+Requirements:
+- Must be clearly different from the reference ad at first glance
+- Represent the product "${product.name}" prominently
+- Professional quality suitable for Facebook/Instagram ads
+- High resolution output${TEXT_REQUIREMENTS}
+
+Generate an ad that refreshes the creative while keeping the same product and quality level.`
+  }
+
+  if (style === 'bold') {
+    return `I'm providing ONE image: a reference ad. Use it as inspiration for a BOLD style ad.
+
+PRODUCT: ${product.name}
+${product.description ? `Description: ${product.description}` : ''}
+
+Create a BOLD, scroll-stopping advertisement that:
+- Takes inspiration from the reference but makes it MORE bold and attention-grabbing
+- Uses vibrant colors, high contrast, and dynamic composition
+
+The ad text MUST be exactly:
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+
+Requirements:
+- Make it impossible to scroll past
+- Include ONLY the two lines of text above - no other text, no labels
+- Spell the text EXACTLY as provided
+- Represent the product "${product.name}" prominently
+- Professional quality suitable for Facebook/Instagram ads${TEXT_REQUIREMENTS}
+
+Generate a bold, attention-grabbing ad for "${product.name}".`
+  }
+
+  // Other styles (lifestyle, product, minimal) with reference ad
+  const styleDescriptions: Record<string, string> = {
+    lifestyle: 'lifestyle photography, natural setting, warm and authentic feel',
+    product: 'clean product photography, studio lighting, professional presentation',
+    minimal: 'minimalist design, clean background, modern aesthetic',
+  }
+
+  const styleGuide = styleDescriptions[style] || styleDescriptions.lifestyle
+
+  return `I'm providing ONE image: a reference ad. Use it for general inspiration.
+
+PRODUCT: ${product.name}
+${product.description ? `Description: ${product.description}` : ''}
+
+Create an advertisement with this style: ${styleGuide}
+
+The ad text MUST be exactly:
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+
+The ad should:
+- Represent the product "${product.name}"
+- Use the ${style} visual style
+- Take general inspiration from the reference ad's approach
+
+Requirements:
+- Include ONLY the two lines of text above - no other text, no labels
+- Spell the text EXACTLY as provided
+- Professional quality suitable for Facebook/Instagram ads
+- High resolution output${TEXT_REQUIREMENTS}
+
+Generate a ${style} style ad with text overlay for "${product.name}".`
+}
+
 // Prompt when we only have product image (no reference ad)
 function buildImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdText): string {
   const { product, style = 'lifestyle' } = req
@@ -550,18 +679,20 @@ export async function POST(request: NextRequest) {
     const curatedText = await curateAdText(body.adCopy.headline, body.adCopy.primaryText)
     console.log('[Imagen] Curated text:', curatedText)
 
-    if (hasProductImage) {
-      // Build the parts array - product image first, then optionally reference ad
-      const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [
-        {
+    if (hasProductImage || hasReferenceAd) {
+      // Build the parts array - product image first (if available), then reference ad
+      const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = []
+
+      if (hasProductImage) {
+        parts.push({
           inlineData: {
             mimeType: body.product.imageMimeType!,
             data: body.product.imageBase64!,
           }
-        }
-      ]
+        })
+      }
 
-      // If we have a reference ad, add it as the second image
+      // If we have a reference ad, add it
       if (hasReferenceAd) {
         console.log('[Imagen] Adding reference ad image to request')
         parts.push({
@@ -584,14 +715,20 @@ export async function POST(request: NextRequest) {
       }
 
       // Select prompt based on what we have:
-      // 1. Reference ad (Clone mode) -> dual-image prompt
-      // 2. Custom imagePrompt (Create mode) -> custom prompt with user's direction
-      // 3. Neither -> default single-image prompt
-      const prompt = hasReferenceAd
-        ? buildDualImagePrompt(body, curatedText, styleDescription)
-        : body.imagePrompt
-          ? buildCustomPrompt(body, curatedText)
-          : buildImagePrompt(body, curatedText)
+      // 1. Reference ad + product image -> dual-image prompt
+      // 2. Reference ad only (no product image) -> reference-only prompt
+      // 3. Custom imagePrompt (Create mode) -> custom prompt with user's direction
+      // 4. Product image only -> default single-image prompt
+      let prompt: string
+      if (hasReferenceAd && hasProductImage) {
+        prompt = buildDualImagePrompt(body, curatedText, styleDescription)
+      } else if (hasReferenceAd) {
+        prompt = buildReferenceOnlyPrompt(body, curatedText, styleDescription)
+      } else if (body.imagePrompt) {
+        prompt = buildCustomPrompt(body, curatedText)
+      } else {
+        prompt = buildImagePrompt(body, curatedText)
+      }
       parts.push({ text: prompt })
 
       console.log('[Imagen] Using model:', MODEL_NAME)
@@ -659,8 +796,8 @@ export async function POST(request: NextRequest) {
         console.error('[Imagen] GEMINI FAILED — falling back to Imagen. Error:', errMsg)
       }
     } else {
-      geminiFallbackReason = `No product image (hasProductImage=${hasProductImage})`
-      console.log('[Imagen] Skipping Gemini — no product image, going to Imagen text-only')
+      geminiFallbackReason = `No product image and no reference ad (hasProductImage=${hasProductImage}, hasReferenceAd=${hasReferenceAd})`
+      console.log('[Imagen] Skipping Gemini — no images available, going to Imagen text-only')
     }
 
     // Fallback: Use Imagen (text-to-image) without reference image
