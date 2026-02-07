@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+// Note: No IntersectionObserver here — this is a browse/select grid where
+// many cards are visible at once. Hover-to-play only to avoid mass buffering.
 import { motion } from 'framer-motion'
 import { Play, Image, Film, DollarSign } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -31,48 +33,25 @@ export function OwnAdCard({ ad, index, onClick }: OwnAdCardProps) {
   const [imageError, setImageError] = useState(false)
   const [videoPlaying, setVideoPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const cardRef = useRef<HTMLDivElement>(null)
-  const isTouchDevice = useRef(false)
-  const [isInView, setIsInView] = useState(false)
 
-  useEffect(() => {
-    isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-  }, [])
-
-  // Intersection Observer for mobile scroll-to-play
-  useEffect(() => {
-    if (ad.mediaType !== 'video' || !isTouchDevice.current) return
-    const el = cardRef.current
-    if (!el) return
-
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsInView(entry.isIntersecting),
-      { threshold: 0.6 }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [ad.mediaType])
-
-  // Play/pause video on hover (desktop) or scroll (mobile)
+  // Play/pause video on hover only (no scroll-to-play — too many cards visible at once)
   useEffect(() => {
     if (!videoRef.current || ad.mediaType !== 'video') return
-    const shouldPlay = isTouchDevice.current ? isInView : isHovered
 
-    if (shouldPlay) {
+    if (isHovered) {
       videoRef.current.play().catch(() => {})
       setVideoPlaying(true)
     } else {
       videoRef.current.pause()
-      videoRef.current.currentTime = 0
+      videoRef.current.currentTime = 0.3
       setVideoPlaying(false)
     }
-  }, [isHovered, isInView, ad.mediaType])
+  }, [isHovered, ad.mediaType])
 
   const thumbnailUrl = ad.storageUrl || ad.thumbnailUrl || ad.imageUrl
 
   return (
     <motion.div
-      ref={cardRef}
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{
@@ -99,34 +78,48 @@ export function OwnAdCard({ ad, index, onClick }: OwnAdCardProps) {
       <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
         {thumbnailUrl && !imageError ? (
           <>
-            <motion.img
-              src={thumbnailUrl}
-              alt=""
-              onLoad={() => setImageLoaded(true)}
-              onError={() => setImageError(true)}
-              initial={false}
-              animate={{
-                scale: isHovered ? 1.08 : 1,
-                filter: isHovered ? 'brightness(0.85)' : 'brightness(1)'
-              }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-              className={cn(
-                'w-full h-full object-cover',
-                imageLoaded ? 'opacity-100' : 'opacity-0'
-              )}
-            />
-
-            {/* Video overlay for playback */}
-            {ad.mediaType === 'video' && ad.storageUrl && (
-              <video
-                ref={videoRef}
-                src={ad.storageUrl}
-                muted
-                loop
-                playsInline
+            {ad.mediaType === 'video' && ad.storageUrl ? (
+              // Video poster: use paused <video> element (not <img>) to avoid Safari auto-play
+              <motion.div
+                initial={false}
+                animate={{
+                  scale: isHovered ? 1.08 : 1,
+                  filter: isHovered ? 'brightness(0.85)' : 'brightness(1)'
+                }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+                className="w-full h-full"
+              >
+                <video
+                  ref={videoRef}
+                  src={`${ad.storageUrl}#t=0.3`}
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  onLoadedData={() => setImageLoaded(true)}
+                  onError={() => setImageError(true)}
+                  className={cn(
+                    'w-full h-full object-cover',
+                    imageLoaded ? 'opacity-100' : 'opacity-0'
+                  )}
+                />
+              </motion.div>
+            ) : (
+              // Image poster: use <img> as normal
+              <motion.img
+                src={thumbnailUrl}
+                alt=""
+                onLoad={() => setImageLoaded(true)}
+                onError={() => setImageError(true)}
+                initial={false}
+                animate={{
+                  scale: isHovered ? 1.08 : 1,
+                  filter: isHovered ? 'brightness(0.85)' : 'brightness(1)'
+                }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
                 className={cn(
-                  'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
-                  videoPlaying ? 'opacity-100' : 'opacity-0'
+                  'w-full h-full object-cover',
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
                 )}
               />
             )}
