@@ -234,7 +234,7 @@ export default function ActiveAdsPage() {
     return [
       { label: 'ROAS', value: `${item.roas.toFixed(2)}x` },
       { label: 'CPA', value: ad && ad.cpa > 0 ? `$${ad.cpa.toFixed(2)}` : '\u2014' },
-      { label: 'Spend', value: formatCurrency(item.spend) },
+      { label: 'CTR', value: `${item.ctr.toFixed(2)}%` },
     ]
   }, [filteredAds])
 

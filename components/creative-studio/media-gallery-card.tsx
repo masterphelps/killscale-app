@@ -488,7 +488,7 @@ export function MediaGalleryCard({
               </div>
 
               <span className="text-xs text-zinc-500 font-mono">
-                {item.ctr.toFixed(2)}% CTR
+                {formatCurrency(item.spend)} spent
               </span>
             </div>
 
