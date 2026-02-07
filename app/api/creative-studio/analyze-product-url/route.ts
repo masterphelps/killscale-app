@@ -46,6 +46,57 @@ function resolveImageUrl(imageUrl: string, pageUrl: string): string {
   }
 }
 
+function extractCleanContent(html: string): { metaTags: string; textContent: string } {
+  // Extract meta tags first (og:image, description, title) before stripping
+  const metaTags: string[] = []
+  const metaRegex = /<meta\s+[^>]*(?:property|name|content)\s*=\s*[^>]*>/gi
+  let metaMatch
+  while ((metaMatch = metaRegex.exec(html)) !== null) {
+    metaTags.push(metaMatch[0])
+  }
+  // Also grab <title>
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  if (titleMatch) {
+    metaTags.push(`<title>${titleMatch[1].trim()}</title>`)
+  }
+
+  let cleaned = html
+
+  // Remove script, style, svg, noscript, iframe tags and their contents
+  cleaned = cleaned.replace(/<script[\s\S]*?<\/script>/gi, '')
+  cleaned = cleaned.replace(/<style[\s\S]*?<\/style>/gi, '')
+  cleaned = cleaned.replace(/<svg[\s\S]*?<\/svg>/gi, '')
+  cleaned = cleaned.replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+  cleaned = cleaned.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+
+  // Remove HTML comments
+  cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '')
+
+  // Remove all HTML tags but keep text content
+  // Preserve line breaks for block elements
+  cleaned = cleaned.replace(/<\/(div|p|h[1-6]|li|tr|section|article|header|footer|nav|main|aside|blockquote)>/gi, '\n')
+  cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n')
+  cleaned = cleaned.replace(/<[^>]+>/g, ' ')
+
+  // Decode common HTML entities
+  cleaned = cleaned.replace(/&amp;/g, '&')
+  cleaned = cleaned.replace(/&lt;/g, '<')
+  cleaned = cleaned.replace(/&gt;/g, '>')
+  cleaned = cleaned.replace(/&quot;/g, '"')
+  cleaned = cleaned.replace(/&#39;/g, "'")
+  cleaned = cleaned.replace(/&nbsp;/g, ' ')
+
+  // Collapse whitespace: multiple spaces to one, multiple newlines to two
+  cleaned = cleaned.replace(/[ \t]+/g, ' ')
+  cleaned = cleaned.replace(/\n\s*\n/g, '\n\n')
+  cleaned = cleaned.split('\n').map(line => line.trim()).filter(Boolean).join('\n')
+
+  return {
+    metaTags: metaTags.join('\n'),
+    textContent: cleaned,
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json()
@@ -67,7 +118,12 @@ export async function POST(request: NextRequest) {
 
     const html = await pageRes.text()
 
-    // Use Claude to extract product info AND image URL from the HTML
+    // Extract clean text content and meta tags from HTML
+    const { metaTags, textContent } = extractCleanContent(html)
+    // 50K chars of clean text covers most full pages
+    const truncatedText = textContent.slice(0, 50000)
+
+    // Use Claude to extract product info AND image URL from the page content
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -77,27 +133,31 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
+        max_tokens: 1500,
         messages: [
           {
             role: 'user',
-            content: `Analyze this product page HTML and extract the key product information.
+            content: `Analyze this product/service page and extract the key information. Read the ENTIRE page content carefully — features, benefits, and details may appear throughout.
 
 URL: ${url}
 
-HTML (truncated):
-${html.slice(0, 15000)}
+META TAGS:
+${metaTags}
+
+PAGE CONTENT:
+${truncatedText}
 
 Extract and return a JSON object with these fields:
-- name: Product name
-- description: Brief product description (1-2 sentences)
+- name: Product/service name
+- description: Brief product description (2-3 sentences covering what it does and who it's for)
 - price: Price if visible (or null)
 - currency: Currency code (USD, EUR, etc.) or null
-- features: Array of 3-5 key features/benefits
+- features: Array of up to 10 key features/benefits found anywhere on the page
 - brand: Brand name if different from product name
-- category: Product category (e.g., "fitness equipment", "skincare", "clothing")
+- category: Product category (e.g., "fitness equipment", "SaaS", "skincare", "clothing")
 - uniqueSellingPoint: The main thing that makes this product special
-- imageUrl: The main product image URL (look for og:image meta tag, or the primary product image in the HTML - return the highest quality image URL you can find)
+- targetAudience: Who this product is for (1 sentence)
+- imageUrl: The main product image URL (from og:image meta tag or primary product image)
 
 Respond ONLY with the JSON object, no other text.`
           }

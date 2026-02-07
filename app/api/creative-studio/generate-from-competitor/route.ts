@@ -16,6 +16,7 @@ interface ProductInfo {
   brand?: string
   category?: string
   uniqueSellingPoint?: string
+  targetAudience?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       finalProduct.category ? `Category: ${finalProduct.category}` : null,
       finalProduct.uniqueSellingPoint ? `Unique Selling Point: ${finalProduct.uniqueSellingPoint}` : null,
       finalProduct.features?.length ? `Key Features:\n${finalProduct.features.map(f => `- ${f}`).join('\n')}` : null,
+      finalProduct.targetAudience ? `Target Audience: ${finalProduct.targetAudience}` : null,
     ].filter(Boolean).join('\n')
 
     const prompt = isRefresh
