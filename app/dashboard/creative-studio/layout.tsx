@@ -153,7 +153,7 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
       if (starredRes.ok) {
         const data = await starredRes.json()
         const starredSet = new Set<string>(
-          (data.starred || []).map((s: { media_hash: string }) => s.media_hash)
+          (data.starred || []).map((s: { mediaHash: string }) => s.mediaHash)
         )
         setStarredIds(starredSet)
       }
