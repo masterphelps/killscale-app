@@ -9,6 +9,9 @@ interface ProductInfo {
   brand?: string
   category?: string
   uniqueSellingPoint?: string
+  targetAudience?: string
+  imageBase64?: string
+  imageMimeType?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -16,28 +19,33 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { product } = body as { product: ProductInfo }
 
-    if (!product || !product.name) {
+    if (!product || (!product.name && !product.description)) {
       return NextResponse.json(
         { error: 'Missing required field: product' },
         { status: 400 }
       )
     }
 
-    // Build rich product context
+    // Build rich product context (skip "Custom Product" placeholder name)
+    const hasRealName = product.name && product.name !== 'Custom Product'
     const productContext = [
-      `Name: ${product.name}`,
+      hasRealName ? `Name: ${product.name}` : null,
       product.brand && product.brand !== product.name ? `Brand: ${product.brand}` : null,
       product.description ? `Description: ${product.description}` : null,
       product.price ? `Price: ${product.currency || '$'}${product.price}` : null,
       product.category ? `Category: ${product.category}` : null,
       product.uniqueSellingPoint ? `Unique Selling Point: ${product.uniqueSellingPoint}` : null,
       product.features?.length ? `Key Features:\n${product.features.map(f => `- ${f}`).join('\n')}` : null,
+      product.targetAudience ? `Target Audience: ${product.targetAudience}` : null,
     ].filter(Boolean).join('\n')
+
+    const hasImage = product.imageBase64 && product.imageMimeType
 
     const prompt = `You are an expert Facebook/Instagram ad copywriter. Create compelling ad copy variations for this product.
 
 MY PRODUCT:
 ${productContext}
+${hasImage ? '\nA product image is also attached — use what you see in the image to inform the ad copy (product appearance, colors, branding, use case, etc.).' : ''}
 
 Generate 4 unique ad copy variations for this product. Each variation should use a different angle/hook to appeal to different customer motivations. Use the specific product details, features, and price point in the copy where relevant.
 
@@ -62,6 +70,22 @@ Respond ONLY with a valid JSON array of 4 objects with these exact fields: angle
 
 Do not include any other text, markdown, or explanation - just the JSON array.`
 
+    // Build message content - text only or multimodal with image
+    const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+
+    if (hasImage) {
+      messageContent.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: product.imageMimeType!,
+          data: product.imageBase64!,
+        }
+      })
+    }
+
+    messageContent.push({ type: 'text', text: prompt })
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -73,7 +97,7 @@ Do not include any other text, markdown, or explanation - just the JSON array.`
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
         messages: [
-          { role: 'user', content: prompt }
+          { role: 'user', content: messageContent }
         ],
       })
     })
