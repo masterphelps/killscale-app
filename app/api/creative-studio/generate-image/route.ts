@@ -49,9 +49,10 @@ interface GenerateImageRequest {
     imageBase64: string
     imageMimeType: string
   }
-  style?: 'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold'
+  style?: 'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold' | 'refresh'
   aspectRatio?: '1:1' | '4:5' | '9:16' | '16:9'
   imagePrompt?: string // User's custom prompt for Create mode (no reference ad)
+  isRefresh?: boolean // True when refreshing own ad creative
 }
 
 // Common text requirements added to all prompts
@@ -165,6 +166,37 @@ Requirements:
 - High resolution output${TEXT_REQUIREMENTS}
 
 Generate an ad that clones the reference ad's visual format using my product and MY provided text.`
+  }
+
+  // Refresh style - creating a fresh version of user's own fatigued ad
+  if (style === 'refresh' || req.isRefresh) {
+    return `I'm providing TWO images:
+1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
+2. SECOND IMAGE: The current ad image that is showing creative fatigue and needs a fresh version
+
+CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
+The ad text MUST be exactly:
+HEADLINE: "${curatedText.headline}"
+SUPPORTING LINE: "${curatedText.supportingLine}"
+
+- Use ONLY the headline and supporting line above
+- Spell the text EXACTLY as provided - no changes
+
+Create a FRESH advertisement that looks noticeably different from the reference:
+- Use MY PRODUCT from the first image
+- Create a DIFFERENT composition, angle, color treatment, or background
+- The goal is to look fresh and new while maintaining brand consistency
+- Do NOT clone the reference ad's layout — change it deliberately
+- Keep it professional and suitable for Facebook/Instagram ads
+- If the reference uses warm tones, try cool tones. If centered, try off-center. If minimal, try environmental.
+
+Requirements:
+- Must be clearly different from the reference ad at first glance
+- Feature MY product from the first image prominently
+- Professional quality suitable for Facebook/Instagram ads
+- High resolution output${TEXT_REQUIREMENTS}
+
+Generate an ad that refreshes the creative while keeping the same product and quality level.`
   }
 
   // Bold style with reference ad

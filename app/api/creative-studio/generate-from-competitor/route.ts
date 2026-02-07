@@ -21,11 +21,12 @@ interface ProductInfo {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { competitorAd, product, productName, productDescription } = body as {
+    const { competitorAd, product, productName, productDescription, isRefresh } = body as {
       competitorAd: CompetitorAd
       product?: ProductInfo
       productName?: string
       productDescription?: string
+      isRefresh?: boolean
     }
 
     // Support both new product object and legacy name/description
@@ -58,7 +59,28 @@ export async function POST(request: NextRequest) {
       finalProduct.features?.length ? `Key Features:\n${finalProduct.features.map(f => `- ${f}`).join('\n')}` : null,
     ].filter(Boolean).join('\n')
 
-    const prompt = `You are an expert Facebook/Instagram ad copywriter. Analyze this competitor ad and create new ad copy variations for a different product.
+    const prompt = isRefresh
+      ? `You are an expert Facebook/Instagram ad copywriter. This is a winning ad for a product that is showing signs of creative fatigue. Create fresh variations that preserve the core value proposition and winning angle, but with completely new hooks, framing, and language.
+
+ORIGINAL AD COPY:
+${competitorCopy}
+
+MY PRODUCT:
+${productContext}
+
+The audience has seen the original ad too many times — surprise them while keeping what works. Generate 4 unique ad copy variations that refresh this ad's approach. Each variation should keep the core value proposition but change the hook, framing, and execution style.
+
+For each variation, provide:
+1. angle: A 2-3 word description of the angle (e.g., "Fresh Hook", "New Framing", "Flip the Script", "Reframe Value")
+2. headline: A compelling headline (under 40 characters) — must be noticeably different from the original
+3. primaryText: The main ad copy (2-4 short paragraphs, use emojis sparingly, include a clear CTA) — same value proposition, completely new language
+4. description: A short link description (under 30 characters)
+5. whyItWorks: One sentence explaining why this fresh approach works
+
+Respond ONLY with a valid JSON array of 4 objects with these exact fields: angle, headline, primaryText, description, whyItWorks
+
+Do not include any other text, markdown, or explanation - just the JSON array.`
+      : `You are an expert Facebook/Instagram ad copywriter. Analyze this competitor ad and create new ad copy variations for a different product.
 
 COMPETITOR AD (from ${competitorAd.pageName}):
 ${competitorCopy}

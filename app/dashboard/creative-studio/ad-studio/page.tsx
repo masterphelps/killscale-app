@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, ArrowDownAZ } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -16,6 +16,8 @@ import {
   CompetitorLandingPages,
   CompetitorFilters,
   InspirationGallery,
+  OwnAdCard,
+  OwnAdModal,
   filterCompetitorAds,
   type MediaTypeFilter,
   type DaysActiveFilter,
@@ -24,6 +26,7 @@ import {
   type CompetitorStats,
   type CompetitorSearchResult,
   type InspirationExample,
+  type OwnAd,
 } from '@/components/creative-studio'
 
 interface AdLibraryAd {
@@ -143,6 +146,16 @@ export default function AdStudioPage() {
   const [daysActiveFilter, setDaysActiveFilter] = useState<DaysActiveFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
+  // Step 2: Your Ads tab (clone source)
+  const [cloneSource, setCloneSource] = useState<'competitor' | 'your-ads'>('competitor')
+  const [ownAds, setOwnAds] = useState<OwnAd[]>([])
+  const [isLoadingOwnAds, setIsLoadingOwnAds] = useState(false)
+  const [ownAdsLoaded, setOwnAdsLoaded] = useState(false)
+  const [ownAdSortBy, setOwnAdSortBy] = useState<'spend' | 'roas' | 'scores'>('spend')
+  const [ownAdFilter, setOwnAdFilter] = useState<'all' | 'top-performers'>('all')
+  const [viewingOwnAd, setViewingOwnAd] = useState<OwnAd | null>(null)
+  const [isRefreshMode, setIsRefreshMode] = useState(false)
+
   // Step 3: Generation
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedAds, setGeneratedAds] = useState<GeneratedAd[]>([])
@@ -153,7 +166,7 @@ export default function AdStudioPage() {
   const [generatedImages, setGeneratedImages] = useState<Record<number, GeneratedImage[]>>({})
   const [currentImageVersion, setCurrentImageVersion] = useState<Record<number, number>>({}) // Track which version is shown
   const [imageErrors, setImageErrors] = useState<Record<number, string>>({})
-  const [imageStyle, setImageStyle] = useState<'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold'>('clone')
+  const [imageStyle, setImageStyle] = useState<'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold' | 'refresh'>('clone')
   const [imagePrompts, setImagePrompts] = useState<Record<number, string>>({}) // For Create mode - required prompt per ad
 
   // Upload mode state
@@ -431,6 +444,132 @@ export default function AdStudioPage() {
     }
   }, [])
 
+  // Load user's own ads for the "Your Ads" tab
+  const loadOwnAds = useCallback(async () => {
+    if (!user?.id || !currentAccountId || ownAdsLoaded) return
+
+    setIsLoadingOwnAds(true)
+    try {
+      const res = await fetch(
+        `/api/creative-studio/active-ads?userId=${user.id}&adAccountId=${currentAccountId}`
+      )
+      const data = await res.json()
+
+      if (res.ok && data.ads) {
+        const mapped: OwnAd[] = data.ads.map((ad: Record<string, unknown>) => ({
+          ad_id: ad.ad_id as string,
+          ad_name: ad.ad_name as string,
+          adset_name: ad.adset_name as string,
+          campaign_name: ad.campaign_name as string,
+          status: ad.status as string,
+          thumbnailUrl: ad.thumbnailUrl as string | null,
+          imageUrl: ad.imageUrl as string | null,
+          storageUrl: ad.storageUrl as string | null,
+          mediaType: (ad.video_id || ad.media_type === 'video') ? 'video' as const : 'image' as const,
+          primary_text: ad.primary_text as string | null,
+          headline: ad.headline as string | null,
+          description: ad.description as string | null,
+          spend: ad.spend as number,
+          revenue: ad.revenue as number,
+          roas: ad.roas as number,
+          ctr: ad.ctr as number,
+          cpc: ad.cpc as number,
+          hookScore: ad.hookScore as number | null,
+          holdScore: ad.holdScore as number | null,
+          clickScore: ad.clickScore as number | null,
+          convertScore: ad.convertScore as number | null,
+        }))
+        setOwnAds(mapped)
+        setOwnAdsLoaded(true)
+      }
+    } catch (err) {
+      console.error('[AdStudio] Failed to load own ads:', err)
+    } finally {
+      setIsLoadingOwnAds(false)
+    }
+  }, [user?.id, currentAccountId, ownAdsLoaded])
+
+  // Handle switching to "Your Ads" tab — lazy loads ads on first visit
+  const handleCloneSourceChange = useCallback((source: 'competitor' | 'your-ads') => {
+    setCloneSource(source)
+    if (source === 'your-ads' && !ownAdsLoaded) {
+      loadOwnAds()
+    }
+  }, [ownAdsLoaded, loadOwnAds])
+
+  // Handle selecting own ad for creative refresh
+  const handleSelectOwnAd = useCallback(async (ad: OwnAd) => {
+    // Convert to AdLibraryAd format
+    const adLibraryAd: AdLibraryAd = {
+      id: ad.ad_id,
+      page_name: ad.campaign_name,
+      page_id: '',
+      ad_snapshot_url: '',
+      ad_creative_bodies: ad.primary_text ? [ad.primary_text] : [],
+      ad_creative_link_titles: ad.headline ? [ad.headline] : [],
+      ad_creative_link_descriptions: ad.description ? [ad.description] : [],
+      ad_delivery_start_time: new Date().toISOString(),
+      publisher_platforms: ['facebook'],
+    }
+
+    setSelectedAd(adLibraryAd)
+    setSelectedCompetitorAd(null)
+    setViewingOwnAd(null)
+    setIsRefreshMode(true)
+    setImageStyle('refresh')
+    setCurrentStep(3)
+
+    // Get the ad image for reference
+    const imageUrl = ad.storageUrl || ad.imageUrl || ad.thumbnailUrl
+    if (imageUrl) {
+      setIsDownloadingRefImage(true)
+      try {
+        // If it's a Supabase storage URL, fetch directly
+        const isStorageUrl = imageUrl.includes('supabase')
+        if (isStorageUrl) {
+          const res = await fetch(imageUrl)
+          if (res.ok) {
+            const blob = await res.blob()
+            const reader = new FileReader()
+            const base64 = await new Promise<string>((resolve) => {
+              reader.onload = () => resolve((reader.result as string).split(',')[1])
+              reader.readAsDataURL(blob)
+            })
+            setReferenceAdImage({
+              base64,
+              mimeType: blob.type || 'image/jpeg',
+            })
+          } else {
+            setReferenceAdImage(null)
+          }
+        } else {
+          // External URL — download via server
+          const res = await fetch('/api/creative-studio/download-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: imageUrl }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            setReferenceAdImage({
+              base64: data.base64,
+              mimeType: data.mimeType,
+            })
+          } else {
+            setReferenceAdImage(null)
+          }
+        }
+      } catch (err) {
+        console.warn('[AdStudio] Error downloading own ad image:', err)
+        setReferenceAdImage(null)
+      } finally {
+        setIsDownloadingRefImage(false)
+      }
+    } else {
+      setReferenceAdImage(null)
+    }
+  }, [])
+
   // Use inspiration example - enter Clone flow at Step 1 (Product URL)
   const handleSelectInspiration = useCallback(async (example: InspirationExample) => {
     // Convert to AdLibraryAd format and set as selected
@@ -495,6 +634,31 @@ export default function AdStudioPage() {
     status: statusFilter,
   })
 
+  // Filter and sort own ads
+  const filteredOwnAds = ownAds
+    .filter(ad => {
+      if (ownAdFilter === 'top-performers') {
+        return (ad.hookScore !== null && ad.hookScore >= 75) ||
+               (ad.holdScore !== null && ad.holdScore >= 75) ||
+               (ad.clickScore !== null && ad.clickScore >= 75) ||
+               (ad.convertScore !== null && ad.convertScore >= 75)
+      }
+      return true
+    })
+    .sort((a, b) => {
+      switch (ownAdSortBy) {
+        case 'roas': return b.roas - a.roas
+        case 'scores': {
+          const avgA = [a.hookScore, a.holdScore, a.clickScore, a.convertScore].filter((s): s is number => s !== null)
+          const avgB = [b.hookScore, b.holdScore, b.clickScore, b.convertScore].filter((s): s is number => s !== null)
+          const scoreA = avgA.length > 0 ? avgA.reduce((s, v) => s + v, 0) / avgA.length : 0
+          const scoreB = avgB.length > 0 ? avgB.reduce((s, v) => s + v, 0) / avgB.length : 0
+          return scoreB - scoreA
+        }
+        default: return b.spend - a.spend
+      }
+    })
+
   // Step 3: Generate
   const handleGenerate = useCallback(async () => {
     // Clone mode requires selectedAd, Create mode doesn't
@@ -521,6 +685,7 @@ export default function AdStudioPage() {
               descriptions: selectedAd!.ad_creative_link_descriptions,
             },
             product: productInfo,
+            isRefresh: isRefreshMode,
           }
 
       const res = await fetch(endpoint, {
@@ -570,7 +735,7 @@ export default function AdStudioPage() {
     } finally {
       setIsGenerating(false)
     }
-  }, [mode, selectedAd, productInfo, user?.id, currentAccountId, productUrl, selectedCompany, imageStyle])
+  }, [mode, selectedAd, productInfo, user?.id, currentAccountId, productUrl, selectedCompany, imageStyle, isRefreshMode])
 
   const copyToClipboard = (ad: GeneratedAd, index: number) => {
     const text = `Headline: ${ad.headline}\n\nPrimary Text: ${ad.primaryText}\n\nDescription: ${ad.description}`
@@ -628,6 +793,7 @@ export default function AdStudioPage() {
         product: productInfo,
         style: imageStyle,
         aspectRatio: '1:1',
+        isRefresh: isRefreshMode,
       }
 
       // Add reference ad image for style matching (Clone mode)
@@ -707,7 +873,7 @@ export default function AdStudioPage() {
     } finally {
       setGeneratingImageIndex(null)
     }
-  }, [productInfo, imageStyle, referenceAdImage, user?.id, currentAccountId, sessionId, generatedImages, saveImageToSession, imagePrompts])
+  }, [productInfo, imageStyle, referenceAdImage, user?.id, currentAccountId, sessionId, generatedImages, saveImageToSession, imagePrompts, isRefreshMode])
 
   // Adjust an existing image with a prompt
   const handleAdjustImage = useCallback(async (adIndex: number) => {
@@ -955,6 +1121,7 @@ export default function AdStudioPage() {
       setAdjustmentPrompts({})
       setSavedToLibrary({})
       setImagePrompts({})
+      setIsRefreshMode(false)
       // Reset step 2 state
       handleClearCompany()
     } else if (step === 2) {
@@ -967,6 +1134,7 @@ export default function AdStudioPage() {
       setAdjustmentPrompts({})
       setSavedToLibrary({})
       setImagePrompts({})
+      setIsRefreshMode(false)
     }
     setCurrentStep(step)
   }
@@ -988,6 +1156,8 @@ export default function AdStudioPage() {
     setImagePrompts({})
     setUploadedImage(null)
     setUploadPrompt('')
+    setIsRefreshMode(false)
+    setCloneSource('competitor')
     handleClearCompany()
   }
 
@@ -1188,10 +1358,10 @@ export default function AdStudioPage() {
                 </div>
                 <h2 className="text-xl font-semibold text-white mb-2">Clone</h2>
                 <p className="text-zinc-400 text-sm leading-relaxed">
-                  Match the style of a competitor's winning ad.
+                  Match the style of a winning ad.
                 </p>
                 <div className="mt-4 flex items-center gap-2 text-purple-400 text-sm font-medium">
-                  Browse competitors <ChevronRight className="w-4 h-4" />
+                  Browse ads <ChevronRight className="w-4 h-4" />
                 </div>
               </button>
 
@@ -1408,13 +1578,13 @@ export default function AdStudioPage() {
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <h1 className="text-2xl lg:text-3xl font-bold text-white">
-                {mode === 'create' ? 'Create Ad' : mode === 'upload' ? 'Upload Ad' : 'Clone Ad'}
+                {mode === 'create' ? 'Create Ad' : mode === 'upload' ? 'Upload Ad' : isRefreshMode ? 'Refresh Ad' : 'Clone Ad'}
               </h1>
               <span className={cn(
                 'px-2 py-0.5 text-xs font-semibold rounded',
                 mode === 'create' ? 'bg-accent/20 text-accent' : mode === 'upload' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-purple-500/20 text-purple-400'
               )}>
-                {mode === 'create' ? 'ORIGINAL' : mode === 'upload' ? 'CUSTOM' : 'STYLE MATCH'}
+                {mode === 'create' ? 'ORIGINAL' : mode === 'upload' ? 'CUSTOM' : isRefreshMode ? 'CREATIVE REFRESH' : 'STYLE MATCH'}
               </span>
             </div>
             <p className="text-zinc-500 mt-1 ml-7">
@@ -1422,7 +1592,9 @@ export default function AdStudioPage() {
                 ? 'Generate original ads from your product page'
                 : mode === 'upload'
                 ? 'Generate ads from your uploaded image'
-                : 'Generate ads that match a competitor\'s winning style'}
+                : isRefreshMode
+                ? 'Create fresh variations of your winning ad'
+                : 'Generate ads that match a winning style'}
             </p>
           </div>
 
@@ -1466,7 +1638,7 @@ export default function AdStudioPage() {
                     )}>
                       {selectedAd ? '✓' : '2'}
                     </span>
-                    Competitor Ad
+                    Reference Ad
                   </button>
                   <ChevronRight className="w-4 h-4 text-zinc-600" />
                 </>
@@ -1757,103 +1929,231 @@ export default function AdStudioPage() {
             </div>
           )}
 
-          {/* Step 2: Competitor Search (Clone mode only) */}
+          {/* Step 2: Ad Source Selection (Clone mode only) */}
           {currentStep === 2 && mode === 'clone' && (
             <div className="space-y-6">
-              {/* Search Input */}
-              <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Search className="w-5 h-5 text-accent" />
-                  Search Competitor Ads
-                </h2>
-                <p className="text-sm text-zinc-400">
-                  Search for a competitor brand to browse their active Facebook and Instagram ads.
-                </p>
-                <CompetitorSearchInput
-                  selectedCompany={selectedCompany}
-                  onSelect={handleCompanySelect}
-                  onClear={handleClearCompany}
-                />
+              {/* Tab Bar: Competitor | Your Ads */}
+              <div className="flex gap-1 bg-bg-card border border-border rounded-xl p-1">
+                <button
+                  onClick={() => handleCloneSourceChange('competitor')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    cloneSource === 'competitor'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Search className="w-4 h-4" />
+                  Competitor
+                </button>
+                <button
+                  onClick={() => handleCloneSourceChange('your-ads')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    cloneSource === 'your-ads'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Your Ads
+                </button>
               </div>
 
-              {/* Stats & Ads Grid (show when company is selected) */}
-              {selectedCompany && (
+              {/* Competitor Tab Content */}
+              {cloneSource === 'competitor' && (
                 <>
-                  {/* Stats Header */}
-                  {competitorStats && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Ad Count & Date */}
-                      <div className="bg-bg-card border border-border rounded-xl p-5">
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
-                          <BarChart3 className="w-4 h-4" />
-                          Ad Library Overview
-                        </div>
-                        <div className="text-2xl font-bold text-white mb-1">
-                          {competitorStats.totalAds} ads
-                        </div>
-                        <div className="text-sm text-zinc-400">
-                          <span className="text-emerald-400">{competitorStats.activeAds} active</span>
-                          {competitorStats.earliestAdDate && (
-                            <span className="ml-2">
-                              · Since {new Date(competitorStats.earliestAdDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Media Mix */}
-                      <div className="bg-bg-card border border-border rounded-xl p-5">
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
-                          Media Mix
-                        </div>
-                        <CompetitorMediaMixChart mediaMix={competitorStats.mediaMix} />
-                      </div>
-
-                      {/* Landing Pages */}
-                      <div className="bg-bg-card border border-border rounded-xl p-5">
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
-                          Top Landing Pages
-                        </div>
-                        <CompetitorLandingPages landingPages={competitorStats.topLandingPages} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Filters */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="text-sm text-zinc-400">
-                      Showing {filteredAds.length} of {competitorAds.length} ads
-                    </div>
-                    <CompetitorFilters
-                      mediaType={mediaTypeFilter}
-                      daysActive={daysActiveFilter}
-                      status={statusFilter}
-                      onMediaTypeChange={setMediaTypeFilter}
-                      onDaysActiveChange={setDaysActiveFilter}
-                      onStatusChange={setStatusFilter}
-                      activeFiltersCount={activeFiltersCount}
-                      onClearAll={clearAllFilters}
+                  {/* Search Input */}
+                  <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Search className="w-5 h-5 text-accent" />
+                      Search Competitor Ads
+                    </h2>
+                    <p className="text-sm text-zinc-400">
+                      Search for a competitor brand to browse their active Facebook and Instagram ads.
+                    </p>
+                    <CompetitorSearchInput
+                      selectedCompany={selectedCompany}
+                      onSelect={handleCompanySelect}
+                      onClear={handleClearCompany}
                     />
                   </div>
 
-                  {/* Ads Grid */}
-                  <CompetitorAdsGrid
-                    ads={filteredAds}
-                    isLoading={isLoadingAds}
-                    hasMore={!!nextCursor}
-                    onLoadMore={handleLoadMore}
-                    onSelect={(ad) => setViewingAd(ad)}
-                  />
+                  {/* Stats & Ads Grid (show when company is selected) */}
+                  {selectedCompany && (
+                    <>
+                      {/* Stats Header */}
+                      {competitorStats && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Ad Count & Date */}
+                          <div className="bg-bg-card border border-border rounded-xl p-5">
+                            <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                              <BarChart3 className="w-4 h-4" />
+                              Ad Library Overview
+                            </div>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {competitorStats.totalAds} ads
+                            </div>
+                            <div className="text-sm text-zinc-400">
+                              <span className="text-emerald-400">{competitorStats.activeAds} active</span>
+                              {competitorStats.earliestAdDate && (
+                                <span className="ml-2">
+                                  · Since {new Date(competitorStats.earliestAdDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Media Mix */}
+                          <div className="bg-bg-card border border-border rounded-xl p-5">
+                            <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                              Media Mix
+                            </div>
+                            <CompetitorMediaMixChart mediaMix={competitorStats.mediaMix} />
+                          </div>
+
+                          {/* Landing Pages */}
+                          <div className="bg-bg-card border border-border rounded-xl p-5">
+                            <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                              Top Landing Pages
+                            </div>
+                            <CompetitorLandingPages landingPages={competitorStats.topLandingPages} />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Filters */}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="text-sm text-zinc-400">
+                          Showing {filteredAds.length} of {competitorAds.length} ads
+                        </div>
+                        <CompetitorFilters
+                          mediaType={mediaTypeFilter}
+                          daysActive={daysActiveFilter}
+                          status={statusFilter}
+                          onMediaTypeChange={setMediaTypeFilter}
+                          onDaysActiveChange={setDaysActiveFilter}
+                          onStatusChange={setStatusFilter}
+                          activeFiltersCount={activeFiltersCount}
+                          onClearAll={clearAllFilters}
+                        />
+                      </div>
+
+                      {/* Ads Grid */}
+                      <CompetitorAdsGrid
+                        ads={filteredAds}
+                        isLoading={isLoadingAds}
+                        hasMore={!!nextCursor}
+                        onLoadMore={handleLoadMore}
+                        onSelect={(ad) => setViewingAd(ad)}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Your Ads Tab Content */}
+              {cloneSource === 'your-ads' && (
+                <>
+                  <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <RefreshCw className="w-5 h-5 text-purple-400" />
+                      Refresh Your Ads
+                    </h2>
+                    <p className="text-sm text-zinc-400">
+                      Select one of your ads to create a fresh variation. Keep what works, change the execution.
+                    </p>
+
+                    {/* Sort and Filter Controls */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">Filter:</span>
+                        <div className="flex gap-1">
+                          {(['all', 'top-performers'] as const).map(f => (
+                            <button
+                              key={f}
+                              onClick={() => setOwnAdFilter(f)}
+                              className={cn(
+                                'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
+                                ownAdFilter === f
+                                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                  : 'text-zinc-400 hover:text-white bg-bg-dark border border-border'
+                              )}
+                            >
+                              {f === 'all' ? 'All' : 'Top Performers'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <ArrowDownAZ className="w-3 h-3 text-zinc-500" />
+                        <select
+                          value={ownAdSortBy}
+                          onChange={(e) => setOwnAdSortBy(e.target.value as typeof ownAdSortBy)}
+                          className="bg-bg-dark border border-border rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+                        >
+                          <option value="spend">Highest Spend</option>
+                          <option value="roas">Best ROAS</option>
+                          <option value="scores">Best Scores</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Own Ads Grid */}
+                  {isLoadingOwnAds ? (
+                    <div className="flex items-center justify-center py-16">
+                      <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+                    </div>
+                  ) : filteredOwnAds.length > 0 ? (
+                    <>
+                      <div className="text-sm text-zinc-400">
+                        Showing {filteredOwnAds.length} of {ownAds.length} ads
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {filteredOwnAds.map((ad, index) => (
+                          <OwnAdCard
+                            key={ad.ad_id}
+                            ad={ad}
+                            index={index}
+                            onClick={() => setViewingOwnAd(ad)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bg-bg-card border border-border rounded-xl p-12 text-center">
+                      <Search className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+                      <h3 className="text-white font-medium mb-2">No ads found</h3>
+                      <p className="text-sm text-zinc-500">
+                        {ownAdFilter !== 'all'
+                          ? 'Try removing the filter to see all ads.'
+                          : 'Connect an ad account and sync data to see your ads here.'}
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           )}
 
-          {/* Selected Ad Card (Clone mode only - shows the competitor ad being used as inspiration) */}
+          {/* Selected Ad Card (Clone mode only - shows the ad being used as reference) */}
           {mode === 'clone' && selectedAd && currentStep === 3 && (
-            <div className="bg-bg-card border border-border rounded-xl p-5">
+            <div className={cn(
+              'bg-bg-card border rounded-xl p-5',
+              isRefreshMode ? 'border-purple-500/30' : 'border-border'
+            )}>
               <div className="flex items-start justify-between mb-3">
-                <h3 className="text-sm font-medium text-zinc-400">Inspiration Ad</h3>
+                <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                  {isRefreshMode ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 text-purple-400" />
+                      Refreshing Ad
+                    </>
+                  ) : (
+                    'Inspiration Ad'
+                  )}
+                </h3>
                 <button
                   onClick={() => resetToStep(2)}
                   className="text-xs text-zinc-500 hover:text-white"
@@ -1864,23 +2164,28 @@ export default function AdStudioPage() {
 
               {/* Show the actual ad visual */}
               <div className="flex gap-4">
-                {/* Ad Media Preview */}
-                {selectedCompetitorAd && (selectedCompetitorAd.imageUrl || selectedCompetitorAd.videoThumbnail || selectedCompetitorAd.carouselCards?.[0]?.imageUrl) && (
-                  <div className="flex-shrink-0 w-32 h-32 rounded-lg overflow-hidden bg-zinc-900">
-                    <img
-                      src={selectedCompetitorAd.imageUrl || selectedCompetitorAd.videoThumbnail || selectedCompetitorAd.carouselCards?.[0]?.imageUrl || ''}
-                      alt="Reference ad"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
+                {/* Ad Media Preview — for own ads use referenceAdImage or storageUrl fallback */}
+                {(() => {
+                  const previewUrl = isRefreshMode
+                    ? (referenceAdImage ? `data:${referenceAdImage.mimeType};base64,${referenceAdImage.base64}` : null)
+                    : (selectedCompetitorAd?.imageUrl || selectedCompetitorAd?.videoThumbnail || selectedCompetitorAd?.carouselCards?.[0]?.imageUrl || null)
+                  return previewUrl ? (
+                    <div className="flex-shrink-0 w-32 h-32 rounded-lg overflow-hidden bg-zinc-900">
+                      <img
+                        src={previewUrl}
+                        alt="Reference ad"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : null
+                })()}
 
                 {/* Ad Details */}
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-white">{selectedAd.page_name}</div>
                   {selectedAd.ad_creative_link_titles?.[0] && (
                     <div className="text-sm text-zinc-300 mt-1 font-medium line-clamp-1">
-                      "{selectedAd.ad_creative_link_titles[0]}"
+                      &ldquo;{selectedAd.ad_creative_link_titles[0]}&rdquo;
                     </div>
                   )}
                   {selectedAd.ad_creative_bodies?.[0] && (
@@ -1899,7 +2204,7 @@ export default function AdStudioPage() {
                     ) : referenceAdImage ? (
                       <div className="flex items-center gap-2 text-xs text-emerald-400">
                         <Check className="w-3 h-3" />
-                        Ready to clone this style
+                        {isRefreshMode ? 'Ready to refresh this creative' : 'Ready to clone this style'}
                       </div>
                     ) : (
                       <div className="text-xs text-zinc-500">
@@ -1912,13 +2217,21 @@ export default function AdStudioPage() {
             </div>
           )}
 
-          {/* Step 3: Generate (Clone mode only - shows after selecting competitor ad) */}
+          {/* Step 3: Generate (Clone mode only - shows after selecting competitor/own ad) */}
           {mode === 'clone' && currentStep === 3 && !generatedAds.length && (
             <div className="bg-bg-card border border-border rounded-xl p-6 text-center">
-              <Wand2 className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
-              <h2 className="text-lg font-semibold text-white mb-2">Ready to Generate</h2>
+              {isRefreshMode ? (
+                <RefreshCw className="w-12 h-12 text-purple-400 mx-auto mb-4" />
+              ) : (
+                <Wand2 className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+              )}
+              <h2 className="text-lg font-semibold text-white mb-2">
+                {isRefreshMode ? 'Ready to Refresh' : 'Ready to Generate'}
+              </h2>
               <p className="text-sm text-zinc-400 mb-6 max-w-md mx-auto">
-                We'll analyze the competitor's ad strategy and create 4 unique ad variations for your product.
+                {isRefreshMode
+                  ? 'We\'ll create fresh variations that keep the winning angle but change the hook, framing, and visuals.'
+                  : 'We\'ll analyze the competitor\'s ad strategy and create 4 unique ad variations for your product.'}
               </p>
               <button
                 onClick={handleGenerate}
@@ -2013,8 +2326,11 @@ export default function AdStudioPage() {
                       onChange={(e) => setImageStyle(e.target.value as typeof imageStyle)}
                       className="bg-bg-dark border border-border rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-accent"
                     >
-                      {/* Clone option only available when we have a reference ad */}
-                      {referenceAdImage && (
+                      {/* Clone/Refresh options only when we have a reference ad */}
+                      {referenceAdImage && isRefreshMode && (
+                        <option value="refresh">Refresh (new variation)</option>
+                      )}
+                      {referenceAdImage && !isRefreshMode && (
                         <option value="clone">Clone (match reference)</option>
                       )}
                       <option value="lifestyle">Lifestyle</option>
@@ -2351,12 +2667,21 @@ export default function AdStudioPage() {
         </div>
       </div>
 
-      {/* Ad Detail Modal */}
+      {/* Competitor Ad Detail Modal */}
       {viewingAd && (
         <CompetitorAdModal
           ad={viewingAd}
           onClose={() => setViewingAd(null)}
           onUseAsInspiration={handleUseAsInspiration}
+        />
+      )}
+
+      {/* Own Ad Detail Modal */}
+      {viewingOwnAd && (
+        <OwnAdModal
+          ad={viewingOwnAd}
+          onClose={() => setViewingOwnAd(null)}
+          onUseThisAd={handleSelectOwnAd}
         />
       )}
 

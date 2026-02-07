@@ -27,6 +27,10 @@ export { CompetitorLandingPages } from './competitor-landing-pages'
 export { CompetitorFilters, filterCompetitorAds } from './competitor-filters'
 export type { MediaTypeFilter, DaysActiveFilter, StatusFilter } from './competitor-filters'
 
+// Own Ad Components (Your Ads tab in Clone flow)
+export { OwnAdCard } from './own-ad-card'
+export { OwnAdModal } from './own-ad-modal'
+
 // Inspiration Gallery Components
 export { InspirationGallery } from './inspiration-gallery'
 export { InspirationCard } from './inspiration-card'
@@ -48,6 +52,7 @@ export type {
   CompetitorSearchResult,
   InspirationExample,
   AdFormat,
+  OwnAd,
 } from './types'
 
 export { AD_FORMAT_LABELS, AD_FORMAT_COLORS } from './types'

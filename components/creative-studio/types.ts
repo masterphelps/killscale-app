@@ -306,6 +306,31 @@ export interface InspirationExample {
   isFeatured: boolean
 }
 
+// Own Ad type (for "Your Ads" tab in Ad Studio Clone flow)
+export interface OwnAd {
+  ad_id: string
+  ad_name: string
+  adset_name: string
+  campaign_name: string
+  status: string
+  thumbnailUrl: string | null
+  imageUrl: string | null
+  storageUrl: string | null
+  mediaType: 'image' | 'video'
+  primary_text: string | null
+  headline: string | null
+  description: string | null
+  spend: number
+  revenue: number
+  roas: number
+  ctr: number
+  cpc: number
+  hookScore: number | null
+  holdScore: number | null
+  clickScore: number | null
+  convertScore: number | null
+}
+
 export const AD_FORMAT_LABELS: Record<AdFormat, string> = {
   ugc: 'UGC',
   product_hero: 'Product Hero',
