@@ -384,17 +384,17 @@ export function MediaGalleryCard({
                     <div className="w-full h-1.5 rounded-full bg-zinc-700 mb-2">
                       <div
                         className={cn('h-full rounded-full', {
-                          'bg-emerald-500': item.fatigueScore >= 80,
-                          'bg-lime-500': item.fatigueScore >= 60 && item.fatigueScore < 80,
+                          'bg-red-500': item.fatigueScore >= 80,
+                          'bg-orange-500': item.fatigueScore >= 60 && item.fatigueScore < 80,
                           'bg-amber-500': item.fatigueScore >= 40 && item.fatigueScore < 60,
-                          'bg-orange-500': item.fatigueScore >= 20 && item.fatigueScore < 40,
-                          'bg-red-500': item.fatigueScore < 20,
+                          'bg-lime-500': item.fatigueScore >= 20 && item.fatigueScore < 40,
+                          'bg-emerald-500': item.fatigueScore < 20,
                         })}
                         style={{ width: `${item.fatigueScore}%` }}
                       />
                     </div>
                     <p className="text-[10px] text-zinc-400 leading-relaxed">
-                      Higher is better. Drops as your audience sees the ad repeatedly and engagement declines.
+                      Lower is better. Rises as your audience sees the ad repeatedly and engagement declines.
                     </p>
                   </motion.div>
                 )}
