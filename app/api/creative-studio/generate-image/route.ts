@@ -59,7 +59,8 @@ interface GenerateImageRequest {
 const TEXT_REQUIREMENTS = `
 - Make sure all text fits in the image section where it's placed
 - Ensure no cutoff sentences or words
-- Any text must be spelled correctly`
+- Any text must be spelled correctly
+- Do NOT include any labels like "Headline:", "Head:", "Supporting Line:", etc. — render ONLY the actual text itself`
 
 // Use Claude to pick the best text for the ad image
 interface CuratedAdText {
@@ -141,10 +142,10 @@ function buildDualImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdT
 
 CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
-- Use ONLY the headline and supporting line above
+- Use ONLY the two lines of text above
 - DO NOT use any text from the reference ad image
 - DO NOT copy the reference ad's text - only its visual style
 - Spell the text EXACTLY as provided - no changes
@@ -176,10 +177,10 @@ Generate an ad that clones the reference ad's visual format using my product and
 
 CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
-- Use ONLY the headline and supporting line above
+- Use ONLY the two lines of text above
 - Spell the text EXACTLY as provided - no changes
 
 Create a FRESH advertisement that looks noticeably different from the reference:
@@ -211,12 +212,12 @@ Create a BOLD, scroll-stopping, pattern-interrupting advertisement that:
 - Uses vibrant colors, high contrast, and dynamic composition
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 Requirements:
 - Make it impossible to scroll past
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Feature MY product from the first image prominently
 - Professional quality suitable for Facebook/Instagram ads${TEXT_REQUIREMENTS}
@@ -240,8 +241,8 @@ Generate a bold, attention-grabbing ad using my product photo.`
 Create an advertisement with this style: ${styleGuide}
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 The ad should:
 - Feature MY PRODUCT from the first image (not the product in the reference ad)
@@ -249,7 +250,7 @@ The ad should:
 - Take general inspiration from the reference ad's approach
 
 Requirements:
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Feature MY product from the first image prominently
 - Apply the ${style} style to the image
@@ -270,12 +271,12 @@ function buildImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdText)
 Use the provided product image as reference - the generated image MUST feature this same product accurately.
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 Requirements:
 - Make it impossible to scroll past - use vibrant colors, high contrast, dynamic angles
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Feature the product from the reference image prominently
 - Professional quality suitable for Facebook/Instagram ads
@@ -298,13 +299,13 @@ Generate a scroll-stopping advertisement that makes people stop and look.`
 Use the provided product image as reference - the generated image MUST feature this same product accurately.
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 Visual style: ${styleGuide}
 
 Requirements:
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Feature the product from the reference image prominently
 - Professional quality suitable for Facebook/Instagram ads
@@ -326,12 +327,12 @@ USER'S CREATIVE DIRECTION:
 "${imagePrompt}"
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 Requirements:
 - Follow the user's creative direction above
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Feature the product from the reference image prominently
 - Professional quality suitable for Facebook/Instagram ads
@@ -353,12 +354,12 @@ Product details:
 ${product.description ? `- Description: ${product.description}` : ''}
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 Requirements:
 - Make it impossible to scroll past - use vibrant colors, high contrast, dynamic angles
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Feature or represent the product prominently
 - Professional quality suitable for Facebook/Instagram ads
@@ -384,13 +385,13 @@ Product details:
 ${product.description ? `- Description: ${product.description}` : ''}
 
 The ad text MUST be exactly:
-HEADLINE: "${curatedText.headline}"
-SUPPORTING LINE: "${curatedText.supportingLine}"
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 
 Visual style: ${styleGuide}
 
 Requirements:
-- Include ONLY the headline and supporting line above - no other text
+- Include ONLY the two lines of text above - no other text, no labels
 - Spell the text EXACTLY as provided
 - Professional quality suitable for Facebook/Instagram ads
 - Photorealistic, high resolution${TEXT_REQUIREMENTS}
