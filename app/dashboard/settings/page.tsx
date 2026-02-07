@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, Loader2, User, CreditCard, Bell, Globe, ExternalLink, CheckCircle } from 'lucide-react'
+import { Save, Loader2, User, CreditCard, Bell, Globe, ExternalLink, CheckCircle, Sparkles } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import Link from 'next/link'
@@ -54,10 +54,17 @@ export default function GeneralSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
+  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number; status: string } | null>(null)
 
   // Load user preferences
   useEffect(() => {
     if (!user) return
+
+    // Fetch AI generation usage
+    fetch(`/api/ai/usage?userId=${user.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setAiUsage(data) })
+      .catch(() => {})
 
     const loadPreferences = async () => {
       const { data } = await supabase
@@ -252,6 +259,43 @@ export default function GeneralSettingsPage() {
               </div>
             </div>
           </div>
+
+          {/* AI Generation Credits */}
+          {aiUsage && aiUsage.limit > 0 && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span className="text-sm font-medium text-zinc-300">AI Generation Credits</span>
+                </div>
+                <span className="text-xs text-zinc-500">
+                  {aiUsage.status === 'trial' ? 'Trial total' : 'Resets monthly'}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 rounded-full bg-zinc-800 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      aiUsage.used >= aiUsage.limit
+                        ? 'bg-red-500'
+                        : aiUsage.used >= aiUsage.limit * 0.8
+                        ? 'bg-amber-500'
+                        : 'bg-purple-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-sm font-mono tabular-nums text-zinc-400 whitespace-nowrap">
+                  {aiUsage.used} / {aiUsage.limit}
+                </span>
+              </div>
+              {aiUsage.used >= aiUsage.limit && (
+                <p className="text-xs text-red-400 mt-1.5">
+                  Limit reached{aiUsage.status === 'active' ? ' — resets next month' : ''}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -411,21 +411,43 @@ export async function POST(request: NextRequest) {
 
     // Check AI generation limits if userId provided
     if (body.userId) {
-      const { data: sub } = await supabaseAdmin
-        .from('subscriptions')
-        .select('plan, status')
-        .eq('user_id', body.userId)
-        .single()
+      // Check both Stripe and admin-granted subscriptions + credit overrides
+      const [subResult, adminSubResult, overrideResult] = await Promise.all([
+        supabaseAdmin
+          .from('subscriptions')
+          .select('plan, status')
+          .eq('user_id', body.userId)
+          .single(),
+        supabaseAdmin
+          .from('admin_granted_subscriptions')
+          .select('plan, is_active, expires_at')
+          .eq('user_id', body.userId)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single(),
+        supabaseAdmin
+          .from('ai_credit_overrides')
+          .select('credit_limit')
+          .eq('user_id', body.userId)
+          .single(),
+      ])
+
+      const sub = subResult.data
+      const adminSub = adminSubResult.data
+      const override = overrideResult.data
+      const hasAdminSub = adminSub?.is_active && new Date(adminSub.expires_at) > new Date()
 
       const isTrial = sub?.status === 'trialing'
-      const isActive = sub?.status === 'active' || isTrial
+      const isActive = sub?.status === 'active' || isTrial || hasAdminSub
 
       if (isActive) {
         let used = 0
-        let limit = 50
+        let defaultLimit = 50
+        if (isTrial) defaultLimit = 10
+        const limit = override?.credit_limit ?? defaultLimit
 
-        if (isTrial) {
-          limit = 10
+        if (isTrial && !override) {
           const { count } = await supabaseAdmin
             .from('ai_generation_usage')
             .select('*', { count: 'exact', head: true })
