@@ -75,10 +75,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    // Get pixel_id for this workspace
+    // Get pixel_id and event_values for this workspace
     const { data: pixelData, error: pixelError } = await supabaseAdmin
       .from('workspace_pixels')
-      .select('pixel_id')
+      .select('pixel_id, event_values')
       .eq('workspace_id', workspace_id)
       .single()
 
@@ -87,6 +87,9 @@ export async function POST(request: NextRequest) {
     }
 
     const pixelId = pixelData.pixel_id
+    const configuredEventValues: Record<string, number> = (pixelData.event_values && typeof pixelData.event_values === 'object')
+      ? pixelData.event_values as Record<string, number>
+      : {}
 
     // Get ad accounts for this workspace (Meta only)
     const { data: workspaceAccounts, error: accountsError } = await supabaseAdmin
@@ -133,7 +136,8 @@ export async function POST(request: NextRequest) {
         pixelId,
         adAccountIds,
         date,
-        userId
+        userId,
+        configuredEventValues
       )
       results.push(mergedData)
     }
@@ -171,19 +175,30 @@ export async function POST(request: NextRequest) {
 /**
  * Process attribution merge for a single date
  */
+// Normalize event type for matching (CompleteRegistration -> complete_registration)
+const normalizeEventType = (type: string): string => {
+  return type
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '')
+    .replace(/__+/g, '_')
+}
+
 async function processDate(
   workspaceId: string,
   pixelId: string,
   adAccountIds: string[],
   date: string,
-  userId: string
+  userId: string,
+  configuredEventValues: Record<string, number>
 ): Promise<any> {
-  // 1. Get KillScale pixel events for this date (only purchase events for attribution)
+  // 1. Get KillScale pixel events for this date (all conversion events, not just purchases)
   const { data: pixelEvents, error: eventsError } = await supabaseAdmin
     .from('pixel_events')
-    .select('utm_content, event_value, source')
+    .select('utm_content, event_type, event_value, source')
     .eq('pixel_id', pixelId)
-    .eq('event_type', 'purchase')
+    .not('event_type', 'ilike', '%pageview%')
+    .not('event_type', 'ilike', '%page_view%')
     .gte('event_time', `${date}T00:00:00Z`)
     .lt('event_time', `${date}T23:59:59Z`)
 
@@ -226,7 +241,9 @@ async function processDate(
       }
 
       const metrics = adMetricsMap.get(adId)!
-      const eventValue = event.event_value || 0
+      const normalizedType = normalizeEventType(event.event_type || '')
+      const configuredValue = configuredEventValues[normalizedType] || configuredEventValues[event.event_type || ''] || 0
+      const eventValue = event.event_value ?? configuredValue
 
       if (event.source === 'manual') {
         metrics.manual_count++

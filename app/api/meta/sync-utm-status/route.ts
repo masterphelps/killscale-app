@@ -31,6 +31,10 @@ interface UtmStatusResult {
   [adId: string]: boolean  // true = has UTM params, false = no UTM params
 }
 
+interface UtmUrlResult {
+  [adId: string]: string | null  // target URL for each ad (for attribution testing)
+}
+
 interface BatchRequest {
   method: string
   relative_url: string
@@ -85,6 +89,7 @@ export async function POST(request: NextRequest) {
     console.log(`[sync-utm-status] Fetching UTM status for ${adIds.length} ads in ${batches.length} batch API calls`)
 
     const utmStatus: UtmStatusResult = {}
+    const utmUrls: UtmUrlResult = {}
 
     // Process each batch using Meta Batch API (one HTTP call per 50 ads)
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -130,8 +135,10 @@ export async function POST(request: NextRequest) {
           try {
             const adData = JSON.parse(result.body || '{}')
             utmStatus[adId] = checkUtmParams(adData)
+            utmUrls[adId] = extractTargetUrl(adData)
           } catch {
             utmStatus[adId] = false
+            utmUrls[adId] = null
           }
         })
 
@@ -153,6 +160,7 @@ export async function POST(request: NextRequest) {
       ad_account_id: adAccountId,
       ad_id: adId,
       has_utm: hasUtm,
+      target_url: utmUrls[adId] || null,
       last_synced_at: now
     }))
 
@@ -172,6 +180,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       utmStatus,
+      utmUrls,
       lastSynced: now
     })
 
@@ -237,6 +246,21 @@ function checkUtmParams(adData: { creative?: { object_story_spec?: {
 }
 
 /**
+ * Extract the target URL from an ad's creative (for attribution testing)
+ * Separate from checkUtmParams to avoid modifying the UTM detection logic
+ */
+function extractTargetUrl(adData: { creative?: { object_story_spec?: {
+  link_data?: { call_to_action?: { value?: { link?: string } } }
+  video_data?: { call_to_action?: { value?: { link?: string } } }
+} } }): string | null {
+  const oss = adData.creative?.object_story_spec
+  if (!oss) return null
+  return oss.link_data?.call_to_action?.value?.link
+    || oss.video_data?.call_to_action?.value?.link
+    || null
+}
+
+/**
  * GET - Fetch cached UTM status from Supabase (no Meta API call)
  * This allows the UI to display cached data without hitting rate limits
  */
@@ -252,7 +276,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('utm_status')
-      .select('ad_id, has_utm, last_synced_at')
+      .select('ad_id, has_utm, target_url, last_synced_at')
       .eq('user_id', userId)
       .eq('ad_account_id', adAccountId)
 
@@ -263,11 +287,13 @@ export async function GET(request: NextRequest) {
 
     // Convert to { [adId]: boolean } format
     const utmStatus: UtmStatusResult = {}
+    const utmUrls: UtmUrlResult = {}
     let lastSynced: string | null = null
 
     if (data && data.length > 0) {
       data.forEach(row => {
         utmStatus[row.ad_id] = row.has_utm
+        utmUrls[row.ad_id] = row.target_url || null
       })
       // Use the most recent sync time
       lastSynced = data[0].last_synced_at
@@ -275,6 +301,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       utmStatus,
+      utmUrls,
       lastSynced,
       cached: true
     })

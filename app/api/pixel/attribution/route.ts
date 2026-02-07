@@ -81,10 +81,19 @@ export async function GET(request: NextRequest) {
       isAuthorized = true
     }
 
-    // Load configured event values from rules
-    // For workspace-based queries, we skip rules since they're per-account
-    // Event values will come from the events themselves
-    const eventValues: Record<string, number> = {}
+    // Load configured event values from workspace_pixels
+    let eventValues: Record<string, number> = {}
+    if (workspaceId) {
+      const { data: wpData } = await supabase
+        .from('workspace_pixels')
+        .select('event_values')
+        .eq('workspace_id', workspaceId)
+        .single()
+
+      if (wpData?.event_values && typeof wpData.event_values === 'object') {
+        eventValues = wpData.event_values as Record<string, number>
+      }
+    }
 
     // Normalize event type for matching (CompleteRegistration -> complete_registration)
     const normalizeEventType = (type: string): string => {

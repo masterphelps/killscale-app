@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, ArrowDownAZ } from 'lucide-react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -153,6 +153,8 @@ export default function AdStudioPage() {
   const [ownAdsLoaded, setOwnAdsLoaded] = useState(false)
   const [ownAdSortBy, setOwnAdSortBy] = useState<'spend' | 'roas' | 'scores'>('spend')
   const [ownAdFilter, setOwnAdFilter] = useState<'all' | 'top-performers'>('all')
+  const [ownAdMediaFilter, setOwnAdMediaFilter] = useState<'all' | 'video' | 'image'>('all')
+  const [ownAdStatusFilter, setOwnAdStatusFilter] = useState<'all' | 'active' | 'paused'>('all')
   const [viewingOwnAd, setViewingOwnAd] = useState<OwnAd | null>(null)
   const [isRefreshMode, setIsRefreshMode] = useState(false)
 
@@ -634,9 +636,31 @@ export default function AdStudioPage() {
     status: statusFilter,
   })
 
+  // Compute own ads media mix (from unfiltered list)
+  const ownAdsMediaMix = useMemo(() => {
+    const total = ownAds.length
+    if (total === 0) return { video: 0, image: 0, carousel: 0, text: 0 }
+    const videoCount = ownAds.filter(a => a.mediaType === 'video').length
+    const imageCount = ownAds.filter(a => a.mediaType === 'image').length
+    return {
+      video: Math.round((videoCount / total) * 100),
+      image: Math.round((imageCount / total) * 100),
+      carousel: 0,
+      text: 0,
+    }
+  }, [ownAds])
+
+  const ownAdsActiveCount = useMemo(() => ownAds.filter(a => a.status === 'ACTIVE').length, [ownAds])
+
   // Filter and sort own ads
   const filteredOwnAds = ownAds
     .filter(ad => {
+      // Media type filter
+      if (ownAdMediaFilter !== 'all' && ad.mediaType !== ownAdMediaFilter) return false
+      // Status filter
+      if (ownAdStatusFilter === 'active' && ad.status !== 'ACTIVE') return false
+      if (ownAdStatusFilter === 'paused' && ad.status === 'ACTIVE') return false
+      // Performance filter
       if (ownAdFilter === 'top-performers') {
         return (ad.hookScore !== null && ad.hookScore >= 75) ||
                (ad.holdScore !== null && ad.holdScore >= 75) ||
@@ -2063,40 +2087,142 @@ export default function AdStudioPage() {
                     <p className="text-sm text-zinc-400">
                       Select one of your ads to create a fresh variation. Keep what works, change the execution.
                     </p>
+                  </div>
 
-                    {/* Sort and Filter Controls */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-zinc-500">Filter:</span>
-                        <div className="flex gap-1">
-                          {(['all', 'top-performers'] as const).map(f => (
-                            <button
-                              key={f}
-                              onClick={() => setOwnAdFilter(f)}
-                              className={cn(
-                                'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
-                                ownAdFilter === f
-                                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                  : 'text-zinc-400 hover:text-white bg-bg-dark border border-border'
-                              )}
-                            >
-                              {f === 'all' ? 'All' : 'Top Performers'}
-                            </button>
-                          ))}
+                  {/* Stats Header — matches competitor tab layout */}
+                  {ownAds.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Ad Count */}
+                      <div className="bg-bg-card border border-border rounded-xl p-5">
+                        <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                          <BarChart3 className="w-4 h-4" />
+                          Your Ad Library
+                        </div>
+                        <div className="text-2xl font-bold text-white mb-1">
+                          {ownAds.length} ads
+                        </div>
+                        <div className="text-sm text-zinc-400">
+                          <span className="text-emerald-400">{ownAdsActiveCount} active</span>
+                          <span className="ml-2">· {ownAds.length - ownAdsActiveCount} paused</span>
                         </div>
                       </div>
+
+                      {/* Media Mix */}
+                      <div className="bg-bg-card border border-border rounded-xl p-5">
+                        <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                          Media Mix
+                        </div>
+                        <CompetitorMediaMixChart mediaMix={ownAdsMediaMix} />
+                      </div>
+
+                      {/* Top Performers */}
+                      <div className="bg-bg-card border border-border rounded-xl p-5">
+                        <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                          <Sparkles className="w-4 h-4" />
+                          Performance
+                        </div>
+                        <div className="space-y-2 mt-2">
+                          {(() => {
+                            const topPerformers = ownAds.filter(a =>
+                              (a.hookScore !== null && a.hookScore >= 75) ||
+                              (a.clickScore !== null && a.clickScore >= 75) ||
+                              (a.convertScore !== null && a.convertScore >= 75)
+                            ).length
+                            const totalSpend = ownAds.reduce((s, a) => s + a.spend, 0)
+                            const totalRevenue = ownAds.reduce((s, a) => s + a.revenue, 0)
+                            return (
+                              <>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm text-zinc-400">Top performers</span>
+                                  <span className="text-sm font-semibold text-emerald-400">{topPerformers}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm text-zinc-400">Total spend</span>
+                                  <span className="text-sm font-semibold text-white">${totalSpend >= 1000 ? `${(totalSpend / 1000).toFixed(1)}k` : totalSpend.toFixed(0)}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm text-zinc-400">Total revenue</span>
+                                  <span className="text-sm font-semibold text-white">${totalRevenue >= 1000 ? `${(totalRevenue / 1000).toFixed(1)}k` : totalRevenue.toFixed(0)}</span>
+                                </div>
+                              </>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filters — matches competitor tab layout */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="text-sm text-zinc-400">
+                      Showing {filteredOwnAds.length} of {ownAds.length} ads
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Media Type */}
                       <div className="flex items-center gap-2">
-                        <ArrowDownAZ className="w-3 h-3 text-zinc-500" />
+                        <span className="text-xs text-zinc-500">Media:</span>
+                        <select
+                          value={ownAdMediaFilter}
+                          onChange={(e) => setOwnAdMediaFilter(e.target.value as typeof ownAdMediaFilter)}
+                          className="bg-bg-dark border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+                        >
+                          <option value="all">All Types</option>
+                          <option value="video">Video</option>
+                          <option value="image">Image</option>
+                        </select>
+                      </div>
+
+                      {/* Status */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">Status:</span>
+                        <select
+                          value={ownAdStatusFilter}
+                          onChange={(e) => setOwnAdStatusFilter(e.target.value as typeof ownAdStatusFilter)}
+                          className="bg-bg-dark border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+                        >
+                          <option value="all">All</option>
+                          <option value="active">Active</option>
+                          <option value="paused">Paused</option>
+                        </select>
+                      </div>
+
+                      {/* Performance */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">Performance:</span>
+                        <select
+                          value={ownAdFilter}
+                          onChange={(e) => setOwnAdFilter(e.target.value as typeof ownAdFilter)}
+                          className="bg-bg-dark border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+                        >
+                          <option value="all">All</option>
+                          <option value="top-performers">Top Performers</option>
+                        </select>
+                      </div>
+
+                      {/* Sort */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">Sort:</span>
                         <select
                           value={ownAdSortBy}
                           onChange={(e) => setOwnAdSortBy(e.target.value as typeof ownAdSortBy)}
-                          className="bg-bg-dark border border-border rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+                          className="bg-bg-dark border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
                         >
                           <option value="spend">Highest Spend</option>
                           <option value="roas">Best ROAS</option>
                           <option value="scores">Best Scores</option>
                         </select>
                       </div>
+
+                      {/* Clear */}
+                      {(ownAdMediaFilter !== 'all' || ownAdStatusFilter !== 'all' || ownAdFilter !== 'all') && (
+                        <button
+                          onClick={() => { setOwnAdMediaFilter('all'); setOwnAdStatusFilter('all'); setOwnAdFilter('all') }}
+                          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                          Clear
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2106,28 +2232,23 @@ export default function AdStudioPage() {
                       <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
                     </div>
                   ) : filteredOwnAds.length > 0 ? (
-                    <>
-                      <div className="text-sm text-zinc-400">
-                        Showing {filteredOwnAds.length} of {ownAds.length} ads
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {filteredOwnAds.map((ad, index) => (
-                          <OwnAdCard
-                            key={ad.ad_id}
-                            ad={ad}
-                            index={index}
-                            onClick={() => setViewingOwnAd(ad)}
-                          />
-                        ))}
-                      </div>
-                    </>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {filteredOwnAds.map((ad, index) => (
+                        <OwnAdCard
+                          key={ad.ad_id}
+                          ad={ad}
+                          index={index}
+                          onClick={() => setViewingOwnAd(ad)}
+                        />
+                      ))}
+                    </div>
                   ) : (
                     <div className="bg-bg-card border border-border rounded-xl p-12 text-center">
                       <Search className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
                       <h3 className="text-white font-medium mb-2">No ads found</h3>
                       <p className="text-sm text-zinc-500">
-                        {ownAdFilter !== 'all'
-                          ? 'Try removing the filter to see all ads.'
+                        {(ownAdMediaFilter !== 'all' || ownAdStatusFilter !== 'all' || ownAdFilter !== 'all')
+                          ? 'Try removing filters to see all ads.'
                           : 'Connect an ad account and sync data to see your ads here.'}
                       </p>
                     </div>

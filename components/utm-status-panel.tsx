@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ChevronRight, ChevronDown, RefreshCw, Loader2, Radio } from 'lucide-react'
+import { ChevronRight, ChevronDown, RefreshCw, Loader2, Radio, ExternalLink, Check } from 'lucide-react'
 import { supabase } from '@/lib/supabase-browser'
 import { UtmIndicator } from './utm-indicator'
 import { cn } from '@/lib/utils'
@@ -27,9 +27,33 @@ interface UtmStatusPanelProps {
   adAccountIds: string[]
 }
 
+/**
+ * Resolve Meta dynamic URL parameters to real values for attribution testing.
+ * Meta replaces these at click time, but for manual testing we need real values.
+ * See: https://www.facebook.com/business/help/2360940870872492
+ */
+function resolveMetaTemplates(url: string, context: {
+  adId: string
+  adName: string
+  adsetId: string
+  adsetName: string
+  campaignId: string
+  campaignName: string
+}): string {
+  return url
+    .replace(/\{\{ad\.id\}\}/g, context.adId)
+    .replace(/\{\{ad\.name\}\}/g, encodeURIComponent(context.adName))
+    .replace(/\{\{adset\.id\}\}/g, context.adsetId)
+    .replace(/\{\{adset\.name\}\}/g, encodeURIComponent(context.adsetName))
+    .replace(/\{\{campaign\.id\}\}/g, context.campaignId)
+    .replace(/\{\{campaign\.name\}\}/g, encodeURIComponent(context.campaignName))
+}
+
 export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
   const [hierarchy, setHierarchy] = useState<CampaignHierarchy[]>([])
   const [utmStatus, setUtmStatus] = useState<Record<string, boolean>>({})
+  const [utmUrls, setUtmUrls] = useState<Record<string, string | null>>({})
+  const [copiedAdId, setCopiedAdId] = useState<string | null>(null)
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
   const [syncing, setSyncing] = useState(false)
@@ -123,6 +147,7 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
     try {
       // Fetch cached UTM status for all ad accounts
       const allStatus: Record<string, boolean> = {}
+      const allUrls: Record<string, string | null> = {}
       let latestSync: string | null = null
 
       for (const adAccountId of adAccountIds) {
@@ -133,6 +158,7 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
         if (response.ok) {
           const data = await response.json()
           Object.assign(allStatus, data.utmStatus || {})
+          Object.assign(allUrls, data.utmUrls || {})
           if (data.lastSynced && (!latestSync || data.lastSynced > latestSync)) {
             latestSync = data.lastSynced
           }
@@ -140,6 +166,7 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
       }
 
       setUtmStatus(allStatus)
+      setUtmUrls(allUrls)
       setLastSynced(latestSync)
     } catch (err) {
       console.error('Error loading cached UTM status:', err)
@@ -179,6 +206,7 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
 
       // Sync each ad account separately
       const allStatus: Record<string, boolean> = {}
+      const allUrls: Record<string, string | null> = {}
       let latestSync: string | null = null
 
       for (const adAccountId of adAccountIds) {
@@ -197,6 +225,7 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
         if (response.ok) {
           const data = await response.json()
           Object.assign(allStatus, data.utmStatus || {})
+          Object.assign(allUrls, data.utmUrls || {})
           if (data.lastSynced) {
             latestSync = data.lastSynced
           }
@@ -204,6 +233,7 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
       }
 
       setUtmStatus(allStatus)
+      setUtmUrls(allUrls)
       setLastSynced(latestSync)
     } catch (err) {
       console.error('Error syncing UTM status:', err)
@@ -390,14 +420,41 @@ export function UtmStatusPanel({ userId, adAccountIds }: UtmStatusPanelProps) {
                             <div className="ml-4 mt-0.5 space-y-0.5">
                               {adset.ads.map(ad => {
                                 const hasUtm = utmStatus[ad.id]
+                                const rawUrl = utmUrls[ad.id]
+                                const resolvedUrl = rawUrl ? resolveMetaTemplates(rawUrl, {
+                                  adId: ad.id,
+                                  adName: ad.name,
+                                  adsetId: adset.id,
+                                  adsetName: adset.name,
+                                  campaignId: campaign.id,
+                                  campaignName: campaign.name,
+                                }) : null
+                                const isCopied = copiedAdId === ad.id
                                 return (
                                   <div
                                     key={ad.id}
-                                    className="flex items-center gap-1.5 p-1 rounded text-xs text-zinc-500"
+                                    className={cn(
+                                      'flex items-center gap-1.5 p-1 rounded text-xs text-zinc-500',
+                                      resolvedUrl && 'hover:bg-bg-hover/50 cursor-pointer group'
+                                    )}
+                                    onClick={() => {
+                                      if (!resolvedUrl) return
+                                      navigator.clipboard.writeText(resolvedUrl)
+                                      setCopiedAdId(ad.id)
+                                      setTimeout(() => setCopiedAdId(null), 2000)
+                                    }}
+                                    title={resolvedUrl ? 'Click to copy target URL for attribution testing' : undefined}
                                   >
                                     <span className="truncate flex-1">
                                       {ad.name}
                                     </span>
+                                    {resolvedUrl && (
+                                      isCopied ? (
+                                        <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                                      ) : (
+                                        <ExternalLink className="w-3 h-3 text-zinc-600 group-hover:text-zinc-400 flex-shrink-0 transition-colors" />
+                                      )
+                                    )}
                                     <UtmIndicator tracked={hasUtm ? 1 : 0} total={1} loading={syncing} />
                                   </div>
                                 )

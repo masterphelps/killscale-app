@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   Scale,
   Users,
+  Plug,
   Layers,
   Building2,
   PanelLeftClose,
@@ -62,17 +63,17 @@ const navItemsBottom = [
 const settingsItems = [
   { href: '/dashboard/settings', label: 'General', icon: SlidersHorizontal },
   { href: '/dashboard/settings/rules', label: 'Rules', icon: Scale },
-  { href: '/dashboard/settings/accounts', label: 'Accounts', icon: Users },
+  { href: '/dashboard/settings/accounts', label: 'Connections', icon: Plug },
   { href: '/dashboard/settings/workspaces', label: 'Workspaces', icon: Layers },
 ]
 
 const creativeStudioItems = [
   { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, isNew: true },
+  { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles },
   { href: '/dashboard/creative-studio/active', label: 'Ads', icon: Zap },
   { href: '/dashboard/creative-studio/media', label: 'Media', icon: LayoutGrid },
   { href: '/dashboard/creative-studio/best-copy', label: 'Copy', icon: FileText },
-  { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles },
-  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, isNew: true },
 ]
 
 export function Sidebar() {

@@ -56,7 +56,22 @@ type WorkspacePixel = {
   pixel_secret: string
   attribution_source: 'native' | 'pixel'
   attribution_model: AttributionModel
+  event_values: Record<string, number>
 }
+
+const STANDARD_EVENTS = [
+  { key: 'purchase', label: 'Purchase' },
+  { key: 'lead', label: 'Lead' },
+  { key: 'complete_registration', label: 'Complete Registration' },
+  { key: 'add_to_cart', label: 'Add to Cart' },
+  { key: 'initiate_checkout', label: 'Initiate Checkout' },
+  { key: 'add_payment_info', label: 'Add Payment Info' },
+  { key: 'subscribe', label: 'Subscribe' },
+  { key: 'contact', label: 'Contact' },
+  { key: 'submit_application', label: 'Submit Application' },
+  { key: 'start_trial', label: 'Start Trial' },
+  { key: 'schedule', label: 'Schedule' },
+]
 
 type KioskSettings = {
   enabled: boolean
@@ -807,7 +822,7 @@ export default function WorkspacesPage() {
     // Check if pixel exists
     let { data: existingPixel } = await supabase
       .from('workspace_pixels')
-      .select('pixel_id, pixel_secret, attribution_source, attribution_model')
+      .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values')
       .eq('workspace_id', workspaceId)
       .single()
 
@@ -826,7 +841,7 @@ export default function WorkspacesPage() {
           attribution_source: 'native',
           attribution_model: 'last_touch',
         })
-        .select('pixel_id, pixel_secret, attribution_source, attribution_model')
+        .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values')
         .single()
 
       if (!createError && newPixel) {
@@ -843,6 +858,7 @@ export default function WorkspacesPage() {
           pixel_secret: existingPixel.pixel_secret,
           attribution_source: existingPixel.attribution_source,
           attribution_model: existingPixel.attribution_model || 'last_touch',
+          event_values: existingPixel.event_values || {},
         }
       }))
 
@@ -954,6 +970,52 @@ export default function WorkspacesPage() {
       console.error('Failed to update attribution model:', err)
     } finally {
       setUpdatingModel(null)
+    }
+  }
+
+  const updateAttributionSource = async (workspaceId: string, newSource: 'native' | 'pixel') => {
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({ attribution_source: newSource })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixels(prev => ({
+          ...prev,
+          [workspaceId]: {
+            ...prev[workspaceId],
+            attribution_source: newSource,
+          }
+        }))
+      } else {
+        console.error('Failed to update attribution source:', error)
+      }
+    } catch (err) {
+      console.error('Failed to update attribution source:', err)
+    }
+  }
+
+  const updateEventValues = async (workspaceId: string, newEventValues: Record<string, number>) => {
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({ event_values: newEventValues })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixels(prev => ({
+          ...prev,
+          [workspaceId]: {
+            ...prev[workspaceId],
+            event_values: newEventValues,
+          }
+        }))
+      } else {
+        console.error('Failed to update event values:', error)
+      }
+    } catch (err) {
+      console.error('Failed to update event values:', err)
     }
   }
 
@@ -1662,6 +1724,52 @@ ks('pageview');
                             </div>
                           </div>
 
+                          {/* Attribution Source */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <h3 className="font-medium text-sm">Attribution Source</h3>
+                              <div className="group relative">
+                                <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+                                  Choose whether to use Meta&apos;s native attribution or KillScale&apos;s first-party pixel for tracking conversions.
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-zinc-500 mb-3">
+                              KS Pixel uses first-party data from your pixel for attribution. Meta Native uses Meta&apos;s reported conversions.
+                            </p>
+                            <div className="space-y-2">
+                              {([
+                                { value: 'native' as const, label: 'Meta Native', desc: 'Use Meta\'s reported attribution data' },
+                                { value: 'pixel' as const, label: 'KS Pixel', desc: 'Use KillScale first-party pixel for attribution' },
+                              ]).map((option) => (
+                                <button
+                                  key={option.value}
+                                  onClick={() => updateAttributionSource(workspace.id, option.value)}
+                                  className={cn(
+                                    "w-full p-3 rounded-lg border-2 transition-all text-left",
+                                    wp.attribution_source === option.value
+                                      ? "border-purple-500 bg-purple-500/10"
+                                      : "border-border hover:border-zinc-600"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className={cn(
+                                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                      wp.attribution_source === option.value ? "border-purple-500" : "border-zinc-600"
+                                    )}>
+                                      {wp.attribution_source === option.value && (
+                                        <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                      )}
+                                    </div>
+                                    <span className="text-sm font-medium text-white">{option.label}</span>
+                                  </div>
+                                  <p className="text-xs text-zinc-500 ml-6">{option.desc}</p>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
                           {/* Attribution Model */}
                           <div>
                             <div className="flex items-center gap-2 mb-3">
@@ -1713,6 +1821,84 @@ ks('pageview');
                                   Updating...
                                 </div>
                               )}
+                          </div>
+
+                          {/* Event Values */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <h3 className="font-medium text-sm">Event Values</h3>
+                              <div className="group relative">
+                                <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+                                  Assign dollar values to conversion events so pixel attribution can calculate revenue and ROAS.
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-zinc-500 mb-3">
+                              When your pixel tracks events (leads, registrations, etc.), these values are used to calculate revenue. ROAS = (Events x Value) / Spend.
+                            </p>
+
+                            {/* Configured events */}
+                            <div className="space-y-2 mb-3">
+                              {Object.entries(wp.event_values || {}).map(([key, value]) => {
+                                const event = STANDARD_EVENTS.find(e => e.key === key)
+                                return (
+                                  <div key={key} className="flex items-center gap-3 bg-bg-dark rounded-lg p-3">
+                                    <span className="flex-1 text-sm font-medium">{event?.label || key}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-zinc-500 text-sm">$</span>
+                                      <input
+                                        type="number"
+                                        step="1"
+                                        min="0"
+                                        value={value}
+                                        onChange={(e) => {
+                                          const num = parseFloat(e.target.value)
+                                          if (!isNaN(num) && num >= 0) {
+                                            updateEventValues(workspace.id, { ...wp.event_values, [key]: num })
+                                          }
+                                        }}
+                                        className="w-24 px-3 py-2 bg-bg-card border border-border rounded-lg text-white font-mono text-sm focus:outline-none focus:border-accent"
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        const next = { ...wp.event_values }
+                                        delete next[key]
+                                        updateEventValues(workspace.id, next)
+                                      }}
+                                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                              {Object.keys(wp.event_values || {}).length === 0 && (
+                                <div className="text-sm text-zinc-500 py-2">
+                                  No event values configured. Add events below to track their value.
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Add event dropdown */}
+                            {STANDARD_EVENTS.filter(e => !(e.key in (wp.event_values || {}))).length > 0 && (
+                              <select
+                                defaultValue=""
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    updateEventValues(workspace.id, { ...wp.event_values, [e.target.value]: 0 })
+                                    e.target.value = ''
+                                  }
+                                }}
+                                className="w-full px-3 py-2 bg-bg-dark border border-border rounded-lg text-white text-sm focus:outline-none focus:border-accent appearance-none cursor-pointer"
+                              >
+                                <option value="" disabled>Add an event...</option>
+                                {STANDARD_EVENTS.filter(e => !(e.key in (wp.event_values || {}))).map(({ key, label }) => (
+                                  <option key={key} value={key}>{label}</option>
+                                ))}
+                              </select>
+                            )}
                           </div>
 
                           {/* Sales Kiosk */}
