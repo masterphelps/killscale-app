@@ -30,6 +30,11 @@ interface TargetingOption {
   type: 'interest' | 'behavior'
 }
 
+interface CustomAudience {
+  id: string
+  name: string
+}
+
 interface CreateAdsetRequest {
   userId: string
   adAccountId: string
@@ -56,6 +61,8 @@ interface CreateAdsetRequest {
   targetingMode?: 'broad' | 'custom'
   selectedInterests?: TargetingOption[]
   selectedBehaviors?: TargetingOption[]
+  selectedCustomAudiences?: CustomAudience[]
+  selectedExcludedAudiences?: CustomAudience[]
   ageMin?: number
   ageMax?: number
 }
@@ -96,6 +103,8 @@ export async function POST(request: NextRequest) {
       targetingMode,
       selectedInterests,
       selectedBehaviors,
+      selectedCustomAudiences,
+      selectedExcludedAudiences,
       ageMin,
       ageMax
     } = body
@@ -227,6 +236,14 @@ export async function POST(request: NextRequest) {
 
       if (Object.keys(flexibleSpecEntry).length > 0) {
         targeting.flexible_spec = [flexibleSpecEntry]
+      }
+
+      // Custom audiences are top-level targeting fields (NOT in flexible_spec)
+      if (selectedCustomAudiences && selectedCustomAudiences.length > 0) {
+        targeting.custom_audiences = selectedCustomAudiences.map(ca => ({ id: ca.id }))
+      }
+      if (selectedExcludedAudiences && selectedExcludedAudiences.length > 0) {
+        targeting.excluded_custom_audiences = selectedExcludedAudiences.map(ea => ({ id: ea.id }))
       }
     }
 

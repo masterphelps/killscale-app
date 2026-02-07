@@ -148,6 +148,13 @@ interface TargetingOption {
   audienceSizeUpper?: number
 }
 
+interface CustomAudience {
+  id: string
+  name: string
+  approximateSize?: number
+  subtype?: string  // LOOKALIKE, WEBSITE, CUSTOM, ENGAGEMENT, etc.
+}
+
 interface WizardState {
   adAccountId: string
   pageId: string
@@ -184,6 +191,8 @@ interface WizardState {
   targetingMode: 'broad' | 'custom'
   selectedInterests: TargetingOption[]
   selectedBehaviors: TargetingOption[]
+  selectedCustomAudiences: CustomAudience[]
+  selectedExcludedAudiences: CustomAudience[]
   ageMin: number
   ageMax: number
   creatives: Creative[]
@@ -343,6 +352,14 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
   const [behaviorQuery, setBehaviorQuery] = useState('')
   const [behaviorResults, setBehaviorResults] = useState<TargetingOption[]>([])
   const [searchingBehaviors, setSearchingBehaviors] = useState(false)
+  const [audienceQuery, setAudienceQuery] = useState('')
+  const [audienceResults, setAudienceResults] = useState<CustomAudience[]>([])
+  const [searchingAudiences, setSearchingAudiences] = useState(false)
+  const [allAudiences, setAllAudiences] = useState<CustomAudience[]>([])
+  const [audiencesLoaded, setAudiencesLoaded] = useState(false)
+  const [showExcludeAudiences, setShowExcludeAudiences] = useState(false)
+  const [excludeAudienceQuery, setExcludeAudienceQuery] = useState('')
+  const [excludeAudienceResults, setExcludeAudienceResults] = useState<CustomAudience[]>([])
   const [conversionEvents, setConversionEvents] = useState<{ value: string; label: string }[]>(FALLBACK_CONVERSION_EVENTS)
   const [loadingPixelEvents, setLoadingPixelEvents] = useState(false)
   const [leadForms, setLeadForms] = useState<LeadForm[]>([])
@@ -394,6 +411,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     targetingMode: 'broad',
     selectedInterests: [],
     selectedBehaviors: [],
+    selectedCustomAudiences: [],
+    selectedExcludedAudiences: [],
     ageMin: 18,
     ageMax: 65,
     creatives: preloadedCreatives || [],
@@ -665,6 +684,57 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     }, 300)
     return () => clearTimeout(timer)
   }, [behaviorQuery, searchBehaviors])
+
+  // Fetch all custom audiences once when custom targeting is selected
+  const fetchAudiences = useCallback(async () => {
+    if (!user || !state.adAccountId || audiencesLoaded) return
+    setSearchingAudiences(true)
+    try {
+      const res = await fetch(`/api/meta/audiences?userId=${user.id}&adAccountId=${encodeURIComponent(state.adAccountId)}`)
+      const data = await res.json()
+      if (data.audiences) {
+        setAllAudiences(data.audiences)
+        setAudiencesLoaded(true)
+      }
+    } catch (err) {
+      console.error('Failed to fetch audiences:', err)
+    } finally {
+      setSearchingAudiences(false)
+    }
+  }, [user, state.adAccountId, audiencesLoaded])
+
+  useEffect(() => {
+    if (state.targetingMode === 'custom') {
+      fetchAudiences()
+    }
+  }, [state.targetingMode, fetchAudiences])
+
+  // Client-side filtering for audience search
+  useEffect(() => {
+    if (audienceQuery.length >= 2) {
+      const filtered = allAudiences.filter(a =>
+        a.name.toLowerCase().includes(audienceQuery.toLowerCase()) &&
+        !state.selectedCustomAudiences.some(s => s.id === a.id)
+      )
+      setAudienceResults(filtered)
+    } else {
+      setAudienceResults([])
+    }
+  }, [audienceQuery, allAudiences, state.selectedCustomAudiences])
+
+  // Client-side filtering for exclude audience search
+  useEffect(() => {
+    if (excludeAudienceQuery.length >= 2) {
+      const filtered = allAudiences.filter(a =>
+        a.name.toLowerCase().includes(excludeAudienceQuery.toLowerCase()) &&
+        !state.selectedExcludedAudiences.some(s => s.id === a.id) &&
+        !state.selectedCustomAudiences.some(s => s.id === a.id)
+      )
+      setExcludeAudienceResults(filtered)
+    } else {
+      setExcludeAudienceResults([])
+    }
+  }, [excludeAudienceQuery, allAudiences, state.selectedExcludedAudiences, state.selectedCustomAudiences])
 
   // Fetch access token for direct Meta uploads
   const fetchAccessToken = useCallback(async () => {
@@ -991,6 +1061,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             targetingMode: state.targetingMode,
             selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
             selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined,
+            selectedCustomAudiences: state.targetingMode === 'custom' ? state.selectedCustomAudiences : undefined,
+            selectedExcludedAudiences: state.targetingMode === 'custom' ? state.selectedExcludedAudiences : undefined,
             ageMin: state.ageMin,
             ageMax: state.ageMax
           })
@@ -1077,6 +1149,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             targetingMode: state.targetingMode,
             selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
             selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined,
+            selectedCustomAudiences: state.targetingMode === 'custom' ? state.selectedCustomAudiences : undefined,
+            selectedExcludedAudiences: state.targetingMode === 'custom' ? state.selectedExcludedAudiences : undefined,
             ageMin: state.ageMin,
             ageMax: state.ageMax
           })
@@ -1127,6 +1201,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             targetingMode: state.targetingMode,
             selectedInterests: state.targetingMode === 'custom' ? state.selectedInterests : undefined,
             selectedBehaviors: state.targetingMode === 'custom' ? state.selectedBehaviors : undefined,
+            selectedCustomAudiences: state.targetingMode === 'custom' ? state.selectedCustomAudiences : undefined,
+            selectedExcludedAudiences: state.targetingMode === 'custom' ? state.selectedExcludedAudiences : undefined,
             ageMin: state.ageMin,
             ageMax: state.ageMax
           })
@@ -2337,7 +2413,9 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     ...s,
                     targetingMode: 'broad',
                     selectedInterests: [],
-                    selectedBehaviors: []
+                    selectedBehaviors: [],
+                    selectedCustomAudiences: [],
+                    selectedExcludedAudiences: []
                   }))}
                   className={cn(
                     "w-full p-3 rounded-lg border text-left text-sm transition-all",
@@ -2550,8 +2628,197 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     )}
                   </div>
 
+                  {/* Custom Audiences */}
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-2">Custom Audiences</label>
+                    {searchingAudiences && !audiencesLoaded ? (
+                      <div className="flex items-center gap-2 text-sm text-zinc-500 py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Loading audiences...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                          <input
+                            type="text"
+                            value={audienceQuery}
+                            onChange={(e) => setAudienceQuery(e.target.value)}
+                            placeholder="Search custom audiences..."
+                            className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-accent"
+                          />
+                        </div>
+
+                        {/* Audience Results Dropdown */}
+                        {audienceResults.length > 0 && (
+                          <div className="mt-1 border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                            {audienceResults.map((aud) => (
+                              <button
+                                key={aud.id}
+                                onClick={() => {
+                                  setState(s => ({
+                                    ...s,
+                                    selectedCustomAudiences: [...s.selectedCustomAudiences, aud]
+                                  }))
+                                  setAudienceQuery('')
+                                  setAudienceResults([])
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm border-b border-border last:border-0 hover:bg-bg-hover"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="truncate">{aud.name}</span>
+                                    {aud.subtype && (
+                                      <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
+                                        {aud.subtype === 'LOOKALIKE' ? 'Lookalike'
+                                          : aud.subtype === 'WEBSITE' ? 'Website'
+                                          : aud.subtype === 'CUSTOM' ? 'CRM'
+                                          : aud.subtype === 'ENGAGEMENT' ? 'Engagement'
+                                          : aud.subtype}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {aud.approximateSize && (
+                                    <span className="text-xs text-zinc-500 flex-shrink-0 ml-2">
+                                      ~{aud.approximateSize >= 1000000
+                                        ? `${(aud.approximateSize / 1000000).toFixed(1)}M`
+                                        : aud.approximateSize >= 1000
+                                          ? `${(aud.approximateSize / 1000).toFixed(0)}K`
+                                          : aud.approximateSize}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Selected Custom Audiences Chips */}
+                        {state.selectedCustomAudiences.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {state.selectedCustomAudiences.map((aud) => (
+                              <span
+                                key={aud.id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs"
+                              >
+                                {aud.name}
+                                <button
+                                  onClick={() => setState(s => ({
+                                    ...s,
+                                    selectedCustomAudiences: s.selectedCustomAudiences.filter(a => a.id !== aud.id)
+                                  }))}
+                                  className="hover:text-white"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {audiencesLoaded && allAudiences.length === 0 && (
+                          <p className="text-xs text-zinc-500 mt-1">No custom audiences found in this ad account.</p>
+                        )}
+
+                        {/* Exclude Audiences */}
+                        <button
+                          onClick={() => setShowExcludeAudiences(!showExcludeAudiences)}
+                          className="mt-3 text-xs text-zinc-400 hover:text-white flex items-center gap-1"
+                        >
+                          <span>{showExcludeAudiences ? '−' : '+'}</span>
+                          <span>Exclude Audiences</span>
+                          {state.selectedExcludedAudiences.length > 0 && (
+                            <span className="text-red-400">({state.selectedExcludedAudiences.length})</span>
+                          )}
+                        </button>
+
+                        {showExcludeAudiences && (
+                          <div className="mt-2 pl-3 border-l-2 border-red-500/30">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                              <input
+                                type="text"
+                                value={excludeAudienceQuery}
+                                onChange={(e) => setExcludeAudienceQuery(e.target.value)}
+                                placeholder="Search audiences to exclude..."
+                                className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-red-500/50"
+                              />
+                            </div>
+
+                            {/* Exclude Audience Results Dropdown */}
+                            {excludeAudienceResults.length > 0 && (
+                              <div className="mt-1 border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                                {excludeAudienceResults.map((aud) => (
+                                  <button
+                                    key={aud.id}
+                                    onClick={() => {
+                                      setState(s => ({
+                                        ...s,
+                                        selectedExcludedAudiences: [...s.selectedExcludedAudiences, aud]
+                                      }))
+                                      setExcludeAudienceQuery('')
+                                      setExcludeAudienceResults([])
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm border-b border-border last:border-0 hover:bg-bg-hover"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="truncate">{aud.name}</span>
+                                        {aud.subtype && (
+                                          <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
+                                            {aud.subtype === 'LOOKALIKE' ? 'Lookalike'
+                                              : aud.subtype === 'WEBSITE' ? 'Website'
+                                              : aud.subtype === 'CUSTOM' ? 'CRM'
+                                              : aud.subtype === 'ENGAGEMENT' ? 'Engagement'
+                                              : aud.subtype}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {aud.approximateSize && (
+                                        <span className="text-xs text-zinc-500 flex-shrink-0 ml-2">
+                                          ~{aud.approximateSize >= 1000000
+                                            ? `${(aud.approximateSize / 1000000).toFixed(1)}M`
+                                            : aud.approximateSize >= 1000
+                                              ? `${(aud.approximateSize / 1000).toFixed(0)}K`
+                                              : aud.approximateSize}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Selected Excluded Audiences Chips */}
+                            {state.selectedExcludedAudiences.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {state.selectedExcludedAudiences.map((aud) => (
+                                  <span
+                                    key={aud.id}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-500/20 text-red-400 rounded-full text-xs"
+                                  >
+                                    {aud.name}
+                                    <button
+                                      onClick={() => setState(s => ({
+                                        ...s,
+                                        selectedExcludedAudiences: s.selectedExcludedAudiences.filter(a => a.id !== aud.id)
+                                      }))}
+                                      className="hover:text-white"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
                   <p className="text-xs text-zinc-500">
-                    People matching ANY of these interests or behaviors will see your ads.
+                    People matching ANY of these interests, behaviors, or audiences will see your ads. Excluded audiences will be filtered out.
                   </p>
                 </div>
               )}
@@ -3035,7 +3302,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     <span className="font-medium">
                       {state.targetingMode === 'broad'
                         ? 'Broad (Advantage+)'
-                        : `Custom (${state.selectedInterests.length + state.selectedBehaviors.length} selections)`
+                        : `Custom (${state.selectedInterests.length + state.selectedBehaviors.length + state.selectedCustomAudiences.length} selections${state.selectedExcludedAudiences.length > 0 ? `, ${state.selectedExcludedAudiences.length} excluded` : ''})`
                       }
                     </span>
                   </div>
