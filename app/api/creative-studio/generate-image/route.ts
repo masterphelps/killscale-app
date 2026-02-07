@@ -540,6 +540,7 @@ export async function POST(request: NextRequest) {
 
     const hasProductImage = body.product.imageBase64 && body.product.imageMimeType
     const hasReferenceAd = body.referenceAd?.imageBase64 && body.referenceAd?.imageMimeType
+    let geminiFallbackReason = ''
 
     console.log('[Imagen] Has product image:', hasProductImage, 'imageBase64 length:', body.product.imageBase64?.length || 0)
     console.log('[Imagen] Has reference ad:', hasReferenceAd, 'referenceAd length:', body.referenceAd?.imageBase64?.length || 0)
@@ -650,15 +651,20 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        console.error('[Imagen] WARNING: Gemini returned response but no image part. Parts:', JSON.stringify(responseParts.map(p => ({ hasImage: !!p.inlineData, hasText: !!p.text, text: p.text?.slice(0, 100) }))))
+        geminiFallbackReason = 'Gemini returned response but no image part'
+        console.error('[Imagen] WARNING:', geminiFallbackReason, 'Parts:', JSON.stringify(responseParts.map(p => ({ hasImage: !!p.inlineData, hasText: !!p.text, text: p.text?.slice(0, 100) }))))
       } catch (geminiError) {
         const errMsg = geminiError instanceof Error ? geminiError.message : String(geminiError)
+        geminiFallbackReason = errMsg
         console.error('[Imagen] GEMINI FAILED — falling back to Imagen. Error:', errMsg)
       }
+    } else {
+      geminiFallbackReason = `No product image (hasProductImage=${hasProductImage})`
+      console.log('[Imagen] Skipping Gemini — no product image, going to Imagen text-only')
     }
 
     // Fallback: Use Imagen (text-to-image) without reference image
-    console.log('[Imagen] Generating with Imagen text-only...')
+    console.log('[Imagen] Generating with Imagen text-only. Reason:', geminiFallbackReason)
 
     const prompt = buildTextOnlyPrompt(body, curatedText)
 
@@ -706,6 +712,7 @@ export async function POST(request: NextRequest) {
         mimeType: 'image/png',
       },
       model: 'imagen-4.0-generate-001',
+      fallbackReason: geminiFallbackReason || 'unknown',
       prompt: prompt.slice(0, 500),
     })
 
