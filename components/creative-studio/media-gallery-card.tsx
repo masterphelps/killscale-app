@@ -92,6 +92,7 @@ export function MediaGalleryCard({
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
   const [isStarAnimating, setIsStarAnimating] = useState(false)
+  const [showFatigueTooltip, setShowFatigueTooltip] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const hasPerf = item.hasPerformanceData
@@ -333,33 +334,72 @@ export function MediaGalleryCard({
               {rankBadge}
             </motion.div>
           ) : hasPerf && fatigueStyles ? (
-            <motion.div
-              animate={fatigueStyles.pulse ? { scale: [1, 1.05, 1] } : {}}
-              transition={fatigueStyles.pulse ? { duration: 2, repeat: Infinity } : {}}
-              title={`Fatigue: ${fatigueStyles.label} (${item.fatigueScore.toFixed(0)})`}
-              className={cn(
-                'relative w-11 h-11 rounded-full flex items-center justify-center',
-                'bg-black/70 backdrop-blur-md border border-white/10',
-                'shadow-lg'
-              )}
+            <div
+              className="relative"
+              onMouseEnter={() => setShowFatigueTooltip(true)}
+              onMouseLeave={() => setShowFatigueTooltip(false)}
             >
-              <svg
-                className="absolute inset-0 w-full h-full -rotate-90"
-                viewBox="0 0 44 44"
+              <motion.div
+                animate={fatigueStyles.pulse ? { scale: [1, 1.05, 1] } : {}}
+                transition={fatigueStyles.pulse ? { duration: 2, repeat: Infinity } : {}}
+                className={cn(
+                  'relative w-11 h-11 rounded-full flex items-center justify-center',
+                  'bg-black/70 backdrop-blur-md border border-white/10',
+                  'shadow-lg'
+                )}
               >
-                <circle cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" className="stroke-zinc-700" />
-                <motion.circle
-                  cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" strokeLinecap="round"
-                  className={fatigueStyles.stroke}
-                  initial={{ strokeDasharray: `0 ${circumference}` }}
-                  animate={{ strokeDasharray: `${fatigueProgress} ${circumference}` }}
-                  transition={{ duration: 1, delay: index * 0.05 + 0.3, ease: 'easeOut' }}
-                />
-              </svg>
-              <span className={cn('text-[11px] font-bold tabular-nums', fatigueStyles.color)}>
-                {item.fatigueScore.toFixed(0)}
-              </span>
-            </motion.div>
+                <svg
+                  className="absolute inset-0 w-full h-full -rotate-90"
+                  viewBox="0 0 44 44"
+                >
+                  <circle cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" className="stroke-zinc-700" />
+                  <motion.circle
+                    cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" strokeLinecap="round"
+                    className={fatigueStyles.stroke}
+                    initial={{ strokeDasharray: `0 ${circumference}` }}
+                    animate={{ strokeDasharray: `${fatigueProgress} ${circumference}` }}
+                    transition={{ duration: 1, delay: index * 0.05 + 0.3, ease: 'easeOut' }}
+                  />
+                </svg>
+                <span className={cn('text-[11px] font-bold tabular-nums', fatigueStyles.color)}>
+                  {item.fatigueScore.toFixed(0)}
+                </span>
+              </motion.div>
+
+              {/* Fatigue tooltip */}
+              <AnimatePresence>
+                {showFatigueTooltip && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-full left-0 mt-2 z-30 w-48 rounded-xl bg-zinc-900 border border-zinc-700 shadow-xl p-3 pointer-events-none"
+                  >
+                    <p className="text-[11px] font-semibold text-white mb-1.5">Creative Fatigue</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={cn('text-sm font-bold', fatigueStyles.color)}>{item.fatigueScore.toFixed(0)}</span>
+                      <span className={cn('text-xs font-medium', fatigueStyles.color)}>{fatigueStyles.label}</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-zinc-700 mb-2">
+                      <div
+                        className={cn('h-full rounded-full', {
+                          'bg-emerald-500': item.fatigueScore >= 80,
+                          'bg-lime-500': item.fatigueScore >= 60 && item.fatigueScore < 80,
+                          'bg-amber-500': item.fatigueScore >= 40 && item.fatigueScore < 60,
+                          'bg-orange-500': item.fatigueScore >= 20 && item.fatigueScore < 40,
+                          'bg-red-500': item.fatigueScore < 20,
+                        })}
+                        style={{ width: `${item.fatigueScore}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-zinc-400 leading-relaxed">
+                      Higher is better. Drops as your audience sees the ad repeatedly and engagement declines.
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           ) : (
             <motion.div
               initial={{ opacity: 0, x: -10 }}
@@ -448,7 +488,7 @@ export function MediaGalleryCard({
               </div>
 
               <span className="text-xs text-zinc-500 font-mono">
-                {formatCurrency(item.spend)} spent
+                {item.ctr.toFixed(2)}% CTR
               </span>
             </div>
 
