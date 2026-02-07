@@ -55,6 +55,53 @@ interface GenerateImageRequest {
   isRefresh?: boolean // True when refreshing own ad creative
 }
 
+// Use Claude vision to describe the reference ad's visual style
+async function analyzeReferenceAdStyle(imageBase64: string, imageMimeType: string): Promise<string | null> {
+  const claude = getAnthropic()
+  if (!claude) return null
+
+  try {
+    const response = await claude.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: imageMimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+              data: imageBase64,
+            }
+          },
+          {
+            type: 'text',
+            text: `Describe this ad's VISUAL FORMAT in one concise paragraph. Focus on:
+- Is it photography, graphic design, illustration, or mixed?
+- Color palette (specific colors like "deep purple", "neon green")
+- Layout (text placement, product placement, composition)
+- Typography style (bold/thin, serif/sans, size hierarchy)
+- Background treatment (solid color, gradient, photo, pattern)
+- Overall mood (bold/minimal/elegant/playful/corporate)
+
+Be specific and visual. Example: "Bold graphic design ad with solid deep purple background, large white sans-serif headline centered top, product photo bottom-right with drop shadow, neon green accent bar, high contrast with no photography."
+
+Reply with ONLY the description, nothing else.`
+          }
+        ]
+      }]
+    })
+
+    const description = (response.content[0] as { text: string }).text.trim()
+    console.log('[Imagen] Claude analyzed reference ad style:', description)
+    return description
+  } catch (err) {
+    console.error('[Imagen] Failed to analyze reference ad:', err)
+    return null
+  }
+}
+
 // Common text requirements added to all prompts
 const TEXT_REQUIREMENTS = `
 - Make sure all text fits in the image section where it's placed
@@ -131,14 +178,19 @@ function extractBestLine(text: string): string {
 }
 
 // Prompt when we have BOTH product image AND reference ad image
-function buildDualImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdText): string {
+function buildDualImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdText, styleDescription?: string | null): string {
   const { product, style = 'clone' } = req
 
   // Clone style (default) - pure format matching, no creative interpretation
   if (style === 'clone') {
+    const styleBlock = styleDescription
+      ? `\nTHE REFERENCE AD'S VISUAL STYLE (analyzed):\n${styleDescription}\n\nYou MUST replicate this exact visual style. If it's a graphic design ad, create a graphic design ad — NOT a lifestyle photo. If it uses solid color backgrounds, use solid color backgrounds. Match the style precisely.`
+      : ''
+
     return `I'm providing TWO images:
 1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
 2. SECOND IMAGE: A reference ad - CLONE this exact visual format and style
+${styleBlock}
 
 CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
 The ad text MUST be exactly:
@@ -150,19 +202,18 @@ Line 2 (smaller supporting text): "${curatedText.supportingLine}"
 - DO NOT copy the reference ad's text - only its visual style
 - Spell the text EXACTLY as provided - no changes
 
-Create an advertisement that is a FAITHFUL CLONE of the reference ad's FORMAT (not its text):
+Create an advertisement that is a FAITHFUL CLONE of the reference ad's VISUAL FORMAT (not its text):
 - Use MY PRODUCT from the first image (not the product in the reference ad)
-- EXACTLY match the reference ad's layout, composition, and visual approach
-- Copy the same camera angle, lighting style, background treatment, and framing
+- EXACTLY match the reference ad's visual approach: if it's a graphic design ad with solid colors and bold typography, create the same. If it's photography-based, match that. Do NOT default to lifestyle photography.
+- Copy the same layout, composition, color palette, background treatment, and typography style
 - Match the reference ad's text STYLING and POSITIONING, but use MY text provided above
-- If the reference is minimal, keep it minimal
-- If the reference has bold graphics, match that graphic style
 
 Requirements:
-- The output should look like it came from the same ad campaign as the reference
+- The output MUST look like it came from the same ad campaign as the reference
 - Feature MY product from the first image
-- Match the reference ad's format EXACTLY - this is a clone, not an interpretation
-- Use ONLY the headline and copy text I provided - never the reference ad's text
+- Match the reference ad's format EXACTLY - this is a clone, not a reinterpretation
+- If the reference uses graphic design (solid backgrounds, bold text, no photography), do NOT add lifestyle photography
+- If the reference uses photography, match the photography style
 - Professional quality suitable for Facebook/Instagram ads
 - High resolution output${TEXT_REQUIREMENTS}
 
@@ -520,12 +571,23 @@ export async function POST(request: NextRequest) {
         })
       }
 
+      // For clone mode, use Claude to analyze the reference ad's visual style
+      // so Gemini gets explicit instructions instead of guessing
+      let styleDescription: string | null = null
+      if (hasReferenceAd && (body.style === 'clone' || !body.style)) {
+        console.log('[Imagen] Analyzing reference ad style with Claude...')
+        styleDescription = await analyzeReferenceAdStyle(
+          body.referenceAd!.imageBase64,
+          body.referenceAd!.imageMimeType
+        )
+      }
+
       // Select prompt based on what we have:
       // 1. Reference ad (Clone mode) -> dual-image prompt
       // 2. Custom imagePrompt (Create mode) -> custom prompt with user's direction
       // 3. Neither -> default single-image prompt
       const prompt = hasReferenceAd
-        ? buildDualImagePrompt(body, curatedText)
+        ? buildDualImagePrompt(body, curatedText, styleDescription)
         : body.imagePrompt
           ? buildCustomPrompt(body, curatedText)
           : buildImagePrompt(body, curatedText)
