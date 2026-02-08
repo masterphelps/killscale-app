@@ -671,8 +671,8 @@ export async function POST(request: NextRequest) {
     const hasReferenceAd = body.referenceAd?.imageBase64 && body.referenceAd?.imageMimeType
     let geminiFallbackReason = ''
 
-    console.log('[Imagen] Has product image:', hasProductImage, 'imageBase64 length:', body.product.imageBase64?.length || 0)
-    console.log('[Imagen] Has reference ad:', hasReferenceAd, 'referenceAd length:', body.referenceAd?.imageBase64?.length || 0)
+    console.log('[Imagen] Has product image:', Boolean(hasProductImage), 'imageBase64 length:', body.product.imageBase64?.length || 0, 'mimeType:', body.product.imageMimeType || 'none')
+    console.log('[Imagen] Has reference ad:', Boolean(hasReferenceAd), 'referenceAd length:', body.referenceAd?.imageBase64?.length || 0)
 
     // Use Claude to intelligently pick the best text for the ad image
     console.log('[Imagen] Curating ad text with Claude...')
@@ -720,17 +720,23 @@ export async function POST(request: NextRequest) {
       // 3. Custom imagePrompt (Create mode) -> custom prompt with user's direction
       // 4. Product image only -> default single-image prompt
       let prompt: string
+      let promptType: string
       if (hasReferenceAd && hasProductImage) {
         prompt = buildDualImagePrompt(body, curatedText, styleDescription)
+        promptType = 'dual-image (product + reference)'
       } else if (hasReferenceAd) {
         prompt = buildReferenceOnlyPrompt(body, curatedText, styleDescription)
+        promptType = 'reference-only (no product image)'
       } else if (body.imagePrompt) {
         prompt = buildCustomPrompt(body, curatedText)
+        promptType = 'custom (user prompt)'
       } else {
         prompt = buildImagePrompt(body, curatedText)
+        promptType = 'product-only (no reference)'
       }
       parts.push({ text: prompt })
 
+      console.log('[Imagen] Prompt type:', promptType, '| Parts count:', parts.length, '(images:', parts.length - 1, ')')
       console.log('[Imagen] Using model:', MODEL_NAME)
 
       try {

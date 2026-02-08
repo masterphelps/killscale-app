@@ -820,13 +820,15 @@ export default function AdStudioPage() {
         isRefresh: isRefreshMode,
       }
 
+      console.log('[Ad Studio] Product image present:', Boolean(productInfo.imageBase64), 'length:', productInfo.imageBase64?.length || 0)
+
       // Add reference ad image for style matching (Clone mode)
       if (referenceAdImage) {
         requestBody.referenceAd = {
           imageBase64: referenceAdImage.base64,
           imageMimeType: referenceAdImage.mimeType,
         }
-        console.log('[Ad Studio] Generating image with reference ad style (Clone mode)')
+        console.log('[Ad Studio] Generating image with reference ad style (Clone mode), ref ad length:', referenceAdImage.base64.length)
       } else if (imagePrompts[index]) {
         // Create mode - use user's image prompt
         requestBody.imagePrompt = imagePrompts[index]
