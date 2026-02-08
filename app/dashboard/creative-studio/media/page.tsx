@@ -81,6 +81,7 @@ export default function AllMediaPage() {
   // Launch Wizard state
   const [showLaunchWizard, setShowLaunchWizard] = useState(false)
   const [wizardCreatives, setWizardCreatives] = useState<Creative[]>([])
+  const [showClearStarsPrompt, setShowClearStarsPrompt] = useState(false)
 
   // Upload state
   const [isUploading, setIsUploading] = useState(false)
@@ -805,11 +806,77 @@ export default function AllMediaPage() {
         <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
           <LaunchWizard
             adAccountId={currentAccountId}
-            onComplete={() => setShowLaunchWizard(false)}
-            onCancel={() => setShowLaunchWizard(false)}
+            onComplete={async (result) => {
+              setShowLaunchWizard(false)
+
+              // Hydrate the newly created entity
+              if (result?.createdEntity && user?.id) {
+                try {
+                  await fetch('/api/meta/hydrate-new-entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId: user.id,
+                      adAccountId: currentAccountId,
+                      entityType: result.createdEntity.entityType,
+                      entityId: result.createdEntity.entityId,
+                    })
+                  })
+                } catch (err) {
+                  console.warn('[Media] Hydrate failed:', err)
+                }
+              }
+
+              // Prompt to clear starred items if we built from stars
+              if (wizardCreatives.length > 0 && starredIds.size > 0) {
+                setShowClearStarsPrompt(true)
+              }
+              setWizardCreatives([])
+            }}
+            onCancel={() => {
+              setShowLaunchWizard(false)
+              setWizardCreatives([])
+            }}
             initialEntityType="campaign"
             preloadedCreatives={wizardCreatives}
           />
+        </div>
+      )}
+
+      {/* Clear Stars Prompt */}
+      {showClearStarsPrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-bg-card border border-border rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                <span className="text-green-400 text-lg">✓</span>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Ad Created!</h3>
+            </div>
+            <p className="text-sm text-zinc-400 mb-2">
+              Your ad has been created and is paused for your review.
+            </p>
+            <p className="text-sm text-zinc-500 mb-4">
+              Clear these {starredIds.size} starred items from your list?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowClearStarsPrompt(false)}
+                className="flex-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg font-medium transition-colors"
+              >
+                Keep Stars
+              </button>
+              <button
+                onClick={() => {
+                  clearStarred()
+                  setShowClearStarsPrompt(false)
+                }}
+                className="flex-1 px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg font-medium transition-colors"
+              >
+                Clear Stars
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

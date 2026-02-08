@@ -47,80 +47,104 @@ export async function POST(request: NextRequest) {
     }
     
     const accessToken = connection.access_token
-    
-    // Update status on Meta
-    // The API endpoint is the same for campaigns, adsets, and ads
-    const metaUrl = `${META_GRAPH_URL}/${entityId}`
-    
-    const response = await fetch(metaUrl, {
+
+    // Helper to update a single entity on Meta
+    const updateOnMeta = async (id: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${META_GRAPH_URL}/${id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, access_token: accessToken })
+        })
+        const data = await res.json()
+        if (data.error) {
+          // Don't fail the whole operation — some children may be in states that can't be changed
+          console.warn(`[update-status] Meta API warning for ${id}:`, data.error.message)
+          return false
+        }
+        return true
+      } catch (err) {
+        console.warn(`[update-status] Failed to update ${id}:`, err)
+        return false
+      }
+    }
+
+    // 1. Update the primary entity on Meta
+    const primaryRes = await fetch(`${META_GRAPH_URL}/${entityId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        status: status,
-        access_token: accessToken
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, access_token: accessToken })
     })
-    
-    const result = await response.json()
-    
-    if (result.error) {
-      console.error('Meta API error:', result.error)
-      return NextResponse.json({ 
-        error: result.error.message || 'Failed to update status on Meta'
+    const primaryResult = await primaryRes.json()
+
+    if (primaryResult.error) {
+      console.error('Meta API error:', primaryResult.error)
+      return NextResponse.json({
+        error: primaryResult.error.message || 'Failed to update status on Meta'
       }, { status: 400 })
     }
-    
-    // Update local database to reflect the change, including cascading to child entities.
-    // Meta uses effective_status which cascades (e.g. ads under a paused campaign get
-    // CAMPAIGN_PAUSED). We mirror that cascade locally so changes are visible immediately.
 
+    // 2. Cascade to children on Meta API
+    // When activating/pausing a campaign → also update all its ad sets and ads
+    // When activating/pausing an ad set → also update all its ads
     if (entityType === 'campaign') {
-      const { error: e1 } = await supabase
+      const { data: children } = await supabase
         .from('ad_data')
-        .update({ campaign_status: status })
+        .select('adset_id, ad_id')
         .eq('user_id', userId)
         .eq('campaign_id', entityId)
-      if (e1) console.error('[update-status] campaign_status error:', e1)
 
-      if (status === 'ACTIVE') {
-        // Cascade: children that were CAMPAIGN_PAUSED become ACTIVE
-        await supabase.from('ad_data').update({ adset_status: 'ACTIVE' })
-          .eq('user_id', userId).eq('campaign_id', entityId).eq('adset_status', 'CAMPAIGN_PAUSED')
-        await supabase.from('ad_data').update({ status: 'ACTIVE' })
-          .eq('user_id', userId).eq('campaign_id', entityId).eq('status', 'CAMPAIGN_PAUSED')
-      } else {
-        // Cascade: active children become CAMPAIGN_PAUSED
-        await supabase.from('ad_data').update({ adset_status: 'CAMPAIGN_PAUSED' })
-          .eq('user_id', userId).eq('campaign_id', entityId).eq('adset_status', 'ACTIVE')
-        await supabase.from('ad_data').update({ status: 'CAMPAIGN_PAUSED' })
-          .eq('user_id', userId).eq('campaign_id', entityId).in('status', ['ACTIVE', 'ADSET_PAUSED'])
+      if (children && children.length > 0) {
+        const adsetIds = Array.from(new Set(children.map(c => c.adset_id).filter(Boolean)))
+        const adIds = Array.from(new Set(children.map(c => c.ad_id).filter(Boolean)))
+
+        // Update ad sets first, then ads, with delays to avoid rate limits
+        for (const id of adsetIds) {
+          await updateOnMeta(id)
+          if (adsetIds.length + adIds.length > 3) await new Promise(r => setTimeout(r, 300))
+        }
+        for (const id of adIds) {
+          await updateOnMeta(id)
+          if (adsetIds.length + adIds.length > 3) await new Promise(r => setTimeout(r, 300))
+        }
+        console.log(`[update-status] Cascaded ${status} to ${adsetIds.length} adsets + ${adIds.length} ads in campaign ${entityId}`)
       }
 
     } else if (entityType === 'adset') {
-      const { error: e1 } = await supabase
+      const { data: children } = await supabase
         .from('ad_data')
-        .update({ adset_status: status })
+        .select('ad_id')
         .eq('user_id', userId)
         .eq('adset_id', entityId)
-      if (e1) console.error('[update-status] adset_status error:', e1)
 
-      if (status === 'ACTIVE') {
-        await supabase.from('ad_data').update({ status: 'ACTIVE' })
-          .eq('user_id', userId).eq('adset_id', entityId).eq('status', 'ADSET_PAUSED')
-      } else {
-        await supabase.from('ad_data').update({ status: 'ADSET_PAUSED' })
-          .eq('user_id', userId).eq('adset_id', entityId).eq('status', 'ACTIVE')
+      if (children && children.length > 0) {
+        const adIds = Array.from(new Set(children.map(c => c.ad_id).filter(Boolean)))
+        for (const id of adIds) {
+          await updateOnMeta(id)
+          if (adIds.length > 3) await new Promise(r => setTimeout(r, 300))
+        }
+        console.log(`[update-status] Cascaded ${status} to ${adIds.length} ads in adset ${entityId}`)
       }
+    }
+
+    // 3. Update local database to match what we told Meta
+    if (entityType === 'campaign') {
+      await supabase.from('ad_data')
+        .update({ campaign_status: status, adset_status: status, status: status })
+        .eq('user_id', userId)
+        .eq('campaign_id', entityId)
+
+    } else if (entityType === 'adset') {
+      await supabase.from('ad_data')
+        .update({ adset_status: status, status: status })
+        .eq('user_id', userId)
+        .eq('adset_id', entityId)
 
     } else {
-      const { error: e1 } = await supabase
-        .from('ad_data')
+      await supabase.from('ad_data')
         .update({ status: status })
         .eq('user_id', userId)
         .eq('ad_id', entityId)
-      if (e1) console.error('[update-status] ad status error:', e1)
     }
     
     return NextResponse.json({ 
