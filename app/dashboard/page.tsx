@@ -1816,6 +1816,8 @@ export default function DashboardPage() {
 
         // Hydrate missing campaigns IF date range includes today (for newly created campaigns)
         // This catches campaigns created outside KillScale (directly in Ads Manager)
+        // Each hydration hits Meta API for full hierarchy (campaign → adsets → ads)
+        // so we stagger calls with delays to avoid rate limits
         if (!isGoogle && result.campaignIds && Array.isArray(result.campaignIds)) {
           const todayStr = new Date().toISOString().split('T')[0]
           const dateIncludesToday = datePreset !== 'yesterday' && datePreset !== 'last_month' &&
@@ -1826,8 +1828,16 @@ export default function DashboardPage() {
             const loadedCampaignIds = new Set((newData || []).map(r => r.campaign_id))
             const missingCampaignIds = (result.campaignIds as string[]).filter(id => !loadedCampaignIds.has(id))
 
-            // Hydrate each missing campaign (they may be paused with no insights)
-            for (const campaignId of missingCampaignIds) {
+            if (missingCampaignIds.length > 0) {
+              console.log(`[Sync] Hydrating ${missingCampaignIds.length} missing campaigns (staggered 1.5s apart)`)
+            }
+
+            // Hydrate all missing campaigns sequentially with delays to avoid rate limits
+            for (let i = 0; i < missingCampaignIds.length; i++) {
+              // Wait 1.5s between hydration calls (each makes 3+ Meta API requests)
+              if (i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1500))
+              }
               try {
                 await fetch('/api/meta/hydrate-new-entity', {
                   method: 'POST',
@@ -1836,11 +1846,11 @@ export default function DashboardPage() {
                     userId: user.id,
                     adAccountId: accountId,
                     entityType: 'campaign',
-                    entityId: campaignId,
+                    entityId: missingCampaignIds[i],
                   })
                 })
               } catch (err) {
-                console.warn('[Sync] Failed to hydrate campaign:', campaignId, err)
+                console.warn('[Sync] Failed to hydrate campaign:', missingCampaignIds[i], err)
               }
             }
 
