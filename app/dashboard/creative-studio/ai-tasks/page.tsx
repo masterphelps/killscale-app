@@ -1522,10 +1522,29 @@ function AdSessionDetailPanel({
         <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
           <LaunchWizard
             adAccountId={currentAccountId}
-            onComplete={() => {
+            onComplete={async (result) => {
               setShowLaunchWizard(false)
               setWizardCreatives([])
               setWizardCopy(null)
+
+              // Hydrate the newly created entity so it appears immediately in dashboard/creative suite
+              if (result?.createdEntity && user?.id) {
+                try {
+                  await fetch('/api/meta/hydrate-new-entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId: user.id,
+                      adAccountId: currentAccountId,
+                      entityType: result.createdEntity.entityType,
+                      entityId: result.createdEntity.entityId,
+                    })
+                  })
+                  console.log('[AI Tasks] Hydrated new entity:', result.createdEntity.entityType, result.createdEntity.entityId)
+                } catch (err) {
+                  console.warn('[AI Tasks] Hydrate failed:', err)
+                }
+              }
             }}
             onCancel={() => {
               setShowLaunchWizard(false)
