@@ -744,9 +744,10 @@ export default function AdStudioPage() {
       const ads = data.ads || []
       setGeneratedAds(ads)
 
-      // Save session for AI Tasks page
+      // Save session for AI Tasks page (strip base64 to avoid body size limit)
       if (ads.length > 0) {
         try {
+          const { imageBase64: _img, imageMimeType: _mime, ...sessionProductInfo } = productInfo || {}
           const sessionRes = await fetch('/api/creative-studio/ad-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -754,7 +755,7 @@ export default function AdStudioPage() {
               userId: user.id,
               adAccountId: currentAccountId,
               productUrl,
-              productInfo,
+              productInfo: sessionProductInfo,
               competitorCompany: selectedCompany,
               competitorAd: selectedAd,
               generatedAds: ads,
@@ -1258,14 +1259,19 @@ export default function AdStudioPage() {
 
   // Upload mode: Generate from uploaded image + prompt
   const handleUploadGenerate = useCallback(async () => {
-    if (!uploadedImage || !uploadPrompt.trim() || !user?.id || !currentAccountId) return
+    if (!uploadedImage || !uploadPrompt.trim()) return
+    if (!user?.id || !currentAccountId) {
+      setProductError('Please select an ad account first.')
+      return
+    }
 
     setIsGenerating(true)
     setGeneratedAds([])
     setSessionId(null)
+    setProductError(null)
 
     try {
-      // Create a simple product info from the prompt
+      // Create product info with image for local state
       const uploadProductInfo: ProductInfo = {
         name: 'Custom Product',
         description: uploadPrompt,
@@ -1274,11 +1280,19 @@ export default function AdStudioPage() {
       }
       setProductInfo(uploadProductInfo)
 
+      // For API call, only include image if under 3MB base64 (avoid Vercel body limit)
+      const imageSmallEnough = uploadedImage.base64.length < 3 * 1024 * 1024
+      const apiProduct: ProductInfo = {
+        name: 'Custom Product',
+        description: uploadPrompt,
+        ...(imageSmallEnough ? { imageBase64: uploadedImage.base64, imageMimeType: uploadedImage.mimeType } : {}),
+      }
+
       // Generate ad copy variations using the prompt as the product description
       const res = await fetch('/api/creative-studio/generate-from-product', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: uploadProductInfo }),
+        body: JSON.stringify({ product: apiProduct }),
       })
 
       const data = await res.json()
@@ -1297,9 +1311,10 @@ export default function AdStudioPage() {
       })
       setImagePrompts(prompts)
 
-      // Save session for AI Tasks page
+      // Save session for AI Tasks page (strip base64 to avoid body size limit)
       if (ads.length > 0) {
         try {
+          const { imageBase64: _img, ...sessionProductInfo } = uploadProductInfo
           const sessionRes = await fetch('/api/creative-studio/ad-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1307,7 +1322,7 @@ export default function AdStudioPage() {
               userId: user.id,
               adAccountId: currentAccountId,
               productUrl: 'upload',
-              productInfo: uploadProductInfo,
+              productInfo: sessionProductInfo,
               competitorCompany: null,
               competitorAd: null,
               generatedAds: ads,
@@ -1327,8 +1342,8 @@ export default function AdStudioPage() {
       // Move to step 3 to show results
       setCurrentStep(3)
     } catch (err) {
-      console.error('Generation failed:', err)
-      setProductError('Failed to generate ads. Please try again.')
+      console.error('[AdStudio] Upload generation failed:', err)
+      setProductError(err instanceof Error ? err.message : 'Failed to generate ads. Please try again.')
     } finally {
       setIsGenerating(false)
     }
