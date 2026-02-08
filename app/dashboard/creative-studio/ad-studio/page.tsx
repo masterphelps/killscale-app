@@ -289,6 +289,23 @@ export default function AdStudioPage() {
     }
   }, [productUrl, mode, selectedAd])
 
+  // Handle adding a product image after URL analysis (when extraction failed)
+  const handleAddProductImage = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !productInfo) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1]
+      setProductInfo({
+        ...productInfo,
+        imageBase64: base64,
+        imageMimeType: file.type,
+      })
+    }
+    reader.readAsDataURL(file)
+  }, [productInfo])
+
   // Handle manual product image upload
   const handleManualImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1925,6 +1942,34 @@ export default function AdStudioPage() {
                   Change
                 </button>
               </div>
+
+              {/* Warning when no product image was extracted */}
+              {!productInfo.imageBase64 && (
+                <div className="mt-3 flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-amber-300">No product image found on this page. Image generation will use text-only mode which may produce lower quality results.</p>
+                    <label className="inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-sm cursor-pointer transition-colors">
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload product image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleAddProductImage}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Success indicator when product image was added manually */}
+              {productInfo.imageBase64 && !productInfo.imageUrl && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-emerald-400">
+                  <Check className="w-4 h-4" />
+                  Product image added
+                </div>
+              )}
             </div>
           )}
 

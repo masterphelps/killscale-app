@@ -344,7 +344,9 @@ export async function POST(request: NextRequest) {
             return null
           }
 
-          for (const [derivId, meta] of Object.entries(derivMeta)) {
+          const derivEntries = Object.entries(derivMeta)
+          for (let di = 0; di < derivEntries.length; di++) {
+            const [derivId, meta] = derivEntries[di]
             const title = (meta.title || '').trim()
             if (!title) continue // Can't match without a title
 
@@ -363,6 +365,9 @@ export async function POST(request: NextRequest) {
             } else {
               console.log(`[Media Sync] No match for derivative ${derivId} title="${title}" len=${meta.length}`)
             }
+
+            // Throttle: pause every 10 updates to avoid overwhelming the DB
+            if ((di + 1) % 10 === 0) await delay(200)
           }
 
           console.log(`[Media Sync] Resolved ${derivativesResolved}/${uniqueDerivatives.length} video derivatives`)
@@ -402,8 +407,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Update image URLs in ad_data
-      for (const [hash, url] of Array.from(imageLookup)) {
+      // Update image URLs in ad_data (batched with throttling)
+      const imageEntries = Array.from(imageLookup)
+      for (let i = 0; i < imageEntries.length; i++) {
+        const [hash, url] = imageEntries[i]
         const { error: updateError, count } = await supabaseAdmin
           .from('ad_data')
           .update({ image_url: url }, { count: 'exact' })
@@ -416,10 +423,15 @@ export async function POST(request: NextRequest) {
         } else {
           imageUrlsUpdated += count || 0
         }
+
+        // Throttle: pause every 10 updates to avoid overwhelming the DB
+        if ((i + 1) % 10 === 0) await delay(200)
       }
 
-      // Update video thumbnail URLs in ad_data
-      for (const [hash, thumbUrl] of Array.from(videoLookup)) {
+      // Update video thumbnail URLs in ad_data (batched with throttling)
+      const videoEntries = Array.from(videoLookup)
+      for (let i = 0; i < videoEntries.length; i++) {
+        const [hash, thumbUrl] = videoEntries[i]
         const { error: updateError, count } = await supabaseAdmin
           .from('ad_data')
           .update({ thumbnail_url: thumbUrl }, { count: 'exact' })
@@ -432,6 +444,9 @@ export async function POST(request: NextRequest) {
         } else {
           videoThumbsUpdated += count || 0
         }
+
+        // Throttle: pause every 10 updates to avoid overwhelming the DB
+        if ((i + 1) % 10 === 0) await delay(200)
       }
     }
 

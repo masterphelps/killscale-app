@@ -488,11 +488,6 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     // only some rows match media_library (originals have storage_url, derivatives don't)
     if (!ad.storage_url && row.storage_url) ad.storage_url = row.storage_url
     if (!ad.media_hash && row.media_hash) ad.media_hash = row.media_hash
-    // DEBUG: log first 3 ads thumbnail data
-    if (ad.type === 'ad' && adset.children && adset.children.length <= 3) {
-      console.log('[THUMB DEBUG]', ad.name?.slice(0, 30), { thumbnail_url: row.thumbnail_url?.slice(0, 80), image_url: row.image_url?.slice(0, 80), media_type: row.media_type, media_hash: row.media_hash })
-    }
-
     // Aggregate ad metrics
     ad.impressions += row.impressions
     ad.clicks += row.clicks
