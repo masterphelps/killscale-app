@@ -189,93 +189,75 @@ function buildDualImagePrompt(req: GenerateImageRequest, curatedText: CuratedAdT
       ? `\nTHE REFERENCE AD'S VISUAL STYLE (analyzed):\n${styleDescription}\n\nYou MUST replicate this exact visual style. If it's a graphic design ad, create a graphic design ad — NOT a lifestyle photo. If it uses solid color backgrounds, use solid color backgrounds. Match the style precisely.`
       : ''
 
-    return `I'm providing TWO images:
-1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
-2. SECOND IMAGE: A reference ad - CLONE this exact visual format and style
+    return `TWO IMAGES ARE PROVIDED. READ THIS CAREFULLY:
+
+IMAGE 1 (first image) = MY PRODUCT "${product.name}". This is the product you are advertising. You MUST extract this exact product — its shape, colors, packaging, and appearance — and place it prominently in the generated ad. This product MUST be clearly visible and recognizable in your output.
+
+IMAGE 2 (second image) = STYLE REFERENCE ONLY. This is a competitor's ad. Copy ONLY its visual style (layout, colors, typography, composition). IGNORE the product shown in this image — do NOT use it.
 ${styleBlock}
 
-CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
-The ad text MUST be exactly:
+#1 RULE: The generated ad MUST show MY PRODUCT from IMAGE 1. Not a generic product illustration. Not the competitor's product from IMAGE 2. The actual product from IMAGE 1. If my product is not clearly visible in your output, the task has failed.
+
+STYLE TO CLONE (from IMAGE 2):
+- Replicate the layout, composition, color palette, and background treatment
+- Match the typography style and text positioning
+- If IMAGE 2 is graphic design → create graphic design. If photography → match photography style
+- Do NOT default to lifestyle photography unless IMAGE 2 uses it
+
+AD TEXT (render exactly as written, no labels):
 Line 1 (big/bold text): "${curatedText.headline}"
 Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+- Do NOT use any text from IMAGE 2
+- Spell exactly as provided${TEXT_REQUIREMENTS}
 
-- Use ONLY the two lines of text above
-- DO NOT use any text from the reference ad image
-- DO NOT copy the reference ad's text - only its visual style
-- Spell the text EXACTLY as provided - no changes
-
-Create an advertisement that is a FAITHFUL CLONE of the reference ad's VISUAL FORMAT (not its text):
-- Use MY PRODUCT from the first image (not the product in the reference ad)
-- EXACTLY match the reference ad's visual approach: if it's a graphic design ad with solid colors and bold typography, create the same. If it's photography-based, match that. Do NOT default to lifestyle photography.
-- Copy the same layout, composition, color palette, background treatment, and typography style
-- Match the reference ad's text STYLING and POSITIONING, but use MY text provided above
-
-Requirements:
-- The output MUST look like it came from the same ad campaign as the reference
-- Feature MY product from the first image
-- Match the reference ad's format EXACTLY - this is a clone, not a reinterpretation
-- If the reference uses graphic design (solid backgrounds, bold text, no photography), do NOT add lifestyle photography
-- If the reference uses photography, match the photography style
-- Professional quality suitable for Facebook/Instagram ads
-- High resolution output${TEXT_REQUIREMENTS}
-
-Generate an ad that clones the reference ad's visual format using my product and MY provided text.`
+OUTPUT: An ad with MY PRODUCT (IMAGE 1) placed into the visual style of IMAGE 2, with the text above overlaid. Professional quality for Facebook/Instagram ads.`
   }
 
   // Refresh style - creating a fresh version of user's own fatigued ad
   if (style === 'refresh' || req.isRefresh) {
-    return `I'm providing TWO images:
-1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
-2. SECOND IMAGE: The current ad image that is showing creative fatigue and needs a fresh version
+    return `TWO IMAGES ARE PROVIDED:
 
-CRITICAL TEXT INSTRUCTIONS - READ CAREFULLY:
-The ad text MUST be exactly:
+IMAGE 1 (first image) = MY PRODUCT "${product.name}". Extract this exact product and feature it in the new ad.
+
+IMAGE 2 (second image) = THE CURRENT AD that has creative fatigue and needs a fresh version. Use this to understand what to change — make the new ad look DIFFERENT.
+
+#1 RULE: The generated ad MUST show MY PRODUCT from IMAGE 1. Not the competitor's product, not a generic illustration — my actual product.
+
+AD TEXT (render exactly as written, no labels):
 Line 1 (big/bold text): "${curatedText.headline}"
 Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+- Spell exactly as provided${TEXT_REQUIREMENTS}
 
-- Use ONLY the two lines of text above
-- Spell the text EXACTLY as provided - no changes
-
-Create a FRESH advertisement that looks noticeably different from the reference:
-- Use MY PRODUCT from the first image
+REFRESH STRATEGY (make it look fresh vs IMAGE 2):
 - Create a DIFFERENT composition, angle, color treatment, or background
-- The goal is to look fresh and new while maintaining brand consistency
-- Do NOT clone the reference ad's layout — change it deliberately
-- Keep it professional and suitable for Facebook/Instagram ads
-- If the reference uses warm tones, try cool tones. If centered, try off-center. If minimal, try environmental.
+- If IMAGE 2 uses warm tones → try cool tones. Centered → try off-center. Minimal → try environmental.
+- Do NOT clone IMAGE 2's layout — change it deliberately
+- The goal is to look fresh and new while maintaining brand quality
 
-Requirements:
-- Must be clearly different from the reference ad at first glance
-- Feature MY product from the first image prominently
-- Professional quality suitable for Facebook/Instagram ads
-- High resolution output${TEXT_REQUIREMENTS}
-
-Generate an ad that refreshes the creative while keeping the same product and quality level.`
+OUTPUT: A refreshed ad featuring MY PRODUCT (IMAGE 1) that looks clearly different from IMAGE 2 at first glance. Professional quality for Facebook/Instagram ads.`
   }
 
   // Bold style with reference ad
   if (style === 'bold') {
-    return `I'm providing TWO images:
-1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
-2. SECOND IMAGE: A reference ad - use as inspiration for a BOLD style
+    return `TWO IMAGES ARE PROVIDED:
 
-Create a BOLD, scroll-stopping, pattern-interrupting advertisement that:
-- Features MY PRODUCT from the first image (not the product in the reference ad)
-- Takes inspiration from the reference but makes it MORE bold and attention-grabbing
-- Uses vibrant colors, high contrast, and dynamic composition
+IMAGE 1 (first image) = MY PRODUCT "${product.name}". Extract this exact product and feature it prominently.
 
-The ad text MUST be exactly:
+IMAGE 2 (second image) = STYLE REFERENCE. Use for bold style inspiration only. IGNORE the product in this image.
+
+#1 RULE: The generated ad MUST show MY PRODUCT from IMAGE 1. Not the competitor's product from IMAGE 2.
+
+Create a BOLD, scroll-stopping, pattern-interrupting advertisement:
+- Feature MY PRODUCT from IMAGE 1 as the clear focal point
+- Take inspiration from IMAGE 2 but make it MORE bold and attention-grabbing
+- Vibrant colors, high contrast, dynamic composition
+
+AD TEXT (render exactly as written, no labels):
 Line 1 (big/bold text): "${curatedText.headline}"
 Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+- Spell exactly as provided${TEXT_REQUIREMENTS}
 
-Requirements:
-- Make it impossible to scroll past
-- Include ONLY the two lines of text above - no other text, no labels
-- Spell the text EXACTLY as provided
-- Feature MY product from the first image prominently
-- Professional quality suitable for Facebook/Instagram ads${TEXT_REQUIREMENTS}
-
-Generate a bold, attention-grabbing ad using my product photo.`
+OUTPUT: A bold, impossible-to-scroll-past ad featuring MY PRODUCT (IMAGE 1). Professional quality for Facebook/Instagram ads.`
   }
 
   // Other styles (lifestyle, product, minimal) with reference ad
@@ -287,30 +269,27 @@ Generate a bold, attention-grabbing ad using my product photo.`
 
   const styleGuide = styleDescriptions[style] || styleDescriptions.lifestyle
 
-  return `I'm providing TWO images:
-1. FIRST IMAGE: My product photo (${product.name}) - use this exact product in the ad
-2. SECOND IMAGE: A reference ad - use for general inspiration
+  return `TWO IMAGES ARE PROVIDED:
 
-Create an advertisement with this style: ${styleGuide}
+IMAGE 1 (first image) = MY PRODUCT "${product.name}". Extract this exact product and feature it prominently.
 
-The ad text MUST be exactly:
+IMAGE 2 (second image) = STYLE REFERENCE. Use for general inspiration only. IGNORE the product in this image.
+
+#1 RULE: The generated ad MUST show MY PRODUCT from IMAGE 1. Not the competitor's product from IMAGE 2.
+
+STYLE: ${styleGuide}
+
+AD TEXT (render exactly as written, no labels):
 Line 1 (big/bold text): "${curatedText.headline}"
 Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+- Spell exactly as provided${TEXT_REQUIREMENTS}
 
-The ad should:
-- Feature MY PRODUCT from the first image (not the product in the reference ad)
-- Use the ${style} visual style
-- Take general inspiration from the reference ad's approach
+Create an ad that:
+- Features MY PRODUCT from IMAGE 1 as the focal point
+- Uses the ${style} visual style
+- Takes general inspiration from IMAGE 2's approach
 
-Requirements:
-- Include ONLY the two lines of text above - no other text, no labels
-- Spell the text EXACTLY as provided
-- Feature MY product from the first image prominently
-- Apply the ${style} style to the image
-- Professional quality suitable for Facebook/Instagram ads
-- High resolution output${TEXT_REQUIREMENTS}
-
-Generate a ${style} style ad with text overlay using my product photo.`
+OUTPUT: A ${style} style ad featuring MY PRODUCT (IMAGE 1) with text overlaid. Professional quality for Facebook/Instagram ads.`
 }
 
 // Prompt when we only have reference ad (no product image)
