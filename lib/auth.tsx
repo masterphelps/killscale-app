@@ -118,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     // Clear session-specific flags
     sessionStorage.removeItem('ks_had_valid_subscription')
+    sessionStorage.removeItem('ks_onboarding_checked')
     await supabase.auth.signOut()
     router.push('/login')
   }
