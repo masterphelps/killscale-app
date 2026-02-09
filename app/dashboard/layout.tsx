@@ -98,6 +98,24 @@ export default function DashboardLayout({
     }
   }, [user, loading, router])
 
+  // Invalidate stale sessionStorage flags when the user changes (e.g., sign out → sign up
+  // with a different email in the same tab). Without this, flags from User A bleed into User B's
+  // session and cause the onboarding wizard to be skipped / subscription gate to misfire.
+  useEffect(() => {
+    if (!loading && user) {
+      const storedUserId = sessionStorage.getItem('ks_session_user_id')
+      if (storedUserId !== user.id) {
+        // Different user (or first visit) — clear cached checks
+        sessionStorage.removeItem('ks_onboarding_checked')
+        sessionStorage.removeItem('ks_had_valid_subscription')
+        sessionStorage.setItem('ks_session_user_id', user.id)
+        hadOnboardingChecked.current = false
+        hadValidSubscription.current = false
+        setOnboardingChecked(false)
+      }
+    }
+  }, [user, loading])
+
   // Onboarding gate: redirect to /onboarding if not completed
   useEffect(() => {
     if (!loading && user && !hadOnboardingChecked.current) {
@@ -126,6 +144,10 @@ export default function DashboardLayout({
   // onboarding query returns and redirects new users to /account instead of /onboarding
   useEffect(() => {
     if (!loading && !subLoading && user && onboardingChecked) {
+      // Safety: don't act on stale onboardingChecked state if the ref was just cleared
+      // (refs update synchronously, state updates are deferred to next render)
+      if (!hadOnboardingChecked.current) return
+
       if (plan !== 'None') {
         hadValidSubscription.current = true
         // Persist to sessionStorage to survive component remounts during navigation

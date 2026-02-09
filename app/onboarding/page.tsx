@@ -314,6 +314,8 @@ function OnboardingContent() {
       // Mark that we have a valid subscription (trial just created) so the
       // subscription gate doesn't redirect to /account during the brief loading state
       sessionStorage.setItem('ks_had_valid_subscription', 'true')
+      // Scope flags to this user so they don't bleed into a different account
+      sessionStorage.setItem('ks_session_user_id', user!.id)
 
       // Full page reload so subscription context re-initializes with the new trial
       // router.push would keep the stale 'None' subscription in memory
