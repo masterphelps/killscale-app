@@ -54,14 +54,15 @@ export default function GeneralSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
-  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number; status: string } | null>(null)
+  const [aiUsage, setAiUsage] = useState<{ used: number; planLimit: number; purchased: number; totalAvailable: number; remaining: number; status: string; history?: Array<{ generation_type: string; generation_label: string; credit_cost: number; created_at: string }> } | null>(null)
+  const [showUsageLog, setShowUsageLog] = useState(false)
 
   // Load user preferences
   useEffect(() => {
     if (!user) return
 
-    // Fetch AI generation usage
-    fetch(`/api/ai/usage?userId=${user.id}`)
+    // Fetch AI credit usage
+    fetch(`/api/ai/usage?userId=${user.id}&includeHistory=true`)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setAiUsage(data) })
       .catch(() => {})
@@ -260,39 +261,85 @@ export default function GeneralSettingsPage() {
             </div>
           </div>
 
-          {/* AI Generation Credits */}
-          {aiUsage && aiUsage.limit > 0 && (
+          {/* AI Credits */}
+          {aiUsage && aiUsage.totalAvailable > 0 && (
             <div className="mt-4 pt-4 border-t border-border">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-purple-400" />
-                  <span className="text-sm font-medium text-zinc-300">AI Generation Credits</span>
+                  <span className="text-sm font-medium text-zinc-300">AI Credits</span>
                 </div>
-                <span className="text-xs text-zinc-500">
-                  {aiUsage.status === 'trial' ? 'Trial total' : 'Resets monthly'}
-                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowUsageLog(!showUsageLog)}
+                    className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                  >
+                    {showUsageLog ? 'Hide Usage' : 'See Usage'}
+                  </button>
+                  <span className="text-xs text-zinc-500">
+                    {aiUsage.status === 'trial' ? 'Trial total' : 'Resets monthly'}
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-2 rounded-full bg-zinc-800 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
-                      aiUsage.used >= aiUsage.limit
+                      aiUsage.remaining <= 0
                         ? 'bg-red-500'
-                        : aiUsage.used >= aiUsage.limit * 0.8
+                        : aiUsage.remaining <= aiUsage.totalAvailable * 0.2
                         ? 'bg-amber-500'
                         : 'bg-purple-500'
                     }`}
-                    style={{ width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (aiUsage.used / aiUsage.totalAvailable) * 100)}%` }}
                   />
                 </div>
                 <span className="text-sm font-mono tabular-nums text-zinc-400 whitespace-nowrap">
-                  {aiUsage.used} / {aiUsage.limit}
+                  {aiUsage.used} / {aiUsage.totalAvailable}
                 </span>
               </div>
-              {aiUsage.used >= aiUsage.limit && (
+              {aiUsage.purchased > 0 && (
+                <p className="text-xs text-zinc-500 mt-1">
+                  {aiUsage.planLimit} plan + {aiUsage.purchased} purchased
+                </p>
+              )}
+              {aiUsage.remaining <= 0 && (
                 <p className="text-xs text-red-400 mt-1.5">
                   Limit reached{aiUsage.status === 'active' ? ' — resets next month' : ''}
                 </p>
+              )}
+
+              {/* Usage Log */}
+              {showUsageLog && aiUsage.history && aiUsage.history.length > 0 && (
+                <div className="mt-3 max-h-48 overflow-y-auto border border-border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-zinc-500">
+                        <th className="text-left px-3 py-1.5">Date</th>
+                        <th className="text-left px-3 py-1.5">Type</th>
+                        <th className="text-right px-3 py-1.5">Credits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiUsage.history.map((entry, i) => (
+                        <tr key={i} className="border-b border-border/50 last:border-0">
+                          <td className="px-3 py-1.5 text-zinc-500 tabular-nums">
+                            {new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className="px-3 py-1.5 text-zinc-300">
+                            {entry.generation_label || entry.generation_type || 'Image'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-zinc-400 tabular-nums">
+                            {entry.credit_cost || 5}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {showUsageLog && (!aiUsage.history || aiUsage.history.length === 0) && (
+                <p className="text-xs text-zinc-500 mt-3">No usage yet this period.</p>
               )}
             </div>
           )}

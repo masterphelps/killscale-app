@@ -36,10 +36,13 @@ import {
   Send,
   Megaphone,
   Loader2,
+  Video,
 } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
+import { VideoJobCard } from '@/components/creative-studio/video-job-card'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import type { VideoAnalysis, ScriptSuggestion } from '@/components/creative-studio/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -656,16 +659,20 @@ function AdSessionDetailPanel({
   const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
   const [savedCopyIds, setSavedCopyIds] = useState<Record<number, boolean>>({})
 
-  // AI generation usage tracking
-  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number; status: string } | null>(null)
+  // AI credit usage tracking
+  const [aiUsage, setAiUsage] = useState<{ used: number; planLimit: number; purchased: number; totalAvailable: number; remaining: number; status: string } | null>(null)
 
-  useEffect(() => {
+  const refreshCredits = useCallback(() => {
     if (!user?.id) return
     fetch(`/api/ai/usage?userId=${user.id}`)
       .then(res => res.json())
-      .then(data => { if (data.limit !== undefined) setAiUsage(data) })
+      .then(data => { if (data.totalAvailable !== undefined) setAiUsage(data) })
       .catch(() => {})
   }, [user?.id])
+
+  useEffect(() => {
+    refreshCredits()
+  }, [refreshCredits])
 
   // Image generation state - stores array of versions per ad
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null)
@@ -817,15 +824,15 @@ function AdSessionDetailPanel({
       const data = await res.json()
 
       if (!res.ok) {
-        if (res.status === 429 && data.limit) {
-          setAiUsage({ used: data.used, limit: data.limit, status: data.status })
+        if (res.status === 429 && data.totalAvailable) {
+          setAiUsage({ used: data.used, planLimit: data.totalAvailable, purchased: 0, totalAvailable: data.totalAvailable, remaining: data.remaining || 0, status: data.status })
         }
         setImageErrors(prev => ({ ...prev, [index]: data.error || 'Failed to generate image' }))
         return
       }
 
-      // Optimistically update usage counter
-      setAiUsage(prev => prev ? { ...prev, used: prev.used + 1 } : prev)
+      // Optimistically update credit usage
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + 5, remaining: Math.max(0, prev.remaining - 5) } : prev)
 
       const newImage: GeneratedImage = {
         base64: data.image.base64,
@@ -1229,18 +1236,18 @@ function AdSessionDetailPanel({
         </div>
       </div>
 
-      {/* AI Generation Usage */}
+      {/* AI Credits */}
       {aiUsage && (
         <div className={cn(
           'flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg w-fit',
-          aiUsage.used >= aiUsage.limit
+          aiUsage.remaining <= 0
             ? 'bg-red-500/10 text-red-400 border border-red-500/20'
             : 'bg-zinc-800 text-zinc-400'
         )}>
           <ImagePlus className="w-3 h-3" />
-          {aiUsage.used >= aiUsage.limit
-            ? `Image generation limit reached (${aiUsage.limit}${aiUsage.status === 'active' ? '/mo' : ' total'})`
-            : `${aiUsage.limit - aiUsage.used} image generation${aiUsage.limit - aiUsage.used !== 1 ? 's' : ''} remaining${aiUsage.status === 'active' ? ' this month' : ''}`
+          {aiUsage.remaining <= 0
+            ? `Credit limit reached (${aiUsage.totalAvailable}${aiUsage.status === 'active' ? '/mo' : ' total'})`
+            : `${aiUsage.remaining} credits remaining — Image (5 cr)${aiUsage.status === 'active' ? ' · resets monthly' : ''}`
           }
         </div>
       )}
@@ -1477,11 +1484,11 @@ function AdSessionDetailPanel({
                     <div className="space-y-2">
                       <button
                         onClick={() => handleGenerateImage(ad, index)}
-                        disabled={generatingImageIndex !== null || (aiUsage != null && aiUsage.used >= aiUsage.limit)}
+                        disabled={generatingImageIndex !== null || (aiUsage != null && aiUsage.remaining < 5)}
                         className={cn(
                           'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
                           'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30',
-                          (generatingImageIndex !== null || (aiUsage != null && aiUsage.used >= aiUsage.limit)) && 'opacity-50 cursor-not-allowed'
+                          (generatingImageIndex !== null || (aiUsage != null && aiUsage.remaining < 5)) && 'opacity-50 cursor-not-allowed'
                         )}
                       >
                         {generatingImageIndex === index ? (
@@ -1492,7 +1499,7 @@ function AdSessionDetailPanel({
                         ) : (
                           <>
                             <ImagePlus className="w-4 h-4" />
-                            Generate Image
+                            Generate Image (5 credits)
                           </>
                         )}
                       </button>
@@ -1588,6 +1595,13 @@ export default function AITasksPage() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(true)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
 
+  // Video generation jobs state
+  const [videoJobs, setVideoJobs] = useState<any[]>([])
+  const [isLoadingVideoJobs, setIsLoadingVideoJobs] = useState(true)
+  const [videoGenExpanded, setVideoGenExpanded] = useState(true)
+
+  const router = useRouter()
+
   // Mobile expanded view
   const [mobileExpandedItem, setMobileExpandedItem] = useState<{ type: SelectedItemType; id: string } | null>(null)
 
@@ -1652,10 +1666,33 @@ export default function AITasksPage() {
     }
   }, [user, currentAccountId, selectedSessionId, selectedAnalysisId])
 
+  // Load video generation jobs
+  const loadVideoJobs = useCallback(async () => {
+    if (!user?.id || !currentAccountId) return
+
+    setIsLoadingVideoJobs(true)
+    try {
+      const res = await fetch('/api/creative-studio/video-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId }),
+      })
+      const data = await res.json()
+      if (data.jobs) {
+        setVideoJobs(data.jobs)
+      }
+    } catch (err) {
+      console.error('Failed to load video jobs:', err)
+    } finally {
+      setIsLoadingVideoJobs(false)
+    }
+  }, [user?.id, currentAccountId])
+
   useEffect(() => {
     loadAnalyses()
     loadSessions()
-  }, [loadAnalyses, loadSessions])
+    loadVideoJobs()
+  }, [loadAnalyses, loadSessions, loadVideoJobs])
 
   // Poll for video analysis updates
   useEffect(() => {
@@ -1665,6 +1702,15 @@ export default function AITasksPage() {
     const interval = setInterval(loadAnalyses, 5000)
     return () => clearInterval(interval)
   }, [analyses, loadAnalyses])
+
+  // Poll for video generation job updates
+  useEffect(() => {
+    const hasInProgress = videoJobs.some(j => j.status === 'queued' || j.status === 'generating' || j.status === 'rendering')
+    if (!hasInProgress) return
+
+    const interval = setInterval(loadVideoJobs, 5000)
+    return () => clearInterval(interval)
+  }, [videoJobs, loadVideoJobs])
 
   // Handlers for selecting items
   const handleSelectSession = (sessionId: string) => {
@@ -1707,8 +1753,8 @@ export default function AITasksPage() {
     )
   }
 
-  const isLoading = isLoadingAnalyses || isLoadingSessions
-  const isEmpty = sessions.length === 0 && analyses.length === 0
+  const isLoading = isLoadingAnalyses || isLoadingSessions || isLoadingVideoJobs
+  const isEmpty = sessions.length === 0 && analyses.length === 0 && videoJobs.length === 0
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
@@ -1801,6 +1847,70 @@ export default function AITasksPage() {
                             session={session}
                             isSelected={selectedType === 'session' && session.id === selectedSessionId}
                             onClick={() => handleSelectSession(session.id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Video Generation Section */}
+              <div className="border-b border-border">
+                <button
+                  onClick={() => setVideoGenExpanded(!videoGenExpanded)}
+                  className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/30 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Video className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm font-medium text-white">Video Generation</span>
+                    {videoJobs.length > 0 && (
+                      <span className="text-xs text-zinc-500">({videoJobs.length})</span>
+                    )}
+                    {videoJobs.some(j => j.status === 'generating' || j.status === 'queued') && (
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                      </span>
+                    )}
+                  </div>
+                  {videoGenExpanded ? (
+                    <ChevronUp className="w-4 h-4 text-zinc-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-zinc-500" />
+                  )}
+                </button>
+
+                {videoGenExpanded && (
+                  <div className="pb-2">
+                    {isLoadingVideoJobs && videoJobs.length === 0 ? (
+                      <div className="px-2 space-y-1">
+                        {[1, 2].map((i) => (
+                          <div key={i} className="h-14 bg-zinc-800/50 rounded-lg animate-pulse" />
+                        ))}
+                      </div>
+                    ) : videoJobs.length === 0 ? (
+                      <div className="px-3 py-4 text-center">
+                        <p className="text-xs text-zinc-500 mb-2">No video generations yet</p>
+                        <Link
+                          href="/dashboard/creative-studio/video-studio"
+                          className="text-xs text-blue-400 hover:text-blue-300"
+                        >
+                          Open Video Studio →
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="px-2 space-y-2">
+                        {videoJobs.map((job) => (
+                          <VideoJobCard
+                            key={job.id}
+                            job={job}
+                            compact
+                            onEdit={(jobId) => router.push(`/dashboard/creative-studio/video-editor?jobId=${jobId}`)}
+                            onSaveToLibrary={async (jobId) => {
+                              // TODO: save to media library
+                              console.log('Save to library:', jobId)
+                            }}
                           />
                         ))}
                       </div>

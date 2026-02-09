@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// Detect actual MIME type from base64 magic bytes (browser file.type can lie)
+function detectMimeType(base64: string): string {
+  const header = base64.slice(0, 20)
+  if (header.startsWith('/9j/')) return 'image/jpeg'
+  if (header.startsWith('iVBOR')) return 'image/png'
+  if (header.startsWith('R0lGO')) return 'image/gif'
+  if (header.startsWith('UklGR')) return 'image/webp'
+  return 'image/jpeg' // safe default
+}
+
 interface ProductInfo {
   name: string
   description?: string
@@ -74,11 +84,15 @@ Do not include any other text, markdown, or explanation - just the JSON array.`
     const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
 
     if (hasImage) {
+      const actualMime = detectMimeType(product.imageBase64!)
+      if (actualMime !== product.imageMimeType) {
+        console.log(`[GenerateFromProduct] MIME mismatch: browser said ${product.imageMimeType}, actual is ${actualMime}`)
+      }
       messageContent.push({
         type: 'image',
         source: {
           type: 'base64',
-          media_type: product.imageMimeType!,
+          media_type: actualMime,
           data: product.imageBase64!,
         }
       })

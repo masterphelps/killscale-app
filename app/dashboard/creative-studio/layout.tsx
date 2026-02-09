@@ -9,6 +9,7 @@ import type { StudioAsset, StudioAssetDetail, VideoAnalysis, ScriptSuggestion } 
 import { TheaterModal } from '@/components/creative-studio'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CreativeStudioContext } from './creative-studio-context'
+import { CreditsGauge } from '@/components/creative-studio/credits-gauge'
 
 // Compute date range from preset (same logic as dashboard)
 function getDateRange(preset: string, customStart?: string, customEnd?: string): { since: string; until: string } {
@@ -551,10 +552,11 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
 
   return (
     <CreativeStudioContext.Provider value={value}>
-      {/* Date picker bar — hidden on Best Copy page (always all-time) */}
-      {!hideDatePicker && (
-        <div className="max-w-[1800px] mx-auto px-4 lg:px-8 pt-4">
-          <div className="flex justify-end">
+      {/* Header bar with credits gauge + date picker */}
+      <div className="max-w-[1800px] mx-auto px-4 lg:px-8 pt-4">
+        <div className="flex items-center justify-end gap-3">
+          <CreditsGauge />
+          {!hideDatePicker && (
             <div className="relative">
               <DatePickerButton
                 label={getDateLabel()}
@@ -581,9 +583,9 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
                 }}
               />
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
       {children}
       <TheaterModal
         item={theaterItem}

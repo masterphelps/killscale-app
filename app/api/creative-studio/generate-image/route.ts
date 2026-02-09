@@ -57,6 +57,16 @@ interface GenerateImageRequest {
   isRefresh?: boolean // True when refreshing own ad creative
 }
 
+// Detect actual MIME type from base64 magic bytes (browser file.type can lie)
+function detectMimeType(base64: string): string {
+  const header = base64.slice(0, 20)
+  if (header.startsWith('/9j/')) return 'image/jpeg'
+  if (header.startsWith('iVBOR')) return 'image/png'
+  if (header.startsWith('R0lGO')) return 'image/gif'
+  if (header.startsWith('UklGR')) return 'image/webp'
+  return 'image/jpeg'
+}
+
 // Use Claude vision to describe the reference ad's visual style
 async function analyzeReferenceAdStyle(imageBase64: string, imageMimeType: string): Promise<string | null> {
   const claude = getAnthropic()
@@ -73,7 +83,7 @@ async function analyzeReferenceAdStyle(imageBase64: string, imageMimeType: strin
             type: 'image',
             source: {
               type: 'base64',
-              media_type: imageMimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+              media_type: detectMimeType(imageBase64) as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
               data: imageBase64,
             }
           },
@@ -571,67 +581,57 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check AI generation limits if userId provided
+    // Check AI credit limits if userId provided
     if (body.userId) {
-      // Check both Stripe and admin-granted subscriptions + credit overrides
+      // Inline credit check — mirrors /api/ai/usage logic
+      const PLAN_CREDITS: Record<string, number> = { pro: 500, scale: 500, launch: 500 }
+      const TRIAL_CREDITS = 25
+
       const [subResult, adminSubResult, overrideResult] = await Promise.all([
-        supabaseAdmin
-          .from('subscriptions')
-          .select('plan, status')
-          .eq('user_id', body.userId)
-          .single(),
-        supabaseAdmin
-          .from('admin_granted_subscriptions')
-          .select('plan, is_active, expires_at')
-          .eq('user_id', body.userId)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single(),
-        supabaseAdmin
-          .from('ai_credit_overrides')
-          .select('credit_limit')
-          .eq('user_id', body.userId)
-          .single(),
+        supabaseAdmin.from('subscriptions').select('plan, status').eq('user_id', body.userId).single(),
+        supabaseAdmin.from('admin_granted_subscriptions').select('plan, is_active, expires_at')
+          .eq('user_id', body.userId).eq('is_active', true).order('created_at', { ascending: false }).limit(1).single(),
+        supabaseAdmin.from('ai_credit_overrides').select('credit_limit').eq('user_id', body.userId).single(),
       ])
 
       const sub = subResult.data
       const adminSub = adminSubResult.data
       const override = overrideResult.data
       const hasAdminSub = adminSub?.is_active && new Date(adminSub.expires_at) > new Date()
-
       const isTrial = sub?.status === 'trialing'
       const isActive = sub?.status === 'active' || isTrial || hasAdminSub
 
       if (isActive) {
-        let used = 0
-        let defaultLimit = 50
-        if (isTrial) defaultLimit = 10
-        const limit = override?.credit_limit ?? defaultLimit
+        const plan = sub?.plan || 'launch'
+        let planLimit = isTrial ? TRIAL_CREDITS : (PLAN_CREDITS[plan] || PLAN_CREDITS.launch)
+        if (override?.credit_limit) planLimit = override.credit_limit
 
-        if (isTrial && !override) {
-          const { count } = await supabaseAdmin
-            .from('ai_generation_usage')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', body.userId)
-          used = count || 0
-        } else {
-          const now = new Date()
-          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-          const { count } = await supabaseAdmin
-            .from('ai_generation_usage')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', body.userId)
-            .gte('created_at', monthStart)
-          used = count || 0
+        const now = new Date()
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+
+        // Sum credit_cost for used credits
+        let usedQuery = supabaseAdmin.from('ai_generation_usage').select('credit_cost').eq('user_id', body.userId)
+        if (!isTrial || override) {
+          usedQuery = usedQuery.gte('created_at', monthStart)
         }
+        const { data: usageRows } = await usedQuery
+        const used = (usageRows || []).reduce((sum: number, row: any) => sum + (row.credit_cost || 5), 0)
 
-        if (used >= limit) {
+        // Get purchased credits this month
+        const { data: purchaseRows } = await supabaseAdmin
+          .from('ai_credit_purchases').select('credits').eq('user_id', body.userId).gte('created_at', monthStart)
+        const purchased = (purchaseRows || []).reduce((sum: number, row: any) => sum + row.credits, 0)
+
+        const totalAvailable = planLimit + purchased
+        const IMAGE_CREDIT_COST = 5
+
+        if (used + IMAGE_CREDIT_COST > totalAvailable) {
           return NextResponse.json(
             {
-              error: 'AI generation limit reached',
-              limit,
+              error: 'AI credit limit reached',
+              totalAvailable,
               used,
+              remaining: Math.max(0, totalAvailable - used),
               status: isTrial ? 'trial' : 'active',
             },
             { status: 429 }
@@ -756,11 +756,13 @@ export async function POST(request: NextRequest) {
               base64Data = Buffer.from(rawData as ArrayBuffer).toString('base64')
             }
 
-            // Track usage
+            // Track usage with credit cost
             if (body.userId) {
               await supabaseAdmin.from('ai_generation_usage').insert({
                 user_id: body.userId,
                 generation_type: 'image',
+                credit_cost: 5,
+                generation_label: `Image: ${body.style || 'default'}`,
               })
             }
 
@@ -822,11 +824,13 @@ export async function POST(request: NextRequest) {
 
     console.log('[Imagen] Image generated successfully with Imagen (text-only)')
 
-    // Track usage
+    // Track usage with credit cost
     if (body.userId) {
       await supabaseAdmin.from('ai_generation_usage').insert({
         user_id: body.userId,
         generation_type: 'image',
+        credit_cost: 5,
+        generation_label: `Image: ${body.style || 'default'} (Imagen fallback)`,
       })
     }
 

@@ -33,7 +33,8 @@ import {
   FileText,
   LayoutGrid,
   Sparkles,
-  Wand2
+  Wand2,
+  Video
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -69,7 +70,8 @@ const settingsItems = [
 
 const creativeStudioItems = [
   { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2, isNew: true },
+  { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2 },
+  { href: '/dashboard/creative-studio/video-studio', label: 'Video Studio', icon: Video, isNew: true },
   { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles },
   { href: '/dashboard/creative-studio/active', label: 'Ads', icon: Zap },
   { href: '/dashboard/creative-studio/media', label: 'Media', icon: LayoutGrid },

@@ -45,7 +45,37 @@ export async function POST(request: NextRequest) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
-    
+
+    // Handle credit pack purchases (one-time payments)
+    if (session.metadata?.type === 'credit_pack') {
+      const userId = session.metadata.userId
+      const credits = parseInt(session.metadata.credits || '0', 10)
+
+      if (userId && credits > 0) {
+        try {
+          const { error } = await supabase
+            .from('ai_credit_purchases')
+            .insert({
+              user_id: userId,
+              credits,
+              amount_cents: session.amount_total || 0,
+              stripe_session_id: session.id,
+            })
+
+          if (error) {
+            console.error('Error saving credit purchase:', error)
+          } else {
+            console.log(`[Webhook] Credit pack purchased: ${credits} credits for user ${userId}`)
+          }
+        } catch (err) {
+          console.error('Error processing credit purchase:', err)
+        }
+      }
+      // Return early — credit packs are not subscriptions
+      return NextResponse.json({ received: true })
+    }
+
+    // Handle subscription checkout
     const userId = session.metadata?.userId
     const customerId = session.customer as string
     const subscriptionId = session.subscription as string
@@ -56,7 +86,7 @@ export async function POST(request: NextRequest) {
         const priceId = subscription.items.data[0].price.id
         const plan = PRICE_TO_PLAN[priceId] || 'launch'
 
-        const periodEnd = subscription.current_period_end 
+        const periodEnd = subscription.current_period_end
           ? new Date(subscription.current_period_end * 1000).toISOString()
           : null
 

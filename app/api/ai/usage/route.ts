@@ -6,9 +6,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Plan credit limits
+const PLAN_CREDITS: Record<string, number> = {
+  pro: 500,
+  scale: 500,
+  launch: 500,
+}
+const TRIAL_CREDITS = 25
+
 export async function GET(request: NextRequest) {
   try {
     const userId = request.nextUrl.searchParams.get('userId')
+    const includeHistory = request.nextUrl.searchParams.get('includeHistory') === 'true'
     if (!userId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
@@ -46,45 +55,72 @@ export async function GET(request: NextRequest) {
     const isActive = sub?.status === 'active' || isTrial || hasAdminSub
 
     if (!isActive) {
-      return NextResponse.json({ used: 0, limit: 0, status: 'inactive' })
+      return NextResponse.json({ used: 0, planLimit: 0, purchased: 0, totalAvailable: 0, remaining: 0, status: 'inactive' })
     }
 
-    // Determine the default limit
-    let defaultLimit = 50
-    if (isTrial) defaultLimit = 10
+    // Determine the plan credit limit
+    const plan = sub?.plan || 'launch'
+    let planLimit = isTrial ? TRIAL_CREDITS : (PLAN_CREDITS[plan] || PLAN_CREDITS.launch)
 
     // Credit override takes precedence over plan default
-    const limit = override?.credit_limit ?? defaultLimit
-
-    if (isTrial && !override) {
-      // Trial: count all-time usage
-      const { count } = await supabase
-        .from('ai_generation_usage')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-
-      return NextResponse.json({
-        used: count || 0,
-        limit,
-        status: 'trial',
-      })
+    if (override?.credit_limit) {
+      planLimit = override.credit_limit
     }
 
-    // Active subscriber: count this calendar month
     const now = new Date()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-    const { count } = await supabase
+    // Calculate used credits (SUM of credit_cost)
+    let usedQuery = supabase
       .from('ai_generation_usage')
-      .select('*', { count: 'exact', head: true })
+      .select('credit_cost')
+      .eq('user_id', userId)
+
+    if (!isTrial || override) {
+      // Active subscriber: count this calendar month
+      usedQuery = usedQuery.gte('created_at', monthStart)
+    }
+    // Trial without override: count all-time (no date filter)
+
+    const { data: usageRows } = await usedQuery
+    const used = (usageRows || []).reduce((sum, row) => sum + (row.credit_cost || 5), 0)
+
+    // Get purchased credits (current month only — packs don't roll over)
+    const { data: purchaseRows } = await supabase
+      .from('ai_credit_purchases')
+      .select('credits')
       .eq('user_id', userId)
       .gte('created_at', monthStart)
 
-    return NextResponse.json({
-      used: count || 0,
-      limit,
-      status: hasAdminSub ? 'demo' : 'active',
-    })
+    const purchased = (purchaseRows || []).reduce((sum, row) => sum + row.credits, 0)
+
+    const totalAvailable = planLimit + purchased
+    const remaining = Math.max(0, totalAvailable - used)
+
+    const status = hasAdminSub ? 'demo' : isTrial ? 'trial' : 'active'
+
+    const response: Record<string, any> = {
+      used,
+      planLimit,
+      purchased,
+      totalAvailable,
+      remaining,
+      status,
+    }
+
+    // Optional history for usage log
+    if (includeHistory) {
+      const { data: history } = await supabase
+        .from('ai_generation_usage')
+        .select('generation_type, generation_label, credit_cost, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      response.history = history || []
+    }
+
+    return NextResponse.json(response)
   } catch (err) {
     console.error('[AI Usage] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
