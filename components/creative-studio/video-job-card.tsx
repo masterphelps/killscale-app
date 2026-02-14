@@ -20,6 +20,7 @@ export function VideoJobCard({ job, onEdit, onSaveToLibrary, compact }: VideoJob
   const statusConfig = {
     queued: { icon: Clock, color: 'text-zinc-400', bg: 'bg-zinc-500/10', label: 'Queued' },
     generating: { icon: Loader2, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Generating...' },
+    extending: { icon: Loader2, color: 'text-amber-400', bg: 'bg-amber-500/10', label: 'Extending...' },
     rendering: { icon: Loader2, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Rendering overlay...' },
     complete: { icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: 'Complete' },
     failed: { icon: AlertCircle, color: 'text-red-400', bg: 'bg-red-500/10', label: 'Failed' },
@@ -42,14 +43,22 @@ export function VideoJobCard({ job, onEdit, onSaveToLibrary, compact }: VideoJob
     return (
       <div className="flex items-center gap-3 p-3 bg-bg-card border border-border rounded-lg">
         <div className={`p-1.5 rounded ${config.bg}`}>
-          <StatusIcon className={`w-4 h-4 ${config.color} ${job.status === 'generating' || job.status === 'rendering' ? 'animate-spin' : ''}`} />
+          <StatusIcon className={`w-4 h-4 ${config.color} ${job.status === 'generating' || job.status === 'rendering' || job.status === 'extending' ? 'animate-spin' : ''}`} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm text-white truncate capitalize">{job.video_style.replace(/_/g, ' ')}</div>
-          <div className="text-xs text-zinc-500">{config.label}{job.status === 'generating' ? ` · ${job.progress_pct}%` : ''}</div>
+          <div className="text-xs text-zinc-500">
+            {config.label}
+            {job.status === 'generating' && job.progress_pct > 0 ? ` · ${job.progress_pct}%` : ''}
+            {job.status === 'extending' && job.extension_total ? ` Step ${(job.extension_step || 0) + 1}/${(job.extension_total || 0) + 1}` : ''}
+          </div>
         </div>
         {job.status === 'complete' && videoUrl && (
-          <button onClick={handlePlayToggle} className="p-1.5 rounded-full bg-purple-500/20 text-purple-400 hover:bg-purple-500/30">
+          <button
+            onClick={() => onEdit ? onEdit(job.id) : handlePlayToggle()}
+            className="p-1.5 rounded-full bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+            title={onEdit ? 'Open in editor' : 'Play'}
+          >
             <Play className="w-3 h-3" />
           </button>
         )}
@@ -91,18 +100,23 @@ export function VideoJobCard({ job, onEdit, onSaveToLibrary, compact }: VideoJob
           </div>
         ) : (
           <div className="text-center p-6">
-            <Loader2 className="w-10 h-10 text-purple-400 mx-auto mb-3 animate-spin" />
-            <p className="text-sm text-zinc-400 mb-2">{config.label}</p>
-            {job.progress_pct > 0 && (
-              <div className="w-48 mx-auto">
+            <Loader2 className={`w-10 h-10 mx-auto mb-3 animate-spin ${job.status === 'extending' ? 'text-amber-400' : 'text-purple-400'}`} />
+            <p className="text-sm text-zinc-300">{config.label}</p>
+            {job.status === 'extending' && job.extension_total ? (
+              <p className="text-xs text-zinc-500 mt-1">Step {(job.extension_step || 0) + 1} of {(job.extension_total || 0) + 1}</p>
+            ) : null}
+            {job.progress_pct > 0 ? (
+              <div className="w-48 mx-auto mt-2">
                 <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-purple-500 transition-all duration-500"
+                    className={`h-full rounded-full transition-all duration-1000 ${job.status === 'extending' ? 'bg-amber-500' : 'bg-purple-500'}`}
                     style={{ width: `${job.progress_pct}%` }}
                   />
                 </div>
                 <p className="text-xs text-zinc-500 mt-1">{job.progress_pct}%</p>
               </div>
+            ) : (
+              <p className="text-xs text-zinc-500 mt-1">This usually takes 2–5 minutes</p>
             )}
           </div>
         )}
@@ -113,11 +127,11 @@ export function VideoJobCard({ job, onEdit, onSaveToLibrary, compact }: VideoJob
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <Film className="w-4 h-4 text-zinc-400" />
-            <span className="text-sm font-medium text-white capitalize">{job.video_style.replace(/_/g, ' ')}</span>
+            <span className="text-sm font-medium text-white capitalize">{(job.video_style || '').replace(/_/g, ' ')}</span>
           </div>
-          <span className="text-xs text-zinc-500">{job.duration_seconds}s</span>
+          <span className="text-xs text-zinc-500">{job.target_duration_seconds || job.duration_seconds}s</span>
         </div>
-        <p className="text-xs text-zinc-400 line-clamp-2 mb-3">{job.prompt.slice(0, 120)}...</p>
+        <p className="text-xs text-zinc-400 line-clamp-2 mb-3">{(job.prompt || '').slice(0, 120)}{job.prompt ? '...' : ''}</p>
 
         {job.status === 'complete' && (
           <div className="flex gap-2">
