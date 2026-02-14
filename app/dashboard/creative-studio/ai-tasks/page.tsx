@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { useSubscription } from '@/lib/subscription'
@@ -37,13 +37,22 @@ import {
   Megaphone,
   Loader2,
   Video,
+  Type,
+  Search,
+  Layers,
+  Trash2,
+  Minus,
+  Plus,
 } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
-import { VideoJobCard } from '@/components/creative-studio/video-job-card'
 import { cn } from '@/lib/utils'
+import { ConfirmModal } from '@/components/confirm-modal'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import type { VideoAnalysis, ScriptSuggestion } from '@/components/creative-studio/types'
+import type { VideoJob, OverlayConfig, VideoComposition } from '@/remotion/types'
+import type { ProductKnowledge, AdConcept } from '@/lib/video-prompt-templates'
+import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +110,18 @@ interface AdStudioSession {
   }>
   image_style: string | null
   status: string
+  created_at: string
+  updated_at: string
+}
+
+interface ConceptCanvas {
+  id: string
+  user_id: string
+  ad_account_id: string
+  product_url: string | null
+  product_knowledge: ProductKnowledge
+  concepts: AdConcept[]
+  completed_video_count?: number
   created_at: string
   updated_at: string
 }
@@ -543,22 +564,26 @@ function AnalysisDetailPanel({
 function AnalysisListItem({
   item,
   isSelected,
-  onClick
+  onClick,
+  onDelete
 }: {
   item: AnalysisItem
   isSelected: boolean
   onClick: () => void
+  onDelete?: () => void
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors',
+        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors group',
         isSelected ? 'bg-accent/15 ring-1 ring-accent/50' : 'hover:bg-zinc-800/50'
       )}
     >
       <div className="w-12 h-12 rounded-lg bg-zinc-800 overflow-hidden flex-shrink-0">
-        {item.thumbnailUrl ? (
+        {item.storageUrl ? (
+          <video src={`${item.storageUrl}#t=0.1`} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+        ) : item.thumbnailUrl ? (
           <img src={item.thumbnailUrl} alt="" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -576,6 +601,14 @@ function AnalysisListItem({
           )}
         </div>
       </div>
+      {onDelete && (
+        <div
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </div>
+      )}
     </button>
   )
 }
@@ -585,11 +618,13 @@ function AnalysisListItem({
 function AdSessionListItem({
   session,
   isSelected,
-  onClick
+  onClick,
+  onDelete
 }: {
   session: AdStudioSession
   isSelected: boolean
   onClick: () => void
+  onDelete?: () => void
 }) {
   const productName = session.product_info?.name || 'Untitled Product'
   const competitorName = session.competitor_company?.name || session.competitor_ad?.page_name || 'Unknown'
@@ -600,7 +635,7 @@ function AdSessionListItem({
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors',
+        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors group',
         isSelected ? 'bg-purple-500/15 ring-1 ring-purple-500/50' : 'hover:bg-zinc-800/50'
       )}
     >
@@ -611,8 +646,12 @@ function AdSessionListItem({
         <div className="font-medium text-white text-sm truncate leading-tight">{productName}</div>
         <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500">
           <span>vs {competitorName}</span>
-          <span>•</span>
-          <span>{adCount} ads</span>
+          {adCount > 0 && (
+            <>
+              <span>•</span>
+              <span>{adCount} ads</span>
+            </>
+          )}
           {imageCount > 0 && (
             <>
               <span>•</span>
@@ -621,6 +660,14 @@ function AdSessionListItem({
           )}
         </div>
       </div>
+      {onDelete && (
+        <div
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </div>
+      )}
     </button>
   )
 }
@@ -1568,18 +1615,1078 @@ function AdSessionDetailPanel({
   )
 }
 
+// ─── Video Job Components ─────────────────────────────────────────────────────
+
+function VideoJobStatusBadge({ status, progressPct }: { status: string; progressPct?: number }) {
+  const config: Record<string, { icon: typeof Clock; label: string; color: string; animate: boolean }> = {
+    queued: { icon: Clock, label: 'Queued', color: 'text-zinc-400 bg-zinc-500/20', animate: false },
+    generating: { icon: RefreshCw, label: progressPct && progressPct > 0 ? `${progressPct}%` : 'Generating', color: 'text-purple-400 bg-purple-500/20', animate: true },
+    rendering: { icon: RefreshCw, label: 'Rendering', color: 'text-blue-400 bg-blue-500/20', animate: true },
+    complete: { icon: CheckCircle2, label: 'Complete', color: 'text-emerald-400 bg-emerald-500/20', animate: false },
+    failed: { icon: AlertCircle, label: 'Failed', color: 'text-red-400 bg-red-500/20', animate: false },
+  }
+
+  const { icon: Icon, label, color, animate } = config[status] || config.queued
+
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium', color)}>
+      <Icon className={cn('w-3 h-3', animate && 'animate-spin')} />
+      {label}
+    </span>
+  )
+}
+
+function VideoJobListItem({
+  job,
+  isSelected,
+  onClick
+}: {
+  job: any
+  isSelected: boolean
+  onClick: () => void
+}) {
+  const styleName = (job.video_style || '').replace(/_/g, ' ')
+  const displayName = job.product_name || styleName
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors',
+        isSelected ? 'bg-blue-500/15 ring-1 ring-blue-500/50' : 'hover:bg-zinc-800/50'
+      )}
+    >
+      <div className="w-12 h-12 rounded-lg bg-zinc-800 overflow-hidden flex-shrink-0">
+        {job.thumbnail_url ? (
+          <img src={job.thumbnail_url} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20">
+            <Video className="w-5 h-5 text-blue-400" />
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-white text-sm truncate leading-tight">{displayName}</div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <VideoJobStatusBadge status={job.status} progressPct={job.progress_pct} />
+          <span className="text-xs text-zinc-500">{job.duration_seconds}s</span>
+          {job.product_name && (
+            <>
+              <span className="text-xs text-zinc-600">•</span>
+              <span className="text-xs text-zinc-500 capitalize">{styleName}</span>
+            </>
+          )}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function VideoJobDetailPanel({
+  job,
+  onClose,
+  onRetry,
+  isRetrying,
+}: {
+  job: VideoJob
+  onClose?: () => void
+  onRetry?: (job: VideoJob) => void
+  isRetrying?: boolean
+}) {
+  const router = useRouter()
+  const [promptExpanded, setPromptExpanded] = useState(false)
+  const videoUrl = job.final_video_url || job.raw_video_url
+  const overlay = job.overlay_config as OverlayConfig | undefined
+
+  if (job.status === 'generating' || job.status === 'queued' || job.status === 'rendering') {
+    return (
+      <div className="space-y-6">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden absolute top-4 right-4 p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-purple-500/20 flex items-center justify-center mb-4">
+            <RefreshCw className="w-8 h-8 text-purple-400 animate-spin" />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">Generating Video...</h3>
+          <p className="text-sm text-zinc-400 max-w-sm mb-4">
+            {job.status === 'rendering' ? 'Rendering overlay onto video...' : 'Sora is generating your video. This usually takes 5-10 minutes.'}
+          </p>
+          {job.progress_pct > 0 && (
+            <div className="w-48">
+              <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-purple-500 transition-all duration-1000"
+                  style={{ width: `${job.progress_pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-zinc-500 mt-1">{job.progress_pct}%</p>
+            </div>
+          )}
+        </div>
+
+        {/* Still show prompt while generating */}
+        {job.prompt && (
+          <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 p-4">
+            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Prompt</div>
+            <p className="text-sm text-zinc-300 whitespace-pre-wrap">{job.prompt}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (job.status === 'failed') {
+    return (
+      <div className="space-y-6">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden absolute top-4 right-4 p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+            <AlertCircle className="w-8 h-8 text-red-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">Generation Failed</h3>
+          <p className="text-sm text-zinc-400 max-w-sm mb-5">
+            {job.error_message || 'Something went wrong while generating this video.'}
+          </p>
+          {onRetry && (
+            <button
+              onClick={() => onRetry(job)}
+              disabled={isRetrying}
+              className="flex flex-col items-center gap-1.5 text-emerald-400 hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <RefreshCw className={`w-5 h-5 ${isRetrying ? 'animate-spin' : ''}`} />
+              </div>
+              <span className="text-xs font-semibold">{isRetrying ? 'Retrying...' : 'Retry'}</span>
+            </button>
+          )}
+        </div>
+
+        {job.prompt && (
+          <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 p-4">
+            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Prompt</div>
+            <p className="text-sm text-zinc-300 whitespace-pre-wrap">{job.prompt}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="lg:hidden absolute top-4 right-4 p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Video Preview */}
+      {videoUrl && (
+        <div className="aspect-[9/16] max-h-[500px] rounded-xl overflow-hidden bg-zinc-900 mx-auto">
+          <video
+            src={videoUrl}
+            poster={job.thumbnail_url || undefined}
+            controls
+            playsInline
+            className="w-full h-full object-contain"
+          />
+        </div>
+      )}
+
+      {/* Metadata Row */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 font-medium capitalize">
+            {(job.video_style || '').replace(/_/g, ' ')}
+          </span>
+          <span className="text-xs text-zinc-500">{job.duration_seconds}s</span>
+          <span className="text-xs text-zinc-500">{formatRelativeTime(job.created_at)}</span>
+        </div>
+        <VideoJobStatusBadge status={job.status} />
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}`)}
+          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
+        >
+          <Film className="w-4 h-4" />
+          Edit Video
+        </button>
+        {onRetry && (
+          <button
+            onClick={() => onRetry(job)}
+            disabled={isRetrying}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors border border-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
+            {isRetrying ? 'Generating...' : 'Re-generate'}
+          </button>
+        )}
+      </div>
+
+      {/* Script / Overlay Config */}
+      {overlay && (overlay.hook || (overlay.captions && overlay.captions.length > 0) || overlay.cta) && (
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Script / Overlay</h4>
+
+          {overlay.hook && (
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="text-xs font-semibold text-emerald-400 mb-1">HOOK</div>
+              <p className="text-sm text-zinc-300">{overlay.hook.line1}</p>
+              {overlay.hook.line2 && (
+                <p className="text-sm text-zinc-400 mt-1">{overlay.hook.line2}</p>
+              )}
+            </div>
+          )}
+
+          {overlay.captions && overlay.captions.length > 0 && (
+            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="text-xs font-semibold text-blue-400 mb-1">CAPTIONS</div>
+              <div className="space-y-1.5">
+                {overlay.captions.map((cap, i) => (
+                  <p key={i} className="text-sm text-zinc-300">
+                    <span className="text-xs text-zinc-500 mr-2">{cap.startSec}s–{cap.endSec}s</span>
+                    {cap.text}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {overlay.cta && (
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <div className="text-xs font-semibold text-amber-400 mb-1">CTA</div>
+              <p className="text-sm text-zinc-300">{overlay.cta.buttonText}</p>
+              {overlay.cta.brandName && (
+                <p className="text-xs text-zinc-500 mt-1">{overlay.cta.brandName}</p>
+              )}
+            </div>
+          )}
+
+          {overlay.style && (
+            <div className="text-xs text-zinc-500">
+              Overlay style: <span className="text-zinc-400 capitalize">{overlay.style}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Prompt */}
+      {job.prompt && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
+          <button
+            onClick={() => setPromptExpanded(!promptExpanded)}
+            className="w-full flex items-center justify-between p-4"
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-zinc-400" />
+              <span className="font-semibold text-white text-sm">Sora Prompt</span>
+            </div>
+            {promptExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+          </button>
+          {promptExpanded && (
+            <div className="px-4 pb-4">
+              <p className="text-sm text-zinc-400 whitespace-pre-wrap">{job.prompt}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Concept Canvas Components ──────────────────────────────────────────────
+
+function CanvasListItem({
+  canvas,
+  videoCount,
+  isSelected,
+  onClick,
+  onDelete
+}: {
+  canvas: ConceptCanvas
+  videoCount: number
+  isSelected: boolean
+  onClick: () => void
+  onDelete?: () => void
+}) {
+  const productName = canvas.product_knowledge?.name || 'Untitled Product'
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors group',
+        isSelected ? 'bg-amber-500/15 ring-1 ring-amber-500/50' : 'hover:bg-zinc-800/50'
+      )}
+    >
+      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center flex-shrink-0">
+        <Lightbulb className="w-5 h-5 text-amber-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-white text-sm truncate leading-tight">{productName}</div>
+        <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500">
+          <span>{videoCount} {videoCount === 1 ? 'video' : 'videos'}</span>
+          <span>•</span>
+          <span>{formatRelativeTime(canvas.created_at)}</span>
+        </div>
+      </div>
+      {onDelete && (
+        <div
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </div>
+      )}
+    </button>
+  )
+}
+
+const CONCEPT_COLORS = [
+  { bg: 'bg-amber-500/10', border: 'border-amber-500/30', activeBorder: 'border-amber-500', text: 'text-amber-400', icon: 'text-amber-400' },
+  { bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', activeBorder: 'border-cyan-500', text: 'text-cyan-400', icon: 'text-cyan-400' },
+  { bg: 'bg-rose-500/10', border: 'border-rose-500/30', activeBorder: 'border-rose-500', text: 'text-rose-400', icon: 'text-rose-400' },
+  { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', activeBorder: 'border-emerald-500', text: 'text-emerald-400', icon: 'text-emerald-400' },
+]
+
+function ConceptCanvasDetailPanel({
+  canvas,
+  canvasJobs,
+  onClose,
+  onVideoGenerated,
+  initialExpandedConcept,
+  onDeleteComposition,
+  deletedCompositionId,
+}: {
+  canvas: ConceptCanvas
+  canvasJobs: any[]
+  onClose?: () => void
+  onVideoGenerated?: () => void
+  initialExpandedConcept?: number | null
+  onDeleteComposition?: (compId: string, compName: string) => void
+  deletedCompositionId?: string | null
+}) {
+  const { user } = useAuth()
+  const { currentAccountId } = useAccount()
+  const router = useRouter()
+
+
+
+  const [expandedConcept, setExpandedConcept] = useState<number | null>(initialExpandedConcept ?? null)
+
+  // Per-concept provider + duration settings
+  type ProviderType = 'veo' | 'runway' | 'sora'
+  const PROVIDER_CONFIG: Record<ProviderType, { label: string; fixedDuration: number; baseCost: number }> = {
+    veo: { label: 'Veo 3.1', fixedDuration: 8, baseCost: 50 },
+    runway: { label: 'Runway', fixedDuration: 10, baseCost: 50 },
+    sora: { label: 'Sora', fixedDuration: 12, baseCost: 50 },
+  }
+  const VEO_EXTENSION_STEP = 7
+  const VEO_EXTENSION_COST = 25
+  const [conceptSettings, setConceptSettings] = useState<Record<number, { provider: ProviderType; veoDuration: number }>>({})
+  const getConceptSettings = (i: number) => conceptSettings[i] || { provider: 'veo' as ProviderType, veoDuration: 8 }
+  const getConceptDuration = (i: number) => {
+    const s = getConceptSettings(i)
+    return s.provider === 'veo' ? s.veoDuration : PROVIDER_CONFIG[s.provider].fixedDuration
+  }
+  const getConceptCreditCost = (i: number) => {
+    const s = getConceptSettings(i)
+    if (s.provider !== 'veo') return PROVIDER_CONFIG[s.provider].baseCost
+    const extensions = Math.max(0, (s.veoDuration - 8) / VEO_EXTENSION_STEP)
+    return PROVIDER_CONFIG.veo.baseCost + extensions * VEO_EXTENSION_COST
+  }
+  const getApiProvider = (i: number) => {
+    const s = getConceptSettings(i)
+    return s.provider === 'veo' && s.veoDuration > 8 ? 'veo-ext' : s.provider
+  }
+  const updateConceptSetting = (i: number, updates: Partial<{ provider: ProviderType; veoDuration: number }>) => {
+    setConceptSettings(prev => ({ ...prev, [i]: { ...getConceptSettings(i), ...updates } }))
+  }
+
+  const [generatingIndex, setGeneratingIndex] = useState<number | null>(null)
+  const [generateError, setGenerateError] = useState<string | null>(null)
+  const [extendingIndex, setExtendingIndex] = useState<number | null>(null)
+
+  // Compositions state
+  const [compositions, setCompositions] = useState<VideoComposition[]>([])
+  const [isDeletingComposition, setIsDeletingComposition] = useState<string | null>(null)
+
+  // React to parent-confirmed composition deletions
+  useEffect(() => {
+    if (deletedCompositionId) {
+      setCompositions(prev => prev.filter(c => c.id !== deletedCompositionId))
+    }
+  }, [deletedCompositionId])
+
+  // Fetch compositions for this canvas
+  useEffect(() => {
+    if (!user?.id || !canvas.id) return
+    const fetchCompositions = async () => {
+      try {
+        const res = await fetch(`/api/creative-studio/video-composition?canvasId=${canvas.id}&userId=${user.id}`)
+        const data = await res.json()
+        if (data.compositions) setCompositions(data.compositions)
+      } catch (err) {
+        console.error('Failed to load compositions:', err)
+      }
+    }
+    fetchCompositions()
+  }, [user?.id, canvas.id])
+
+  const handleDeleteComposition = useCallback(async (compId: string) => {
+    if (!user?.id) return
+    setIsDeletingComposition(compId)
+    try {
+      const res = await fetch(`/api/creative-studio/video-composition?compositionId=${compId}&userId=${user.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        setCompositions(prev => prev.filter(c => c.id !== compId))
+      }
+    } catch (err) {
+      console.error('Failed to delete composition:', err)
+    } finally {
+      setIsDeletingComposition(null)
+    }
+  }, [user?.id])
+
+  // Get the latest video job for a given concept index
+  const getJobForConcept = (conceptIndex: number) => {
+    return canvasJobs.find(j => j.ad_index === conceptIndex) || null
+  }
+
+  const handleGenerate = useCallback(async (conceptIndex: number) => {
+    if (!user?.id || !currentAccountId) return
+
+    const concept = canvas.concepts[conceptIndex]
+    if (!concept) return
+
+    const conceptDuration = getConceptDuration(conceptIndex)
+    const apiProvider = getApiProvider(conceptIndex)
+
+    setGeneratingIndex(conceptIndex)
+    setGenerateError(null)
+
+    try {
+      const fullPrompt = concept.videoPrompt || buildConceptSoraPrompt(concept, conceptDuration)
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          prompt: fullPrompt,
+          videoStyle: 'concept',
+          durationSeconds: conceptDuration,
+          canvasId: canvas.id,
+          productName: canvas.product_knowledge?.name || null,
+          adIndex: conceptIndex,
+          productImageBase64: null,
+          productImageMimeType: null,
+          provider: apiProvider,
+          targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
+          overlayConfig: {
+            style: 'bold' as const,
+            hook: {
+              line1: concept.overlay.hook,
+              startSec: 0,
+              endSec: 3,
+              animation: 'pop' as const,
+              fontSize: 56,
+              fontWeight: 800,
+              position: 'center' as const,
+            },
+            captions: (() => {
+              const caps = concept.overlay.captions
+              const captionCount = caps.length
+              const captionStart = 3
+              const captionEnd = conceptDuration - 0.5
+              const segmentDuration = (captionEnd - captionStart) / captionCount
+              return caps.map((text, idx) => ({
+                text,
+                startSec: Math.round((captionStart + idx * segmentDuration) * 10) / 10,
+                endSec: Math.round((captionStart + (idx + 1) * segmentDuration) * 10) / 10,
+                highlight: idx < captionCount - 1,
+                highlightWord: undefined as string | undefined,
+                fontSize: 40,
+                fontWeight: 700,
+                position: 'bottom' as const,
+              }))
+            })(),
+            cta: {
+              buttonText: concept.overlay.cta,
+              startSec: Math.max(conceptDuration - 3, conceptDuration * 0.7),
+              animation: 'slide' as const,
+              fontSize: 32,
+            },
+          },
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setGenerateError(data.error || 'Failed to start video generation')
+        return
+      }
+
+      setGenerateError(null)
+      onVideoGenerated?.()
+    } catch {
+      setGenerateError('Failed to generate video')
+    } finally {
+      setGeneratingIndex(null)
+    }
+  }, [user?.id, currentAccountId, canvas, onVideoGenerated])
+
+  // ─── Extend a completed Veo job by +7s ──────────────────────────────────
+  const handleExtend = useCallback(async (conceptIndex: number) => {
+    if (!user?.id) return
+    const job = getJobForConcept(conceptIndex)
+    if (!job || job.status !== 'complete' || (job.provider !== 'veo-ext' && job.provider !== 'veo')) return
+
+    setExtendingIndex(conceptIndex)
+    try {
+      const res = await fetch('/api/creative-studio/video-status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, userId: user.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Extension failed')
+        return
+      }
+      // Trigger refresh to pick up new status
+      onVideoGenerated?.()
+    } catch (err) {
+      console.error('[AITasks] Extend error:', err)
+      alert('Failed to extend video')
+    } finally {
+      setExtendingIndex(null)
+    }
+  }, [user?.id, canvasJobs, onVideoGenerated])
+
+  return (
+    <div className="space-y-6">
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="lg:hidden absolute top-4 right-4 p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Header */}
+      <div>
+        <h3 className="text-lg font-bold text-white">{canvas.product_knowledge.name}</h3>
+        {canvas.product_url && (
+          <a
+            href={canvas.product_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-zinc-500 hover:text-purple-400 flex items-center gap-1 mt-1"
+          >
+            <ExternalLink className="w-3 h-3" />
+            {canvas.product_url}
+          </a>
+        )}
+        <p className="text-xs text-zinc-500 mt-1">{formatRelativeTime(canvas.created_at)}</p>
+      </div>
+
+      {/* Concept cards */}
+      <div className="space-y-4">
+        {canvas.concepts.map((concept, i) => {
+          const colors = CONCEPT_COLORS[i % CONCEPT_COLORS.length]
+          const isExpanded = expandedConcept === i
+          const job = getJobForConcept(i)
+          const videoUrl = job?.final_video_url || job?.raw_video_url
+          const hasVideo = job?.status === 'complete' && videoUrl
+          const isJobInProgress = job?.status === 'generating' || job?.status === 'queued' || job?.status === 'rendering' || job?.status === 'extending'
+
+
+
+          return (
+            <div
+              key={i}
+              className={cn(
+                'rounded-xl border-2 transition-all',
+                isExpanded ? `${colors.activeBorder} ${colors.bg}` : 'border-border hover:border-zinc-600 bg-bg-card'
+              )}
+            >
+              {/* Card header */}
+              <button
+                onClick={() => setExpandedConcept(isExpanded ? null : i)}
+                className="w-full p-4 text-left"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={cn(
+                    'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold',
+                    isExpanded ? `${colors.bg} ${colors.text}` : 'bg-zinc-800 text-zinc-500'
+                  )}>
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <h4 className="font-bold text-white text-sm">{concept.title}</h4>
+                      {concept.angle && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-300">
+                          {concept.angle}
+                        </span>
+                      )}
+                      {hasVideo && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400">
+                          Video Ready
+                        </span>
+                      )}
+                      {isJobInProgress && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-400 flex items-center gap-1">
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                          Generating
+                        </span>
+                      )}
+                      {job?.status === 'failed' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/20 text-red-400">
+                          Failed
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-zinc-300 mb-1">{concept.logline}</p>
+                    <p className="text-xs text-zinc-500 italic">{concept.whyItWorks}</p>
+                  </div>
+                  <div className="flex-shrink-0 text-zinc-500">
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </div>
+              </button>
+
+              {/* Expanded: script + overlay + video */}
+              {isExpanded && (
+                <div className="px-4 pb-4 border-t border-border/50 pt-3">
+                  {/* Video section — shown first when a video exists */}
+                  {hasVideo && (
+                    <div className="mb-4">
+                      <div className="flex items-center gap-3 justify-center">
+                        <div className="rounded-xl overflow-hidden bg-zinc-900" style={{ maxHeight: 360, maxWidth: 202, aspectRatio: '9/16' }}>
+                          <video
+                            src={videoUrl}
+                            poster={job.thumbnail_url || undefined}
+                            controls
+                            playsInline
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        {/* +7 sec extend button — for any Veo job */}
+                        {(job.provider === 'veo-ext' || job.provider === 'veo') && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleExtend(i) }}
+                            disabled={extendingIndex === i}
+                            className="flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl text-sm font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {extendingIndex === i ? (
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                              <Plus className="w-5 h-5" />
+                            )}
+                            <span className="whitespace-nowrap">+ 7 sec</span>
+                            <span className="text-[10px] text-amber-400/60">25 credits</span>
+                          </button>
+                        )}
+                      </div>
+                      {/* Duration badge */}
+                      {(job.provider === 'veo-ext' || job.provider === 'veo') && (
+                        <p className="text-center text-xs text-zinc-500 mt-2">
+                          {job.duration_seconds || job.target_duration_seconds || 8}s video
+                        </p>
+                      )}
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}`) }}
+                          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
+                        >
+                          <Film className="w-3.5 h-3.5" />
+                          Edit Video
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
+                          disabled={generatingIndex === i}
+                          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border disabled:opacity-50"
+                        >
+                          <RefreshCw className={cn('w-3.5 h-3.5', generatingIndex === i && 'animate-spin')} />
+                          Re-generate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generating / Extending state */}
+                  {isJobInProgress && (
+                    <div className={cn(
+                      'mb-4 p-6 rounded-xl bg-zinc-900/50 text-center',
+                      job.status === 'extending' ? 'border border-amber-500/20' : 'border border-blue-500/20'
+                    )}>
+                      <RefreshCw className={cn(
+                        'w-8 h-8 animate-spin mx-auto mb-3',
+                        job.status === 'extending' ? 'text-amber-400' : 'text-blue-400'
+                      )} />
+                      <p className="text-sm font-medium text-white mb-1">
+                        {job.status === 'extending'
+                          ? `Extending video... Step ${(job.extension_step || 0) + 1} of ${(job.extension_total || 0) + 1}`
+                          : 'Generating Video...'}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        {job.status === 'extending'
+                          ? 'Adding 7 more seconds...'
+                          : job.status === 'rendering'
+                            ? 'Rendering overlay...'
+                            : 'Usually takes 2-5 minutes'}
+                      </p>
+                      {job.progress_pct > 0 && (
+                        <div className="w-32 mx-auto mt-3">
+                          <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all duration-1000',
+                                job.status === 'extending' ? 'bg-amber-500' : 'bg-blue-500'
+                              )}
+                              style={{ width: `${job.progress_pct}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-1">{job.progress_pct}%</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Failed state */}
+                  {job?.status === 'failed' && (
+                    <div className="mb-4 p-4 rounded-xl bg-red-500/5 border border-red-500/20">
+                      <div className="flex items-center gap-2 text-red-400 text-sm mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        {job.error_message || 'Video generation failed'}
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
+                        disabled={generatingIndex === i}
+                        className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn('w-3.5 h-3.5', generatingIndex === i && 'animate-spin')} />
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Visual metaphor */}
+                  <div className={cn('rounded-lg p-3 mb-3', colors.bg)}>
+                    <div className={cn('text-[10px] uppercase tracking-wider font-semibold mb-1', colors.text)}>Visual Metaphor</div>
+                    <p className="text-sm text-zinc-300">{concept.visualMetaphor}</p>
+                  </div>
+
+                  {/* Script sections — only if concept has script data */}
+                  {concept.script ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Eye className="w-3 h-3 text-zinc-500" />
+                            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Scene</span>
+                          </div>
+                          <p className="text-xs text-zinc-400 leading-relaxed">{concept.script.scene}</p>
+                        </div>
+                        {concept.script.subject && (
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Video className="w-3 h-3 text-zinc-500" />
+                              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Subject</span>
+                            </div>
+                            <p className="text-xs text-zinc-400 leading-relaxed">{concept.script.subject}</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Zap className="w-3 h-3 text-zinc-500" />
+                            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Action</span>
+                          </div>
+                          <p className="text-xs text-zinc-400 leading-relaxed">{concept.script.action}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Sparkles className="w-3 h-3 text-zinc-500" />
+                            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Mood</span>
+                          </div>
+                          <p className="text-xs text-zinc-400 leading-relaxed">{concept.script.mood}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : concept.videoPrompt ? (
+                    <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-3 mb-3">
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1">Motion Prompt</div>
+                      <p className="text-sm text-zinc-300">{concept.videoPrompt}</p>
+                    </div>
+                  ) : null}
+
+                  {/* Overlay preview */}
+                  {concept.overlay && (
+                    <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-3">
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-2">Text Overlays</div>
+                      <div className="space-y-2">
+                        {concept.overlay.hook && (
+                          <div className="flex items-start gap-2">
+                            <Type className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
+                            <div>
+                              <span className="text-[10px] text-zinc-500 uppercase">Hook</span>
+                              <p className="text-sm font-semibold text-white">{concept.overlay.hook}</p>
+                            </div>
+                          </div>
+                        )}
+                        {(concept.overlay.captions || []).map((caption: string, ci: number) => (
+                          <div key={ci} className="flex items-start gap-2">
+                            <MessageSquare className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-zinc-600" />
+                            <div>
+                              <span className="text-[10px] text-zinc-500 uppercase">Caption {ci + 1}</span>
+                              <p className="text-sm text-zinc-300">{caption}</p>
+                            </div>
+                          </div>
+                        ))}
+                        {concept.overlay.cta && (
+                          <div className="flex items-start gap-2">
+                            <MousePointer className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
+                            <div>
+                              <span className="text-[10px] text-zinc-500 uppercase">CTA</span>
+                              <p className="text-sm font-semibold text-white">{concept.overlay.cta}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Provider + Duration + Generate — shown when no job exists */}
+                  {!job && (() => {
+                    const cs = getConceptSettings(i)
+                    const cDuration = getConceptDuration(i)
+                    const cCost = getConceptCreditCost(i)
+                    return (
+                      <>
+                        {generateError && generatingIndex === i && (
+                          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm mb-3">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            {generateError}
+                          </div>
+                        )}
+
+                        {/* Provider + Duration row */}
+                        <div className="flex items-center gap-3 mt-3 mb-3 flex-wrap">
+                          {/* Provider pills */}
+                          <div className="flex gap-1.5">
+                            {(['veo', 'runway', 'sora'] as ProviderType[]).map(p => (
+                              <button
+                                key={p}
+                                onClick={(e) => { e.stopPropagation(); updateConceptSetting(i, { provider: p }) }}
+                                className={cn(
+                                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                                  cs.provider === p
+                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                    : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+                                )}
+                              >
+                                {PROVIDER_CONFIG[p].label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Duration stepper — Veo only */}
+                          {cs.provider === 'veo' && (
+                            <div className="flex items-center gap-0 rounded-lg border border-zinc-700/50 bg-zinc-800/50 overflow-hidden">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (cs.veoDuration > 8) updateConceptSetting(i, { veoDuration: cs.veoDuration - VEO_EXTENSION_STEP })
+                                }}
+                                disabled={cs.veoDuration <= 8}
+                                className="px-2 py-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="px-3 py-1.5 text-xs font-bold text-white min-w-[3rem] text-center tabular-nums">
+                                {cs.veoDuration}s
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  updateConceptSetting(i, { veoDuration: cs.veoDuration + VEO_EXTENSION_STEP })
+                                }}
+                                className="px-2 py-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Fixed duration badge — Runway/Sora */}
+                          {cs.provider !== 'veo' && (
+                            <span className="text-xs text-zinc-500">{PROVIDER_CONFIG[cs.provider].fixedDuration}s</span>
+                          )}
+
+                          {/* Credit cost */}
+                          <span className="text-xs text-zinc-500 ml-auto">{cCost} credits</span>
+                        </div>
+
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
+                          disabled={generatingIndex !== null}
+                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                        >
+                          {generatingIndex === i ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Starting generation...
+                            </>
+                          ) : (
+                            <>
+                              <Video className="w-4 h-4" />
+                              Generate {cDuration}s Video
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Compositions section */}
+      {compositions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-purple-400" />
+            <h4 className="text-sm font-semibold text-white">Compositions</h4>
+            <span className="text-xs text-zinc-500">({compositions.length})</span>
+          </div>
+          {compositions.map((comp) => {
+            // Resolve thumbnail from first source job
+            const firstSourceJob = canvasJobs.find(j => j.id === comp.sourceJobIds[0])
+            const thumbUrl = comp.thumbnailUrl || firstSourceJob?.thumbnail_url || firstSourceJob?.raw_video_url
+
+            return (
+              <div
+                key={comp.id}
+                className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3"
+              >
+                <div className="flex gap-3">
+                  {/* Thumbnail */}
+                  <div className="flex-shrink-0 w-16 h-28 rounded-lg overflow-hidden bg-zinc-900">
+                    {thumbUrl ? (
+                      <video
+                        src={thumbUrl}
+                        className="w-full h-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Layers className="w-5 h-5 text-zinc-700" />
+                      </div>
+                    )}
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/20 text-purple-300">
+                        Composition
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-white truncate">
+                      {comp.title || `Composition ${comp.id.slice(0, 6)}`}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {comp.sourceJobIds.length} clips
+                      {comp.durationSeconds ? ` · ${Math.round(comp.durationSeconds)}s` : ''}
+                    </p>
+                    <p className="text-xs text-zinc-600 mt-0.5">
+                      {new Date(comp.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                    {/* Actions */}
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => router.push(`/dashboard/creative-studio/video-editor?compositionId=${comp.id}`)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
+                      >
+                        <Film className="w-3 h-3" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => onDeleteComposition
+                          ? onDeleteComposition(comp.id, comp.title || `Composition ${comp.id.slice(0, 6)}`)
+                          : handleDeleteComposition(comp.id)
+                        }
+                        disabled={isDeletingComposition === comp.id}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                      >
+                        {isDeletingComposition === comp.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {generateError && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {generateError}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-type SelectedItemType = 'session' | 'analysis' | null
+type SelectedItemType = 'session' | 'analysis' | 'canvas' | null
 
 export default function AITasksPage() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
   const { plan } = useSubscription()
+  const searchParams = useSearchParams()
 
-  // Section expansion state
-  const [adGenExpanded, setAdGenExpanded] = useState(true)
-  const [videoExpanded, setVideoExpanded] = useState(true)
+  // Section expansion state (collapsed by default)
+  const [adGenExpanded, setAdGenExpanded] = useState(false)
+  const [videoExpanded, setVideoExpanded] = useState(false)
 
   // Track which type of item is selected
   const [selectedType, setSelectedType] = useState<SelectedItemType>(null)
@@ -1594,21 +2701,47 @@ export default function AITasksPage() {
   const [sessions, setSessions] = useState<AdStudioSession[]>([])
   const [isLoadingSessions, setIsLoadingSessions] = useState(true)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const [detailSession, setDetailSession] = useState<AdStudioSession | null>(null)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false)
 
   // Video generation jobs state
   const [videoJobs, setVideoJobs] = useState<any[]>([])
   const [isLoadingVideoJobs, setIsLoadingVideoJobs] = useState(true)
-  const [videoGenExpanded, setVideoGenExpanded] = useState(true)
+  // (video jobs loaded for inline display within canvases, no standalone section)
+
+  // Video concept canvases state
+  const [canvases, setCanvases] = useState<ConceptCanvas[]>([])
+  const [isLoadingCanvases, setIsLoadingCanvases] = useState(true)
+  const [canvasExpanded, setCanvasExpanded] = useState(false)
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
+  const [selectedCanvas, setSelectedCanvas] = useState<ConceptCanvas | null>(null)
+  const [isLoadingCanvas, setIsLoadingCanvas] = useState(false)
+
+  // Deep-link state: which concept to auto-expand when returning from video editor
+  const [initialConceptIndex, setInitialConceptIndex] = useState<number | null>(null)
+  const deepLinkHandledRef = useRef(false)
 
   const router = useRouter()
 
   // Mobile expanded view
-  const [mobileExpandedItem, setMobileExpandedItem] = useState<{ type: SelectedItemType; id: string } | null>(null)
+  const [mobileExpandedItem, setMobileExpandedItem] = useState<{ type: NonNullable<SelectedItemType>; id: string } | null>(null)
 
   const isPro = !!plan
 
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    type: 'session' | 'canvas' | 'analysis' | 'composition'
+    id: string
+    name: string
+  } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [lastDeletedCompositionId, setLastDeletedCompositionId] = useState<string | null>(null)
+
+  // Ref to prevent auto-select from overriding manual selections
+  const hasUserSelectedRef = useRef(false)
+
   const selectedAnalysis = analyses.find(a => a.id === selectedAnalysisId) || null
-  const selectedSession = sessions.find(s => s.id === selectedSessionId) || null
+  const selectedSession = detailSession && detailSession.id === selectedSessionId ? detailSession : null
 
   // Load video analyses
   const loadAnalyses = useCallback(async () => {
@@ -1653,10 +2786,17 @@ export default function AITasksPage() {
 
       if (data.sessions) {
         setSessions(data.sessions)
-        // Auto-select first session if we have sessions
-        if (data.sessions.length > 0 && !selectedSessionId && !selectedAnalysisId) {
-          setSelectedSessionId(data.sessions[0].id)
+        // Auto-select first session only on very first load (ref prevents stale closure race)
+        if (data.sessions.length > 0 && !hasUserSelectedRef.current) {
+          hasUserSelectedRef.current = true
+          const firstId = data.sessions[0].id
+          setSelectedSessionId(firstId)
           setSelectedType('session')
+          // Fetch full detail for auto-selected session
+          fetch(`/api/creative-studio/ad-session?userId=${user!.id}&sessionId=${firstId}`)
+            .then(r => r.json())
+            .then(d => { if (d.session) setDetailSession(d.session) })
+            .catch(() => {})
         }
       }
     } catch (err) {
@@ -1664,10 +2804,11 @@ export default function AITasksPage() {
     } finally {
       setIsLoadingSessions(false)
     }
-  }, [user, currentAccountId, selectedSessionId, selectedAnalysisId])
+  }, [user, currentAccountId])
 
   // Load video generation jobs
-  const loadVideoJobs = useCallback(async () => {
+  // skipPolling=true on initial load (fast DB-only read), false on poll interval (external API calls)
+  const loadVideoJobs = useCallback(async (skipPolling = false) => {
     if (!user?.id || !currentAccountId) return
 
     setIsLoadingVideoJobs(true)
@@ -1675,7 +2816,7 @@ export default function AITasksPage() {
       const res = await fetch('/api/creative-studio/video-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId }),
+        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, skipPolling }),
       })
       const data = await res.json()
       if (data.jobs) {
@@ -1688,48 +2829,233 @@ export default function AITasksPage() {
     }
   }, [user?.id, currentAccountId])
 
+  // Load video concept canvases
+  const loadCanvases = useCallback(async () => {
+    if (!user?.id || !currentAccountId) return
+
+    setIsLoadingCanvases(true)
+    try {
+      const params = new URLSearchParams({
+        userId: user.id,
+        adAccountId: currentAccountId,
+      })
+
+      const res = await fetch(`/api/creative-studio/video-canvas?${params}`)
+      const data = await res.json()
+
+      if (data.canvases) {
+        setCanvases(data.canvases)
+      }
+    } catch (err) {
+      console.error('Failed to load canvases:', err)
+    } finally {
+      setIsLoadingCanvases(false)
+    }
+  }, [user?.id, currentAccountId])
+
   useEffect(() => {
     loadAnalyses()
     loadSessions()
-    loadVideoJobs()
-  }, [loadAnalyses, loadSessions, loadVideoJobs])
+    loadVideoJobs(true) // skipPolling=true on initial load (fast DB-only read)
+    loadCanvases()
+  }, [loadAnalyses, loadSessions, loadVideoJobs, loadCanvases])
 
-  // Poll for video analysis updates
+  // Poll for video analysis updates (15s interval, stop after 10 min)
   useEffect(() => {
     const hasProcessing = analyses.some(a => a.status === 'processing')
     if (!hasProcessing) return
 
-    const interval = setInterval(loadAnalyses, 5000)
+    const startTime = Date.now()
+    const interval = setInterval(() => {
+      if (Date.now() - startTime > 600000) { clearInterval(interval); return } // 10 min max
+      loadAnalyses()
+    }, 15000)
     return () => clearInterval(interval)
   }, [analyses, loadAnalyses])
 
-  // Poll for video generation job updates
+  // Poll for video generation job updates (15s interval, stop after 10 min)
   useEffect(() => {
-    const hasInProgress = videoJobs.some(j => j.status === 'queued' || j.status === 'generating' || j.status === 'rendering')
+    const hasInProgress = videoJobs.some(j => j.status === 'queued' || j.status === 'generating' || j.status === 'rendering' || j.status === 'extending')
     if (!hasInProgress) return
 
-    const interval = setInterval(loadVideoJobs, 5000)
+    const startTime = Date.now()
+    const interval = setInterval(() => {
+      if (Date.now() - startTime > 600000) { clearInterval(interval); return } // 10 min max
+      loadVideoJobs() // skipPolling=false (default) — poll external providers
+    }, 15000)
     return () => clearInterval(interval)
   }, [videoJobs, loadVideoJobs])
 
   // Handlers for selecting items
-  const handleSelectSession = (sessionId: string) => {
+  const handleSelectSession = useCallback(async (sessionId: string) => {
+    hasUserSelectedRef.current = true
     setSelectedSessionId(sessionId)
     setSelectedAnalysisId(null)
+    setSelectedCanvasId(null)
+    setSelectedCanvas(null)
     setSelectedType('session')
     if (window.innerWidth < 1024) {
       setMobileExpandedItem({ type: 'session', id: sessionId })
     }
-  }
+    // Fetch full session detail (list query excludes heavy JSONB like competitor_ad)
+    if (!user?.id) return
+    setIsLoadingDetail(true)
+    try {
+      const res = await fetch(`/api/creative-studio/ad-session?userId=${user.id}&sessionId=${sessionId}`)
+      const data = await res.json()
+      if (data.session) {
+        setDetailSession(data.session)
+      }
+    } catch (err) {
+      console.error('[AI Tasks] Failed to load session detail:', err)
+    } finally {
+      setIsLoadingDetail(false)
+    }
+  }, [user?.id])
 
-  const handleSelectAnalysis = (analysisId: string) => {
+  const handleSelectAnalysis = useCallback(async (analysisId: string) => {
     setSelectedAnalysisId(analysisId)
     setSelectedSessionId(null)
+    setSelectedCanvasId(null)
+    setSelectedCanvas(null)
     setSelectedType('analysis')
     if (window.innerWidth < 1024) {
       setMobileExpandedItem({ type: 'analysis', id: analysisId })
     }
-  }
+
+    // Fetch full analysis detail (list endpoint only returns status, not full analysis/transcript/scripts)
+    const item = analyses.find(a => a.id === analysisId)
+    if (!item || !user?.id || !currentAccountId) return
+    if (item.analysis) return // Already loaded
+
+    try {
+      const params = new URLSearchParams({
+        userId: user.id,
+        adAccountId: currentAccountId,
+        mediaHash: item.mediaHash,
+      })
+      const res = await fetch(`/api/creative-studio/analyze-video?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.status === 'complete' && data.analysis) {
+          setAnalyses(prev => prev.map(a =>
+            a.id === analysisId
+              ? { ...a, analysis: data.analysis, transcript: data.transcript, scriptSuggestions: data.scriptSuggestions }
+              : a
+          ))
+        }
+      }
+    } catch (err) {
+      console.error('[AI Tasks] Failed to load analysis detail:', err)
+    }
+  }, [analyses, user?.id, currentAccountId])
+
+  // Select a concept canvas
+  const handleSelectCanvas = useCallback(async (canvasId: string) => {
+    hasUserSelectedRef.current = true
+    setSelectedCanvasId(canvasId)
+    setSelectedSessionId(null)
+    setSelectedAnalysisId(null)
+    setSelectedType('canvas')
+    if (window.innerWidth < 1024) {
+      setMobileExpandedItem({ type: 'canvas', id: canvasId })
+    }
+    // Fetch full canvas with concepts
+    if (!user?.id) return
+    setIsLoadingCanvas(true)
+    try {
+      const res = await fetch(`/api/creative-studio/video-canvas?userId=${user.id}&canvasId=${canvasId}`)
+      const data = await res.json()
+      if (data.canvas) {
+        setSelectedCanvas(data.canvas)
+      }
+    } catch (err) {
+      console.error('[AI Tasks] Failed to load canvas detail:', err)
+    } finally {
+      setIsLoadingCanvas(false)
+    }
+  }, [user?.id])
+
+  // Callback when a video is generated from a canvas concept
+  const handleCanvasVideoGenerated = useCallback(() => {
+    loadVideoJobs()
+  }, [loadVideoJobs])
+
+  // Unified delete handler
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteConfirm || !user?.id) return
+    setIsDeleting(true)
+    try {
+      let url = ''
+      switch (deleteConfirm.type) {
+        case 'session':
+          url = `/api/creative-studio/ad-session?userId=${user.id}&sessionId=${deleteConfirm.id}`
+          break
+        case 'canvas':
+          url = `/api/creative-studio/video-canvas?userId=${user.id}&canvasId=${deleteConfirm.id}`
+          break
+        case 'analysis':
+          url = `/api/creative-studio/video-analyses?userId=${user.id}&analysisId=${deleteConfirm.id}`
+          break
+        case 'composition':
+          url = `/api/creative-studio/video-composition?compositionId=${deleteConfirm.id}&userId=${user.id}`
+          break
+      }
+      const res = await fetch(url, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        switch (deleteConfirm.type) {
+          case 'session':
+            setSessions(prev => prev.filter(s => s.id !== deleteConfirm.id))
+            if (selectedSessionId === deleteConfirm.id) {
+              setSelectedSessionId(null)
+              setDetailSession(null)
+              setSelectedType(null)
+            }
+            break
+          case 'canvas':
+            setCanvases(prev => prev.filter(c => c.id !== deleteConfirm.id))
+            if (selectedCanvasId === deleteConfirm.id) {
+              setSelectedCanvasId(null)
+              setSelectedCanvas(null)
+              setSelectedType(null)
+            }
+            break
+          case 'analysis':
+            setAnalyses(prev => prev.filter(a => a.id !== deleteConfirm.id))
+            setAnalysisTotal(prev => prev - 1)
+            if (selectedAnalysisId === deleteConfirm.id) {
+              setSelectedAnalysisId(null)
+              setSelectedType(null)
+            }
+            break
+          case 'composition':
+            setLastDeletedCompositionId(deleteConfirm.id)
+            break
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete:', err)
+    } finally {
+      setIsDeleting(false)
+      setDeleteConfirm(null)
+    }
+  }, [deleteConfirm, user?.id, selectedSessionId, selectedCanvasId, selectedAnalysisId])
+
+  // Deep-link: auto-select canvas + concept when returning from video editor
+  useEffect(() => {
+    if (deepLinkHandledRef.current || isLoadingCanvases) return
+    const canvasIdParam = searchParams.get('canvasId')
+    if (!canvasIdParam) return
+    // Only fire once canvases have loaded and the target canvas exists
+    const found = canvases.find(c => c.id === canvasIdParam)
+    if (!found) return
+    deepLinkHandledRef.current = true
+    const conceptIdx = searchParams.get('conceptIndex')
+    if (conceptIdx != null) setInitialConceptIndex(parseInt(conceptIdx, 10))
+    setCanvasExpanded(true)
+    handleSelectCanvas(canvasIdParam)
+  }, [isLoadingCanvases, canvases, searchParams, handleSelectCanvas])
 
   // Not Pro - show upgrade prompt
   if (!isPro) {
@@ -1753,8 +3079,8 @@ export default function AITasksPage() {
     )
   }
 
-  const isLoading = isLoadingAnalyses || isLoadingSessions || isLoadingVideoJobs
-  const isEmpty = sessions.length === 0 && analyses.length === 0 && videoJobs.length === 0
+  const isLoading = isLoadingAnalyses || isLoadingSessions || isLoadingVideoJobs || isLoadingCanvases
+  const isEmpty = sessions.length === 0 && analyses.length === 0 && canvases.length === 0
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
@@ -1794,10 +3120,10 @@ export default function AITasksPage() {
 
       {/* Main content - Master/Detail layout */}
       {!isEmpty && (
-        <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex min-h-0 min-w-0">
           {/* Left column - List with collapsible sections */}
           <div className={cn(
-            'w-full lg:w-80 xl:w-96 flex-shrink-0 border-r border-border flex flex-col overflow-hidden',
+            'w-full lg:w-64 xl:w-80 flex-shrink-0 border-r border-border flex flex-col overflow-hidden',
             mobileExpandedItem && 'hidden lg:flex'
           )}>
             <div className="flex-1 overflow-y-auto">
@@ -1809,7 +3135,7 @@ export default function AITasksPage() {
                 >
                   <div className="flex items-center gap-2">
                     <Wand2 className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm font-medium text-white">Ad Generation</span>
+                    <span className="text-sm font-medium text-white">Ad Creative</span>
                     {sessions.length > 0 && (
                       <span className="text-xs text-zinc-500">({sessions.length})</span>
                     )}
@@ -1847,6 +3173,7 @@ export default function AITasksPage() {
                             session={session}
                             isSelected={selectedType === 'session' && session.id === selectedSessionId}
                             onClick={() => handleSelectSession(session.id)}
+                            onDelete={() => setDeleteConfirm({ type: 'session', id: session.id, name: session.product_info?.name || 'Untitled Session' })}
                           />
                         ))}
                       </div>
@@ -1855,62 +3182,54 @@ export default function AITasksPage() {
                 )}
               </div>
 
-              {/* Video Generation Section */}
+              {/* Video Concepts Section */}
               <div className="border-b border-border">
                 <button
-                  onClick={() => setVideoGenExpanded(!videoGenExpanded)}
+                  onClick={() => setCanvasExpanded(!canvasExpanded)}
                   className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/30 transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <Video className="w-4 h-4 text-blue-400" />
-                    <span className="text-sm font-medium text-white">Video Generation</span>
-                    {videoJobs.length > 0 && (
-                      <span className="text-xs text-zinc-500">({videoJobs.length})</span>
-                    )}
-                    {videoJobs.some(j => j.status === 'generating' || j.status === 'queued') && (
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                      </span>
+                    <Lightbulb className="w-4 h-4 text-amber-400" />
+                    <span className="text-sm font-medium text-white">Video Ads</span>
+                    {canvases.length > 0 && (
+                      <span className="text-xs text-zinc-500">({canvases.length})</span>
                     )}
                   </div>
-                  {videoGenExpanded ? (
+                  {canvasExpanded ? (
                     <ChevronUp className="w-4 h-4 text-zinc-500" />
                   ) : (
                     <ChevronDown className="w-4 h-4 text-zinc-500" />
                   )}
                 </button>
 
-                {videoGenExpanded && (
+                {canvasExpanded && (
                   <div className="pb-2">
-                    {isLoadingVideoJobs && videoJobs.length === 0 ? (
+                    {isLoadingCanvases && canvases.length === 0 ? (
                       <div className="px-2 space-y-1">
                         {[1, 2].map((i) => (
                           <div key={i} className="h-14 bg-zinc-800/50 rounded-lg animate-pulse" />
                         ))}
                       </div>
-                    ) : videoJobs.length === 0 ? (
+                    ) : canvases.length === 0 ? (
                       <div className="px-3 py-4 text-center">
-                        <p className="text-xs text-zinc-500 mb-2">No video generations yet</p>
+                        <p className="text-xs text-zinc-500 mb-2">No concept canvases yet</p>
                         <Link
                           href="/dashboard/creative-studio/video-studio"
-                          className="text-xs text-blue-400 hover:text-blue-300"
+                          className="text-xs text-amber-400 hover:text-amber-300"
                         >
                           Open Video Studio →
                         </Link>
                       </div>
                     ) : (
-                      <div className="px-2 space-y-2">
-                        {videoJobs.map((job) => (
-                          <VideoJobCard
-                            key={job.id}
-                            job={job}
-                            compact
-                            onEdit={(jobId) => router.push(`/dashboard/creative-studio/video-editor?jobId=${jobId}`)}
-                            onSaveToLibrary={async (jobId) => {
-                              // TODO: save to media library
-                              console.log('Save to library:', jobId)
-                            }}
+                      <div className="px-2 space-y-1">
+                        {canvases.map((canvas) => (
+                          <CanvasListItem
+                            key={canvas.id}
+                            canvas={canvas}
+                            videoCount={videoJobs.length > 0 ? videoJobs.filter(j => j.canvas_id === canvas.id && j.status === 'complete').length : (canvas.completed_video_count || 0)}
+                            isSelected={selectedType === 'canvas' && canvas.id === selectedCanvasId}
+                            onClick={() => handleSelectCanvas(canvas.id)}
+                            onDelete={() => setDeleteConfirm({ type: 'canvas', id: canvas.id, name: canvas.product_knowledge?.name || 'Untitled Canvas' })}
                           />
                         ))}
                       </div>
@@ -1919,15 +3238,15 @@ export default function AITasksPage() {
                 )}
               </div>
 
-              {/* Video Analysis Section */}
+              {/* Analysis Section */}
               <div>
                 <button
                   onClick={() => setVideoExpanded(!videoExpanded)}
                   className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/30 transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <Film className="w-4 h-4 text-accent" />
-                    <span className="text-sm font-medium text-white">Video Analysis</span>
+                    <Search className="w-4 h-4 text-accent" />
+                    <span className="text-sm font-medium text-white">Analysis</span>
                     {analysisTotal > 0 && (
                       <span className="text-xs text-zinc-500">({analysisTotal})</span>
                     )}
@@ -1965,6 +3284,7 @@ export default function AITasksPage() {
                             item={item}
                             isSelected={selectedType === 'analysis' && item.id === selectedAnalysisId}
                             onClick={() => handleSelectAnalysis(item.id)}
+                            onDelete={() => setDeleteConfirm({ type: 'analysis', id: item.id, name: item.videoName })}
                           />
                         ))}
                       </div>
@@ -1980,6 +3300,18 @@ export default function AITasksPage() {
             {selectedType === 'session' && selectedSession ? (
               <div className="max-w-4xl mx-auto p-6">
                 <AdSessionDetailPanel session={selectedSession} />
+              </div>
+            ) : selectedType === 'session' && selectedSessionId && isLoadingDetail ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
+              </div>
+            ) : selectedType === 'canvas' && selectedCanvas ? (
+              <div className="max-w-4xl mx-auto p-6">
+                <ConceptCanvasDetailPanel canvas={selectedCanvas} canvasJobs={videoJobs.filter(j => j.canvas_id === selectedCanvas.id)} onVideoGenerated={handleCanvasVideoGenerated} initialExpandedConcept={initialConceptIndex} onDeleteComposition={(compId, compName) => setDeleteConfirm({ type: 'composition', id: compId, name: compName })} deletedCompositionId={lastDeletedCompositionId} />
+              </div>
+            ) : selectedType === 'canvas' && selectedCanvasId && isLoadingCanvas ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
               </div>
             ) : selectedType === 'analysis' && selectedAnalysis ? (
               <div className="max-w-4xl mx-auto p-6">
@@ -2006,11 +3338,27 @@ export default function AITasksPage() {
                 >
                   <X className="w-5 h-5" />
                 </button>
-                {mobileExpandedItem.type === 'session' && sessions.find(s => s.id === mobileExpandedItem.id) && (
+                {mobileExpandedItem.type === 'session' && detailSession && detailSession.id === mobileExpandedItem.id && (
                   <AdSessionDetailPanel
-                    session={sessions.find(s => s.id === mobileExpandedItem.id)!}
+                    session={detailSession}
                     onClose={() => setMobileExpandedItem(null)}
                   />
+                )}
+                {mobileExpandedItem.type === 'canvas' && selectedCanvas && selectedCanvas.id === mobileExpandedItem.id && (
+                  <ConceptCanvasDetailPanel
+                    canvas={selectedCanvas}
+                    canvasJobs={videoJobs.filter(j => j.canvas_id === selectedCanvas.id)}
+                    onClose={() => setMobileExpandedItem(null)}
+                    onVideoGenerated={handleCanvasVideoGenerated}
+                    initialExpandedConcept={initialConceptIndex}
+                    onDeleteComposition={(compId, compName) => setDeleteConfirm({ type: 'composition', id: compId, name: compName })}
+                    deletedCompositionId={lastDeletedCompositionId}
+                  />
+                )}
+                {mobileExpandedItem.type === 'canvas' && isLoadingCanvas && (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
+                  </div>
                 )}
                 {mobileExpandedItem.type === 'analysis' && analyses.find(a => a.id === mobileExpandedItem.id) && (
                   <AnalysisDetailPanel
@@ -2023,6 +3371,26 @@ export default function AITasksPage() {
           )}
         </div>
       )}
+
+      {/* Delete confirmation modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={handleDeleteConfirm}
+        title={`Delete ${deleteConfirm?.type === 'session' ? 'session' : deleteConfirm?.type === 'canvas' ? 'canvas' : deleteConfirm?.type === 'analysis' ? 'analysis' : 'composition'}?`}
+        message={
+          deleteConfirm?.type === 'session'
+            ? 'Generated ads and images will be permanently removed.'
+            : deleteConfirm?.type === 'canvas'
+            ? 'All generated videos in this canvas will be permanently removed.'
+            : deleteConfirm?.type === 'analysis'
+            ? 'The analysis results will be permanently removed.'
+            : 'This multi-clip timeline will be permanently removed.'
+        }
+        confirmText="Delete"
+        confirmType="danger"
+        isLoading={isDeleting}
+      />
     </div>
   )
 }

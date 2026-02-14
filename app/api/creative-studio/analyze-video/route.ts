@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 3. Get video URL from media_library
+    // 3. Get video URL from media_library (or fall back to ad_data for Active Ads assets)
     const strippedAccountId = adAccountId.replace(/^act_/, '')
     const { data: media } = await supabase
       .from('media_library')
@@ -103,15 +103,53 @@ export async function POST(request: NextRequest) {
       .eq('media_hash', mediaHash)
       .single()
 
-    if (!media) {
-      return NextResponse.json({ error: 'Media not found' }, { status: 404 })
+    let videoUrl: string | null = null
+    let mediaType: string | null = null
+
+    if (media) {
+      mediaType = media.media_type
+      videoUrl = media.storage_url || media.url
+    } else {
+      // Not in media_library, try ad_data fallback
+      // Fallback: check ad_data for storage_url (Active Ads assets may not be in media_library)
+      // Try media_hash first, then video_id (mediaHash from frontend may be either)
+      let adRow: { storage_url: string | null; media_type: string | null } | null = null
+
+      const { data: hashRow } = await supabase
+        .from('ad_data')
+        .select('storage_url, media_type')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .eq('media_hash', mediaHash)
+        .not('storage_url', 'is', null)
+        .limit(1)
+        .single()
+      adRow = hashRow
+
+      if (!adRow) {
+        // Try matching by video_id (Active Ads sometimes uses video_id as mediaHash)
+        const { data: vidRow } = await supabase
+          .from('ad_data')
+          .select('storage_url, media_type')
+          .eq('user_id', userId)
+          .eq('ad_account_id', adAccountId)
+          .eq('video_id', mediaHash)
+          .not('storage_url', 'is', null)
+          .limit(1)
+          .single()
+        adRow = vidRow
+      }
+
+      if (!adRow) {
+        return NextResponse.json({ error: 'Media not found. Video may not be downloaded to storage yet.' }, { status: 404 })
+      }
+      mediaType = adRow.media_type
+      videoUrl = adRow.storage_url
     }
 
-    if (media.media_type !== 'video') {
+    if (mediaType !== 'video') {
       return NextResponse.json({ error: 'Only videos can be analyzed' }, { status: 400 })
     }
-
-    const videoUrl = media.storage_url || media.url
     if (!videoUrl) {
       return NextResponse.json({ error: 'Video URL not available' }, { status: 404 })
     }

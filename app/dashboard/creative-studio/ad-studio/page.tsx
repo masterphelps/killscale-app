@@ -1,18 +1,18 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film } from 'lucide-react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
+import { MediaLibraryModal } from '@/components/media-library-modal'
+import type { MediaImage } from '@/app/api/meta/media/route'
+import { VideoJobCard } from '@/components/creative-studio/video-job-card'
+import type { VideoJob } from '@/remotion/types'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { useSubscription } from '@/lib/subscription'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { VideoJobCard } from '@/components/creative-studio/video-job-card'
-import { VideoStylePicker } from '@/components/creative-studio/video-style-picker'
-import { VIDEO_STYLES, type VideoStyle } from '@/remotion/types'
-import { generatePromptSections, buildSoraPrompt } from '@/lib/video-prompt-templates'
 import {
   CompetitorSearchInput,
   CompetitorAdsGrid,
@@ -55,9 +55,21 @@ interface ProductInfo {
   brand?: string
   category?: string
   uniqueSellingPoint?: string
+  targetAudience?: string
   imageUrl?: string
   imageBase64?: string
   imageMimeType?: string
+  benefits?: string[]
+  painPoints?: string[]
+  testimonialPoints?: string[]
+  keyMessages?: string[]
+}
+
+interface ProductImageOption {
+  base64: string
+  mimeType: string
+  description: string
+  type: string
 }
 
 interface GeneratedAd {
@@ -110,6 +122,126 @@ function inspirationToAdLibraryAd(example: InspirationExample): AdLibraryAd {
   }
 }
 
+// ── Pill-based product knowledge (matching Video Studio) ─────────────────────
+
+type PillCategory = 'name' | 'description' | 'features' | 'benefits' | 'keyMessages' | 'testimonials' | 'painPoints'
+
+const SINGLE_SELECT: PillCategory[] = ['name', 'description']
+
+const PILL_SECTIONS: { key: PillCategory; label: string; required?: boolean; hint: string }[] = [
+  { key: 'name', label: 'Product Name', required: true, hint: 'pick one' },
+  { key: 'description', label: 'Description', hint: 'pick one' },
+  { key: 'features', label: 'Key Features', hint: 'select all that apply' },
+  { key: 'benefits', label: 'Benefits', hint: 'select all that apply' },
+  { key: 'keyMessages', label: 'Key Messages', hint: 'select all that apply' },
+  { key: 'testimonials', label: 'Customer Voice', hint: 'select all that apply' },
+  { key: 'painPoints', label: 'Problems It Solves', hint: 'select all that apply' },
+]
+
+function PillGroup({
+  label,
+  items,
+  selectedIndices,
+  multiSelect,
+  onToggle,
+  onAdd,
+  required,
+  hint,
+}: {
+  label: string
+  items: string[]
+  selectedIndices: number[]
+  multiSelect: boolean
+  onToggle: (index: number) => void
+  onAdd: (value: string) => void
+  required?: boolean
+  hint: string
+}) {
+  const [isAdding, setIsAdding] = useState(false)
+  const [input, setInput] = useState('')
+
+  const handleAdd = () => {
+    if (!input.trim()) return
+    onAdd(input.trim())
+    setInput('')
+    setIsAdding(false)
+  }
+
+  if (items.length === 0 && !isAdding) {
+    return (
+      <div>
+        <label className="text-sm font-medium text-zinc-300 mb-2 block">
+          {label} {required && <span className="text-red-400">*</span>}
+        </label>
+        <button
+          onClick={() => setIsAdding(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-zinc-500 border border-dashed border-zinc-700 hover:text-purple-400 hover:border-purple-500/30 transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          Add {label.toLowerCase()}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-zinc-300 mb-2 block">
+        {label} {required && <span className="text-red-400">*</span>}
+        {items.length > 0 && (
+          <span className="text-xs text-zinc-600 ml-2">{hint}</span>
+        )}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item, i) => {
+          const isSelected = selectedIndices.includes(i)
+          return (
+            <button
+              key={i}
+              onClick={() => onToggle(i)}
+              className={cn(
+                'px-3 py-1.5 rounded-full text-xs font-medium transition-all border cursor-pointer text-left max-w-full',
+                isSelected
+                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                  : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+              )}
+            >
+              <span className="line-clamp-2">{item}</span>
+            </button>
+          )
+        })}
+
+        {isAdding ? (
+          <div className="flex items-center gap-1">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAdd()
+                if (e.key === 'Escape') { setIsAdding(false); setInput('') }
+              }}
+              autoFocus
+              placeholder="Type and press Enter"
+              className="bg-bg-dark border border-purple-500/30 rounded-full px-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none w-48"
+            />
+            <button onClick={() => { setIsAdding(false); setInput('') }} className="text-zinc-500 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs text-zinc-600 border border-dashed border-zinc-700 hover:text-purple-400 hover:border-purple-500/30 transition-colors"
+            title={`Add custom ${label.toLowerCase()}`}
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function AdStudioPage() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
@@ -117,8 +249,8 @@ export default function AdStudioPage() {
 
   const isPro = !!plan
 
-  // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image
-  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | null>(null)
+  // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image, 'image-to-video' = animate image to video
+  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'image-to-video' | null>(null)
 
   // Step tracking
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
@@ -128,6 +260,8 @@ export default function AdStudioPage() {
   const [isAnalyzingProduct, setIsAnalyzingProduct] = useState(false)
   const [productInfo, setProductInfo] = useState<ProductInfo | null>(null)
   const [productError, setProductError] = useState<string | null>(null)
+  const [productImageOptions, setProductImageOptions] = useState<ProductImageOption[]>([])
+  const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
 
   // Manual product entry (alternative to URL)
   const [useManualEntry, setUseManualEntry] = useState(false)
@@ -135,6 +269,21 @@ export default function AdStudioPage() {
   const [manualProductDescription, setManualProductDescription] = useState('')
   const [manualProductImage, setManualProductImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
   const [isUploadingManualImage, setIsUploadingManualImage] = useState(false)
+
+  // Step 1: Pill pools + selection (matching Video Studio)
+  const [pools, setPools] = useState<Record<PillCategory, string[]>>({
+    name: [], description: [], features: [], benefits: [],
+    keyMessages: [], testimonials: [], painPoints: [],
+  })
+  const [selected, setSelected] = useState<Record<PillCategory, number[]>>({
+    name: [], description: [], features: [], benefits: [],
+    keyMessages: [], testimonials: [], painPoints: [],
+  })
+  const [extraContext, setExtraContext] = useState({
+    targetAudience: '', category: '', uniqueSellingPoint: '',
+  })
+  const [hasAnalyzed, setHasAnalyzed] = useState(false)
+  const rawAnalysisRef = useRef<Record<string, unknown> | null>(null)
 
   // Step 2: Competitor Search (API-driven)
   const [selectedCompany, setSelectedCompany] = useState<CompetitorSearchResult | null>(null)
@@ -173,7 +322,7 @@ export default function AdStudioPage() {
   const [generatedImages, setGeneratedImages] = useState<Record<number, GeneratedImage[]>>({})
   const [currentImageVersion, setCurrentImageVersion] = useState<Record<number, number>>({}) // Track which version is shown
   const [imageErrors, setImageErrors] = useState<Record<number, string>>({})
-  const [imageStyle, setImageStyle] = useState<'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold' | 'refresh'>('clone')
+  const [imageStyles, setImageStyles] = useState<Record<number, 'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold' | 'refresh'>>({})
   const [imagePrompts, setImagePrompts] = useState<Record<number, string>>({}) // For Create mode - required prompt per ad
 
   // Upload mode state
@@ -209,12 +358,18 @@ export default function AdStudioPage() {
     mimeType?: string
   }>>([])
 
-  // Video generation per ad card
-  const [adMediaMode, setAdMediaMode] = useState<Record<number, 'image' | 'video'>>({})
-  const [adVideoStyle, setAdVideoStyle] = useState<Record<number, string>>({})
-  const [adVideoJobs, setAdVideoJobs] = useState<Record<number, any>>({})
-  const [generatingVideoIndex, setGeneratingVideoIndex] = useState<number | null>(null)
-  const [videoErrors, setVideoErrors] = useState<Record<number, string>>({})
+  // Image-to-Video state
+  const [i2vSelectedImage, setI2vSelectedImage] = useState<{ base64: string; mimeType: string; preview: string; name: string } | null>(null)
+  const [i2vShowLibrary, setI2vShowLibrary] = useState(false)
+  const [i2vDownloadingLibrary, setI2vDownloadingLibrary] = useState(false)
+  const [i2vPrompt, setI2vPrompt] = useState('')
+  const [i2vDuration, setI2vDuration] = useState(8) // Veo stepper: min 8, step 7
+  const [i2vCanvasId, setI2vCanvasId] = useState<string | null>(null)
+  const [i2vJobs, setI2vJobs] = useState<Record<number, VideoJob>>({}) // keyed by ad_index
+  const [i2vGenerating, setI2vGenerating] = useState(false)
+  const [i2vExtending, setI2vExtending] = useState(false)
+  const [i2vError, setI2vError] = useState<string | null>(null)
+  const [i2vGenerateCount, setI2vGenerateCount] = useState(0) // tracks ad_index for multiple generates
 
   const router = useRouter()
 
@@ -237,6 +392,79 @@ export default function AdStudioPage() {
   useEffect(() => {
     refreshCredits()
   }, [refreshCredits])
+
+  // Pill toggle + add callbacks
+  const togglePill = useCallback((category: PillCategory, index: number) => {
+    const isSingle = SINGLE_SELECT.includes(category)
+    setSelected(prev => ({
+      ...prev,
+      [category]: isSingle
+        ? (prev[category].includes(index) ? [] : [index])
+        : (prev[category].includes(index)
+            ? prev[category].filter(i => i !== index)
+            : [...prev[category], index]),
+    }))
+  }, [])
+
+  const addToPool = useCallback((category: PillCategory, value: string) => {
+    const isSingle = SINGLE_SELECT.includes(category)
+    setPools(prev => {
+      const newPool = [...prev[category], value]
+      const newIndex = newPool.length - 1
+      setSelected(sel => ({
+        ...sel,
+        [category]: isSingle ? [newIndex] : [...sel[category], newIndex],
+      }))
+      return { ...prev, [category]: newPool }
+    })
+  }, [])
+
+  const canProceedFromPills = selected.name.length > 0
+  const totalPillsFound = Object.values(pools).reduce((sum, arr) => sum + arr.length, 0)
+  const totalSelected = Object.values(selected).reduce((sum, arr) => sum + arr.length, 0)
+
+  // Assemble productInfo from selected pills and proceed
+  const handleProceedFromPills = useCallback(() => {
+    if (!canProceedFromPills) return
+
+    const pick = (cat: PillCategory) => selected[cat].map(i => pools[cat][i])
+    const pickOne = (cat: PillCategory) => pick(cat)[0] || undefined
+
+    const assembled: ProductInfo = {
+      name: pickOne('name')!,
+      description: pickOne('description'),
+      features: pick('features').length > 0 ? pick('features') : undefined,
+      benefits: pick('benefits').length > 0 ? pick('benefits') : undefined,
+      painPoints: pick('painPoints').length > 0 ? pick('painPoints') : undefined,
+      testimonialPoints: pick('testimonials').length > 0 ? pick('testimonials') : undefined,
+      keyMessages: pick('keyMessages').length > 0 ? pick('keyMessages') : undefined,
+      targetAudience: extraContext.targetAudience || undefined,
+      category: extraContext.category || undefined,
+      uniqueSellingPoint: extraContext.uniqueSellingPoint || undefined,
+      // Carry over image/price/brand/currency from raw analysis
+      ...(rawAnalysisRef.current ? {
+        imageBase64: rawAnalysisRef.current.imageBase64 as string | undefined,
+        imageMimeType: rawAnalysisRef.current.imageMimeType as string | undefined,
+        imageUrl: rawAnalysisRef.current.imageUrl as string | undefined,
+        price: rawAnalysisRef.current.price as string | undefined,
+        brand: rawAnalysisRef.current.brand as string | undefined,
+        currency: rawAnalysisRef.current.currency as string | undefined,
+      } : {}),
+    }
+
+    setProductInfo(assembled)
+
+    // Image-to-video mode goes to step 2 (image selection)
+    // Create mode skips competitor search, goes straight to generate
+    // Clone mode with pre-selected ad also skips to generate
+    if (mode === 'image-to-video') {
+      setCurrentStep(2)
+    } else if (mode === 'create' || selectedAd) {
+      setCurrentStep(3)
+    } else {
+      setCurrentStep(2)
+    }
+  }, [canProceedFromPills, selected, pools, extraContext, mode, selectedAd])
 
   // Save image to session for persistence
   const saveImageToSession = useCallback(async (
@@ -292,20 +520,75 @@ export default function AdStudioPage() {
         return
       }
 
-      setProductInfo(data.product)
-      // Create mode skips competitor search, goes straight to generate
-      // Clone mode with pre-selected ad (from inspiration) also skips to generate
-      if (mode === 'create' || selectedAd) {
-        setCurrentStep(3)
-      } else {
-        setCurrentStep(2)
+      const p = data.product
+      // Store raw analysis for later assembly (image, price, brand, currency)
+      rawAnalysisRef.current = {
+        imageBase64: p.imageBase64,
+        imageMimeType: p.imageMimeType,
+        imageUrl: p.imageUrl,
+        price: p.price,
+        brand: p.brand,
+        currency: p.currency,
       }
+      // Populate pill pools from analysis
+      setPools({
+        name: p.name ? [p.name] : [],
+        description: p.description ? [p.description] : [],
+        features: p.features || [],
+        benefits: p.benefits || [],
+        keyMessages: p.keyMessages || [],
+        testimonials: p.testimonialPoints || [],
+        painPoints: p.painPoints || [],
+      })
+      // All pills start unselected — user picks what matters
+      setSelected({
+        name: [], description: [], features: [], benefits: [],
+        keyMessages: [], testimonials: [], painPoints: [],
+      })
+      setExtraContext({
+        targetAudience: p.targetAudience || '',
+        category: p.category || '',
+        uniqueSellingPoint: p.uniqueSellingPoint || '',
+      })
+      // Store multiple product images for selection
+      if (data.productImages && data.productImages.length > 0) {
+        setProductImageOptions(data.productImages)
+        setSelectedProductImageIdx(0)
+      } else {
+        setProductImageOptions([])
+      }
+      setHasAnalyzed(true)
+      // Do NOT advance step — wait for user pill selection
     } catch (err) {
       setProductError('Failed to analyze product URL')
     } finally {
       setIsAnalyzingProduct(false)
     }
-  }, [productUrl, mode, selectedAd])
+  }, [productUrl])
+
+  // Handle selecting a different product image from the thumbnail strip
+  const handleSelectProductImage = useCallback((idx: number) => {
+    setSelectedProductImageIdx(idx)
+    const img = productImageOptions[idx]
+    if (img) {
+      // Update rawAnalysisRef so pill proceed picks up the selected image
+      if (rawAnalysisRef.current) {
+        rawAnalysisRef.current = {
+          ...rawAnalysisRef.current,
+          imageBase64: img.base64,
+          imageMimeType: img.mimeType,
+        }
+      }
+      // Also update productInfo if it already exists (for post-pill-proceed state)
+      if (productInfo) {
+        setProductInfo(prev => prev ? {
+          ...prev,
+          imageBase64: img.base64,
+          imageMimeType: img.mimeType,
+        } : prev)
+      }
+    }
+  }, [productImageOptions, productInfo])
 
   // Handle adding a product image after URL analysis (when extraction failed)
   const handleAddProductImage = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -355,20 +638,25 @@ export default function AdStudioPage() {
     }
 
     setProductError(null)
-    setProductInfo({
-      name: manualProductName.trim(),
-      description: manualProductDescription.trim() || undefined,
+    // Store manual image data in rawAnalysisRef
+    rawAnalysisRef.current = {
       imageBase64: manualProductImage?.base64,
       imageMimeType: manualProductImage?.mimeType,
-    })
-
-    // Move to next step
-    if (mode === 'create' || selectedAd) {
-      setCurrentStep(3)
-    } else {
-      setCurrentStep(2)
     }
-  }, [manualProductName, manualProductDescription, manualProductImage, mode, selectedAd])
+    // Pre-populate pills from manual input
+    setPools(prev => ({
+      ...prev,
+      name: [manualProductName.trim()],
+      description: manualProductDescription.trim() ? [manualProductDescription.trim()] : [],
+    }))
+    setSelected(prev => ({
+      ...prev,
+      name: [0], // Auto-select the name
+      description: manualProductDescription.trim() ? [0] : [],
+    }))
+    setHasAnalyzed(true)
+    // Do NOT advance step — wait for user pill selection
+  }, [manualProductName, manualProductDescription, manualProductImage])
 
   // Step 2: Load competitor ads
   const loadCompetitorAds = useCallback(async (company: CompetitorSearchResult, cursor?: string) => {
@@ -442,7 +730,7 @@ export default function AdStudioPage() {
     setSelectedCompetitorAd(ad) // Keep original for display
     setViewingAd(null)
     setCurrentStep(3)
-    setImageStyle('clone') // Default to clone style when using inspiration
+    setImageStyles({}) // Reset per-card styles — defaults to clone when reference ad present
 
     // Get the ad's image URL - use selected carousel index if provided
     const imageUrl = ad.mediaType === 'carousel' && ad.carouselCards && selectedCarouselIndex !== undefined
@@ -553,7 +841,7 @@ export default function AdStudioPage() {
     setSelectedCompetitorAd(null)
     setViewingOwnAd(null)
     setIsRefreshMode(true)
-    setImageStyle('refresh')
+    setImageStyles({}) // Reset per-card styles — defaults to refresh when in refresh mode
     setCurrentStep(3)
 
     // Get the ad image for reference
@@ -777,7 +1065,7 @@ export default function AdStudioPage() {
               competitorCompany: selectedCompany,
               competitorAd: selectedAd,
               generatedAds: ads,
-              imageStyle,
+              imageStyle: referenceAdImage ? (isRefreshMode ? 'refresh' : 'clone') : 'lifestyle',
             }),
           })
           const sessionData = await sessionRes.json()
@@ -795,7 +1083,7 @@ export default function AdStudioPage() {
     } finally {
       setIsGenerating(false)
     }
-  }, [mode, selectedAd, productInfo, user?.id, currentAccountId, productUrl, selectedCompany, imageStyle, isRefreshMode])
+  }, [mode, selectedAd, productInfo, user?.id, currentAccountId, productUrl, selectedCompany, isRefreshMode, referenceAdImage])
 
   const copyToClipboard = (ad: GeneratedAd, index: number) => {
     const text = `Headline: ${ad.headline}\n\nPrimary Text: ${ad.primaryText}\n\nDescription: ${ad.description}`
@@ -851,7 +1139,7 @@ export default function AdStudioPage() {
           angle: ad.angle,
         },
         product: productInfo,
-        style: imageStyle,
+        style: imageStyles[index] || (referenceAdImage ? (isRefreshMode ? 'refresh' : 'clone') : 'lifestyle'),
         aspectRatio: '1:1',
         isRefresh: isRefreshMode,
       }
@@ -938,7 +1226,7 @@ export default function AdStudioPage() {
     } finally {
       setGeneratingImageIndex(null)
     }
-  }, [productInfo, imageStyle, referenceAdImage, user?.id, currentAccountId, sessionId, generatedImages, saveImageToSession, imagePrompts, isRefreshMode])
+  }, [productInfo, imageStyles, referenceAdImage, user?.id, currentAccountId, sessionId, generatedImages, saveImageToSession, imagePrompts, isRefreshMode])
 
   // Adjust an existing image with a prompt
   const handleAdjustImage = useCallback(async (adIndex: number) => {
@@ -1027,102 +1315,6 @@ export default function AdStudioPage() {
       setAdjustingImageIndex(null)
     }
   }, [generatedImages, currentImageVersion, adjustmentPrompts, user?.id, currentAccountId, sessionId, saveImageToSession])
-
-  // Generate video for an ad card
-  const handleGenerateVideo = useCallback(async (ad: GeneratedAd, adIndex: number) => {
-    if (!productInfo || !user?.id || !currentAccountId) return
-
-    const videoStyle = adVideoStyle[adIndex] || 'lifestyle'
-
-    setGeneratingVideoIndex(adIndex)
-    setVideoErrors(prev => ({ ...prev, [adIndex]: '' }))
-
-    try {
-      // Build prompt from product + ad copy + style
-      const sections = generatePromptSections(videoStyle as VideoStyle, productInfo.name, productInfo.description || ad.primaryText)
-      const prompt = buildSoraPrompt(sections)
-
-      const res = await fetch('/api/creative-studio/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productImageBase64: productInfo.imageBase64,
-          productImageMimeType: productInfo.imageMimeType,
-          prompt,
-          videoStyle,
-          durationSeconds: 8,
-          adAccountId: currentAccountId,
-          sessionId: sessionId || undefined,
-          adIndex,
-          userId: user.id,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        if (res.status === 429 && data.totalAvailable) {
-          setAiUsage({ used: data.used, planLimit: data.totalAvailable, purchased: 0, totalAvailable: data.totalAvailable, remaining: data.remaining || 0, status: data.status })
-        }
-        setVideoErrors(prev => ({ ...prev, [adIndex]: data.error || 'Failed to generate video' }))
-        return
-      }
-
-      // Optimistically update credit usage
-      setAiUsage(prev => prev ? { ...prev, used: prev.used + 50, remaining: Math.max(0, prev.remaining - 50) } : prev)
-
-      // Store the job for polling
-      setAdVideoJobs(prev => ({
-        ...prev,
-        [adIndex]: {
-          id: data.jobId,
-          status: 'generating',
-          progress_pct: 0,
-          video_style: videoStyle,
-          prompt,
-          duration_seconds: 8,
-        },
-      }))
-    } catch (err) {
-      setVideoErrors(prev => ({ ...prev, [adIndex]: 'Failed to generate video' }))
-    } finally {
-      setGeneratingVideoIndex(null)
-    }
-  }, [productInfo, user?.id, currentAccountId, adVideoStyle, sessionId])
-
-  // Poll video jobs that are generating
-  useEffect(() => {
-    const inProgressJobs = Object.entries(adVideoJobs).filter(
-      ([, job]) => job.status === 'queued' || job.status === 'generating'
-    )
-    if (inProgressJobs.length === 0 || !user?.id) return
-
-    const interval = setInterval(async () => {
-      for (const [adIndex, job] of inProgressJobs) {
-        try {
-          const res = await fetch(`/api/creative-studio/video-status?jobId=${job.id}&userId=${user.id}`)
-          const data = await res.json()
-          if (data.status) {
-            setAdVideoJobs(prev => ({
-              ...prev,
-              [adIndex]: {
-                ...prev[Number(adIndex)],
-                status: data.status,
-                progress_pct: data.progress_pct || 0,
-                raw_video_url: data.raw_video_url,
-                final_video_url: data.final_video_url,
-                error_message: data.error_message,
-              },
-            }))
-          }
-        } catch {
-          // Ignore polling errors
-        }
-      }
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [adVideoJobs, user?.id])
 
   // Navigate between image versions
   const navigateVersion = (adIndex: number, direction: 'prev' | 'next') => {
@@ -1283,6 +1475,12 @@ export default function AdStudioPage() {
       setSavedToLibrary({})
       setImagePrompts({})
       setIsRefreshMode(false)
+      // Reset pill state
+      setPools({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
+      setSelected({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
+      setExtraContext({ targetAudience: '', category: '', uniqueSellingPoint: '' })
+      setHasAnalyzed(false)
+      rawAnalysisRef.current = null
       // Reset step 2 state
       handleClearCompany()
     } else if (step === 2) {
@@ -1319,6 +1517,24 @@ export default function AdStudioPage() {
     setUploadPrompt('')
     setIsRefreshMode(false)
     setCloneSource('competitor')
+    // Reset i2v state
+    setI2vSelectedImage(null)
+    setI2vShowLibrary(false)
+    setI2vDownloadingLibrary(false)
+    setI2vPrompt('')
+    setI2vDuration(8)
+    setI2vCanvasId(null)
+    setI2vJobs({})
+    setI2vGenerating(false)
+    setI2vExtending(false)
+    setI2vError(null)
+    setI2vGenerateCount(0)
+    // Reset pill state
+    setPools({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
+    setSelected({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
+    setExtraContext({ targetAudience: '', category: '', uniqueSellingPoint: '' })
+    setHasAnalyzed(false)
+    rawAnalysisRef.current = null
     handleClearCompany()
   }
 
@@ -1440,7 +1656,7 @@ export default function AdStudioPage() {
               competitorCompany: null,
               competitorAd: null,
               generatedAds: ads,
-              imageStyle,
+              imageStyle: 'lifestyle',
             }),
           })
           const sessionData = await sessionRes.json()
@@ -1461,7 +1677,207 @@ export default function AdStudioPage() {
     } finally {
       setIsGenerating(false)
     }
-  }, [uploadedImage, uploadPrompt, user?.id, currentAccountId, imageStyle])
+  }, [uploadedImage, uploadPrompt, user?.id, currentAccountId])
+
+  // ── Image-to-Video: Video Studio patterns ──────────────────────────────────
+
+  const VEO_EXTENSION_STEP = 7
+  const VEO_EXTENSION_COST = 25
+  const VEO_BASE_COST = 50
+
+  const i2vCreditCost = VEO_BASE_COST + Math.max(0, (i2vDuration - 8) / VEO_EXTENSION_STEP) * VEO_EXTENSION_COST
+  const i2vApiProvider = i2vDuration > 8 ? 'veo-ext' : 'veo'
+
+  // Poll jobs by canvasId (same pattern as Video Studio)
+  const pollI2vJobsRef = useRef<NodeJS.Timeout | null>(null)
+
+  const refreshI2vJobs = useCallback(async () => {
+    if (!user?.id || !i2vCanvasId) return
+    try {
+      const res = await fetch('/api/creative-studio/video-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, canvasId: i2vCanvasId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const jobMap: Record<number, VideoJob> = {}
+        for (const j of (data.jobs || [])) {
+          if (j.ad_index !== null && j.ad_index !== undefined) {
+            if (!(j.ad_index in jobMap)) jobMap[j.ad_index] = j
+          }
+        }
+        setI2vJobs(jobMap)
+      }
+    } catch (err) {
+      console.error('[I2V] Poll error:', err)
+    }
+  }, [user?.id, i2vCanvasId, currentAccountId])
+
+  const i2vHasInProgressJobs = Object.values(i2vJobs).some(
+    j => j.status === 'generating' || j.status === 'queued' || j.status === 'rendering' || j.status === 'extending'
+  )
+
+  // Initial fetch when canvasId is set
+  useEffect(() => {
+    if (!i2vCanvasId || !user?.id) return
+    refreshI2vJobs()
+  }, [i2vCanvasId, user?.id, refreshI2vJobs])
+
+  // Poll while any job is in-progress (15s interval)
+  useEffect(() => {
+    if (!i2vHasInProgressJobs || !i2vCanvasId) return
+    pollI2vJobsRef.current = setInterval(refreshI2vJobs, 15000)
+    return () => { if (pollI2vJobsRef.current) { clearInterval(pollI2vJobsRef.current); pollI2vJobsRef.current = null } }
+  }, [i2vHasInProgressJobs, i2vCanvasId, refreshI2vJobs])
+
+  // Generate video — creates canvas if needed, then calls generate-video
+  const handleI2vGenerate = useCallback(async () => {
+    if (!i2vSelectedImage || !i2vPrompt.trim() || !user?.id || !currentAccountId || !productInfo) return
+
+    setI2vGenerating(true)
+    setI2vError(null)
+
+    try {
+      // Create canvas if first generation (so it appears in AI Tasks)
+      let canvasId = i2vCanvasId
+      if (!canvasId) {
+        // Build overlay content from product knowledge (mirrors Video Studio concept overlays)
+        const hookText = productInfo.painPoints?.[0]
+          || productInfo.keyMessages?.[0]
+          || productInfo.uniqueSellingPoint
+          || productInfo.benefits?.[0]
+          || productInfo.name
+        const captionSources = [
+          ...(productInfo.benefits || []),
+          ...(productInfo.features || []),
+          ...(productInfo.keyMessages || []),
+        ]
+        const captions = captionSources.slice(0, 3).map(s =>
+          s.length > 60 ? s.slice(0, 57) + '...' : s
+        )
+        const ctaText = productInfo.price
+          ? `Get it for ${productInfo.price}`
+          : productInfo.category?.toLowerCase().includes('service')
+            ? 'Try it Free'
+            : 'Shop Now'
+
+        const canvasRes = await fetch('/api/creative-studio/video-canvas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            productUrl: productUrl || null,
+            productKnowledge: {
+              name: productInfo.name,
+              description: productInfo.description,
+              features: productInfo.features,
+              benefits: productInfo.benefits,
+              painPoints: productInfo.painPoints,
+              keyMessages: productInfo.keyMessages,
+              uniqueSellingPoint: productInfo.uniqueSellingPoint,
+            },
+            concepts: [{
+              title: 'Image to Video',
+              angle: 'Product Showcase',
+              logline: `Animate ${productInfo.name} into a scroll-stopping video ad`,
+              visualMetaphor: `Product image comes to life — the motion itself IS the hook`,
+              whyItWorks: 'Still-to-motion grabs attention. The product is the star.',
+              videoPrompt: i2vPrompt,
+              overlay: { hook: hookText, captions, cta: ctaText },
+            }],
+          }),
+        })
+        const canvasData = await canvasRes.json()
+        if (canvasRes.ok && canvasData.canvas?.id) {
+          canvasId = canvasData.canvas.id
+          setI2vCanvasId(canvasId)
+        }
+      }
+
+      const adIndex = i2vGenerateCount
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          prompt: i2vPrompt,
+          videoStyle: 'image_to_video',
+          durationSeconds: i2vDuration,
+          productName: productInfo.name,
+          productImageBase64: i2vSelectedImage.base64,
+          productImageMimeType: i2vSelectedImage.mimeType,
+          provider: i2vApiProvider,
+          canvasId: canvasId || null,
+          adIndex,
+          targetDurationSeconds: i2vApiProvider === 'veo-ext' ? i2vDuration : undefined,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          setAiUsage(prev => prev ? { ...prev, remaining: data.remaining || 0 } : prev)
+        }
+        throw new Error(data.error || 'Failed to generate video')
+      }
+
+      // Optimistically deduct credits
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + i2vCreditCost, remaining: Math.max(0, prev.remaining - i2vCreditCost) } : prev)
+      setI2vGenerateCount(prev => prev + 1)
+
+      // Refresh jobs to pick up the new one
+      refreshI2vJobs()
+    } catch (err) {
+      setI2vError(err instanceof Error ? err.message : 'Failed to generate video')
+    } finally {
+      setI2vGenerating(false)
+    }
+  }, [i2vSelectedImage, i2vPrompt, i2vDuration, i2vApiProvider, i2vCreditCost, i2vCanvasId, i2vGenerateCount, user?.id, currentAccountId, productInfo, productUrl, refreshI2vJobs])
+
+  // Extend completed Veo job by +7s (same as Video Studio)
+  const handleI2vExtend = useCallback(async (adIndex: number) => {
+    if (!user?.id) return
+    const job = i2vJobs[adIndex]
+    if (!job || job.status !== 'complete') return
+
+    setI2vExtending(true)
+    try {
+      const res = await fetch('/api/creative-studio/video-status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, userId: user.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setI2vError(data.error || 'Extension failed')
+        return
+      }
+
+      // Deduct 25 credits
+      setAiUsage(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - VEO_EXTENSION_COST) } : prev)
+
+      // Optimistic update
+      setI2vJobs(prev => ({
+        ...prev,
+        [adIndex]: {
+          ...job,
+          status: 'extending' as const,
+          extension_total: data.extension_total,
+          extension_step: data.extension_step,
+          target_duration_seconds: data.target_duration_seconds,
+        },
+      }))
+    } catch {
+      setI2vError('Failed to extend video')
+    } finally {
+      setI2vExtending(false)
+    }
+  }, [user?.id, i2vJobs])
 
   // Not Pro - show upgrade prompt
   if (!isPro) {
@@ -1504,75 +1920,124 @@ export default function AdStudioPage() {
               </p>
             </div>
 
-            {/* Mode Selection Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Create Mode */}
-              <button
-                onClick={() => setMode('create')}
-                className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-accent/50 hover:bg-bg-card/80 transition-all"
-              >
-                <div className="w-14 h-14 rounded-xl bg-accent/20 flex items-center justify-center mb-4 group-hover:bg-accent/30 transition-colors">
-                  <PlusCircle className="w-7 h-7 text-accent" />
-                </div>
-                <h2 className="text-xl font-semibold text-white mb-2">Create</h2>
-                <p className="text-zinc-400 text-sm leading-relaxed">
-                  Generate original ads from your product page.
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-accent text-sm font-medium">
-                  Get started <ChevronRight className="w-4 h-4" />
-                </div>
-              </button>
+            {/* Image Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <ImagePlus className="w-5 h-5 text-zinc-400" />
+                <h2 className="text-lg font-semibold text-white">Image</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Create Mode */}
+                <button
+                  onClick={() => setMode('create')}
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-accent/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-accent/20 flex items-center justify-center mb-4 group-hover:bg-accent/30 transition-colors">
+                    <PlusCircle className="w-7 h-7 text-accent" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Create</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Generate original ads from your product page.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-accent text-sm font-medium">
+                    Get started <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
 
-              {/* Clone Mode */}
-              <button
-                onClick={() => setMode('clone')}
-                className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-purple-500/50 hover:bg-bg-card/80 transition-all"
-              >
-                <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors">
-                  <Layers className="w-7 h-7 text-purple-400" />
-                </div>
-                <h2 className="text-xl font-semibold text-white mb-2">Clone</h2>
-                <p className="text-zinc-400 text-sm leading-relaxed">
-                  Match the style of a winning ad.
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-purple-400 text-sm font-medium">
-                  Browse ads <ChevronRight className="w-4 h-4" />
-                </div>
-              </button>
+                {/* Clone Mode */}
+                <button
+                  onClick={() => setMode('clone')}
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-purple-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors">
+                    <Layers className="w-7 h-7 text-purple-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Clone</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Match the style of a winning ad.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-purple-400 text-sm font-medium">
+                    Browse ads <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
 
-              {/* Browse Inspiration Mode */}
-              <button
-                onClick={() => setMode('inspiration')}
-                className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
-              >
-                <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
-                  <Lightbulb className="w-7 h-7 text-amber-400" />
-                </div>
-                <h2 className="text-xl font-semibold text-white mb-2">Inspiration</h2>
-                <p className="text-zinc-400 text-sm leading-relaxed">
-                  Explore curated examples of winning ads.
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
-                  View gallery <ChevronRight className="w-4 h-4" />
-                </div>
-              </button>
+                {/* Browse Inspiration Mode */}
+                <button
+                  onClick={() => setMode('inspiration')}
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
+                    <Lightbulb className="w-7 h-7 text-amber-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Inspiration</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Explore curated examples of winning ads.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
+                    View gallery <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
 
-              {/* Upload Mode */}
-              <button
-                onClick={() => setMode('upload')}
-                className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-cyan-500/50 hover:bg-bg-card/80 transition-all"
-              >
-                <div className="w-14 h-14 rounded-xl bg-cyan-500/20 flex items-center justify-center mb-4 group-hover:bg-cyan-500/30 transition-colors">
-                  <Upload className="w-7 h-7 text-cyan-400" />
-                </div>
-                <h2 className="text-xl font-semibold text-white mb-2">Upload</h2>
-                <p className="text-zinc-400 text-sm leading-relaxed">
-                  Upload your own photo and describe your ad.
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-cyan-400 text-sm font-medium">
-                  Upload image <ChevronRight className="w-4 h-4" />
-                </div>
-              </button>
+                {/* Upload Mode */}
+                <button
+                  onClick={() => setMode('upload')}
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-cyan-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-cyan-500/20 flex items-center justify-center mb-4 group-hover:bg-cyan-500/30 transition-colors">
+                    <Upload className="w-7 h-7 text-cyan-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Upload</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Upload your own photo and describe your ad.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-cyan-400 text-sm font-medium">
+                    Upload image <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Video Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Film className="w-5 h-5 text-zinc-400" />
+                <h2 className="text-lg font-semibold text-white">Video</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Video Studio */}
+                <Link
+                  href="/dashboard/creative-studio/video-studio"
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-rose-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-rose-500/20 flex items-center justify-center mb-4 group-hover:bg-rose-500/30 transition-colors">
+                    <Video className="w-7 h-7 text-rose-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Create</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Generate AI video ads from your product page.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-rose-400 text-sm font-medium">
+                    Get started <ChevronRight className="w-4 h-4" />
+                  </div>
+                </Link>
+
+                {/* Image to Video */}
+                <button
+                  onClick={() => setMode('image-to-video')}
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-indigo-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-indigo-500/20 flex items-center justify-center mb-4 group-hover:bg-indigo-500/30 transition-colors">
+                    <Play className="w-7 h-7 text-indigo-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Image to Video</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Animate an image from your library into a video ad.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-indigo-400 text-sm font-medium">
+                    Get started <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1753,13 +2218,13 @@ export default function AdStudioPage() {
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <h1 className="text-2xl lg:text-3xl font-bold text-white">
-                {mode === 'create' ? 'Create Ad' : mode === 'upload' ? 'Upload Ad' : isRefreshMode ? 'Refresh Ad' : 'Clone Ad'}
+                {mode === 'create' ? 'Create Ad' : mode === 'upload' ? 'Upload Ad' : mode === 'image-to-video' ? 'Image to Video' : isRefreshMode ? 'Refresh Ad' : 'Clone Ad'}
               </h1>
               <span className={cn(
                 'px-2 py-0.5 text-xs font-semibold rounded',
-                mode === 'create' ? 'bg-accent/20 text-accent' : mode === 'upload' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-purple-500/20 text-purple-400'
+                mode === 'create' ? 'bg-accent/20 text-accent' : mode === 'upload' ? 'bg-cyan-500/20 text-cyan-400' : mode === 'image-to-video' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-purple-500/20 text-purple-400'
               )}>
-                {mode === 'create' ? 'ORIGINAL' : mode === 'upload' ? 'CUSTOM' : isRefreshMode ? 'CREATIVE REFRESH' : 'STYLE MATCH'}
+                {mode === 'create' ? 'ORIGINAL' : mode === 'upload' ? 'CUSTOM' : mode === 'image-to-video' ? 'ANIMATE' : isRefreshMode ? 'CREATIVE REFRESH' : 'STYLE MATCH'}
               </span>
             </div>
             <p className="text-zinc-500 mt-1 ml-7">
@@ -1767,6 +2232,8 @@ export default function AdStudioPage() {
                 ? 'Generate original ads from your product page'
                 : mode === 'upload'
                 ? 'Generate ads from your uploaded image'
+                : mode === 'image-to-video'
+                ? 'Animate an image into a short video ad'
                 : isRefreshMode
                 ? 'Create fresh variations of your winning ad'
                 : 'Generate ads that match a winning style'}
@@ -1821,15 +2288,19 @@ export default function AdStudioPage() {
 
               <div className={cn(
                 'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-                currentStep === 3 || (mode === 'create' && currentStep === 2) ? 'text-white' : 'text-zinc-500'
+                currentStep === 3 || ((mode === 'create' || mode === 'image-to-video') && currentStep === 2) ? 'text-white' : 'text-zinc-500'
               )}>
                 <span className={cn(
                   'w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold',
-                  generatedAds.length > 0 ? 'bg-emerald-500 text-white' : (currentStep === 3 || (mode === 'create' && currentStep === 2)) ? 'bg-accent text-white' : 'bg-zinc-700'
+                  (mode === 'image-to-video' ? Object.keys(i2vJobs).length > 0 : generatedAds.length > 0)
+                    ? 'bg-emerald-500 text-white'
+                    : (currentStep === 3 || ((mode === 'create' || mode === 'image-to-video') && currentStep === 2))
+                      ? (mode === 'image-to-video' ? 'bg-indigo-500 text-white' : 'bg-accent text-white')
+                      : 'bg-zinc-700'
                 )}>
-                  {generatedAds.length > 0 ? '✓' : mode === 'clone' ? '3' : '2'}
+                  {(mode === 'image-to-video' ? Object.keys(i2vJobs).length > 0 : generatedAds.length > 0) ? '✓' : mode === 'clone' ? '3' : '2'}
                 </span>
-                Generate
+                {mode === 'image-to-video' ? 'Image + Generate' : 'Generate'}
               </div>
             </div>
           )}
@@ -1864,171 +2335,237 @@ export default function AdStudioPage() {
             </div>
           )}
 
-          {/* Step 1: Product URL or Manual Entry */}
+          {/* Step 1: Product URL or Manual Entry + Pill Selectors */}
           {currentStep === 1 && (
-            <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
-              {!useManualEntry ? (
-                <>
-                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <LinkIcon className="w-5 h-5 text-accent" />
-                    Enter Your Product URL
-                  </h2>
-                  <p className="text-sm text-zinc-400">
-                    Paste a link to your product page. We'll extract the product details automatically.
-                  </p>
-
-                  <div className="flex gap-3">
-                    <input
-                      type="url"
-                      value={productUrl}
-                      onChange={(e) => setProductUrl(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeProduct()}
-                      placeholder="https://yourstore.com/products/awesome-product"
-                      className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
-                    />
-                    <button
-                      onClick={handleAnalyzeProduct}
-                      disabled={isAnalyzingProduct || !productUrl.trim()}
-                      className={cn(
-                        'px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2',
-                        'bg-accent hover:bg-accent-hover text-white',
-                        (isAnalyzingProduct || !productUrl.trim()) && 'opacity-50 cursor-not-allowed'
-                      )}
-                    >
-                      {isAnalyzingProduct ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-4 h-4" />
-                      )}
-                      Analyze
-                    </button>
-                  </div>
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-4 py-2">
-                    <div className="flex-1 h-px bg-border" />
-                    <span className="text-sm text-zinc-500">or</span>
-                    <div className="flex-1 h-px bg-border" />
-                  </div>
-
-                  {/* Manual entry option */}
-                  <button
-                    onClick={() => setUseManualEntry(true)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-border rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Upload image & enter details manually
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between">
+            <div className="space-y-4">
+              {/* Section A: Product Input */}
+              <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
+                {!useManualEntry ? (
+                  <>
                     <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                      <Package className="w-5 h-5 text-accent" />
-                      Enter Product Details
+                      <Globe className="w-5 h-5 text-accent" />
+                      Enter Your Product URL
                     </h2>
-                    <button
-                      onClick={() => {
-                        setUseManualEntry(false)
-                        setManualProductName('')
-                        setManualProductDescription('')
-                        setManualProductImage(null)
-                      }}
-                      className="text-sm text-zinc-500 hover:text-white transition-colors"
-                    >
-                      Use URL instead
-                    </button>
-                  </div>
+                    <p className="text-sm text-zinc-400">
+                      Paste a link to your product page. We&apos;ll extract the product details automatically.
+                    </p>
 
-                  <div className="space-y-4">
-                    {/* Product image upload */}
-                    <div>
-                      <label className="block text-sm text-zinc-400 mb-2">Product Image</label>
-                      {manualProductImage ? (
-                        <div className="flex items-start gap-4">
-                          <div className="w-24 h-24 rounded-lg overflow-hidden bg-zinc-900 flex-shrink-0">
-                            <img
-                              src={manualProductImage.preview}
-                              alt="Product"
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <button
-                            onClick={() => setManualProductImage(null)}
-                            className="text-sm text-zinc-500 hover:text-white transition-colors"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ) : (
-                        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-zinc-600 transition-colors">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleManualImageUpload}
-                            className="hidden"
-                          />
-                          {isUploadingManualImage ? (
-                            <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
-                          ) : (
-                            <>
-                              <Upload className="w-6 h-6 text-zinc-500 mb-2" />
-                              <span className="text-sm text-zinc-500">Click to upload product image</span>
-                            </>
-                          )}
-                        </label>
-                      )}
-                    </div>
-
-                    {/* Product name */}
-                    <div>
-                      <label className="block text-sm text-zinc-400 mb-2">
-                        Product Name <span className="text-red-400">*</span>
-                      </label>
+                    <div className="flex gap-3">
                       <input
-                        type="text"
-                        value={manualProductName}
-                        onChange={(e) => setManualProductName(e.target.value)}
-                        placeholder="e.g., Premium Wireless Headphones"
-                        className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
+                        type="url"
+                        value={productUrl}
+                        onChange={(e) => setProductUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeProduct()}
+                        placeholder="https://yourstore.com/products/awesome-product"
+                        className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
                       />
+                      <button
+                        onClick={handleAnalyzeProduct}
+                        disabled={isAnalyzingProduct || !productUrl.trim()}
+                        className={cn(
+                          'px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2',
+                          'bg-accent hover:bg-accent-hover text-white',
+                          (isAnalyzingProduct || !productUrl.trim()) && 'opacity-50 cursor-not-allowed'
+                        )}
+                      >
+                        {isAnalyzingProduct ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                        Analyze
+                      </button>
                     </div>
 
-                    {/* Product description */}
-                    <div>
-                      <label className="block text-sm text-zinc-400 mb-2">
-                        Description <span className="text-zinc-600">(optional)</span>
-                      </label>
-                      <textarea
-                        value={manualProductDescription}
-                        onChange={(e) => setManualProductDescription(e.target.value)}
-                        placeholder="Brief description of your product, key features, benefits..."
-                        rows={3}
-                        className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent resize-none"
-                      />
+                    {hasAnalyzed && totalPillsFound > 0 && (
+                      <div className="flex items-center gap-2 text-emerald-400 text-sm">
+                        <Check className="w-4 h-4" />
+                        Found {totalPillsFound} items — select the ones you want in your creative brief
+                      </div>
+                    )}
+
+                    {!hasAnalyzed && (
+                      <>
+                        {/* Divider */}
+                        <div className="flex items-center gap-4 py-2">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-sm text-zinc-500">or</span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
+
+                        {/* Manual entry option */}
+                        <button
+                          onClick={() => setUseManualEntry(true)}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-border rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
+                        >
+                          <Upload className="w-4 h-4" />
+                          Upload image & enter details manually
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Package className="w-5 h-5 text-accent" />
+                        Enter Product Details
+                      </h2>
+                      <button
+                        onClick={() => {
+                          setUseManualEntry(false)
+                          setManualProductName('')
+                          setManualProductDescription('')
+                          setManualProductImage(null)
+                          setHasAnalyzed(false)
+                          setPools({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
+                          setSelected({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
+                        }}
+                        className="text-sm text-zinc-500 hover:text-white transition-colors"
+                      >
+                        Use URL instead
+                      </button>
                     </div>
 
-                    {/* Continue button */}
-                    <button
-                      onClick={handleUseManualProduct}
-                      disabled={!manualProductName.trim()}
-                      className={cn(
-                        'w-full px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
-                        'bg-accent hover:bg-accent-hover text-white',
-                        !manualProductName.trim() && 'opacity-50 cursor-not-allowed'
+                    <div className="space-y-4">
+                      {/* Product image upload — hidden for i2v since Step 2 handles images */}
+                      {mode !== 'image-to-video' && (
+                        <div>
+                          <label className="block text-sm text-zinc-400 mb-2">Product Image</label>
+                          {manualProductImage ? (
+                            <div className="flex items-start gap-4">
+                              <div className="w-24 h-24 rounded-lg overflow-hidden bg-zinc-900 flex-shrink-0">
+                                <img
+                                  src={manualProductImage.preview}
+                                  alt="Product"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <button
+                                onClick={() => setManualProductImage(null)}
+                                className="text-sm text-zinc-500 hover:text-white transition-colors"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-zinc-600 transition-colors">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleManualImageUpload}
+                                className="hidden"
+                              />
+                              {isUploadingManualImage ? (
+                                <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
+                              ) : (
+                                <>
+                                  <Upload className="w-6 h-6 text-zinc-500 mb-2" />
+                                  <span className="text-sm text-zinc-500">Click to upload product image</span>
+                                </>
+                              )}
+                            </label>
+                          )}
+                        </div>
                       )}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                      Continue
-                    </button>
-                  </div>
-                </>
-              )}
 
-              {productError && (
-                <div className="flex items-center gap-2 text-red-400 text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {productError}
+                      {/* Product name */}
+                      <div>
+                        <label className="block text-sm text-zinc-400 mb-2">
+                          Product Name <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={manualProductName}
+                          onChange={(e) => setManualProductName(e.target.value)}
+                          placeholder="e.g., Premium Wireless Headphones"
+                          className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
+                        />
+                      </div>
+
+                      {/* Product description */}
+                      <div>
+                        <label className="block text-sm text-zinc-400 mb-2">
+                          Description <span className="text-zinc-600">(optional)</span>
+                        </label>
+                        <textarea
+                          value={manualProductDescription}
+                          onChange={(e) => setManualProductDescription(e.target.value)}
+                          placeholder="Brief description of your product, key features, benefits..."
+                          rows={3}
+                          className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent resize-none"
+                        />
+                      </div>
+
+                      {/* Populate pills button */}
+                      {!hasAnalyzed && (
+                        <button
+                          onClick={handleUseManualProduct}
+                          disabled={!manualProductName.trim()}
+                          className={cn(
+                            'w-full px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
+                            'bg-accent hover:bg-accent-hover text-white',
+                            !manualProductName.trim() && 'opacity-50 cursor-not-allowed'
+                          )}
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                          Continue
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {productError && (
+                  <div className="flex items-center gap-2 text-red-400 text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    {productError}
+                  </div>
+                )}
+              </div>
+
+              {/* Section B: Creative Brief (Pill Selectors) */}
+              {hasAnalyzed && (
+                <div className="bg-bg-card border border-border rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-lg font-semibold text-white">Creative Brief</h2>
+                    {totalSelected > 0 && (
+                      <span className="text-xs text-zinc-500">{totalSelected} selected</span>
+                    )}
+                  </div>
+                  <div className="space-y-5">
+                    {PILL_SECTIONS.map(({ key, label, required, hint }) => {
+                      if (pools[key].length === 0 && !required && key !== 'features' && key !== 'benefits') return null
+                      return (
+                        <PillGroup
+                          key={key}
+                          label={label}
+                          items={pools[key]}
+                          selectedIndices={selected[key]}
+                          multiSelect={!SINGLE_SELECT.includes(key)}
+                          onToggle={(index) => togglePill(key, index)}
+                          onAdd={(value) => addToPool(key, value)}
+                          required={required}
+                          hint={hint}
+                        />
+                      )
+                    })}
+                  </div>
+
+                  {/* Continue button */}
+                  <button
+                    onClick={handleProceedFromPills}
+                    disabled={!canProceedFromPills}
+                    className={cn(
+                      'w-full mt-6 px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
+                      canProceedFromPills
+                        ? 'bg-accent hover:bg-accent-hover text-white'
+                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                    )}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                    Continue{totalSelected > 0 ? ` with ${totalSelected} selected` : ''}
+                  </button>
                 </div>
               )}
             </div>
@@ -2097,6 +2634,38 @@ export default function AdStudioPage() {
                 <div className="mt-3 flex items-center gap-2 text-sm text-emerald-400">
                   <Check className="w-4 h-4" />
                   Product image added
+                </div>
+              )}
+
+              {/* Product image picker — shown when multiple images extracted */}
+              {productImageOptions.length > 1 && (
+                <div className="mt-4">
+                  <label className="text-xs font-medium text-zinc-400 mb-2 block">Product image — click to change</label>
+                  <div className="flex flex-wrap gap-2">
+                    {productImageOptions.map((img, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSelectProductImage(i)}
+                        className={cn(
+                          'relative w-14 h-14 rounded-lg overflow-hidden border-2 transition-all',
+                          selectedProductImageIdx === i
+                            ? 'border-purple-500 ring-2 ring-purple-500/30'
+                            : 'border-border hover:border-zinc-500'
+                        )}
+                      >
+                        <img
+                          src={`data:${img.mimeType};base64,${img.base64}`}
+                          alt={img.description || `Image ${i + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        {selectedProductImageIdx === i && (
+                          <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
+                            <Check className="w-3.5 h-3.5 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -2437,6 +3006,385 @@ export default function AdStudioPage() {
             </div>
           )}
 
+          {/* Step 2: Image-to-Video — Select image, prompt, generate */}
+          {currentStep === 2 && mode === 'image-to-video' && (
+            <div className="space-y-6">
+              {/* Image Selection */}
+              <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <ImagePlus className="w-5 h-5 text-indigo-400" />
+                  Select Image
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  Choose a product image to animate into a video ad.
+                </p>
+
+                {/* Selected image preview */}
+                {i2vSelectedImage && (
+                  <div className="flex items-start gap-4 p-4 bg-bg-dark rounded-xl border border-indigo-500/30">
+                    <div className="relative w-32 h-32 rounded-lg overflow-hidden bg-zinc-900 flex-shrink-0 border-2 border-indigo-500/40">
+                      <img
+                        src={i2vSelectedImage.preview}
+                        alt={i2vSelectedImage.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div className="font-medium text-white truncate">{i2vSelectedImage.name}</div>
+                      <div className="flex items-center gap-2 text-xs text-emerald-400">
+                        <Check className="w-3 h-3" />
+                        Image selected
+                      </div>
+                      <button
+                        onClick={() => setI2vSelectedImage(null)}
+                        className="text-sm text-zinc-500 hover:text-white transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Image source options — only show when no image selected */}
+                {!i2vSelectedImage && (
+                  <div className="space-y-4">
+                    {/* URL Photos — from product analysis */}
+                    {productImageOptions.length > 0 ? (
+                      <div>
+                        <label className="text-sm font-medium text-zinc-300 mb-2 block">From product URL</label>
+                        <div className="flex flex-wrap gap-3">
+                          {productImageOptions.map((img, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setI2vSelectedImage({
+                                base64: img.base64,
+                                mimeType: img.mimeType,
+                                preview: `data:${img.mimeType};base64,${img.base64}`,
+                                name: img.description || `Product image ${i + 1}`,
+                              })}
+                              className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-zinc-700 hover:border-indigo-500/60 transition-all group"
+                            >
+                              <img
+                                src={`data:${img.mimeType};base64,${img.base64}`}
+                                alt={img.description || `Image ${i + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center">
+                                <Check className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Also show raw analysis image if no productImageOptions but rawAnalysis has image */}
+                    {productImageOptions.length === 0 && rawAnalysisRef.current?.imageBase64 ? (
+                      <div>
+                        <label className="text-sm font-medium text-zinc-300 mb-2 block">From product URL</label>
+                        <button
+                          onClick={() => setI2vSelectedImage({
+                            base64: rawAnalysisRef.current!.imageBase64 as string,
+                            mimeType: (rawAnalysisRef.current!.imageMimeType as string) || 'image/jpeg',
+                            preview: `data:${rawAnalysisRef.current!.imageMimeType || 'image/jpeg'};base64,${rawAnalysisRef.current!.imageBase64}`,
+                            name: 'Product image',
+                          })}
+                          className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-zinc-700 hover:border-indigo-500/60 transition-all group"
+                        >
+                          <img
+                            src={`data:${rawAnalysisRef.current.imageMimeType || 'image/jpeg'};base64,${rawAnalysisRef.current.imageBase64}`}
+                            alt="Product"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center">
+                            <Check className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {/* Divider if URL photos exist */}
+                    {(productImageOptions.length > 0 || rawAnalysisRef.current?.imageBase64) ? (
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1 h-px bg-border" />
+                        <span className="text-xs text-zinc-500">or choose from</span>
+                        <div className="flex-1 h-px bg-border" />
+                      </div>
+                    ) : null}
+
+                    {/* Media Library + Upload buttons */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Media Library */}
+                      <button
+                        onClick={() => setI2vShowLibrary(true)}
+                        disabled={i2vDownloadingLibrary}
+                        className={cn(
+                          'flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-indigo-500/40 hover:bg-indigo-500/5 transition-colors',
+                          i2vDownloadingLibrary && 'opacity-50 cursor-not-allowed'
+                        )}
+                      >
+                        {i2vDownloadingLibrary ? (
+                          <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-2" />
+                        ) : (
+                          <Layers className="w-8 h-8 text-indigo-400 mb-2" />
+                        )}
+                        <p className="text-white font-medium text-sm">
+                          {i2vDownloadingLibrary ? 'Loading...' : 'Media Library'}
+                        </p>
+                        <p className="text-zinc-500 text-xs mt-1">Browse your ad account images</p>
+                      </button>
+
+                      {/* Upload */}
+                      <label className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-indigo-500/40 hover:bg-indigo-500/5 transition-colors cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            if (file.size > 10 * 1024 * 1024) {
+                              setI2vError('Image must be less than 10MB')
+                              return
+                            }
+                            const reader = new FileReader()
+                            reader.onload = () => {
+                              const base64 = (reader.result as string).split(',')[1]
+                              setI2vSelectedImage({
+                                base64,
+                                mimeType: file.type,
+                                preview: URL.createObjectURL(file),
+                                name: file.name,
+                              })
+                              setI2vError(null)
+                            }
+                            reader.readAsDataURL(file)
+                          }}
+                        />
+                        <Upload className="w-8 h-8 text-indigo-400 mb-2" />
+                        <p className="text-white font-medium text-sm">Upload Image</p>
+                        <p className="text-zinc-500 text-xs mt-1">PNG, JPG, WEBP up to 10MB</p>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Motion Prompt + Duration + Generate */}
+              <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Play className="w-5 h-5 text-indigo-400" />
+                  Describe the Motion
+                </h2>
+
+                <textarea
+                  value={i2vPrompt}
+                  onChange={(e) => setI2vPrompt(e.target.value)}
+                  placeholder="e.g., 'Slowly zoom in while the product rotates, particles float upward, cinematic lighting shifts from cool to warm'"
+                  className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 resize-none"
+                  rows={3}
+                />
+                <p className="text-xs text-zinc-500">
+                  Describe camera movement, effects, and atmosphere. Veo will animate your still image.
+                </p>
+
+                {/* Duration Stepper — Veo style: min 8, step 7 */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Duration</label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-0 rounded-lg border border-zinc-700/50 bg-zinc-800/50 overflow-hidden">
+                      <button
+                        onClick={() => { if (i2vDuration > 8) setI2vDuration(i2vDuration - VEO_EXTENSION_STEP) }}
+                        disabled={i2vDuration <= 8}
+                        className="px-2.5 py-2 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="px-4 py-2 text-sm font-bold text-white min-w-[3.5rem] text-center tabular-nums">
+                        {i2vDuration}s
+                      </span>
+                      <button
+                        onClick={() => setI2vDuration(i2vDuration + VEO_EXTENSION_STEP)}
+                        className="px-2.5 py-2 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <span className="text-xs text-zinc-500">{i2vCreditCost} credits</span>
+                  </div>
+                </div>
+
+                {/* Credits info */}
+                {aiUsage && (
+                  <div className="text-xs text-zinc-500">
+                    {aiUsage.remaining} credits remaining
+                    {i2vDuration > 8 && (
+                      <span className="text-amber-400/60"> · Base 50 + {Math.max(0, (i2vDuration - 8) / VEO_EXTENSION_STEP) * VEO_EXTENSION_COST} extension</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Error */}
+                {i2vError && (
+                  <div className="flex items-center gap-2 text-red-400 text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    {i2vError}
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <button
+                  onClick={handleI2vGenerate}
+                  disabled={!i2vSelectedImage || !i2vPrompt.trim() || i2vGenerating || (aiUsage ? aiUsage.remaining < i2vCreditCost : false)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-indigo-500 text-white font-medium hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                >
+                  {i2vGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Starting generation...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="w-4 h-4" />
+                      Generate {i2vDuration}s Video ({i2vCreditCost} credits)
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Generated Videos */}
+              {Object.keys(i2vJobs).length > 0 && (
+                <div className="space-y-4">
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <Film className="w-5 h-5 text-indigo-400" />
+                    Generated Videos
+                  </h2>
+                  {Object.values(i2vJobs).map((job) => {
+                    const videoUrl = job.final_video_url || job.raw_video_url
+                    const hasVideo = job.status === 'complete' && videoUrl
+
+                    return (
+                      <div key={job.id} className="bg-bg-card border border-border rounded-xl overflow-hidden">
+                        {hasVideo ? (
+                          <div className="p-4">
+                            <div className="flex items-center gap-3 justify-center">
+                              <div className="rounded-xl overflow-hidden bg-zinc-900" style={{ maxHeight: 360, maxWidth: 202, aspectRatio: '9/16' }}>
+                                <video
+                                  src={videoUrl}
+                                  poster={job.thumbnail_url || undefined}
+                                  controls
+                                  playsInline
+                                  className="w-full h-full object-contain"
+                                />
+                              </div>
+                              {/* +7 sec extend button */}
+                              <button
+                                onClick={() => handleI2vExtend(job.ad_index || 0)}
+                                disabled={i2vExtending || (aiUsage ? aiUsage.remaining < VEO_EXTENSION_COST : false)}
+                                className="flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl text-sm font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {i2vExtending ? (
+                                  <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                  <Plus className="w-5 h-5" />
+                                )}
+                                <span className="whitespace-nowrap">+ 7 sec</span>
+                                <span className="text-[10px] text-amber-400/60">25 credits</span>
+                              </button>
+                            </div>
+                            {/* Duration badge */}
+                            <p className="text-center text-xs text-zinc-500 mt-2">
+                              {job.duration_seconds || job.target_duration_seconds || 8}s video
+                            </p>
+                            {/* Action buttons */}
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                onClick={() => router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}`)}
+                                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
+                              >
+                                <Film className="w-3.5 h-3.5" />
+                                Edit Video
+                              </button>
+                              <button
+                                onClick={() => handleI2vGenerate()}
+                                disabled={i2vGenerating}
+                                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border disabled:opacity-50"
+                              >
+                                <RefreshCw className={cn('w-3.5 h-3.5', i2vGenerating && 'animate-spin')} />
+                                Re-generate
+                              </button>
+                            </div>
+                          </div>
+                        ) : job.status === 'failed' ? (
+                          <div className="p-6 text-center">
+                            <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+                            <p className="text-sm text-red-400">{job.error_message || 'Generation failed'}</p>
+                            <button
+                              onClick={() => handleI2vGenerate()}
+                              className="mt-3 px-4 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                            >
+                              Try Again
+                            </button>
+                          </div>
+                        ) : (
+                          <VideoJobCard job={job} compact />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Media Library Modal for Image-to-Video */}
+          {i2vShowLibrary && user?.id && currentAccountId && (
+            <MediaLibraryModal
+              isOpen={i2vShowLibrary}
+              onClose={() => setI2vShowLibrary(false)}
+              userId={user.id}
+              adAccountId={currentAccountId}
+              selectedItems={[]}
+              onSelectionChange={async (items) => {
+                setI2vShowLibrary(false)
+                if (items.length === 0) return
+
+                const item = items[0]
+                if (!('hash' in item)) return
+
+                const mediaItem = item as MediaImage & { mediaType: 'image' }
+
+                // Download image to get base64
+                setI2vDownloadingLibrary(true)
+                try {
+                  const res = await fetch('/api/creative-studio/download-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: mediaItem.url }),
+                  })
+
+                  if (res.ok) {
+                    const data = await res.json()
+                    setI2vSelectedImage({
+                      base64: data.base64,
+                      mimeType: data.mimeType || 'image/jpeg',
+                      preview: mediaItem.url,
+                      name: mediaItem.name || 'Library image',
+                    })
+                  } else {
+                    setI2vError('Failed to load image from library')
+                  }
+                } catch {
+                  setI2vError('Failed to load image from library')
+                } finally {
+                  setI2vDownloadingLibrary(false)
+                }
+              }}
+              maxSelection={1}
+              allowedTypes={['image']}
+            />
+          )}
+
           {/* Selected Ad Card (Clone mode only - shows the ad being used as reference) */}
           {mode === 'clone' && selectedAd && currentStep === 3 && (
             <div className={cn(
@@ -2618,27 +3566,6 @@ export default function AdStudioPage() {
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <h2 className="text-lg font-semibold text-white">Your Generated Ads</h2>
                 <div className="flex items-center gap-4">
-                  {/* Image Style Selector */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">Image style:</span>
-                    <select
-                      value={imageStyle}
-                      onChange={(e) => setImageStyle(e.target.value as typeof imageStyle)}
-                      className="bg-bg-dark border border-border rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-accent"
-                    >
-                      {/* Clone/Refresh options only when we have a reference ad */}
-                      {referenceAdImage && isRefreshMode && (
-                        <option value="refresh">Refresh (new variation)</option>
-                      )}
-                      {referenceAdImage && !isRefreshMode && (
-                        <option value="clone">Clone (match reference)</option>
-                      )}
-                      <option value="lifestyle">Lifestyle</option>
-                      <option value="product">Product</option>
-                      <option value="minimal">Minimal</option>
-                      <option value="bold">Bold</option>
-                    </select>
-                  </div>
                   <button
                     onClick={handleGenerate}
                     disabled={isGenerating}
@@ -2660,7 +3587,7 @@ export default function AdStudioPage() {
                   <ImagePlus className="w-3 h-3" />
                   {aiUsage.remaining <= 0
                     ? `Credit limit reached (${aiUsage.totalAvailable}${aiUsage.status === 'active' ? '/mo' : ' total'})`
-                    : `${aiUsage.remaining} credits remaining — Image (5 cr) · Video (50 cr)${aiUsage.status === 'active' ? ' · resets monthly' : ''}`
+                    : `${aiUsage.remaining} credits remaining — Image (5 cr)${aiUsage.status === 'active' ? ' · resets monthly' : ''}`
                   }
                 </div>
               )}
@@ -2728,113 +3655,8 @@ export default function AdStudioPage() {
                       <div className="text-zinc-500 text-sm">{ad.whyItWorks}</div>
                     </div>
 
-                    {/* Media Generation Section - Image | Video toggle */}
+                    {/* Image Generation Section */}
                     <div className="pt-3 border-t border-border">
-                      {/* Image / Video toggle */}
-                      <div className="flex items-center gap-1 mb-3 bg-zinc-800/50 rounded-lg p-0.5 w-fit">
-                        <button
-                          onClick={() => setAdMediaMode(prev => ({ ...prev, [index]: 'image' }))}
-                          className={cn(
-                            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-                            (adMediaMode[index] || 'image') === 'image'
-                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                              : 'text-zinc-500 hover:text-zinc-300'
-                          )}
-                        >
-                          <ImagePlus className="w-3 h-3" />
-                          Image
-                        </button>
-                        <button
-                          onClick={() => setAdMediaMode(prev => ({ ...prev, [index]: 'video' }))}
-                          className={cn(
-                            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-                            adMediaMode[index] === 'video'
-                              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                              : 'text-zinc-500 hover:text-zinc-300'
-                          )}
-                        >
-                          <Video className="w-3 h-3" />
-                          Video
-                        </button>
-                      </div>
-
-                      {/* VIDEO MODE */}
-                      {adMediaMode[index] === 'video' && (
-                        <div className="space-y-3">
-                          {adVideoJobs[index] ? (
-                            <div>
-                              <VideoJobCard
-                                job={adVideoJobs[index]}
-                                compact={adVideoJobs[index].status !== 'complete'}
-                                onEdit={(jobId) => router.push(`/dashboard/creative-studio/video-editor?jobId=${jobId}`)}
-                              />
-                              {adVideoJobs[index].status === 'failed' && (
-                                <button
-                                  onClick={() => {
-                                    setAdVideoJobs(prev => {
-                                      const next = { ...prev }
-                                      delete next[index]
-                                      return next
-                                    })
-                                  }}
-                                  className="mt-2 text-xs text-zinc-400 hover:text-white"
-                                >
-                                  Try again
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <>
-                              {/* Style selector */}
-                              <div>
-                                <label className="block text-xs text-zinc-500 mb-1.5">Video style</label>
-                                <select
-                                  value={adVideoStyle[index] || 'lifestyle'}
-                                  onChange={(e) => setAdVideoStyle(prev => ({ ...prev, [index]: e.target.value }))}
-                                  className="w-full bg-bg-dark border border-border rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-                                >
-                                  {VIDEO_STYLES.map(s => (
-                                    <option key={s.id} value={s.id}>{s.label}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <button
-                                onClick={() => handleGenerateVideo(ad, index)}
-                                disabled={generatingVideoIndex !== null || (aiUsage != null && aiUsage.remaining < 50)}
-                                className={cn(
-                                  'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
-                                  'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30',
-                                  (generatingVideoIndex !== null || (aiUsage != null && aiUsage.remaining < 50)) && 'opacity-50 cursor-not-allowed'
-                                )}
-                              >
-                                {generatingVideoIndex === index ? (
-                                  <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Starting Video...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Film className="w-4 h-4" />
-                                    Generate Video (50 credits)
-                                  </>
-                                )}
-                              </button>
-                              <p className="text-[10px] text-zinc-600 text-center">
-                                Videos take 2-5 min. Check AI Tasks while you wait.
-                              </p>
-                              {videoErrors[index] && (
-                                <div className="flex items-center gap-2 text-red-400 text-xs">
-                                  <AlertCircle className="w-3 h-3" />
-                                  {videoErrors[index]}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
-
-                      {/* IMAGE MODE (existing logic) */}
-                      {(adMediaMode[index] || 'image') === 'image' && (
                       <>
                       {(() => {
                         const images = generatedImages[index]
@@ -3005,24 +3827,47 @@ export default function AdStudioPage() {
                       {/* No images - show generate button (with prompt field for Create/Upload mode) */}
                       {(!generatedImages[index] || generatedImages[index].length === 0) && (
                         <div className="space-y-3">
-                          {/* Image prompt field - required for Create/Upload mode, optional for Clone */}
-                          {(mode === 'create' || mode === 'upload') && (
-                            <div>
-                              <label className="block text-xs text-zinc-500 mb-1.5">
-                                {mode === 'upload' ? 'Creative direction' : 'Describe how you want the ad to look'} <span className="text-red-400">*</span>
-                              </label>
-                              <textarea
-                                value={imagePrompts[index] || ''}
-                                onChange={(e) => setImagePrompts(prev => ({ ...prev, [index]: e.target.value }))}
-                                placeholder="e.g., 'Lifestyle photo of someone using the product outdoors with warm sunset lighting' or 'Clean product shot on white background with subtle shadows'"
-                                className={cn(
-                                  'w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none resize-none',
-                                  mode === 'upload' ? 'focus:border-cyan-500' : 'focus:border-accent'
+                          {/* Image prompt + style row */}
+                          <div className="flex gap-2 items-end">
+                            {(mode === 'create' || mode === 'upload') ? (
+                              <div className="flex-1">
+                                <label className="block text-xs text-zinc-500 mb-1.5">
+                                  {mode === 'upload' ? 'Creative direction' : 'Describe how you want the ad to look'} <span className="text-red-400">*</span>
+                                </label>
+                                <textarea
+                                  value={imagePrompts[index] || ''}
+                                  onChange={(e) => setImagePrompts(prev => ({ ...prev, [index]: e.target.value }))}
+                                  placeholder="e.g., 'Lifestyle photo of someone using the product outdoors with warm sunset lighting'"
+                                  className={cn(
+                                    'w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none resize-none',
+                                    mode === 'upload' ? 'focus:border-cyan-500' : 'focus:border-accent'
+                                  )}
+                                  rows={2}
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex-1" />
+                            )}
+                            <div className="shrink-0">
+                              <label className="block text-xs text-zinc-500 mb-1.5">Style</label>
+                              <select
+                                value={imageStyles[index] || (referenceAdImage ? (isRefreshMode ? 'refresh' : 'clone') : 'lifestyle')}
+                                onChange={(e) => setImageStyles(prev => ({ ...prev, [index]: e.target.value as any }))}
+                                className="bg-bg-dark border border-border rounded-lg px-2 py-[7px] text-sm text-white focus:outline-none focus:border-accent"
+                              >
+                                {referenceAdImage && isRefreshMode && (
+                                  <option value="refresh">Refresh</option>
                                 )}
-                                rows={2}
-                              />
+                                {referenceAdImage && !isRefreshMode && (
+                                  <option value="clone">Clone</option>
+                                )}
+                                <option value="lifestyle">Lifestyle</option>
+                                <option value="product">Product</option>
+                                <option value="minimal">Minimal</option>
+                                <option value="bold">Bold</option>
+                              </select>
                             </div>
-                          )}
+                          </div>
                           <button
                             onClick={() => handleGenerateImage(ad, index)}
                             disabled={generatingImageIndex !== null || ((mode === 'create' || mode === 'upload') && !imagePrompts[index]?.trim()) || (aiUsage != null && aiUsage.remaining < 5)}
@@ -3055,7 +3900,6 @@ export default function AdStudioPage() {
                         </div>
                       )}
                       </>
-                      )}
                     </div>
                   </div>
                 ))}

@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const strippedAccountId = adAccountId.replace(/^act_/, '')
 
     // 1. Get media metadata from media_library
-    const { data: mediaItem, error: mediaError } = await supabase
+    const { data: mediaItem } = await supabase
       .from('media_library')
       .select('*')
       .eq('user_id', userId)
@@ -45,8 +45,54 @@ export async function GET(request: NextRequest) {
       .eq('media_hash', mediaHash)
       .single()
 
-    if (mediaError || !mediaItem) {
-      return NextResponse.json({ error: 'Media item not found' }, { status: 404 })
+    // If not in media_library, try to build a stub from ad_data (Active Ads uses hashes not in media_library)
+    let mediaStub: any = mediaItem
+    if (!mediaItem) {
+      // Try media_hash first, then video_id (mediaHash from frontend may be either)
+      let adRow: any = null
+
+      // Prefer rows with storage_url (actual Supabase video)
+      const { data: hashRow } = await supabase
+        .from('ad_data')
+        .select('media_hash, media_type, ad_name, thumbnail_url, storage_url, video_id')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .eq('media_hash', mediaHash)
+        .order('storage_url', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .single()
+      adRow = hashRow
+
+      if (!adRow) {
+        // Try matching by video_id
+        const { data: vidRow } = await supabase
+          .from('ad_data')
+          .select('media_hash, media_type, ad_name, thumbnail_url, storage_url, video_id')
+          .eq('user_id', userId)
+          .eq('ad_account_id', adAccountId)
+          .eq('video_id', mediaHash)
+          .order('storage_url', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .single()
+        adRow = vidRow
+      }
+
+      if (!adRow) {
+        return NextResponse.json({ error: 'Media item not found' }, { status: 404 })
+      }
+
+      mediaStub = {
+        media_hash: adRow.media_hash || mediaHash,
+        media_type: adRow.media_type || 'video',
+        name: adRow.ad_name || 'Untitled',
+        storage_url: adRow.storage_url || null,
+        video_thumbnail_url: adRow.storage_url || null,  // Use video URL — browser shows first frame
+        video_id: adRow.video_id || null,
+        url: null,
+        width: null,
+        height: null,
+        created_at: null,
+      }
     }
 
     // 2. Get all ad_data rows for this media (including derivatives across all campaigns)
@@ -144,7 +190,7 @@ export async function GET(request: NextRequest) {
     // media_library hash. Replicate the gallery endpoint's full resolution:
     // aggregate spend per derivative hash, then match unmatched derivatives to
     // unmatched inventory videos using the same spend-ordered assignment.
-    if (allAdData.length === 0 && mediaItem.media_type === 'video') {
+    if (allAdData.length === 0 && mediaStub.media_type === 'video') {
       // Fetch all video ad_data for this account (same dataset the gallery uses)
       const { data: allVideoData } = await supabase
         .from('ad_data')
@@ -500,10 +546,10 @@ export async function GET(request: NextRequest) {
     // 9. Video source for playback
     let videoSource: string | null = null
 
-    if (mediaItem.media_type === 'video') {
+    if (mediaStub.media_type === 'video') {
       // Prefer storage URL
-      if (mediaItem.storage_url) {
-        videoSource = mediaItem.storage_url
+      if (mediaStub.storage_url) {
+        videoSource = mediaStub.storage_url
       } else {
         // Fallback: fetch from Meta API
         const videoRow = allAdData.find(row => row.video_id)
@@ -533,16 +579,16 @@ export async function GET(request: NextRequest) {
     // 10. Return unified StudioAssetDetail
     return NextResponse.json({
       media: {
-        mediaHash: mediaItem.media_hash,
-        mediaType: mediaItem.media_type,
-        name: mediaItem.name,
-        width: mediaItem.width,
-        height: mediaItem.height,
-        fileSize: mediaItem.file_size_bytes,
-        storageUrl: mediaItem.storage_url,
-        imageUrl: mediaItem.url,
-        thumbnailUrl: mediaItem.video_thumbnail_url,
-        syncedAt: mediaItem.synced_at,
+        mediaHash: mediaStub.media_hash,
+        mediaType: mediaStub.media_type,
+        name: mediaStub.name,
+        width: mediaStub.width,
+        height: mediaStub.height,
+        fileSize: mediaStub.file_size_bytes,
+        storageUrl: mediaStub.storage_url,
+        imageUrl: mediaStub.url,
+        thumbnailUrl: mediaStub.video_thumbnail_url,
+        syncedAt: mediaStub.synced_at,
       },
       dailyData,
       earlyPeriod,

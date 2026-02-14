@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenAI } from '@google/genai'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { getGoogleAI } from '@/lib/google-ai'
 
 export const maxDuration = 60
 
@@ -19,17 +19,28 @@ function getAnthropic() {
   return anthropic
 }
 
-// Lazy initialization to avoid build-time errors when env var is missing
-let genAI: GoogleGenAI | null = null
-function getGenAI() {
-  if (!genAI && process.env.GOOGLE_GEMINI_API_KEY) {
-    genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY })
-  }
-  return genAI
-}
+// Use shared Vertex AI / AI Studio client
+const getGenAI = getGoogleAI
 
 // Always use Gemini 3 Pro - it's the only model that works reliably
 const MODEL_NAME = 'gemini-3-pro-image-preview'
+
+// Retry wrapper for transient 429s from Vertex AI
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const is429 = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Resource exhausted')
+      if (!is429 || attempt === maxRetries) throw err
+      const delay = (attempt + 1) * 3000 // 3s, 6s
+      console.log(`[Imagen] 429 hit, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  throw new Error('Unreachable')
+}
 
 interface GenerateImageRequest {
   userId?: string
@@ -721,7 +732,7 @@ export async function POST(request: NextRequest) {
       console.log('[Imagen] Using model:', MODEL_NAME)
 
       try {
-        const response = await client.models.generateContent({
+        const response = await withRetry(() => client.models.generateContent({
           model: MODEL_NAME,
           contents: [
             {
@@ -732,7 +743,7 @@ export async function POST(request: NextRequest) {
           config: {
             responseModalities: ['IMAGE', 'TEXT'],
           }
-        })
+        }))
 
         // Extract the generated image from response
         const responseParts = response.candidates?.[0]?.content?.parts || []
@@ -789,60 +800,65 @@ export async function POST(request: NextRequest) {
       console.log('[Imagen] Skipping Gemini — no images available, going to Imagen text-only')
     }
 
-    // Fallback: Use Imagen (text-to-image) without reference image
-    console.log('[Imagen] Generating with Imagen text-only. Reason:', geminiFallbackReason)
+    // Text-only: use Gemini 3 Pro (same model as image-input path)
+    console.log('[Imagen] Generating with Gemini 3 Pro text-only. Reason:', geminiFallbackReason)
 
     const prompt = buildTextOnlyPrompt(body, curatedText)
 
-    const response = await client.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt,
+    const textOnlyResponse = await withRetry(() => client.models.generateContent({
+      model: MODEL_NAME,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        numberOfImages: 1,
-        aspectRatio: body.aspectRatio || '1:1',
+        responseModalities: ['IMAGE', 'TEXT'],
       },
-    })
+    }))
 
-    if (!response.generatedImages || response.generatedImages.length === 0) {
-      console.error('[Imagen] No images generated from Imagen')
-      return NextResponse.json(
-        { error: 'Failed to generate image' },
-        { status: 500 }
-      )
+    const textOnlyParts = textOnlyResponse.candidates?.[0]?.content?.parts || []
+    console.log('[Imagen] Text-only response parts count:', textOnlyParts.length)
+
+    for (const part of textOnlyParts) {
+      if (part.inlineData) {
+        console.log('[Imagen] Image generated successfully with Gemini 3 Pro (text-only)')
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawData: any = part.inlineData.data
+        let base64Data: string
+        if (typeof rawData === 'string') {
+          base64Data = rawData
+        } else if (Buffer.isBuffer(rawData)) {
+          base64Data = rawData.toString('base64')
+        } else if (rawData instanceof Uint8Array) {
+          base64Data = Buffer.from(rawData).toString('base64')
+        } else {
+          base64Data = Buffer.from(rawData as ArrayBuffer).toString('base64')
+        }
+
+        // Track usage with credit cost
+        if (body.userId) {
+          await supabaseAdmin.from('ai_generation_usage').insert({
+            user_id: body.userId,
+            generation_type: 'image',
+            credit_cost: 5,
+            generation_label: `Image: ${body.style || 'default'} (text-only)`,
+          })
+        }
+
+        return NextResponse.json({
+          image: {
+            base64: base64Data,
+            mimeType: part.inlineData.mimeType || 'image/png',
+          },
+          model: MODEL_NAME,
+          prompt: prompt.slice(0, 500),
+        })
+      }
     }
 
-    const generatedImage = response.generatedImages[0]
-    const imageBytes = generatedImage.image?.imageBytes
-
-    if (!imageBytes) {
-      console.error('[Imagen] No image bytes in Imagen response')
-      return NextResponse.json(
-        { error: 'Failed to generate image' },
-        { status: 500 }
-      )
-    }
-
-    console.log('[Imagen] Image generated successfully with Imagen (text-only)')
-
-    // Track usage with credit cost
-    if (body.userId) {
-      await supabaseAdmin.from('ai_generation_usage').insert({
-        user_id: body.userId,
-        generation_type: 'image',
-        credit_cost: 5,
-        generation_label: `Image: ${body.style || 'default'} (Imagen fallback)`,
-      })
-    }
-
-    return NextResponse.json({
-      image: {
-        base64: imageBytes,
-        mimeType: 'image/png',
-      },
-      model: 'imagen-4.0-generate-001',
-      fallbackReason: geminiFallbackReason || 'unknown',
-      prompt: prompt.slice(0, 500),
-    })
+    console.error('[Imagen] Gemini 3 Pro text-only returned no image')
+    return NextResponse.json(
+      { error: 'Failed to generate image' },
+      { status: 500 }
+    )
 
   } catch (err) {
     console.error('[Imagen] Generation error:', err)

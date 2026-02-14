@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenAI } from '@google/genai'
+import { getGoogleAI } from '@/lib/google-ai'
 
-// Lazy initialization to avoid build-time errors when env var is missing
-let genAI: GoogleGenAI | null = null
-function getGenAI() {
-  if (!genAI && process.env.GOOGLE_GEMINI_API_KEY) {
-    genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY })
-  }
-  return genAI
-}
+// Use shared Vertex AI / AI Studio client
+const getGenAI = getGoogleAI
 
 // Always use Gemini 3 Pro - it's the only model that works reliably
 const MODEL_NAME = 'gemini-3-pro-image-preview'
@@ -31,7 +25,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!process.env.GOOGLE_GEMINI_API_KEY) {
+    if (!getGenAI()) {
       return NextResponse.json(
         { error: 'Image generation not configured' },
         { status: 503 }

@@ -42,8 +42,10 @@ export async function GET(request: NextRequest) {
 
     const cleanAccountId = adAccountId.replace(/^act_/, '')
 
+    // List view: use view that strips imageBase64/imageMimeType from product_info (~92MB savings)
+    // Also excludes competitor_ad and generated_ads (only needed in detail view)
     const { data: sessions, error } = await supabase
-      .from('ad_studio_sessions')
+      .from('ad_studio_sessions_list')
       .select('*')
       .eq('user_id', userId)
       .eq('ad_account_id', cleanAccountId)

@@ -38,7 +38,7 @@ interface AnalysisItem {
 export default function CreativeStudioOverview() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
-  const { assets, isLoading, activeAds, activeDailyBudget, copyVariations } = useCreativeStudio()
+  const { assets, isLoading, activeAds, activeDailyBudget, copyVariations, openTheater } = useCreativeStudio()
 
   // AI Analyses state
   const [analyses, setAnalyses] = useState<AnalysisItem[]>([])
@@ -356,7 +356,7 @@ export default function CreativeStudioOverview() {
               </div>
               <div className="space-y-2">
                 {topHook.map((item, i) => (
-                  <div key={item.id} className="flex items-center gap-3">
+                  <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
                     <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -364,7 +364,7 @@ export default function CreativeStudioOverview() {
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.hookScore} size="sm" />
-                  </div>
+                  </button>
                 ))}
                 {topHook.length === 0 && <p className="text-xs text-zinc-600">No video data yet</p>}
               </div>
@@ -380,7 +380,7 @@ export default function CreativeStudioOverview() {
               </div>
               <div className="space-y-2">
                 {topHold.map((item, i) => (
-                  <div key={item.id} className="flex items-center gap-3">
+                  <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
                     <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -388,7 +388,7 @@ export default function CreativeStudioOverview() {
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.holdScore} size="sm" />
-                  </div>
+                  </button>
                 ))}
                 {topHold.length === 0 && <p className="text-xs text-zinc-600">No video data yet</p>}
               </div>
@@ -404,7 +404,7 @@ export default function CreativeStudioOverview() {
               </div>
               <div className="space-y-2">
                 {topClick.map((item, i) => (
-                  <div key={item.id} className="flex items-center gap-3">
+                  <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
                     <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -412,7 +412,7 @@ export default function CreativeStudioOverview() {
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.clickScore} size="sm" />
-                  </div>
+                  </button>
                 ))}
                 {topClick.length === 0 && <p className="text-xs text-zinc-600">No scored data yet</p>}
               </div>
@@ -428,7 +428,7 @@ export default function CreativeStudioOverview() {
               </div>
               <div className="space-y-2">
                 {topConvert.map((item, i) => (
-                  <div key={item.id} className="flex items-center gap-3">
+                  <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
                     <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -436,7 +436,7 @@ export default function CreativeStudioOverview() {
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.convertScore} size="sm" />
-                  </div>
+                  </button>
                 ))}
                 {topConvert.length === 0 && <p className="text-xs text-zinc-600">No scored data yet</p>}
               </div>
