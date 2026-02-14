@@ -6,7 +6,7 @@ KillScale is a SaaS app for Meta and Google Ads advertisers. Users connect via M
 
 **Live URLs:** Landing at killscale.com, App at app.killscale.com
 
-**Stats (as of Feb 2026):** 48K+ LOC, 73 API endpoints, 42+ React components, 33+ database migrations
+**Stats (as of Feb 2026):** 48K+ LOC, 88+ API endpoints, 42+ React components, 39+ database migrations
 
 ---
 
@@ -27,7 +27,8 @@ npm run lint    # Run Next.js linter
 - **Hosting:** Vercel (auto-deploy on git push)
 - **Charts:** Recharts
 - **CSV Parsing:** Papaparse
-- **AI:** Claude API (Andromeda AI chat, Health Recommendations)
+- **AI:** Claude Sonnet 4 (AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), OpenAI (Sora 2 Pro video gen, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen, Gemini 2.5 Flash image gen), Runway Gen-4.5 (video gen)
+- **Video Editor:** Remotion 4.0 (@remotion/player for preview, server render needs Chromium)
 
 ## Key Conventions
 
@@ -134,6 +135,26 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `components/creative-studio/competitor-media-mix-chart.tsx` - Recharts donut chart for media types
 - `components/creative-studio/competitor-landing-pages.tsx` - Top landing pages with percentage bars
 - `components/creative-studio/competitor-filters.tsx` - Media type, days active, status filters
+
+**Video Studio (AI Video Generation):**
+- `app/dashboard/creative-studio/video-studio/page.tsx` - Product → Concepts pipeline with pill selector, inline video generation
+- `app/dashboard/creative-studio/video-editor/page.tsx` - Remotion overlay editor
+- `app/api/creative-studio/generate-ad-concepts/route.ts` - Claude generates 4 visual metaphor concepts with angle diversity
+- `app/api/creative-studio/generate-video-script/route.ts` - Claude generates video scripts per style
+- `app/api/creative-studio/generate-video/route.ts` - Unified video generation (Sora/Veo/Runway)
+- `app/api/creative-studio/video-status/route.ts` - Provider-agnostic polling with auto-completion
+- `app/api/creative-studio/generate-overlay/route.ts` - Whisper transcription + Claude overlay generation
+- `app/api/creative-studio/render-overlay/route.ts` - Non-destructive overlay versioning
+- `app/api/creative-studio/overlay-versions/route.ts` - Version history management
+- `app/api/creative-studio/generate-voiceover/route.ts` - OpenAI TTS integration
+- `app/api/creative-studio/video-composition/route.ts` - Multi-clip timeline compositions
+- `app/api/creative-studio/video-canvas/route.ts` - Canvas (concept set) persistence
+- `lib/video-prompt-templates.ts` - AdConcept interface, ProductKnowledge type, buildSoraPrompt()
+- `lib/rve-bridge.ts` - Remotion Video Engine bridge (server render — NOT on Vercel)
+- `remotion/types.ts` - OverlayConfig, HookOverlay, CaptionOverlay, VideoComposition types
+- `remotion/AdOverlay.tsx` - Main Remotion composition
+- `components/creative-studio/video-job-card.tsx` - Video job status card
+- Database: `video_generation_jobs`, `video_overlays`, `video_concept_canvases`, `video_compositions`
 
 **Onboarding & Trial:**
 - `app/onboarding/page.tsx` - 3-step onboarding wizard (Profile, Connect Meta, Select Accounts)
@@ -512,11 +533,90 @@ Save AI-generated ad copy from Ad Studio / AI Tasks to the Copy library for reus
 - `app/dashboard/creative-studio/ai-tasks/page.tsx` - Save Copy button per card
 - `app/dashboard/creative-studio/creative-studio-context.tsx` - CopyVariation type extended
 
+### AI Video Generation (Video Studio)
+Generate scroll-stopping short-form video ads using Sora 2 Pro, Veo 3.1, or Runway Gen-4.5.
+
+**User Flow:**
+1. **Step 1: Product Input** — URL analysis → Claude extracts product knowledge → Pill selector (7 categories: name, description, features, benefits, key messages, testimonials, pain points)
+2. **Step 2: Concepts + Generate** — Claude creates 4 unique visual metaphor concepts, each with different angle (Problem→Solution, Feature Spotlight, Emotional Benefit, Social Proof, etc.) and visual world. Video generation happens inline per concept card (no step 3 navigation).
+
+**Triple Provider System:**
+- `VIDEO_MODEL` env var controls provider: `sora-*` → OpenAI, `veo-*` → Google, `runway-*` → Runway
+- Default: `sora-2-pro`. Current preferred: `runway-gen4.5`
+- Jobs stored with provider prefix on `sora_job_id`: `veo:operationName`, `runway:taskId`, or plain (Sora)
+
+**Provider Comparison:**
+| | Sora 2 Pro | Veo 3.1 | Runway Gen-4.5 |
+|---|---|---|---|
+| Duration | 4/8/12s | 4/6/8s (12→8 auto-clamp) | 2-10s |
+| Image Input | Must match output dims (1024x1792) | Any size | HTTPS URL required (upload to Supabase first) |
+| Progress | Percentage available | No progress (0 until done) | 0-1 ratio |
+
+**Concept Generation (`generate-ad-concepts/route.ts`):**
+- Claude generates 4 concepts, each rooted in a different product attribute from selected pills
+- Angle pool maps pill categories: Pain Points→"Problem→Solution", Benefits→"Emotional Benefit", Features→"Feature Spotlight", Testimonials→"Social Proof", etc.
+- 15 visual world categories enforced (MECHANICAL, CULINARY, AQUATIC, ARCHITECTURAL, etc.) — no repeats across 4 concepts
+- Banned clichés list (desert/oasis, silk flowing, hourglass, etc.)
+
+**Overlay System:**
+- Hook overlays (2-line text), captions (auto-synced via Whisper), CTA, graphics, end cards
+- Non-destructive versioning — each save increments version, rollback available
+- Voiceover via OpenAI TTS with 6 voice options
+
+**Compositions (Multi-Clip):**
+- Combine sibling concept videos into single timeline
+- Each clip's overlay config preserved for round-trip editing
+
+**Credit Cost:** 50 credits per video (vs 5 for images)
+
+### Unified Credit System
+Credits replace count-based limits for AI generation.
+
+- **Credit costs:** Images = 5 credits, Videos = 50 credits
+- **Plan limits:** Pro/Scale/Launch = 500/month, Trial = 25 total
+- **Tables:** `ai_generation_usage` (tracks with `credit_cost`), `ai_credit_purchases` (top-ups), `ai_credit_overrides` (admin)
+- **API response:** `{ used, planLimit, purchased, totalAvailable, remaining, status }`
+- **Refund pattern:** Failed generations insert negative `credit_cost` row
+- **UI:** Buttons disabled when `remaining < 5` (images) or `remaining < 50` (videos)
+
+### Video Analysis (Gemini 2.0 Flash)
+AI-powered creative analysis of video ads using Gemini's native multimodal video processing.
+
+**Why Gemini:** Only model that can natively process video files (Claude/GPT handle text/images only). Gemini's File API handles audio transcription + visual analysis + temporal flow in one pass.
+
+**Pipeline:**
+1. User clicks "Analyze" on a video in Creative Studio
+2. `POST /api/creative-studio/analyze-video` — subscription check, cache lookup
+3. Performance context enrichment — queries `ad_data` for real metrics (ROAS, CTR, thumbstop rate, hold rate)
+4. `analyzeVideo()` in `lib/gemini.ts`:
+   - Downloads video from Supabase Storage → temp file
+   - Uploads to Gemini File API (`fileManager.uploadFile`)
+   - Polls until `file.state === 'ACTIVE'` (Gemini processes video server-side)
+   - Sends processed video + "Creative Strategist" prompt → structured JSON response
+5. Results cached in `video_analysis` table (same video never re-analyzed)
+
+**Analysis Output:**
+- Full audio/dialogue transcript
+- Funnel stage scores (0-100): Hook, Hold, Click, Convert — with timestamps, elements, improvements
+- Style detection: speaker style, visual style, emotional tone
+- 2-3 script rewrite suggestions with hook/body/CTA
+- Quick wins (actionable improvements)
+
+**Key Files:**
+- `app/api/creative-studio/analyze-video/route.ts` — orchestrator (subscription check, cache, performance context)
+- `lib/gemini.ts` — `analyzeVideo()` function + creative strategist prompt
+- `app/api/creative-studio/video-analyses/route.ts` — list endpoint for AI Tasks page
+- Database: `video_analysis` table (migration 045), indexes (migration 054)
+
 ### AI-Powered Features
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
 - **Ad Studio Copy Generation:** Claude generates ad copy inspired by competitor ads
 - **Ad Studio Image Generation:** Gemini 2.5 Flash Image creates ad images using product reference
+- **Video Analysis:** Gemini 2.0 Flash multimodal video analysis with funnel stage scoring
+- **Video Concept Generation:** Claude generates 4 visual metaphor concepts with angle diversity
+- **Video Overlay Generation:** Whisper transcription + Claude generates time-synced captions
+- **Voiceover:** OpenAI TTS with 6 voice options
 
 ### Onboarding Wizard & Free Trial
 3-step wizard runs once after first authentication. All steps skippable. Creates a 7-day Launch trial (no credit card).
@@ -566,7 +666,7 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 
 ## Database
 
-33+ migrations. Key tables:
+39+ migrations. Key tables:
 
 **Core:**
 - `profiles` - User profiles (linked to auth.users)
@@ -592,6 +692,16 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 - `starred_ads` - Bookmarked ads for Performance Sets
 - `budget_changes` - Tracking for Andromeda-safe scaling
 - `saved_copy` - AI-generated ad copy saved from Ad Studio/AI Tasks
+
+**AI Generation:**
+- `video_generation_jobs` - Sora/Veo/Runway job tracking (`sora_job_id` stores provider-prefixed IDs)
+- `video_overlays` - Non-destructive overlay versions (dual parent: job or composition)
+- `video_concept_canvases` - Persisted concept sets linking to all generated jobs
+- `video_compositions` - Multi-clip timelines with `source_job_ids` array
+- `ai_generation_usage` - Unified credit tracking (images + videos, `credit_cost` column)
+- `ai_credit_purchases` - User credit top-ups
+- `ai_credit_overrides` - Admin custom credit limits
+- `ad_studio_sessions` - Saved ad generation sessions for AI Tasks
 
 **Views:**
 - `creative_star_counts` - Aggregates stars by creative (deduplication)
@@ -968,6 +1078,22 @@ The API uses `cleanAccountId = adAccountId.replace(/^act_/, '')` for media_libra
 - `app/dashboard/creative-studio/active/page.tsx` — `resolveMedia()` function
 - `components/creative-studio/media-gallery-card.tsx` — renders video with storageUrl
 
+### 9. Video Generation Provider Detection (`app/api/creative-studio/generate-video/route.ts`)
+- Lines 7-10: Provider detection via `VIDEO_MODEL` env var prefix (`sora-*`, `veo-*`, `runway-*`)
+- Job IDs stored with provider prefix: `veo:operationName`, `runway:taskId`, plain = Sora
+- **Why fragile:** Changing prefix pattern breaks polling logic. All three providers have different APIs, auth, duration limits, image input formats.
+- **If you must modify:** Keep prefix pattern (`veo:`, `runway:`). Never remove provider-specific logic branches in generate-video or video-status.
+
+### 10. Runway Prompt Condensing (`generate-video/route.ts`)
+- `condenseForRunway()` strips structured Sora/Veo prompts to ≤1000 chars
+- **Why fragile:** Runway has hard 1000-char limit. Sora/Veo prompts are ~2000+ chars with block headers.
+- **If you must modify:** Never remove this function. Test that output stays under 1000 chars.
+
+### 11. Sora Image Dimensions (`generate-video/route.ts`)
+- Uses sharp to resize product image to exact output dimensions (1024x1792 for portrait)
+- **Why fragile:** Sora requires `input_reference` dimensions to EXACTLY match `size` param. Mismatch = generation fails silently.
+- **If you must modify:** Never skip resize step. Always use `OpenAI.toFile()` for image upload (not raw FormData).
+
 ### Signs You Broke Something
 - "Error code 17" or "Rate limit exceeded" from Meta
 - Sync takes 5+ minutes
@@ -1019,7 +1145,12 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 
 # Ad Studio (Competitor Research + Image Generation)
 SCRAPECREATORS_API_KEY=...          # ScrapeCreators Facebook Ad Library API
-GOOGLE_GEMINI_API_KEY=...           # Gemini 2.5 Flash Image for ad generation
+GOOGLE_GEMINI_API_KEY=...           # Gemini 2.5 Flash Image + Veo 3.1 video gen
+
+# Video Generation
+VIDEO_MODEL=sora-2-pro              # Provider: sora-2-pro | veo-3.1-generate-preview | runway-gen4.5
+OPENAI_API_KEY=...                  # Sora video gen + Whisper transcription + TTS voiceover
+RUNWAY_API_KEY=...                  # Runway Gen-4.5 video generation
 ```
 
 ---
@@ -1050,6 +1181,8 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| `warm-petting-harbor.md` | Video Studio Inline Generation + Prompt Diversity | Feb 12 |
+| AI Video Generation | Triple provider (Sora/Veo/Runway), credits, overlays, compositions | Feb 10 |
 | Launch Wizard Hydration Fix | Timezone, budget conversion, review status filtering | Feb 06 |
 | `prancy-moseying-pancake.md` | Ad Studio: ScrapeCreators + Gemini Image Generation | Feb 05 |
 | `nested-beaming-pearl.md` | Creative Studio Mobile View + Stability + Scroll-to-Play | Feb 01 |
