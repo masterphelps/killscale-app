@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
-import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown, Loader2, Video, Image as ImageIcon, X, MoreHorizontal, Pencil, Info, Copy, Trash2 } from 'lucide-react'
+import { Minus, Plus, Check, ChevronUp, ChevronDown, ChevronRight, Pause, Play, TrendingUp, TrendingDown, Loader2, Video, Image as ImageIcon, X, MoreHorizontal, Pencil, Info, Copy, Trash2, Activity } from 'lucide-react'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { VerdictBadge } from './verdict-badge'
 import { BudgetEditModal } from './budget-edit-modal'
@@ -11,6 +11,7 @@ import { Rules, calculateVerdict, Verdict, isEntityActive, StarredAd } from '@/l
 import { SelectedItem } from './bulk-action-toolbar'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { FEATURES } from '@/lib/feature-flags'
+import { FatigueBurnoutPopover } from './fatigue-burnout-popover'
 
 // Simple performance indicator for ads (shows arrow based on verdict without text)
 const PerformanceArrow = ({ verdict }: { verdict: Verdict }) => {
@@ -110,6 +111,9 @@ type AdRow = {
   // Manual events (from workspace pixel)
   _manualRevenue?: number
   _manualCount?: number
+  // Reach & frequency for fatigue detection
+  reach?: number
+  frequency?: number
 }
 
 type VerdictFilter = 'all' | 'scale' | 'watch' | 'kill' | 'learn'
@@ -188,6 +192,8 @@ type PerformanceTableProps = {
   // Bulk selection for actions
   bulkSelectedItems?: Map<string, SelectedItem>
   onBulkSelectItem?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
+  // API date range for fatigue chart (since/until from date preset)
+  apiDateRange?: { since: string; until: string }
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -236,6 +242,11 @@ export type HierarchyNode = {
   // Manual events (from workspace pixel)
   manualRevenue?: number
   manualCount?: number
+  // Frequency for fatigue detection (weighted avg of Meta's raw per-day frequency)
+  reach?: number
+  frequency?: number
+  _freqWeightedSum?: number   // internal: sum of (frequency × impressions)
+  _freqWeightedCount?: number // internal: sum of impressions where frequency > 0
 }
 
 // Creative data type (from Meta API)
@@ -386,6 +397,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         budgetResourceName: row.campaign_budget_resource_name || undefined,  // Google budget resource name
         manualRevenue: 0,
         manualCount: 0,
+        reach: 0,
+        frequency: 0,
+        _freqWeightedSum: 0,
+        _freqWeightedCount: 0,
       }
     }
     const campaign = campaigns[campaignKey]
@@ -431,6 +446,10 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         accountId: row.ad_account_id,  // Inherit accountId from row
         manualRevenue: 0,
         manualCount: 0,
+        reach: 0,
+        frequency: 0,
+        _freqWeightedSum: 0,
+        _freqWeightedCount: 0,
       }
       campaign.children?.push(adset)
     }
@@ -474,7 +493,12 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         storage_url: row.storage_url,
         // Manual events tracking
         manualRevenue: 0,
-        manualCount: 0
+        manualCount: 0,
+        // Frequency tracking (weighted average)
+        reach: 0,
+        frequency: 0,
+        _freqWeightedSum: 0,
+        _freqWeightedCount: 0,
       }
       adset.children?.push(ad)
     }
@@ -495,6 +519,13 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     ad.purchases += row.purchases
     ad.revenue += row.revenue
     ad.results += row.results || 0
+    ad.reach = (ad.reach || 0) + (row.reach || 0)
+    // Track weighted frequency from Meta's raw per-day values (skip rows with freq=0 from pre-migration data)
+    const rowFreq = row.frequency || 0
+    if (rowFreq > 0 && row.impressions > 0) {
+      ad._freqWeightedSum = (ad._freqWeightedSum || 0) + rowFreq * row.impressions
+      ad._freqWeightedCount = (ad._freqWeightedCount || 0) + row.impressions
+    }
     // Manual events are already at ad level (not per-day), so only capture once
     // They're on every row for this ad, so we take max to avoid double-counting
     if (row._manualRevenue !== undefined) {
@@ -511,6 +542,11 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     adset.purchases += row.purchases
     adset.revenue += row.revenue
     adset.results += row.results || 0
+    adset.reach = (adset.reach || 0) + (row.reach || 0)
+    if (rowFreq > 0 && row.impressions > 0) {
+      adset._freqWeightedSum = (adset._freqWeightedSum || 0) + rowFreq * row.impressions
+      adset._freqWeightedCount = (adset._freqWeightedCount || 0) + row.impressions
+    }
   })
   
   Object.values(campaigns).forEach(campaign => {
@@ -521,6 +557,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         const adMetrics = calculateMetrics(ad)
         Object.assign(ad, adMetrics)
         ad.verdict = calculateVerdict(ad.spend, ad.roas, rules)
+        // Weighted average of Meta's per-day frequency (ignores pre-migration rows with freq=0)
+        ad.frequency = (ad._freqWeightedCount && ad._freqWeightedCount > 0)
+          ? ad._freqWeightedSum! / ad._freqWeightedCount : 0
       })
 
       // Roll up manual events from ads to adset
@@ -553,6 +592,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
       
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
+      // Weighted average of Meta's per-day frequency
+      adset.frequency = (adset._freqWeightedCount && adset._freqWeightedCount > 0)
+        ? adset._freqWeightedSum! / adset._freqWeightedCount : 0
 
       // Set budget info on adset (use account-qualified keys)
       const adsetBudget = adsetBudgets[adsetLookupKey]
@@ -575,6 +617,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       campaign.purchases += adset.purchases
       campaign.revenue += adset.revenue
       campaign.results += adset.results
+      campaign.reach = (campaign.reach || 0) + (adset.reach || 0)
+      campaign._freqWeightedSum = (campaign._freqWeightedSum || 0) + (adset._freqWeightedSum || 0)
+      campaign._freqWeightedCount = (campaign._freqWeightedCount || 0) + (adset._freqWeightedCount || 0)
       // Roll up manual events from adset to campaign
       campaign.manualRevenue = (campaign.manualRevenue || 0) + (adset.manualRevenue || 0)
       campaign.manualCount = (campaign.manualCount || 0) + (adset.manualCount || 0)
@@ -583,6 +628,9 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     campaign.roas = campaign.spend > 0 ? campaign.revenue / campaign.spend : 0
     const campaignMetrics = calculateMetrics(campaign)
     Object.assign(campaign, campaignMetrics)
+    // Weighted average of Meta's per-day frequency
+    campaign.frequency = (campaign._freqWeightedCount && campaign._freqWeightedCount > 0)
+      ? campaign._freqWeightedSum! / campaign._freqWeightedCount : 0
 
     // Use the direct campaign_status from Meta API if available (use account-qualified key)
     const campaignLookupKey = `${campaign.accountId}::${campaign.name}`
@@ -691,7 +739,8 @@ export function PerformanceTable({
   onDuplicateEntity,
   onDeleteEntity,
   bulkSelectedItems,
-  onBulkSelectItem
+  onBulkSelectItem,
+  apiDateRange,
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -714,6 +763,15 @@ export function PerformanceTable({
     const prefix = type === 'campaign' ? 'Campaign' : type === 'adset' ? 'Ad Set' : 'Ad'
     return `${prefix} ${index + 1}`
   }
+
+  // Fatigue chart popover state
+  const [fatigueChartEntity, setFatigueChartEntity] = useState<{
+    type: 'campaign' | 'adset' | 'ad'
+    id: string
+    name: string
+    accountId: string
+  } | null>(null)
+  const [fatigueAnchorRect, setFatigueAnchorRect] = useState<DOMRect | null>(null)
 
   // Budget edit modal state
   const [budgetEditModal, setBudgetEditModal] = useState<{
@@ -1818,6 +1876,39 @@ export function PerformanceTable({
                 <div className="text-zinc-500 text-xs mb-0.5">Impr</div>
                 <div className="font-mono text-white">{formatNumber(node.impressions)}</div>
               </div>
+              {/* Frequency indicator — leading signal for audience saturation */}
+              <div className="text-right w-14">
+                <div className="text-zinc-500 text-xs mb-0.5">Freq</div>
+                <div className={cn(
+                  "font-mono text-sm",
+                  (node.frequency || 0) >= 3 ? "text-red-400" :     // 3+ burnout risk
+                  (node.frequency || 0) >= 2.5 ? "text-orange-400" : // 2.5+ elevated
+                  (node.frequency || 0) >= 2 ? "text-amber-400" :    // 2+ watch
+                  "text-white"                                        // < 2 normal
+                )}>
+                  {(node.frequency || 0) > 0 ? (node.frequency || 0).toFixed(1) : '—'}
+                </div>
+              </div>
+              {/* Burnout chart icon */}
+              {node.id && node.platform !== 'google' && userId && apiDateRange && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setFatigueAnchorRect(rect)
+                    setFatigueChartEntity({
+                      type: level,
+                      id: node.id!,
+                      name: node.name,
+                      accountId: node.accountId || '',
+                    })
+                  }}
+                  className="flex items-center justify-center w-7 h-7 rounded hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-colors"
+                  title="Burnout Chart"
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -2708,6 +2799,21 @@ export function PerformanceTable({
             <p className="text-white text-sm font-medium truncate">{previewModal.name}</p>
           </div>
         </div>
+      )}
+
+      {/* Fatigue/Burnout Chart Popover */}
+      {fatigueChartEntity && fatigueAnchorRect && userId && apiDateRange && (
+        <FatigueBurnoutPopover
+          entity={fatigueChartEntity}
+          userId={userId}
+          since={apiDateRange.since}
+          until={apiDateRange.until}
+          anchorRect={fatigueAnchorRect}
+          onClose={() => {
+            setFatigueChartEntity(null)
+            setFatigueAnchorRect(null)
+          }}
+        />
       )}
     </div>
   )

@@ -167,6 +167,8 @@ type MetaInsight = {
   outbound_clicks?: { action_type: string; value: string }[]
   inline_link_click_ctr?: string  // scalar string
   cost_per_inline_link_click?: string  // scalar string
+  reach?: string  // scalar integer — unique people reached
+  frequency?: string  // scalar decimal — avg times each person saw the ad
 }
 
 // Extract integer value from Meta action array (first element)
@@ -393,6 +395,8 @@ export async function POST(request: NextRequest) {
       'outbound_clicks',
       'inline_link_click_ctr',
       'cost_per_inline_link_click',
+      'reach',
+      'frequency',
     ].join(',')
 
     // Hierarchy cache will be built from entity endpoints (faster than date_preset=maximum discovery)
@@ -905,6 +909,8 @@ export async function POST(request: NextRequest) {
       const outboundClicks = extractActionValue(insight.outbound_clicks)
       const inlineLinkClickCtr = insight.inline_link_click_ctr ? parseFloat(insight.inline_link_click_ctr) : null
       const costPerInlineLinkClick = insight.cost_per_inline_link_click ? parseFloat(insight.cost_per_inline_link_click) : null
+      const reach = insight.reach ? parseInt(insight.reach) : null
+      const frequency = insight.frequency ? parseFloat(insight.frequency) : null
 
       // Get status at each level using the new maps
       const adStatus = adStatusMap[insight.ad_id] || 'UNKNOWN'
@@ -961,6 +967,8 @@ export async function POST(request: NextRequest) {
         outbound_clicks: outboundClicks,
         inline_link_click_ctr: inlineLinkClickCtr,
         cost_per_inline_link_click: costPerInlineLinkClick,
+        reach: reach,
+        frequency: frequency,
         synced_at: new Date().toISOString(),
       }
     })
@@ -1033,6 +1041,8 @@ export async function POST(request: NextRequest) {
           outbound_clicks: null,
           inline_link_click_ctr: null,
           cost_per_inline_link_click: null,
+          reach: null,
+          frequency: null,
           synced_at: new Date().toISOString(),
         })
       }

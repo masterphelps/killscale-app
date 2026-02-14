@@ -39,6 +39,9 @@ export type CSVRow = {
   results?: number
   result_value?: number | null
   result_type?: string | null
+  // Reach and frequency for fatigue detection
+  reach?: number
+  frequency?: number
   // Platform marker for Google Ads integration
   _platform?: 'meta' | 'google'
   // Google budget resource name for mutations

@@ -1051,6 +1051,9 @@ export default function DashboardPage() {
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
+        // Reach & frequency for fatigue detection
+        reach: row.reach || 0,
+        frequency: parseFloat(row.frequency) || 0,
         // Platform marker for display
         _platform: 'meta' as const,
       }))
@@ -1414,6 +1417,9 @@ export default function DashboardPage() {
         campaign_lifetime_budget: row.campaign_lifetime_budget,
         adset_daily_budget: row.adset_daily_budget,
         adset_lifetime_budget: row.adset_lifetime_budget,
+        // Reach & frequency for fatigue detection
+        reach: row.reach || 0,
+        frequency: parseFloat(row.frequency) || 0,
         // Platform marker for display
         _platform: 'meta' as const,
       }))
@@ -3040,6 +3046,8 @@ export default function DashboardPage() {
     start: data.length > 0 ? data[0].date_start : new Date().toISOString().split('T')[0],
     end: data.length > 0 ? data[0].date_end : new Date().toISOString().split('T')[0]
   }
+  // Compute actual API date range from preset for fatigue chart
+  const apiDateRange = getDateRangeFromPreset(datePreset, customStartDate, customEndDate)
   
   const tableData = filteredData.map(row => ({
     campaign_name: row.campaign_name,
@@ -3078,6 +3086,9 @@ export default function DashboardPage() {
     media_type: row.media_type,
     media_hash: row.media_hash,
     storage_url: row.storage_url,
+    // Reach & frequency for fatigue detection
+    reach: row.reach || 0,
+    frequency: row.frequency || 0,
   }))
 
   // Build a map of campaign -> ABO adsets for selection cascading
@@ -3843,6 +3854,7 @@ export default function DashboardPage() {
               onDeleteEntity={handleDeleteEntity}
               bulkSelectedItems={bulkSelectedItems}
               onBulkSelectItem={handleBulkSelectItem}
+              apiDateRange={apiDateRange}
             />
           </div>
         </>

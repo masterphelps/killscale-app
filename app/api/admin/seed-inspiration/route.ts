@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { v4 as uuidv4 } from 'uuid'
+
+export const maxDuration = 300 // 5 minutes for bulk download+upload
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,21 +11,75 @@ const supabase = createClient(
 
 const SCRAPECREATORS_API_KEY = process.env.SCRAPECREATORS_API_KEY!
 
-// Brand configuration with their assigned formats
+// Brands confirmed to return ads from ScrapeCreators + extras for coverage
 const BRANDS_BY_FORMAT: Record<string, { brands: string[]; industry: string }> = {
-  ugc: { brands: ['Hexclad', 'Ridge Wallet', 'Liquid Death', 'Keeps', 'Theragun', 'Oura Ring'], industry: 'consumer' },
-  product_hero: { brands: ['Apple', 'Dyson', 'Casper', 'Sony', 'Samsung', 'Bose'], industry: 'tech' },
-  lifestyle: { brands: ['Allbirds', 'Outdoor Voices', 'Glossier', 'Lululemon', 'Alo Yoga', 'Gymshark'], industry: 'fashion' },
-  bold: { brands: ['Athletic Greens', 'Huel', 'MANSCAPED', 'Dollar Shave Club', 'Olipop', 'Liquid IV'], industry: 'supplements' },
-  testimonial: { brands: ['Noom', 'BetterHelp', 'HelloFresh', 'Calm', 'Headspace', 'Weight Watchers'], industry: 'health' },
-  before_after: { brands: ['Curology', 'Smile Direct Club', 'Nurtec', 'Keeps', 'Hims', 'Ro'], industry: 'health' },
+  ugc: { brands: ['True Classic', 'Liquid Death', 'Keeps', 'BarkBox', 'Chubbies', 'Fabletics', 'Pura Vida', 'Quince', 'Cozy Earth', 'CUTS Clothing'], industry: 'consumer' },
+  product_hero: { brands: ['Samsung', 'Tile', 'iRobot', 'Sonos', 'Anker', 'Breville', 'Dyson', 'Bose', 'Solo Stove', 'Ooni'], industry: 'tech' },
+  lifestyle: { brands: ['Under Armour', 'Skims', 'Savage X Fenty', 'Mejuri', 'Girlfriend Collective', 'Athleta', 'Rothy\'s', 'Cariuma', 'ABLE', 'Ministry of Supply'], industry: 'fashion' },
+  bold: { brands: ['MANSCAPED', 'Dollar Shave Club', 'Olipop', 'GHOST', 'Liquid I.V.', 'AG1', 'RXBAR', 'Orgain', 'Ka\'Chava', 'Seed'], industry: 'supplements' },
+  testimonial: { brands: ['Audible', 'Monday.com', 'Notion', 'Calm', 'Headspace', 'Blinkist', 'Wix', 'Fiverr', 'Asana', 'ClickUp'], industry: 'tech' },
+  before_after: { brands: ['Nutrafol', 'Prose', 'Keeps', 'The Ordinary', 'Supergoop', 'Hims', 'Curology', 'Ro', 'Tula', 'Paula\'s Choice'], industry: 'health' },
+}
+
+// Download a file from URL and upload to Supabase Storage, returns permanent public URL
+async function downloadAndStore(url: string, prefix: string): Promise<string | null> {
+  if (!url) return null
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) {
+      console.log(`[Seed] Download failed (${res.status}) for ${url.substring(0, 80)}...`)
+      return null
+    }
+
+    const contentType = res.headers.get('content-type') || 'image/jpeg'
+    const buffer = await res.arrayBuffer()
+
+    // Skip files > 20MB
+    if (buffer.byteLength > 20 * 1024 * 1024) {
+      console.log(`[Seed] Skipping large file (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB)`)
+      return null
+    }
+
+    // Determine extension from content type
+    let ext = 'jpg'
+    if (contentType.includes('png')) ext = 'png'
+    else if (contentType.includes('webp')) ext = 'webp'
+    else if (contentType.includes('gif')) ext = 'gif'
+    else if (contentType.includes('mp4') || contentType.includes('video')) ext = 'mp4'
+
+    const filename = `${prefix}_${uuidv4()}.${ext}`
+    const storagePath = `inspiration/${filename}`
+
+    const { error: uploadError } = await supabase
+      .storage
+      .from('media')
+      .upload(storagePath, Buffer.from(buffer), {
+        contentType,
+        upsert: true,
+      })
+
+    if (uploadError) {
+      console.error(`[Seed] Upload error for ${prefix}:`, uploadError.message)
+      return null
+    }
+
+    const { data: publicUrlData } = supabase
+      .storage
+      .from('media')
+      .getPublicUrl(storagePath)
+
+    return publicUrlData?.publicUrl || null
+  } catch (err: any) {
+    console.log(`[Seed] downloadAndStore failed for ${prefix}: ${err.message}`)
+    return null
+  }
 }
 
 // Search for a company and get their page ID
 async function searchCompany(name: string): Promise<{ pageId: string; pageName: string } | null> {
   try {
     const url = `https://api.scrapecreators.com/v1/facebook/adLibrary/search/companies?query=${encodeURIComponent(name)}`
-    console.log(`[Seed] Search URL: ${url}`)
 
     const res = await fetch(url, {
       headers: {
@@ -45,7 +102,6 @@ async function searchCompany(name: string): Promise<{ pageId: string; pageName: 
       return null
     }
 
-    // Return first match
     const first = results[0]
     return {
       pageId: first.page_id || first.pageId || first.id || '',
@@ -61,7 +117,6 @@ async function searchCompany(name: string): Promise<{ pageId: string; pageName: 
 async function fetchAds(pageId: string, pageName: string): Promise<any[]> {
   try {
     const url = `https://api.scrapecreators.com/v1/facebook/adLibrary/company/ads?companyName=${encodeURIComponent(pageName)}&country=US&trim=true`
-    console.log(`[Seed] Fetching ads from: ${url}`)
 
     const res = await fetch(url, {
       headers: {
@@ -86,11 +141,11 @@ async function fetchAds(pageId: string, pageName: string): Promise<any[]> {
   }
 }
 
-// Map ScrapeCreators ad to our format
-function mapAd(ad: any, format: string, industry: string) {
+// Map ScrapeCreators ad to our format and download media to Supabase Storage
+async function mapAndDownloadAd(ad: any, format: string, industry: string, brandSlug: string) {
   const snapshot = ad.snapshot || {}
 
-  // Handle timestamps (can be Unix timestamp or ISO string)
+  // Handle timestamps
   let startDate: Date
   if (ad.start_date) {
     startDate = typeof ad.start_date === 'number'
@@ -110,23 +165,19 @@ function mapAd(ad: any, format: string, industry: string) {
     mediaType = 'carousel'
   }
 
-  // Get image/video URLs - try multiple possible field names
-  const imageUrl = snapshot.images?.[0]?.url ||
+  // Get raw URLs from ad data
+  const rawImageUrl = snapshot.images?.[0]?.url ||
     snapshot.images?.[0]?.resized_image_url ||
     snapshot.images?.[0]?.original_image_url ||
     snapshot.cards?.[0]?.resized_image_url ||
     snapshot.cards?.[0]?.original_image_url ||
     null
 
-  const videoUrl = snapshot.videos?.[0]?.video_hd_url ||
-    snapshot.videos?.[0]?.video_sd_url ||
-    null
-
-  const videoThumbnail = snapshot.videos?.[0]?.video_preview_image_url ||
+  const rawVideoThumbnail = snapshot.videos?.[0]?.video_preview_image_url ||
     snapshot.images?.[0]?.url ||
     null
 
-  // Get copy - handle both string and object formats
+  // Get copy
   const body = typeof snapshot.body === 'string'
     ? snapshot.body
     : (snapshot.body?.text || snapshot.body?.markup?.__html || null)
@@ -135,18 +186,37 @@ function mapAd(ad: any, format: string, industry: string) {
     ? snapshot.title
     : (snapshot.title?.text || snapshot.link_title || null)
 
-  // Build carousel cards if applicable
+  // Download media to Supabase Storage in parallel
+  const prefix = `${format}_${brandSlug}`
+
+  const [storedImageUrl, storedVideoThumbnail] = await Promise.all([
+    rawImageUrl ? downloadAndStore(rawImageUrl, `${prefix}_img`) : Promise.resolve(null),
+    (mediaType === 'video' && rawVideoThumbnail) ? downloadAndStore(rawVideoThumbnail, `${prefix}_vthumb`) : Promise.resolve(null),
+  ])
+
+  // Build carousel cards with downloaded images (first 3 cards only)
   let carouselCards = null
   if (mediaType === 'carousel' && snapshot.cards && snapshot.cards.length > 0) {
-    carouselCards = snapshot.cards.map((card: any) => ({
-      imageUrl: card.resized_image_url || card.original_image_url || card.image_url || null,
-      headline: typeof card.title === 'string' ? card.title : (card.title?.text || null),
-      body: typeof card.body === 'string' ? card.body : (card.body?.text || null),
-      linkUrl: card.link_url || null,
-    }))
+    const cardSlice = snapshot.cards.slice(0, 3)
+    const downloadedCards = await Promise.all(
+      cardSlice.map(async (card: any, idx: number) => {
+        const cardImgUrl = card.resized_image_url || card.original_image_url || card.image_url || null
+        const storedCardUrl = cardImgUrl
+          ? await downloadAndStore(cardImgUrl, `${prefix}_card${idx}`)
+          : null
+
+        return {
+          imageUrl: storedCardUrl || cardImgUrl, // fallback to raw if download fails
+          headline: typeof card.title === 'string' ? card.title : (card.title?.text || null),
+          body: typeof card.body === 'string' ? card.body : (card.body?.text || null),
+          linkUrl: card.link_url || null,
+        }
+      })
+    )
+    carouselCards = downloadedCards
   }
 
-  // Strip HTML tags from body if present
+  // Strip HTML tags from body
   const cleanBody = body ? body.replace(/<[^>]*>/g, '').substring(0, 1000) : null
 
   return {
@@ -157,13 +227,13 @@ function mapAd(ad: any, format: string, industry: string) {
     media_type: mediaType,
     body: cleanBody,
     headline,
-    image_url: imageUrl,
-    video_url: videoUrl,
-    video_thumbnail: videoThumbnail,
+    image_url: storedImageUrl || rawImageUrl, // fallback to raw if download fails
+    video_url: null, // Full videos too large for Storage; thumbnail + copy is sufficient
+    video_thumbnail: storedVideoThumbnail || rawVideoThumbnail, // fallback to raw
     carousel_cards: carouselCards,
     days_active: Math.max(0, daysActive),
     is_active: ad.is_active !== false,
-    description: null, // Will be filled manually later
+    description: null,
     is_featured: false,
     display_order: 0,
   }
@@ -171,7 +241,6 @@ function mapAd(ad: any, format: string, industry: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Check for admin auth (simple check - in production use proper auth)
     const { searchParams } = new URL(request.url)
     const secret = searchParams.get('secret')
 
@@ -179,8 +248,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const results: { brand: string; format: string; adsFound: number; inserted: number }[] = []
+    // Clear existing rows (wipe stale Facebook CDN data)
+    console.log('[Seed] Clearing existing inspiration_gallery rows...')
+    const { error: deleteError } = await supabase
+      .from('inspiration_gallery')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000') // delete all rows (neq dummy to match all)
+
+    if (deleteError) {
+      console.error('[Seed] Delete error:', deleteError.message)
+    } else {
+      console.log('[Seed] Cleared existing rows')
+    }
+
+    const results: { brand: string; format: string; adsFound: number; inserted: number; mediaDownloaded: number }[] = []
     let totalInserted = 0
+    let totalMediaDownloaded = 0
 
     // Process each format
     for (const [format, config] of Object.entries(BRANDS_BY_FORMAT)) {
@@ -189,60 +272,61 @@ export async function POST(request: NextRequest) {
       for (const brand of config.brands) {
         console.log(`[Seed] Searching for ${brand}...`)
 
-        // Search for the company
         const company = await searchCompany(brand)
         if (!company) {
-          results.push({ brand, format, adsFound: 0, inserted: 0 })
+          results.push({ brand, format, adsFound: 0, inserted: 0, mediaDownloaded: 0 })
+          await new Promise(resolve => setTimeout(resolve, 500))
           continue
         }
 
         console.log(`[Seed] Found ${company.pageName} (${company.pageId})`)
 
-        // Fetch their ads
         const ads = await fetchAds(company.pageId, company.pageName)
-        console.log(`[Seed] Found ${ads.length} ads for ${brand}`)
 
         if (ads.length === 0) {
-          results.push({ brand, format, adsFound: 0, inserted: 0 })
+          results.push({ brand, format, adsFound: 0, inserted: 0, mediaDownloaded: 0 })
+          await new Promise(resolve => setTimeout(resolve, 500))
           continue
         }
 
-        // Take up to 5 best ads (longest running, with some media)
+        // Take up to 8 best ads (longest running, with media)
         const sortedAds = ads
           .filter((ad: any) => {
             const snapshot = ad.snapshot || {}
-            // Accept ads with images, videos, or carousel cards
             const hasImages = snapshot.images?.length > 0
             const hasVideos = snapshot.videos?.length > 0
             const hasCards = snapshot.cards?.length > 0
             return hasImages || hasVideos || hasCards
           })
           .sort((a: any, b: any) => {
-            // Sort by total_active_time if available, otherwise by start_date
             const aTime = a.total_active_time || 0
             const bTime = b.total_active_time || 0
-            if (aTime !== bTime) return bTime - aTime // Longest running first
+            if (aTime !== bTime) return bTime - aTime
             const aStart = a.start_date || 0
             const bStart = b.start_date || 0
-            return aStart - bStart // Oldest first as fallback
+            return aStart - bStart
           })
-          .slice(0, 5)
+          .slice(0, 8)
 
-        // Map and insert ads
-        const mappedAds = sortedAds.map((ad: any) => mapAd(ad, format, config.industry))
+        // Map and download media for all ads in parallel
+        const brandSlug = brand.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const mappedAds = await Promise.all(
+          sortedAds.map((ad: any) => mapAndDownloadAd(ad, format, config.industry, brandSlug))
+        )
 
-        // Log what we're trying to insert
-        console.log(`[Seed] Trying to insert ${mappedAds.length} ads for ${brand}`)
-        if (mappedAds.length > 0) {
-          console.log(`[Seed] Sample mapped ad:`, JSON.stringify(mappedAds[0], null, 2))
+        // Count how many got Supabase Storage URLs (not raw Facebook CDN)
+        let mediaDownloaded = 0
+        for (const ad of mappedAds) {
+          if (ad.image_url && ad.image_url.includes('supabase')) mediaDownloaded++
+          if (ad.video_thumbnail && ad.video_thumbnail.includes('supabase')) mediaDownloaded++
         }
 
-        // Filter out ads without any image URL (required for display)
-        const validAds = mappedAds.filter((ad: any) => ad.image_url || ad.video_thumbnail || ad.video_url)
-        console.log(`[Seed] Valid ads after filtering: ${validAds.length}`)
+        // Filter out ads without any image
+        const validAds = mappedAds.filter((ad: any) => ad.image_url || ad.video_thumbnail)
 
         if (validAds.length === 0) {
-          results.push({ brand, format, adsFound: ads.length, inserted: 0 })
+          results.push({ brand, format, adsFound: ads.length, inserted: 0, mediaDownloaded: 0 })
+          await new Promise(resolve => setTimeout(resolve, 500))
           continue
         }
 
@@ -253,22 +337,27 @@ export async function POST(request: NextRequest) {
 
         if (error) {
           console.error(`[Seed] Insert error for ${brand}:`, error.message, error.details)
-          results.push({ brand, format, adsFound: ads.length, inserted: 0 })
+          results.push({ brand, format, adsFound: ads.length, inserted: 0, mediaDownloaded: 0 })
         } else {
           const insertedCount = data?.length || 0
           totalInserted += insertedCount
-          results.push({ brand, format, adsFound: ads.length, inserted: insertedCount })
-          console.log(`[Seed] Inserted ${insertedCount} ads for ${brand}`)
+          totalMediaDownloaded += mediaDownloaded
+          results.push({ brand, format, adsFound: ads.length, inserted: insertedCount, mediaDownloaded })
+          console.log(`[Seed] Inserted ${insertedCount} ads for ${brand} (${mediaDownloaded} media stored)`)
         }
 
-        // Rate limit - wait between API calls
+        // Rate limit between brands within same format
         await new Promise(resolve => setTimeout(resolve, 500))
       }
+
+      // Longer delay between formats
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
     return NextResponse.json({
       success: true,
       totalInserted,
+      totalMediaDownloaded,
       results,
     })
   } catch (error) {
@@ -297,8 +386,25 @@ export async function GET() {
     byFormat[row.ad_format] = (byFormat[row.ad_format] || 0) + 1
   }
 
+  // Check how many have Supabase Storage URLs vs Facebook CDN
+  const { data: urlCheck } = await supabase
+    .from('inspiration_gallery')
+    .select('image_url')
+
+  let supabaseUrls = 0
+  let cdnUrls = 0
+  for (const row of urlCheck || []) {
+    if (row.image_url?.includes('supabase')) supabaseUrls++
+    else if (row.image_url) cdnUrls++
+  }
+
   return NextResponse.json({
     total: count || 0,
     byFormat,
+    urlHealth: {
+      supabaseStorage: supabaseUrls,
+      facebookCdn: cdnUrls,
+      note: cdnUrls > 0 ? 'Facebook CDN URLs will expire! Re-seed to fix.' : 'All URLs are permanent Supabase Storage URLs.',
+    },
   })
 }
