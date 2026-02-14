@@ -107,20 +107,34 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
   const preset = STYLE_PRESETS[styleName]
   const anim = useEntryAnimation(config.animation)
 
+  const positionStyle: React.CSSProperties = (() => {
+    switch (config.position || 'top') {
+      case 'center': return { top: '50%', transform: 'translateY(-50%)' }
+      case 'bottom': return { bottom: '18%' }
+      default: return { top: '12%' }
+    }
+  })()
+
+  // Merge animation transform with position transform
+  const mergedStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '0 40px',
+    ...positionStyle,
+    opacity: anim.opacity,
+    // Combine position transform (if center) with animation transform
+    transform: [positionStyle.transform, anim.transform].filter(Boolean).join(' ') || undefined,
+  }
+
+  const hookFontSize = config.fontSize || 52
+  const hookFontWeight = config.fontWeight || 800
+
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: '12%',
-        left: 0,
-        right: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '0 40px',
-        ...anim,
-      }}
-    >
+    <div style={mergedStyle}>
       <div
         style={{
           background: preset.hookBg,
@@ -132,8 +146,8 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
         <div
           style={{
             fontFamily: preset.fontFamily,
-            fontSize: 52,
-            fontWeight: 800,
+            fontSize: hookFontSize,
+            fontWeight: hookFontWeight,
             color: preset.hookTextColor,
             lineHeight: 1.2,
             textShadow: `0 2px 8px rgba(0,0,0,${preset.shadowIntensity})`,
@@ -145,8 +159,8 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
           <div
             style={{
               fontFamily: preset.fontFamily,
-              fontSize: 48,
-              fontWeight: 700,
+              fontSize: hookFontSize * 0.92,
+              fontWeight: hookFontWeight - 100,
               color: config.line2Color || brandColor || '#10B981',
               lineHeight: 1.3,
               marginTop: 8,
@@ -192,17 +206,25 @@ const Caption: React.FC<{ config: CaptionOverlay; style: OverlayStyle; brandColo
     )
   }
 
+  const captionPositionStyle: React.CSSProperties = (() => {
+    switch (config.position || 'bottom') {
+      case 'top': return { top: '12%' }
+      case 'center': return { top: '50%', transform: 'translateY(-50%)' }
+      default: return { bottom: '18%' }
+    }
+  })()
+
   return (
     <div
       style={{
         position: 'absolute',
-        bottom: '18%',
         left: 0,
         right: 0,
         display: 'flex',
         justifyContent: 'center',
         padding: '0 32px',
         opacity,
+        ...captionPositionStyle,
       }}
     >
       <div
@@ -218,8 +240,8 @@ const Caption: React.FC<{ config: CaptionOverlay; style: OverlayStyle; brandColo
         <div
           style={{
             fontFamily: preset.fontFamily,
-            fontSize: 36,
-            fontWeight: 600,
+            fontSize: config.fontSize || 36,
+            fontWeight: config.fontWeight || 600,
             color: preset.captionTextColor,
             textAlign: 'center',
             lineHeight: 1.4,
@@ -283,7 +305,7 @@ const CTASection: React.FC<{ config: CTAOverlay; style: OverlayStyle; brandColor
         <div
           style={{
             fontFamily: preset.fontFamily,
-            fontSize: 32,
+            fontSize: config.fontSize || 32,
             fontWeight: 800,
             color: preset.ctaTextColor,
             letterSpacing: 2,
@@ -359,7 +381,7 @@ const GraphicItem: React.FC<{ config: GraphicOverlay; style: OverlayStyle }> = (
 
 // ─── Main Composition ────────────────────────────────────────────────────────
 
-export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSeconds, overlayConfig }) => {
+export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSeconds, overlayConfig, trimStartSec, trimEndSec }) => {
   const { fps } = useVideoConfig()
   const totalFrames = Math.round(durationInSeconds * fps)
   const styleName = overlayConfig.style || 'capcut'
@@ -367,12 +389,16 @@ export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSecond
 
   const secToFrame = (sec: number) => Math.round(sec * fps)
 
+  // Trim: startFrom tells OffthreadVideo which frame of the source to begin at
+  const trimStart = trimStartSec ? Math.round(trimStartSec * fps) : 0
+
   return (
     <AbsoluteFill>
-      {/* Background video — full duration */}
+      {/* Background video — trimmed */}
       <AbsoluteFill>
         <OffthreadVideo
           src={videoUrl}
+          startFrom={trimStart}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       </AbsoluteFill>

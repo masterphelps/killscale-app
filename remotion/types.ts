@@ -7,6 +7,9 @@ export interface HookOverlay {
   startSec: number
   endSec: number
   animation: 'pop' | 'fade' | 'slide'
+  fontSize?: number              // default 52
+  fontWeight?: number            // default 800
+  position?: 'top' | 'center' | 'bottom'  // default 'top'
 }
 
 export interface CaptionOverlay {
@@ -15,6 +18,9 @@ export interface CaptionOverlay {
   endSec: number
   highlight?: boolean
   highlightWord?: string
+  fontSize?: number              // default 36
+  fontWeight?: number            // default 600
+  position?: 'top' | 'center' | 'bottom'  // default 'bottom'
 }
 
 export interface CTAOverlay {
@@ -24,6 +30,7 @@ export interface CTAOverlay {
   buttonColor?: string
   startSec: number
   animation: 'pop' | 'fade' | 'slide'
+  fontSize?: number              // default 32
 }
 
 export interface GraphicOverlay {
@@ -36,16 +43,34 @@ export interface GraphicOverlay {
   opacity?: number
 }
 
+export interface EndCardOverlay {
+  durationSec: number        // e.g. 3
+  backgroundColor: string    // e.g. '#000000'
+  text?: string             // e.g. 'Shop Now at example.com'
+  textColor?: string        // default '#FFFFFF'
+  fontSize?: number         // default 48
+}
+
 export type OverlayStyle = 'capcut' | 'minimal' | 'bold' | 'clean'
+
+export interface AppendedClip {
+  videoUrl: string
+  durationSeconds: number
+  fromFrame: number
+  overlayConfig?: OverlayConfig  // sibling's hook/captions/CTA for round-trip
+}
 
 export interface OverlayConfig {
   hook?: HookOverlay
   captions?: CaptionOverlay[]
   cta?: CTAOverlay
   graphics?: GraphicOverlay[]
+  endCard?: EndCardOverlay
   style: OverlayStyle
   brandColor?: string
   accentColor?: string
+  voiceoverUrl?: string
+  appendedClips?: AppendedClip[]
 }
 
 // Full props passed to the Remotion composition
@@ -53,6 +78,20 @@ export interface AdOverlayProps {
   videoUrl: string
   durationInSeconds: number
   overlayConfig: OverlayConfig
+  trimStartSec?: number
+  trimEndSec?: number
+}
+
+// Video composition (multi-clip timeline)
+export interface VideoComposition {
+  id: string
+  canvasId: string
+  sourceJobIds: string[]
+  overlayConfig: OverlayConfig
+  title: string
+  thumbnailUrl?: string
+  durationSeconds: number
+  createdAt: string
 }
 
 // Video styles for the prompt builder
@@ -87,7 +126,7 @@ export interface VideoJob {
   prompt: string
   video_style: string
   duration_seconds: number
-  status: 'queued' | 'generating' | 'rendering' | 'complete' | 'failed'
+  status: 'queued' | 'generating' | 'extending' | 'rendering' | 'complete' | 'failed'
   progress_pct: number
   error_message?: string
   raw_video_url?: string
@@ -96,6 +135,10 @@ export interface VideoJob {
   ad_index?: number
   credit_cost: number
   overlay_config?: OverlayConfig
+  provider?: string
+  target_duration_seconds?: number
+  extension_step?: number
+  extension_total?: number
   created_at: string
   updated_at: string
 }

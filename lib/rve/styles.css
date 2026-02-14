@@ -1,0 +1,236 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap')
+layer(base);
+@import url('https://fonts.googleapis.com/css2?family=Inter&display=swap')
+layer(base);
+
+@import 'tailwindcss';
+
+/* Import base theme files */
+@import './styles/base-themes/light.css' layer(utilities);
+@import './styles/base-themes/dark.css' layer(utilities);
+@import './styles/base-themes/rve.css' layer(utilities);
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+}
+
+@layer base {
+  :root {
+    /* Ensure consistent rem calculations across browsers */
+    font-size: 16px;
+    
+    --background: var(--base-50);
+    --foreground: var(--base-800);
+    --card: hsl(0 0% 100%);
+    --card-foreground: var(--base-100);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: var(--base-800);
+    --primary: var(--primary-600);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: var(--base-200);
+    --secondary-foreground: var(--base-950);
+    --muted: var(--base-100);
+    --muted-foreground: var(--base-600);
+    --accent: var(--base-100);
+    --accent-foreground: var(--base-800);
+    --destructive: hsl(0 84.2% 60.2%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --success: hsl(142.1 76.2% 36.3%);
+    --success-foreground: hsl(0 0% 98%);
+    --warning: hsl(32.1 95.0% 44.0%);
+    --warning-foreground: hsl(0 0% 98%);
+    --info: hsl(198.6 88.7% 48.4%);
+    --info-foreground: hsl(0 0% 98%);
+    --border: var(--base-300);
+
+    --input: hsl(0 0% 100%);
+    --ring: var(--primary-600);
+    --chart-1: var(--primary-600);
+    --chart-2: var(--primary-200);
+    --chart-3: var(--primary-400);
+    --chart-4: var(--primary-300);
+    --chart-5: var(--primary-100);
+    --sidebar: hsl(0 0% 100%);
+    --sidebar-foreground: var(--base-800);
+    --sidebar-primary: var(--primary-600);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: var(--base-200);
+    --sidebar-accent-foreground: var(--base-800);
+    --sidebar-border: var(--base-200);
+    --sidebar-ring: var(--primary-600);
+
+    /* === Additional semantic colors for better text hierarchy === */
+    --text-primary: var(--base-900);
+    --text-secondary: var(--base-700);
+    --text-tertiary: var(--base-500);
+    --text-disabled: var(--base-400);
+    --text-placeholder: var(--base-400);
+    
+    /* === Surface colors for better layering === */
+    --surface: var(--base-50);
+    --surface-elevated: hsl(0 0% 100%);
+    --surface-overlay: var(--base-100);
+    
+    /* === Interactive states === */
+    --interactive-hover: var(--base-100);
+    --interactive-pressed: var(--base-200);
+    --interactive-disabled: var(--base-100);
+
+    --display-weight: 300;
+    --text-weight: 200;
+  }
+
+  .dark {
+    --background: var(--base-950);
+    --foreground: var(--base-200);
+    --card: var(--base-900);
+    --card-foreground: var(--base-900);
+    --popover: var(--base-900);
+    --popover-foreground: var(--base-200);
+    --primary: var(--primary-600);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: var(--base-700);
+    --secondary-foreground: var(--base-50);
+    --muted: var(--base-800);
+    --muted-foreground: var(--base-300);
+    --accent: var(--base-800);
+    --accent-foreground: var(--base-200);
+    --destructive: hsl(0 62.8% 30.6%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --success: hsl(142.1 70.6% 45.3%);
+    --success-foreground: hsl(0 0% 98%);
+    --warning: hsl(32.1 95.0% 44.0%);
+    --warning-foreground: hsl(0 0% 98%);
+    --info: hsl(198.6 88.7% 48.4%);
+    --info-foreground: hsl(0 0% 98%);
+    --border: var(--base-800);
+    --input: var(--base-700);
+    --ring: var(--primary-600);
+    --chart-1: var(--primary-600);
+    --chart-2: var(--primary-200);
+    --chart-3: var(--primary-400);
+    --chart-4: var(--primary-300);
+    --chart-5: var(--primary-100);
+    --sidebar: var(--base-900);
+    --sidebar-foreground: var(--base-200);
+    --sidebar-primary: var(--primary-600);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: var(--base-800);
+    --sidebar-accent-foreground: var(--base-200);
+    --sidebar-border: var(--base-800);
+    --sidebar-ring: var(--primary-600);
+
+    /* === Dark mode text colors === */
+    --text-primary: var(--base-100);
+    --text-secondary: var(--base-300);
+    --text-tertiary: var(--base-500);
+    --text-disabled: var(--base-600);
+    --text-placeholder: var(--base-600);
+    
+    /* === Dark mode surfaces === */
+    --surface: var(--base-950);
+    --surface-elevated: var(--base-900);
+    --surface-overlay: var(--base-800);
+    
+    /* === Dark mode interactive states === */
+    --interactive-hover: var(--base-800);
+    --interactive-pressed: var(--base-700);
+    --interactive-disabled: var(--base-800);
+  }
+
+  .rve {
+    /* === Dark blue theme base === */
+    --background: var(--base-950);
+    --foreground: var(--base-200);
+    --card: hsl(217.5, 33.33%, 14.12%);
+    --card-foreground:hsl(212.5, 27.91%, 16.86%);
+    --popover:var(--base-950);
+    --popover-foreground: var(--base-200);
+    --primary: var(--primary-600);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: var(--base-700);
+    --secondary-foreground: var(--base-100);
+    --muted: var(--base-800);
+    --muted-foreground: var(--base-300);
+    --accent: var(--base-800);
+    --accent-foreground: var(--base-200);
+    --destructive: hsl(0 65% 50%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --success: hsl(142 70% 45%);
+    --success-foreground: hsl(0 0% 98%);
+    --warning: hsl(32 90% 55%);
+    --warning-foreground: hsl(0 0% 98%);
+    --info: hsl(200 85% 60%);
+    --info-foreground: hsl(0 0% 98%);
+    --border: var(--base-800);
+    --input: var(--base-800);
+    --ring: var(--primary-600);
+    --chart-1: var(--primary-600);
+    --chart-2: var(--primary-400);
+    --chart-3: var(--primary-500);
+    --chart-4: var(--primary-300);
+    --chart-5: var(--primary-200);
+    --sidebar: var(--sidebar);
+    --sidebar-foreground: var(--sidebar-foreground);
+    --sidebar-primary: var(--sidebar-primary);
+    --sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --sidebar-accent: var(--sidebar-accent);
+    --sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --sidebar-border: var(--sidebar-border);
+    --sidebar-ring: var(--sidebar-ring);
+
+    /* === Dark blue text colors === */
+    --text-primary: var(--base-100);
+    --text-secondary: var(--base-300);
+    --text-tertiary: var(--base-500);
+    --text-disabled: var(--base-600);
+    --text-placeholder: var(--base-600);
+    
+    /* === Dark blue surfaces === */
+    --surface: var(--base-950);
+    --surface-elevated: var(--base-900);
+    --surface-overlay: var(--base-800);
+    
+    /* === Dark blue interactive states === */
+    --interactive-hover: var(--base-800);
+    --interactive-pressed: var(--base-700);
+    --interactive-disabled: var(--base-800);
+  }
+
+}
+
+/* Base layer for global defaults */
+@layer base {
+
+  html,
+  body {
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
+  }
+
+  svg,
+  [data-lucide] {
+    stroke-width: var(--icon-stroke-width, 1.5);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+  }
+}
+
+/* Component layer for reusable components */
+
+

@@ -1,0 +1,17 @@
+@utility radix-context-menu {
+  z-index: 100;
+}
+@utility font-league-spartan {
+  font-family: 'League Spartan', sans-serif;
+}
+@utility font-bungee-inline {
+  font-family: 'Bungee Inline', cursive;
+}
+@utility scrollbar-hide {
+  /* Scrollbar utilities */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

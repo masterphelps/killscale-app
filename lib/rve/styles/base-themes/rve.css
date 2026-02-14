@@ -1,0 +1,88 @@
+.rve,
+[data-theme="rve"] {
+  /* === Blue-tinted base colors === */
+  --base-50: hsl(215 25% 97%);
+  --base-100: hsl(214 30% 94%);
+  --base-200: hsl(213 25% 88%);
+  --base-300: hsl(212 20% 80%);
+  --base-400: hsl(211 15% 65%);
+  --base-500: hsl(210 12% 48%);
+  --base-600: hsl(209 15% 35%);
+  --base-700: hsl(208 18% 28%);
+  --base-800: hsl(207 20% 18%);
+  --base-900: hsl(206 25% 12%);
+  --base-950: hsl(221.54, 44.83%, 11.37%);
+  --base-1000: hsl(204 35% 3%);
+
+  /* === Deep blue primary palette === */
+  --primary-50: hsl(220 80% 97%);
+  --primary-100: hsl(219 75% 93%);
+  --primary-200: hsl(218 70% 86%);
+  --primary-300: hsl(217 65% 76%);
+  --primary-400: hsl(216 60% 64%);
+  --primary-500: hsl(215, 88%, 47%);
+  --primary-600: hsl(214, 89%, 49%);
+  --primary-700: hsl(213 70% 35%);
+  --primary-800: hsl(212 72% 28%);
+  --primary-900: hsl(211 75% 22%);
+  --primary-950: hsl(210 78% 14%);
+  --primary-1000: hsl(209 80% 9%);
+
+  --radius: 0.535rem;
+
+  /* === Border color for RVE theme === */
+  --border: var(--base-800);
+
+  /* === Video editor overlay colors === */
+  --video-overlay: hsl(0 0% 0%);
+  --video-overlay-foreground: hsl(0 0% 100%);
+  --audio-overlay: hsl(37 81% 52%);
+  --audio-overlay-foreground: hsl(0 0% 100%);
+  --text-overlay: hsl(274 58% 60%);
+  --text-overlay-foreground: hsl(0 0% 100%);
+  --image-overlay: hsl(160 84% 39%);
+  --image-overlay-foreground: hsl(0 0% 100%);
+  --caption-overlay: hsl(217 91% 60%);
+  --caption-overlay-foreground: hsl(0 0% 100%);
+  --caption-item: hsl(213, 42%, 45%); 
+  --caption-item-foreground: 	hsl(216, 44%, 26%);
+  --caption-item-active: 		hsl(217, 91%, 60%);
+  --caption-item-active-foreground: hsl(224, 100%, 96%);
+  --sticker-overlay: hsl(0 84% 60%);
+  --sticker-overlay-foreground: hsl(0 0% 100%);
+  --waveform-bar: hsl(54 91% 84%);
+  --waveform-bar-foreground: hsl(0 0% 0%);
+
+  /* === Timeline colors with blue theme === */
+  --timeline-marker: hsl(0 62.8% 50.6%);
+  --timeline-marker-hover: hsl(0 62.8% 45%);
+  --timeline-tick: hsla(213, 11%, 31%, 0.588);
+  --timeline-tick-hover: hsl(213 25% 55%);
+  --timeline-ghost: hsl(0, 0%, 100%);
+  --timeline-row: 	 	hsl(219, 42%, 14%);
+  /* === Keyframe colors === */
+  --keyframe-pink: hsl(310 70% 55%);
+  --keyframe-pink-hover: hsl(310 70% 60%);
+  --keyframe-slate: hsl(215 35% 25%);
+
+  /* === Timeline item borders === */
+  --timeline-item-selected-border: hsl(215 65% 35%);
+
+  /* === Blue-themed sidebar === */
+  --sidebar: 	hsl(219, 42%, 11%);
+  --sidebar-foreground: hsl(220 80% 90%);
+  --sidebar-primary: hsl(215 65% 45%);
+  --sidebar-primary-foreground: hsl(220 80% 95%);
+  --sidebar-accent: hsl(214 30% 20%);
+  --sidebar-accent-foreground: hsl(220 80% 85%);
+  --sidebar-border: hsl(213 25% 25%);
+  --sidebar-ring: hsl(215 65% 45%);
+  
+ /* === Timeline item borders === */
+ --timeline-item-selected-border: hsl(211 62.2% 92.7%);
+
+  /* === Timeline resize handle colors === */
+  --timeline-handle-bg: hsl(208 18% 28%);
+  --timeline-handle-indicator: hsl(215 65% 76%);
+  --timeline-handle-hover: hsl(209 15% 35%);
+}
