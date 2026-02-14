@@ -9,12 +9,197 @@
   --bg-sidebar: #0f0f12;
   --bg-card: #18181b;
   --bg-hover: #1f1f23;
+
+  /* Safe defaults for CSS-var-based Tailwind tokens (overridden inside .rve-editor) */
+  --radius: 0.5rem;
+  --background: #09090b;
+  --foreground: #e4e4e7;
+  --border: #27272a;
+  --input: #3f3f46;
+  --ring: #3b82f6;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #3b82f6;
+  --accent-foreground: #e4e4e7;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #18181b;
+  --popover: #18181b;
+  --popover-foreground: #e4e4e7;
+  --sidebar: #0f0f12;
+  --sidebar-foreground: #e4e4e7;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #27272a;
+  --sidebar-accent-foreground: #e4e4e7;
+  --sidebar-border: #27272a;
+  --sidebar-ring: #3b82f6;
+}
+
+/* ─── RVE Editor Theme ─── Scoped so it doesn't affect dashboard pages */
+.rve-editor {
+  /* Base Palette (Dark Theme) */
+  --base-50: hsl(240 11.1% 98.2%);
+  --base-100: hsl(240 10% 96.1%);
+  --base-200: hsl(240 8% 90.2%);
+  --base-300: hsl(240 7.5% 84.3%);
+  --base-400: hsl(240 4.3% 63.9%);
+  --base-500: hsl(240 4.2% 46.3%);
+  --base-600: hsl(240 5.2% 33.9%);
+  --base-700: hsl(240 5.3% 26.1%);
+  --base-800: hsl(240 4.9% 16.1%);
+  --base-900: hsl(240 5.9% 10%);
+  --base-950: hsl(240 10% 3.9%);
+  --base-1000: hsl(0 0% 1.2%);
+
+  --primary-50: hsl(207 64.7% 96.7%);
+  --primary-100: hsl(211 62.2% 92.7%);
+  --primary-200: hsl(210 67.6% 86.7%);
+  --primary-300: hsl(209 71.9% 77.6%);
+  --primary-400: hsl(209 71.1% 66.1%);
+  --primary-500: hsl(211 67.4% 57.8%);
+  --primary-600: hsl(213 61.5% 47.8%);
+  --primary-700: hsl(214 66.5% 41%);
+  --primary-800: hsl(215 60.2% 34.5%);
+  --primary-900: hsl(216 51.4% 29%);
+  --primary-950: hsl(217 47.4% 18.6%);
+  --primary-1000: hsl(219 41.9% 12.2%);
+
+  --radius: 0.635rem;
+
+  /* Semantic Tokens */
+  --background: var(--base-950);
+  --foreground: var(--base-200);
+  --card: var(--base-900);
+  --card-foreground: var(--base-900);
+  --popover: var(--base-900);
+  --popover-foreground: var(--base-200);
+  --primary: var(--primary-600);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: var(--base-700);
+  --secondary-foreground: var(--base-50);
+  --muted: var(--base-800);
+  --muted-foreground: var(--base-300);
+  --accent: var(--base-800);
+  --accent-foreground: var(--base-200);
+  --destructive: hsl(0 62.8% 30.6%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --success: hsl(142.1 70.6% 45.3%);
+  --success-foreground: hsl(0 0% 98%);
+  --warning: hsl(32.1 95.0% 44.0%);
+  --warning-foreground: hsl(0 0% 98%);
+  --info: hsl(198.6 88.7% 48.4%);
+  --info-foreground: hsl(0 0% 98%);
+  --border: var(--base-800);
+  --input: var(--base-700);
+  --ring: var(--primary-600);
+
+  /* Sidebar */
+  --sidebar: var(--base-900);
+  --sidebar-foreground: var(--base-200);
+  --sidebar-primary: var(--primary-600);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: var(--base-800);
+  --sidebar-accent-foreground: var(--base-200);
+  --sidebar-border: var(--base-800);
+  --sidebar-ring: var(--primary-600);
+
+  /* Text hierarchy */
+  --text-primary: var(--base-100);
+  --text-secondary: var(--base-300);
+  --text-tertiary: var(--base-500);
+  --text-disabled: var(--base-600);
+  --text-placeholder: var(--base-600);
+
+  /* Surfaces */
+  --surface: var(--base-950);
+  --surface-elevated: var(--base-900);
+  --surface-overlay: var(--base-800);
+
+  /* Interactive states */
+  --interactive-hover: var(--base-800);
+  --interactive-pressed: var(--base-700);
+  --interactive-disabled: var(--base-800);
+
+  /* Overlay type colors */
+  --video-overlay: hsl(0 0% 0%);
+  --video-overlay-foreground: hsl(0 0% 100%);
+  --audio-overlay: hsl(37 81% 52%);
+  --audio-overlay-foreground: hsl(0 0% 100%);
+  --text-overlay: hsl(274 58% 60%);
+  --text-overlay-foreground: hsl(0 0% 100%);
+  --image-overlay: hsl(160 84% 39%);
+  --image-overlay-foreground: hsl(0 0% 100%);
+  --caption-overlay: hsl(217 91% 60%);
+  --caption-overlay-foreground: hsl(0 0% 100%);
+  --caption-item: hsl(180, 1%, 17%);
+  --caption-item-foreground: hsl(240, 0%, 42%);
+  --caption-item-active: hsl(217, 91%, 60%);
+  --caption-item-active-foreground: hsl(0, 0%, 92%);
+  --sticker-overlay: hsl(0 84% 60%);
+  --sticker-overlay-foreground: hsl(0 0% 100%);
+  --waveform-bar: hsl(54 91% 84%);
+  --waveform-bar-foreground: hsl(0 0% 0%);
+
+  /* Timeline colors */
+  --timeline-marker: hsl(0 62.8% 50.6%);
+  --timeline-marker-hover: hsl(0 62.8% 45%);
+  --timeline-tick: hsl(0, 0%, 31%);
+  --timeline-tick-hover: hsl(0, 0%, 60%);
+  --timeline-ghost: hsl(0, 0%, 100%);
+  --timeline-row: hsl(240 5.9% 10%);
+
+  /* Keyframe colors */
+  --keyframe-pink: hsl(316.7 77.8% 48.6%);
+  --keyframe-pink-hover: hsl(316.7 77.8% 54%);
+  --keyframe-slate: hsl(217.2 32.6% 17.5%);
+
+  /* Timeline item borders */
+  --timeline-item-selected-border: hsl(211 62.2% 92.7%);
+
+  /* Timeline resize handle colors */
+  --timeline-handle-bg: hsl(240 4.9% 16.1%);
+  --timeline-handle-indicator: hsl(240 10% 96.1%);
+  --timeline-handle-hover: hsl(240 5.2% 33.9%);
+
+  --display-weight: 300;
+  --text-weight: 200;
 }
 
 body {
   font-family: 'Outfit', sans-serif;
   background: var(--bg-dark);
   color: #fafafa;
+}
+
+/* Tailwind v4 default border-color compat for RVE components (they use `border` without a color) */
+.rve-editor *,
+.rve-editor ::after,
+.rve-editor ::before {
+  border-color: var(--border);
+}
+
+/* ─── RVE Utility Classes (converted from Tailwind v4 @utility) ─── */
+.radix-context-menu {
+  z-index: 100;
+}
+.font-league-spartan {
+  font-family: 'League Spartan', sans-serif;
+}
+.font-bungee-inline {
+  font-family: 'Bungee Inline', cursive;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Safe area utilities for iOS home bar */
