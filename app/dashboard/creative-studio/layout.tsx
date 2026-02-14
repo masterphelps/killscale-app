@@ -50,6 +50,8 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
   // Also hide on Active page (has its own date picker in the header)
   // Also hide on Ad Studio page (not date-dependent)
   const hideDatePicker = pathname?.includes('/best-copy') || pathname?.includes('/media') || pathname?.includes('/ai-tasks') || pathname?.includes('/active') || pathname?.includes('/ad-studio')
+  // Hide entire CS header for video editor (maximize vertical space)
+  const hideHeader = pathname?.includes('/video-editor')
 
   // Data state
   const [assets, setAssets] = useState<StudioAsset[]>([])
@@ -552,40 +554,42 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
 
   return (
     <CreativeStudioContext.Provider value={value}>
-      {/* Header bar with credits gauge + date picker */}
-      <div className="max-w-[1800px] mx-auto px-4 lg:px-8 pt-4">
-        <div className="flex items-center justify-end gap-3">
-          <CreditsGauge />
-          {!hideDatePicker && (
-            <div className="relative">
-              <DatePickerButton
-                label={getDateLabel()}
-                onClick={() => setShowDatePicker(!showDatePicker)}
-                isOpen={showDatePicker}
-              />
-              <DatePicker
-                isOpen={showDatePicker}
-                onClose={() => setShowDatePicker(false)}
-                datePreset={datePreset}
-                onPresetChange={(preset) => {
-                  setDatePreset(preset)
-                  if (preset !== 'custom') setShowDatePicker(false)
-                }}
-                customStartDate={customStartDate}
-                customEndDate={customEndDate}
-                onCustomDateChange={(start, end) => {
-                  setCustomStartDate(start)
-                  setCustomEndDate(end)
-                }}
-                onApply={() => {
-                  setDatePreset('custom')
-                  setShowDatePicker(false)
-                }}
-              />
-            </div>
-          )}
+      {/* Header bar with credits gauge + date picker (hidden for video editor) */}
+      {!hideHeader && (
+        <div className="max-w-[1800px] mx-auto px-4 lg:px-8 pt-4">
+          <div className="flex items-center justify-end gap-3">
+            <CreditsGauge />
+            {!hideDatePicker && (
+              <div className="relative">
+                <DatePickerButton
+                  label={getDateLabel()}
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  isOpen={showDatePicker}
+                />
+                <DatePicker
+                  isOpen={showDatePicker}
+                  onClose={() => setShowDatePicker(false)}
+                  datePreset={datePreset}
+                  onPresetChange={(preset) => {
+                    setDatePreset(preset)
+                    if (preset !== 'custom') setShowDatePicker(false)
+                  }}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomDateChange={(start, end) => {
+                    setCustomStartDate(start)
+                    setCustomEndDate(end)
+                  }}
+                  onApply={() => {
+                    setDatePreset('custom')
+                    setShowDatePicker(false)
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {children}
       <TheaterModal
         item={theaterItem}

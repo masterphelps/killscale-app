@@ -1,126 +1,254 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
-import { Player, type PlayerRef } from '@remotion/player'
-import { AdOverlay } from '@/remotion/AdOverlay'
-import type { OverlayConfig, HookOverlay, CaptionOverlay, CTAOverlay, GraphicOverlay, OverlayStyle } from '@/remotion/types'
+import type { OverlayConfig, VideoComposition } from '@/remotion/types'
+import { OverlayType } from '@/lib/rve/types'
+import type { Overlay, ClipOverlay } from '@/lib/rve/types'
+import { ReactVideoEditor, type SiblingClip } from '@/lib/rve/components/react-video-editor'
+import { stubRenderer } from '@/lib/rve/stub-renderer'
+import { overlayConfigToRVEOverlays, rveOverlaysToOverlayConfig } from '@/lib/rve-bridge'
+import { LaunchWizard, type Creative } from '@/components/launch-wizard'
+import type { AdConcept } from '@/lib/video-prompt-templates'
 import {
-  Play,
-  Pause,
-  RotateCcw,
-  Type,
-  MessageSquare,
-  MousePointerClick,
-  Image as ImageIcon,
-  Palette,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Trash2,
+  ArrowLeft,
   Save,
   Loader2,
-  ArrowLeft,
-  Volume2,
-  VolumeX,
-  History,
   Download,
   CheckCircle,
+  History,
+  ChevronDown,
+  Mic,
+  Megaphone,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+
+const VOICES = [
+  { id: 'onyx', label: 'Onyx', desc: 'Deep, authoritative' },
+  { id: 'nova', label: 'Nova', desc: 'Warm, friendly' },
+  { id: 'alloy', label: 'Alloy', desc: 'Neutral, balanced' },
+  { id: 'echo', label: 'Echo', desc: 'Smooth, clear' },
+  { id: 'fable', label: 'Fable', desc: 'Expressive, storytelling' },
+  { id: 'shimmer', label: 'Shimmer', desc: 'Bright, energetic' },
+] as const
 
 const FPS = 30
-const STYLE_OPTIONS: { value: OverlayStyle; label: string }[] = [
-  { value: 'capcut', label: 'CapCut' },
-  { value: 'minimal', label: 'Minimal' },
-  { value: 'bold', label: 'Bold' },
-  { value: 'clean', label: 'Clean' },
-]
-
-const ANIMATION_OPTIONS = [
-  { value: 'pop' as const, label: 'Pop (Spring)' },
-  { value: 'fade' as const, label: 'Fade In' },
-  { value: 'slide' as const, label: 'Slide Up' },
-]
-
-const POSITION_OPTIONS = [
-  { value: 'top_left' as const, label: 'Top Left' },
-  { value: 'top_right' as const, label: 'Top Right' },
-  { value: 'bottom_left' as const, label: 'Bottom Left' },
-  { value: 'bottom_right' as const, label: 'Bottom Right' },
-  { value: 'center' as const, label: 'Center' },
-]
 
 export default function VideoEditorPage() {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const jobId = searchParams.get('jobId')
+  const compositionIdParam = searchParams.get('compositionId')
 
-  const playerRef = useRef<PlayerRef>(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentFrame, setCurrentFrame] = useState(0)
-  const [isMuted, setIsMuted] = useState(true)
+  // Composition state
+  const [compositionId, setCompositionId] = useState<string | null>(compositionIdParam)
+  const [isComposition, setIsComposition] = useState(!!compositionIdParam)
 
-  // Video source
+  // Video source data
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(10)
+  const [initialOverlays, setInitialOverlays] = useState<Overlay[] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  // Back-navigation context (canvas + concept index from job)
+  const [backCanvasId, setBackCanvasId] = useState<string | null>(null)
+  const [backConceptIndex, setBackConceptIndex] = useState<number | null>(null)
+
+  // Save state
   const [isSaving, setIsSaving] = useState(false)
-
-  // Overlay config
-  const [overlayConfig, setOverlayConfig] = useState<OverlayConfig>({
-    style: 'capcut',
-    brandColor: '#10B981',
-    accentColor: '#6366F1',
-  })
-
-  // Panel open states
-  const [openPanel, setOpenPanel] = useState<string | null>('hook')
-
-  // Version history
-  const [versions, setVersions] = useState<Array<{ id: string; version: number; overlay_config: OverlayConfig; render_status: string; created_at: string }>>([])
-  const [activeVersion, setActiveVersion] = useState<number | null>(null)
-  const [isLoadingVersions, setIsLoadingVersions] = useState(false)
-
-  // Save to library
   const [isSavingToLibrary, setIsSavingToLibrary] = useState(false)
   const [savedToLibrary, setSavedToLibrary] = useState(false)
-  const [videoStyle, setVideoStyle] = useState('')
 
-  // Load video job data
+  // Version history
+  const [versions, setVersions] = useState<Array<{
+    id: string; version: number; overlay_config: OverlayConfig; render_status: string; created_at: string
+  }>>([])
+  const [activeVersion, setActiveVersion] = useState<number | null>(null)
+  const [showVersions, setShowVersions] = useState(false)
+
+  // AI state
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [cachedTranscript, setCachedTranscript] = useState<{
+    text: string; words: { word: string; start: number; end: number }[]
+  } | null>(null)
+
+  // Script prompt for TTS voiceover
+  const [scriptPrompt, setScriptPrompt] = useState<string | null>(null)
+
+  // Voiceover state
+  const [isGeneratingVoiceover, setIsGeneratingVoiceover] = useState(false)
+  const [selectedVoice, setSelectedVoice] = useState('onyx')
+  const [showVoiceMenu, setShowVoiceMenu] = useState(false)
+  const [hasVoiceover, setHasVoiceover] = useState(false)
+
+  // Launch Wizard state
+  const [showLaunchWizard, setShowLaunchWizard] = useState(false)
+  const [wizardCreatives, setWizardCreatives] = useState<Creative[]>([])
+  const [wizardCopy, setWizardCopy] = useState<{ primaryText?: string; headline?: string; description?: string } | null>(null)
+  const [isPreparingLaunch, setIsPreparingLaunch] = useState(false)
+
+  // Sibling concept videos (from same canvas)
+  const [siblingClips, setSiblingClips] = useState<SiblingClip[]>([])
+  const [appendedSiblings, setAppendedSiblings] = useState<Set<string>>(new Set())
+  const currentOverlaysRef = useRef<Overlay[]>([])
+  const siblingClipsRef = useRef<SiblingClip[]>([])
+
+  // Track existing overlay config for iterative AI generation
+  const overlayConfigRef = useRef<OverlayConfig | undefined>(undefined)
+
+  // Track canvas info for composition creation
+  const canvasIdRef = useRef<string | null>(null)
+
+  // Load composition data
   useEffect(() => {
-    if (!jobId || !user?.id) return
+    if (!compositionIdParam || !user?.id) return
+
+    const loadComposition = async () => {
+      setIsLoading(true)
+      try {
+        const res = await fetch(`/api/creative-studio/video-composition?compositionId=${compositionIdParam}&userId=${user.id}`)
+        const data = await res.json()
+
+        if (!data.composition) {
+          console.error('Composition not found')
+          setIsLoading(false)
+          return
+        }
+
+        const comp: VideoComposition = data.composition
+        setCompositionId(comp.id)
+        setIsComposition(true)
+        setBackCanvasId(comp.canvasId)
+        canvasIdRef.current = comp.canvasId
+
+        // Load source jobs to get video URLs
+        const jobsRes = await fetch('/api/creative-studio/video-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, canvasId: comp.canvasId }),
+        })
+        const jobsData = await jobsRes.json()
+        const allJobs = jobsData.jobs || []
+
+        // Find the first source job for primary video
+        const sourceJobs = comp.sourceJobIds
+          .map((sid: string) => allJobs.find((j: any) => j.id === sid))
+          .filter(Boolean)
+
+        if (sourceJobs.length === 0) {
+          console.error('No source jobs found for composition')
+          setIsLoading(false)
+          return
+        }
+
+        const primaryJob = sourceJobs[0]
+        const primaryVideoUrl = primaryJob.raw_video_url
+        const primaryDuration = primaryJob.duration_seconds || 10
+
+        if (!primaryVideoUrl) {
+          setIsLoading(false)
+          return
+        }
+
+        // Total duration from composition or calculate
+        const totalDuration = comp.durationSeconds || sourceJobs.reduce((sum: number, j: any) => sum + (j.duration_seconds || 8), 0)
+
+        setVideoUrl(primaryVideoUrl)
+        setDurationSec(totalDuration)
+
+        if (comp.overlayConfig) {
+          overlayConfigRef.current = comp.overlayConfig
+          if (comp.overlayConfig.voiceoverUrl) {
+            setHasVoiceover(true)
+          }
+        }
+
+        // Convert the overlay config to RVE overlays
+        const rveOverlays = overlayConfigToRVEOverlays(
+          comp.overlayConfig || { style: 'clean' },
+          primaryVideoUrl,
+          primaryDuration,
+          FPS,
+        )
+
+        // For multi-clip compositions, we need to add the appended clips
+        // The appendedClips from overlayConfig should be handled by overlayConfigToRVEOverlays
+        setInitialOverlays(rveOverlays)
+
+        // Mark source jobs as appended (except the first which is the primary)
+        const appendedSet = new Set<string>()
+        for (let i = 1; i < comp.sourceJobIds.length; i++) {
+          appendedSet.add(comp.sourceJobIds[i])
+        }
+        setAppendedSiblings(appendedSet)
+
+        // Load sibling clips from same canvas
+        loadSiblings(comp.canvasId, sourceJobs[0].id)
+
+        // Load versions
+        loadCompositionVersions()
+      } catch (err) {
+        console.error('Failed to load composition:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadComposition()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compositionIdParam, user?.id])
+
+  // Load video job data — single GET request (overlay_config now included in GET response)
+  useEffect(() => {
+    if (!jobId || !user?.id || compositionIdParam) return
 
     const loadJob = async () => {
       setIsLoading(true)
       try {
         const res = await fetch(`/api/creative-studio/video-status?jobId=${jobId}&userId=${user.id}`)
         const data = await res.json()
-        if (data.raw_video_url) {
-          setVideoUrl(data.raw_video_url)
-        }
-        // If job has overlay config, load it
-        // We'd fetch full job data here
-        const jobRes = await fetch('/api/creative-studio/video-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId }),
-        })
-        const jobData = await jobRes.json()
-        const job = (jobData.jobs || []).find((j: any) => j.id === jobId)
-        if (job) {
-          setDurationSec(job.duration_seconds || 10)
-          setVideoStyle(job.video_style || '')
-          if (job.overlay_config) {
-            setOverlayConfig(job.overlay_config)
+
+        const rawVideoUrl: string | null = data.raw_video_url || null
+        const jobDuration = data.duration_seconds || 10
+        const overlayConfig: OverlayConfig | undefined = data.overlay_config
+
+        if (overlayConfig) {
+          overlayConfigRef.current = overlayConfig
+          if (overlayConfig.voiceoverUrl) {
+            setHasVoiceover(true)
           }
         }
+        if (data.prompt) {
+          setScriptPrompt(data.prompt)
+        }
 
-        // Load version history
+        if (rawVideoUrl) {
+          setVideoUrl(rawVideoUrl)
+          setDurationSec(jobDuration)
+
+          // Convert OverlayConfig to RVE overlays
+          const rveOverlays = overlayConfigToRVEOverlays(
+            overlayConfig || { style: 'clean' },
+            rawVideoUrl,
+            jobDuration,
+            FPS,
+          )
+          setInitialOverlays(rveOverlays)
+        }
+
+        // Load versions
         loadVersions()
+
+        // Load sibling concept videos if this job came from a canvas
+        if (data.canvas_id) {
+          setBackCanvasId(data.canvas_id)
+          canvasIdRef.current = data.canvas_id
+          if (data.ad_index != null) setBackConceptIndex(data.ad_index)
+          loadSiblings(data.canvas_id, jobId!)
+        }
       } catch (err) {
         console.error('Failed to load video:', err)
       } finally {
@@ -129,49 +257,12 @@ export default function VideoEditorPage() {
     }
 
     loadJob()
-  }, [jobId, user?.id, currentAccountId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, user?.id])
 
-  // Track current frame
-  useEffect(() => {
-    const player = playerRef.current
-    if (!player) return
-
-    const handler = () => {
-      setCurrentFrame(player.getCurrentFrame())
-    }
-    player.addEventListener('frameupdate', handler)
-    player.addEventListener('play', () => setIsPlaying(true))
-    player.addEventListener('pause', () => setIsPlaying(false))
-
-    return () => {
-      player.removeEventListener('frameupdate', handler)
-    }
-  }, [videoUrl])
-
-  const totalFrames = useMemo(() => Math.round(durationSec * FPS), [durationSec])
-  const currentTimeSec = currentFrame / FPS
-
-  // Overlay update helpers
-  const updateHook = useCallback((hook: HookOverlay | undefined) => {
-    setOverlayConfig(prev => ({ ...prev, hook }))
-  }, [])
-
-  const updateCTA = useCallback((cta: CTAOverlay | undefined) => {
-    setOverlayConfig(prev => ({ ...prev, cta }))
-  }, [])
-
-  const updateCaptions = useCallback((captions: CaptionOverlay[]) => {
-    setOverlayConfig(prev => ({ ...prev, captions }))
-  }, [])
-
-  const updateGraphics = useCallback((graphics: GraphicOverlay[]) => {
-    setOverlayConfig(prev => ({ ...prev, graphics }))
-  }, [])
-
-  // Load overlay versions
+  // Load overlay versions (job mode)
   const loadVersions = useCallback(async () => {
     if (!jobId || !user?.id) return
-    setIsLoadingVersions(true)
     try {
       const res = await fetch(`/api/creative-studio/overlay-versions?videoJobId=${jobId}&userId=${user.id}`)
       const data = await res.json()
@@ -180,85 +271,363 @@ export default function VideoEditorPage() {
       }
     } catch (err) {
       console.error('Failed to load versions:', err)
-    } finally {
-      setIsLoadingVersions(false)
     }
   }, [jobId, user?.id])
 
-  // Load a specific version's overlay config
-  const loadVersion = useCallback((version: { version: number; overlay_config: OverlayConfig }) => {
-    setOverlayConfig(version.overlay_config)
-    setActiveVersion(version.version)
+  // Load overlay versions (composition mode)
+  const loadCompositionVersions = useCallback(async () => {
+    const cid = compositionIdParam || compositionId
+    if (!cid || !user?.id) return
+    try {
+      const res = await fetch(`/api/creative-studio/overlay-versions?compositionId=${cid}&userId=${user.id}`)
+      const data = await res.json()
+      if (data.versions) {
+        setVersions(data.versions)
+      }
+    } catch (err) {
+      console.error('Failed to load composition versions:', err)
+    }
+  }, [compositionIdParam, compositionId, user?.id])
+
+  // Load sibling concept videos from the same canvas
+  const loadSiblings = useCallback(async (canvasId: string, currentJobId: string) => {
+    if (!user?.id) return
+    try {
+      // Fetch all jobs from this canvas (includes overlay_config when canvasId filter is used)
+      const jobsRes = await fetch('/api/creative-studio/video-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, canvasId }),
+      })
+      const jobsData = await jobsRes.json()
+
+      // Fetch canvas for concept titles
+      const canvasRes = await fetch(`/api/creative-studio/video-canvas?userId=${user.id}&canvasId=${canvasId}`)
+      const canvasData = await canvasRes.json()
+      const concepts: Array<{ title?: string; conceptTitle?: string }> = canvasData.canvas?.concepts || []
+
+      // Filter to completed siblings (exclude current job)
+      const siblings: SiblingClip[] = (jobsData.jobs || [])
+        .filter((j: any) => j.id !== currentJobId && j.status === 'complete' && j.raw_video_url)
+        .map((j: any) => {
+          const conceptIdx = j.ad_index ?? 0
+          const concept = concepts[conceptIdx]
+          return {
+            jobId: j.id,
+            adIndex: conceptIdx,
+            conceptTitle: concept?.title || concept?.conceptTitle || j.product_name || `Concept ${conceptIdx + 1}`,
+            rawVideoUrl: j.raw_video_url,
+            durationSeconds: j.duration_seconds || 8,
+            overlayConfig: j.overlay_config || undefined,
+          }
+        })
+
+      setSiblingClips(siblings)
+    } catch (err) {
+      console.error('Failed to load siblings:', err)
+    }
+  }, [user?.id])
+
+  // Keep siblingClipsRef in sync
+  useEffect(() => { siblingClipsRef.current = siblingClips }, [siblingClips])
+
+  // Keep currentOverlaysRef in sync via ks-overlays-raw events
+  // Also sync appendedSiblings: re-enable "Add" when a clip is deleted from the timeline
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<{ overlays: Overlay[] }>
+      if (customEvent.detail?.overlays) {
+        const overlays = customEvent.detail.overlays
+        currentOverlaysRef.current = overlays
+
+        // Build set of video URLs currently on the timeline
+        const timelineUrls = new Set<string>()
+        for (const o of overlays) {
+          if (o.type === OverlayType.VIDEO && 'src' in o) {
+            timelineUrls.add((o as ClipOverlay).src)
+          }
+        }
+
+        // Sync appendedSiblings: only mark siblings whose video URL is on the timeline
+        const siblings = siblingClipsRef.current
+        if (siblings.length > 0) {
+          const onTimeline = new Set<string>()
+          for (const s of siblings) {
+            if (timelineUrls.has(s.rawVideoUrl)) {
+              onTimeline.add(s.jobId)
+            }
+          }
+          setAppendedSiblings(prev => {
+            // Only update if different to avoid unnecessary re-renders
+            if (prev.size !== onTimeline.size || ![...Array.from(onTimeline)].every(id => prev.has(id))) {
+              return onTimeline
+            }
+            return prev
+          })
+        }
+      }
+    }
+    window.addEventListener('ks-overlays-raw', handler)
+    return () => window.removeEventListener('ks-overlays-raw', handler)
   }, [])
 
-  // Save to media library
-  const handleSaveToLibrary = useCallback(async () => {
-    if (!jobId || !user?.id || !currentAccountId) return
-    setIsSavingToLibrary(true)
+  // Append a sibling concept video to the timeline
+  const handleAppendSibling = useCallback(async (sibling: SiblingClip) => {
+    const current = currentOverlaysRef.current
+    if (!current.length) return
+
+    // Find the row and latest end frame of existing VIDEO overlays
+    let lastEndFrame = 0
+    let videoRow = 5
+    for (const o of current) {
+      if (o.type === OverlayType.VIDEO) {
+        videoRow = o.row
+        const end = o.from + o.durationInFrames
+        if (end > lastEndFrame) lastEndFrame = end
+      }
+    }
+
+    // Create the new clip overlay on the same row as existing videos
+    const clipDurationFrames = Math.round(sibling.durationSeconds * FPS)
+    const newClip: ClipOverlay = {
+      id: Date.now(),
+      type: OverlayType.VIDEO,
+      content: sibling.rawVideoUrl,
+      src: sibling.rawVideoUrl,
+      from: lastEndFrame,
+      durationInFrames: clipDurationFrames,
+      left: 0,
+      top: 0,
+      width: 1080,
+      height: 1920,
+      row: videoRow,
+      isDragging: false,
+      rotation: 0,
+      styles: { objectFit: 'cover', volume: 1 },
+    }
+
+    // If the sibling has an overlay config, convert to RVE overlays and time-shift
+    const timeShiftedOverlays: Overlay[] = []
+    if (sibling.overlayConfig) {
+      const subOverlays = overlayConfigToRVEOverlays(
+        sibling.overlayConfig,
+        sibling.rawVideoUrl,
+        sibling.durationSeconds,
+        FPS,
+      )
+      for (const sub of subOverlays) {
+        // Skip the VIDEO overlay (we already have the clip)
+        if (sub.type === OverlayType.VIDEO) continue
+        // Time-shift to align with the appended clip's position
+        sub.from += lastEndFrame
+        sub.id = Date.now() + Math.random() * 10000 // unique ID
+        timeShiftedOverlays.push(sub)
+      }
+    }
+
+    // Inject all overlays into the editor
+    const allOverlays = [...current, newClip, ...timeShiftedOverlays]
+    const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
+    window.dispatchEvent(event)
+
+    // Rebuild overlayConfigRef from the full overlay set so save/composition
+    // captures the sibling's hook, captions, and CTA (the OverlayBridge skips
+    // emission during injection, so we must update the ref manually)
+    const updatedConfig = rveOverlaysToOverlayConfig(allOverlays, overlayConfigRef.current)
+    overlayConfigRef.current = updatedConfig
+
+    // Mark this sibling as appended
+    setAppendedSiblings(prev => new Set(prev).add(sibling.jobId))
+
+    // ── Create or update composition ──
+    if (!user?.id || !currentAccountId) return
+    const canvasId = canvasIdRef.current
+    if (!canvasId) return
+
+    if (!compositionId && !isComposition) {
+      // First sibling appended → create a new composition
+      try {
+        // Build source job IDs: current job + new sibling
+        const sourceJobIds = [jobId, sibling.jobId].filter(Boolean)
+        const totalDuration = durationSec + sibling.durationSeconds
+
+        // Build a title from concept indices
+        const currentConcept = backConceptIndex != null ? backConceptIndex + 1 : 1
+        const siblingConcept = sibling.adIndex + 1
+        const title = `Concepts ${currentConcept} + ${siblingConcept}`
+
+        const res = await fetch('/api/creative-studio/video-composition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            canvasId,
+            adAccountId: currentAccountId,
+            sourceJobIds,
+            overlayConfig: overlayConfigRef.current || { style: 'clean' },
+            title,
+            durationSeconds: totalDuration,
+          }),
+        })
+        const data = await res.json()
+        if (data.compositionId) {
+          setCompositionId(data.compositionId)
+          setIsComposition(true)
+          // Reset version history for the new composition
+          setVersions([])
+          setActiveVersion(null)
+          // Update URL without reload
+          const newUrl = new URL(window.location.href)
+          newUrl.searchParams.delete('jobId')
+          newUrl.searchParams.set('compositionId', data.compositionId)
+          window.history.replaceState({}, '', newUrl.toString())
+        }
+      } catch (err) {
+        console.error('Failed to create composition:', err)
+      }
+    } else if (compositionId) {
+      // Already a composition → add the new sibling to sourceJobIds
+      try {
+        const res = await fetch('/api/creative-studio/video-composition', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            compositionId,
+            userId: user.id,
+            sourceJobIds: [...Array.from(appendedSiblings), sibling.jobId, jobId].filter(Boolean).map(String),
+          }),
+        })
+        await res.json()
+      } catch (err) {
+        console.error('Failed to update composition:', err)
+      }
+    }
+  }, [jobId, user?.id, currentAccountId, compositionId, isComposition, durationSec, backConceptIndex, appendedSiblings])
+
+  // AI generation handler — passed to RVE sidebar
+  const handleAIGenerate = useCallback(async (prompt: string) => {
+    if (isGenerating) return
+    setIsGenerating(true)
     try {
-      const res = await fetch('/api/creative-studio/save-video-to-library', {
+      const currentConfig = overlayConfigRef.current
+      const hasExisting = currentConfig?.hook || currentConfig?.captions?.length || currentConfig?.cta
+      const res = await fetch('/api/creative-studio/generate-overlay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoJobId: jobId,
-          userId: user.id,
-          adAccountId: currentAccountId,
+          instruction: prompt,
+          durationSeconds: durationSec,
+          currentConfig: hasExisting ? currentConfig : undefined,
+          videoUrl: !cachedTranscript ? videoUrl : undefined,
+          transcript: cachedTranscript || undefined,
         }),
       })
       const data = await res.json()
-      if (data.success) {
-        setSavedToLibrary(true)
-      } else {
-        alert(`Failed to save: ${data.error}`)
+      if (data.error) {
+        alert(data.error)
+        return
+      }
+      if (data.transcript && !cachedTranscript) {
+        setCachedTranscript(data.transcript)
+      }
+      if (data.overlayConfig) {
+        overlayConfigRef.current = data.overlayConfig
+        // We need to inject the new overlays into the editor.
+        // This is done via the AIOverlayInjector component below.
+        setAiGeneratedConfig(data.overlayConfig)
       }
     } catch (err) {
-      console.error('Save to library failed:', err)
+      console.error('Generate overlay failed:', err)
     } finally {
-      setIsSavingToLibrary(false)
+      setIsGenerating(false)
     }
-  }, [jobId, user?.id, currentAccountId])
+  }, [isGenerating, durationSec, cachedTranscript, videoUrl])
 
-  // Playback controls
-  const togglePlay = () => {
-    playerRef.current?.toggle()
-  }
-
-  const seekToStart = () => {
-    playerRef.current?.seekTo(0)
-    playerRef.current?.pause()
-  }
-
-  const seekTo = (sec: number) => {
-    playerRef.current?.seekTo(Math.round(sec * FPS))
-  }
-
-  // Save/render
-  const handleSave = useCallback(async () => {
-    if (!jobId || !user?.id) return
-    setIsSaving(true)
+  // Voiceover generation handler
+  const handleGenerateVoiceover = useCallback(async () => {
+    const effectiveJobId = jobId || compositionId
+    if (!effectiveJobId || !user?.id || isGeneratingVoiceover) return
+    setIsGeneratingVoiceover(true)
     try {
-      const res = await fetch('/api/creative-studio/render-overlay', {
+      // Extract current caption text from the live editor state
+      const currentConfig = overlayConfigRef.current
+      const captionTexts = currentConfig?.captions?.map(c => c.text).filter(Boolean)
+      const scriptText = captionTexts && captionTexts.length > 0
+        ? captionTexts.join('. ')
+        : undefined
+
+      const res = await fetch('/api/creative-studio/generate-voiceover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoJobId: jobId,
-          overlayConfig,
-          userId: user.id,
-        }),
+        body: JSON.stringify({ jobId: effectiveJobId, userId: user.id, voice: selectedVoice, scriptText }),
       })
       const data = await res.json()
-      if (data.status === 'saved') {
-        setActiveVersion(data.version)
-        loadVersions() // Refresh version list
-      } else if (data.error) {
-        alert(`Save failed: ${data.error}`)
+      if (data.error) {
+        alert(data.error)
+        return
+      }
+      if (data.voiceoverUrl) {
+        // Update overlay config with voiceover
+        const currentConfig = overlayConfigRef.current || { style: 'clean' as const }
+        const updatedConfig = { ...currentConfig, voiceoverUrl: data.voiceoverUrl }
+        overlayConfigRef.current = updatedConfig
+        setHasVoiceover(true)
+        // Inject updated overlays into editor (with voiceover track + muted video)
+        setAiGeneratedConfig(updatedConfig)
       }
     } catch (err) {
-      console.error('Save failed:', err)
+      console.error('Voiceover generation failed:', err)
     } finally {
-      setIsSaving(false)
+      setIsGeneratingVoiceover(false)
+      setShowVoiceMenu(false)
     }
-  }, [jobId, overlayConfig, user?.id, loadVersions])
+  }, [jobId, compositionId, user?.id, selectedVoice, isGeneratingVoiceover])
+
+  // Launch as ad — fetch canvas concept's adCopy + create Creative from video
+  const handleLaunchAsAd = useCallback(async () => {
+    if (!backCanvasId || !user?.id || !videoUrl || !currentAccountId) return
+    setIsPreparingLaunch(true)
+    try {
+      // Fetch canvas data to get the concept's adCopy
+      const canvasRes = await fetch(`/api/creative-studio/video-canvas?userId=${user.id}&canvasId=${backCanvasId}`)
+      const canvasData = await canvasRes.json()
+      const concepts: AdConcept[] = canvasData.canvas?.concepts || []
+      const conceptIdx = backConceptIndex ?? 0
+      const concept = concepts[conceptIdx]
+
+      // Download video blob to create a File for the wizard
+      const videoRes = await fetch(videoUrl)
+      const videoBlob = await videoRes.blob()
+      const videoFile = new File([videoBlob], 'video-ad.mp4', { type: 'video/mp4' })
+
+      const creative: Creative = {
+        file: videoFile,
+        preview: videoUrl,
+        type: 'video',
+        uploaded: false,
+      }
+
+      setWizardCreatives([creative])
+      setWizardCopy(concept?.adCopy ? {
+        primaryText: concept.adCopy.primaryText,
+        headline: concept.adCopy.headline,
+        description: concept.adCopy.description,
+      } : null)
+      setShowLaunchWizard(true)
+    } catch (err) {
+      console.error('Failed to prepare ad launch:', err)
+    } finally {
+      setIsPreparingLaunch(false)
+    }
+  }, [backCanvasId, backConceptIndex, user?.id, videoUrl, currentAccountId])
+
+  // State for AI-generated config that needs to be injected into RVE
+  const [aiGeneratedConfig, setAiGeneratedConfig] = useState<OverlayConfig | null>(null)
+
+  // Stable project ID — set once on mount so editor never remounts when transitioning to composition
+  const [stableProjectId] = useState(() => compositionIdParam ? `comp-${compositionIdParam}` : `video-${jobId}`)
+  // Effective ID for save operations
+  const effectiveJobId = jobId
 
   if (isLoading) {
     return (
@@ -268,7 +637,7 @@ export default function VideoEditorPage() {
     )
   }
 
-  if (!videoUrl) {
+  if (!videoUrl || !initialOverlays) {
     return (
       <div className="max-w-[1800px] mx-auto px-4 lg:px-8 py-6">
         <p className="text-zinc-400">No video found. Generate a video first in Video Studio.</p>
@@ -276,510 +645,392 @@ export default function VideoEditorPage() {
     )
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const AdOverlayComp = AdOverlay as any
-
   return (
-    <div className="max-w-[1800px] mx-auto px-4 lg:px-8 py-4">
-      {/* Top bar */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="flex flex-col h-[calc(100vh-4rem)] dark rve-editor">
+      {/* KillScale Header Bar */}
+      <div className="flex items-center justify-between px-4 lg:px-6 py-2 border-b border-zinc-800/50 flex-shrink-0 bg-bg-dark z-10">
         <button
-          onClick={() => window.history.back()}
+          onClick={() => {
+            if (backCanvasId) {
+              const params = new URLSearchParams({ canvasId: backCanvasId })
+              if (backConceptIndex != null) params.set('conceptIndex', String(backConceptIndex))
+              router.push(`/dashboard/creative-studio/video-studio?${params}`)
+            } else {
+              router.back()
+            }
+          }}
           className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setOverlayConfig({ style: overlayConfig.style, brandColor: overlayConfig.brandColor, accentColor: overlayConfig.accentColor })}
-            className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors"
-          >
-            Reset All
-          </button>
-          <button
-            onClick={handleSaveToLibrary}
-            disabled={isSavingToLibrary || savedToLibrary}
-            className={cn(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-              savedToLibrary
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/20'
-                : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/20 disabled:opacity-50'
-            )}
-          >
-            {isSavingToLibrary ? <Loader2 className="w-4 h-4 animate-spin" /> : savedToLibrary ? <CheckCircle className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-            {savedToLibrary ? 'Saved' : 'Save to Library'}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save Overlay
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
-        {/* ─── Left: Preview Player ─────────────────────────────────── */}
-        <div>
-          <div className="bg-black rounded-xl overflow-hidden relative" style={{ maxHeight: '70vh' }}>
-            <div className="mx-auto" style={{ aspectRatio: '9/16', maxHeight: '65vh' }}>
-              <Player
-                ref={playerRef}
-                component={AdOverlayComp}
-                durationInFrames={totalFrames}
-                fps={FPS}
-                compositionWidth={1080}
-                compositionHeight={1920}
-                style={{ width: '100%', height: '100%' }}
-                inputProps={{
-                  videoUrl,
-                  durationInSeconds: durationSec,
-                  overlayConfig,
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Playback controls */}
-          <div className="mt-3 bg-bg-card border border-border rounded-xl p-3">
-            <div className="flex items-center gap-3">
-              <button onClick={seekToStart} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">
-                <RotateCcw className="w-4 h-4" />
-              </button>
-              <button onClick={togglePlay} className="p-2 rounded-full bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors">
-                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-              </button>
-              <button
-                onClick={() => { setIsMuted(!isMuted); if (playerRef.current) isMuted ? playerRef.current.unmute() : playerRef.current.mute() }}
-                className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-              >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
-
-              {/* Scrubber */}
-              <div className="flex-1 relative group">
-                <input
-                  type="range"
-                  min={0}
-                  max={totalFrames}
-                  value={currentFrame}
-                  onChange={(e) => seekTo(Number(e.target.value) / FPS)}
-                  className="w-full h-1.5 rounded-full appearance-none bg-zinc-700 cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-500"
-                />
-              </div>
-
-              {/* Timecode */}
-              <span className="text-xs font-mono tabular-nums text-zinc-400 whitespace-nowrap">
-                {currentTimeSec.toFixed(1)}s / {durationSec}s
-              </span>
-            </div>
-
-            {/* Mini timeline showing overlay positions */}
-            <div className="mt-2 h-6 relative bg-zinc-800/50 rounded overflow-hidden">
-              {overlayConfig.hook && (
-                <div
-                  className="absolute top-0 h-2 bg-amber-500/40 rounded-sm"
-                  style={{
-                    left: `${(overlayConfig.hook.startSec / durationSec) * 100}%`,
-                    width: `${((overlayConfig.hook.endSec - overlayConfig.hook.startSec) / durationSec) * 100}%`,
-                  }}
-                  title="Hook"
-                />
-              )}
-              {overlayConfig.captions?.map((c, i) => (
-                <div
-                  key={i}
-                  className="absolute top-2 h-2 bg-blue-500/40 rounded-sm"
-                  style={{
-                    left: `${(c.startSec / durationSec) * 100}%`,
-                    width: `${((c.endSec - c.startSec) / durationSec) * 100}%`,
-                  }}
-                  title={`Caption: ${c.text.slice(0, 20)}`}
-                />
-              ))}
-              {overlayConfig.cta && (
-                <div
-                  className="absolute top-4 h-2 bg-emerald-500/40 rounded-sm"
-                  style={{
-                    left: `${(overlayConfig.cta.startSec / durationSec) * 100}%`,
-                    width: `${((durationSec - overlayConfig.cta.startSec) / durationSec) * 100}%`,
-                  }}
-                  title="CTA"
-                />
-              )}
-              {/* Playhead */}
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-white z-10"
-                style={{ left: `${(currentTimeSec / durationSec) * 100}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ─── Right: Overlay Controls ──────────────────────────────── */}
-        <div className="space-y-3 max-h-[80vh] overflow-y-auto">
-          {/* Style Preset */}
-          <Panel
-            title="Style Preset"
-            icon={<Palette className="w-4 h-4" />}
-            isOpen={openPanel === 'style'}
-            onToggle={() => setOpenPanel(openPanel === 'style' ? null : 'style')}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              {STYLE_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setOverlayConfig(prev => ({ ...prev, style: opt.value }))}
-                  className={cn(
-                    'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                    overlayConfig.style === opt.value
-                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                      : 'bg-zinc-800 text-zinc-400 border border-border hover:border-zinc-600'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 space-y-2">
-              <ColorField label="Brand Color" value={overlayConfig.brandColor || '#10B981'} onChange={v => setOverlayConfig(p => ({ ...p, brandColor: v }))} />
-              <ColorField label="Accent Color" value={overlayConfig.accentColor || '#6366F1'} onChange={v => setOverlayConfig(p => ({ ...p, accentColor: v }))} />
-            </div>
-          </Panel>
-
-          {/* Hook Text */}
-          <Panel
-            title="Hook Text"
-            icon={<Type className="w-4 h-4" />}
-            isOpen={openPanel === 'hook'}
-            onToggle={() => setOpenPanel(openPanel === 'hook' ? null : 'hook')}
-          >
-            {overlayConfig.hook ? (
-              <div className="space-y-3">
-                <TextField label="Line 1" value={overlayConfig.hook.line1} onChange={v => updateHook({ ...overlayConfig.hook!, line1: v })} />
-                <TextField label="Line 2 (optional)" value={overlayConfig.hook.line2 || ''} onChange={v => updateHook({ ...overlayConfig.hook!, line2: v || undefined })} />
-                <ColorField label="Line 2 Color" value={overlayConfig.hook.line2Color || overlayConfig.brandColor || '#10B981'} onChange={v => updateHook({ ...overlayConfig.hook!, line2Color: v })} />
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberField label="Start (sec)" value={overlayConfig.hook.startSec} onChange={v => updateHook({ ...overlayConfig.hook!, startSec: v })} min={0} max={durationSec} step={0.5} />
-                  <NumberField label="End (sec)" value={overlayConfig.hook.endSec} onChange={v => updateHook({ ...overlayConfig.hook!, endSec: v })} min={0} max={durationSec} step={0.5} />
-                </div>
-                <SelectField label="Animation" value={overlayConfig.hook.animation} options={ANIMATION_OPTIONS} onChange={v => updateHook({ ...overlayConfig.hook!, animation: v as any })} />
-                <button onClick={() => { updateHook(undefined); seekTo(0) }} className="text-xs text-red-400 hover:text-red-300">Remove Hook</button>
-              </div>
-            ) : (
-              <button
-                onClick={() => updateHook({ line1: 'Your hook text here', startSec: 0, endSec: 3, animation: 'pop' })}
-                className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
-              >
-                <Plus className="w-4 h-4" />
-                Add Hook Text
-              </button>
-            )}
-          </Panel>
-
-          {/* Captions */}
-          <Panel
-            title="Captions"
-            icon={<MessageSquare className="w-4 h-4" />}
-            isOpen={openPanel === 'captions'}
-            onToggle={() => setOpenPanel(openPanel === 'captions' ? null : 'captions')}
-          >
-            {(overlayConfig.captions || []).map((caption, i) => (
-              <div key={i} className="mb-3 pb-3 border-b border-border/50 last:border-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-zinc-500">Caption {i + 1}</span>
-                  <button
-                    onClick={() => {
-                      const caps = [...(overlayConfig.captions || [])]
-                      caps.splice(i, 1)
-                      updateCaptions(caps)
-                    }}
-                    className="p-1 text-zinc-500 hover:text-red-400"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-                <TextField label="Text" value={caption.text} onChange={v => {
-                  const caps = [...(overlayConfig.captions || [])]
-                  caps[i] = { ...caps[i], text: v }
-                  updateCaptions(caps)
-                }} />
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <NumberField label="Start" value={caption.startSec} onChange={v => {
-                    const caps = [...(overlayConfig.captions || [])]
-                    caps[i] = { ...caps[i], startSec: v }
-                    updateCaptions(caps)
-                  }} min={0} max={durationSec} step={0.5} />
-                  <NumberField label="End" value={caption.endSec} onChange={v => {
-                    const caps = [...(overlayConfig.captions || [])]
-                    caps[i] = { ...caps[i], endSec: v }
-                    updateCaptions(caps)
-                  }} min={0} max={durationSec} step={0.5} />
-                </div>
-                <TextField label="Highlight Word" value={caption.highlightWord || ''} onChange={v => {
-                  const caps = [...(overlayConfig.captions || [])]
-                  caps[i] = { ...caps[i], highlightWord: v || undefined }
-                  updateCaptions(caps)
-                }} />
-              </div>
-            ))}
+          {/* Version dropdown */}
+          <div className="relative">
             <button
-              onClick={() => {
-                const lastEnd = overlayConfig.captions?.length
-                  ? overlayConfig.captions[overlayConfig.captions.length - 1].endSec
-                  : (overlayConfig.hook?.endSec || 0)
-                updateCaptions([
-                  ...(overlayConfig.captions || []),
-                  { text: 'New caption', startSec: lastEnd, endSec: Math.min(lastEnd + 2.5, durationSec) },
-                ])
-              }}
-              className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
+              onClick={() => setShowVersions(!showVersions)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 bg-zinc-800 hover:bg-zinc-700 transition-colors"
             >
-              <Plus className="w-4 h-4" />
-              Add Caption
+              <History className="w-3.5 h-3.5" />
+              {activeVersion !== null ? `v${activeVersion}` : 'Versions'}
+              {versions.length > 0 && <span className="text-zinc-600 ml-0.5">({versions.length})</span>}
+              <ChevronDown className="w-3 h-3" />
             </button>
-          </Panel>
-
-          {/* CTA */}
-          <Panel
-            title="Call to Action"
-            icon={<MousePointerClick className="w-4 h-4" />}
-            isOpen={openPanel === 'cta'}
-            onToggle={() => setOpenPanel(openPanel === 'cta' ? null : 'cta')}
-          >
-            {overlayConfig.cta ? (
-              <div className="space-y-3">
-                <TextField label="Button Text" value={overlayConfig.cta.buttonText} onChange={v => updateCTA({ ...overlayConfig.cta!, buttonText: v })} />
-                <TextField label="Brand Name" value={overlayConfig.cta.brandName || ''} onChange={v => updateCTA({ ...overlayConfig.cta!, brandName: v || undefined })} />
-                <ColorField label="Button Color" value={overlayConfig.cta.buttonColor || overlayConfig.brandColor || '#10B981'} onChange={v => updateCTA({ ...overlayConfig.cta!, buttonColor: v })} />
-                <NumberField label="Appears at (sec)" value={overlayConfig.cta.startSec} onChange={v => updateCTA({ ...overlayConfig.cta!, startSec: v })} min={0} max={durationSec} step={0.5} />
-                <SelectField label="Animation" value={overlayConfig.cta.animation} options={ANIMATION_OPTIONS} onChange={v => updateCTA({ ...overlayConfig.cta!, animation: v as any })} />
-                <button onClick={() => updateCTA(undefined)} className="text-xs text-red-400 hover:text-red-300">Remove CTA</button>
-              </div>
-            ) : (
-              <button
-                onClick={() => updateCTA({ buttonText: 'SHOP NOW', startSec: Math.max(0, durationSec - 3), animation: 'pop' })}
-                className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
-              >
-                <Plus className="w-4 h-4" />
-                Add CTA
-              </button>
-            )}
-          </Panel>
-
-          {/* Graphics */}
-          <Panel
-            title="Graphics & Logo"
-            icon={<ImageIcon className="w-4 h-4" />}
-            isOpen={openPanel === 'graphics'}
-            onToggle={() => setOpenPanel(openPanel === 'graphics' ? null : 'graphics')}
-          >
-            {(overlayConfig.graphics || []).map((graphic, i) => (
-              <div key={i} className="mb-3 pb-3 border-b border-border/50 last:border-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-zinc-500 capitalize">{graphic.type.replace(/_/g, ' ')}</span>
-                  <button
-                    onClick={() => {
-                      const gfx = [...(overlayConfig.graphics || [])]
-                      gfx.splice(i, 1)
-                      updateGraphics(gfx)
-                    }}
-                    className="p-1 text-zinc-500 hover:text-red-400"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-                {(graphic.type === 'lower_third' || graphic.type === 'watermark') && (
-                  <TextField label="Text" value={graphic.text || ''} onChange={v => {
-                    const gfx = [...(overlayConfig.graphics || [])]
-                    gfx[i] = { ...gfx[i], text: v }
-                    updateGraphics(gfx)
-                  }} />
-                )}
-                <TextField label="Image URL" value={graphic.imageUrl || ''} onChange={v => {
-                  const gfx = [...(overlayConfig.graphics || [])]
-                  gfx[i] = { ...gfx[i], imageUrl: v || undefined }
-                  updateGraphics(gfx)
-                }} />
-                <SelectField label="Position" value={graphic.position} options={POSITION_OPTIONS} onChange={v => {
-                  const gfx = [...(overlayConfig.graphics || [])]
-                  gfx[i] = { ...gfx[i], position: v as any }
-                  updateGraphics(gfx)
-                }} />
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <NumberField label="Start" value={graphic.startSec} onChange={v => {
-                    const gfx = [...(overlayConfig.graphics || [])]
-                    gfx[i] = { ...gfx[i], startSec: v }
-                    updateGraphics(gfx)
-                  }} min={0} max={durationSec} step={0.5} />
-                  <NumberField label="End" value={graphic.endSec} onChange={v => {
-                    const gfx = [...(overlayConfig.graphics || [])]
-                    gfx[i] = { ...gfx[i], endSec: v }
-                    updateGraphics(gfx)
-                  }} min={0} max={durationSec} step={0.5} />
-                </div>
-              </div>
-            ))}
-            <button
-              onClick={() => updateGraphics([
-                ...(overlayConfig.graphics || []),
-                { type: 'logo', position: 'top_right', startSec: 0, endSec: durationSec, opacity: 0.8 },
-              ])}
-              className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
-            >
-              <Plus className="w-4 h-4" />
-              Add Graphic
-            </button>
-          </Panel>
-
-          {/* Version History */}
-          <Panel
-            title={`Version History${versions.length ? ` (${versions.length})` : ''}`}
-            icon={<History className="w-4 h-4" />}
-            isOpen={openPanel === 'versions'}
-            onToggle={() => setOpenPanel(openPanel === 'versions' ? null : 'versions')}
-          >
-            {isLoadingVersions ? (
-              <div className="flex items-center gap-2 py-2">
-                <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
-                <span className="text-sm text-zinc-500">Loading...</span>
-              </div>
-            ) : versions.length === 0 ? (
-              <p className="text-sm text-zinc-500 py-2">No saved versions yet. Click &quot;Save Overlay&quot; to create one.</p>
-            ) : (
-              <div className="space-y-2">
-                {/* Current / unsaved */}
+            {showVersions && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-1 max-h-52 overflow-y-auto">
                 <button
-                  onClick={() => { setActiveVersion(null) }}
-                  className={cn(
-                    'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
-                    activeVersion === null
-                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                      : 'bg-zinc-800 text-zinc-400 border border-border hover:border-zinc-600'
-                  )}
+                  onClick={() => { setActiveVersion(null); setShowVersions(false) }}
+                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                    activeVersion === null ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-zinc-800'
+                  }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">Current (unsaved)</span>
-                  </div>
+                  Current (unsaved)
                 </button>
                 {versions.map(v => (
-                  <button
+                  <VersionButton
                     key={v.id}
-                    onClick={() => loadVersion(v)}
-                    className={cn(
-                      'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
-                      activeVersion === v.version
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                        : 'bg-zinc-800 text-zinc-400 border border-border hover:border-zinc-600'
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">v{v.version}</span>
-                      <span className="text-xs text-zinc-500">
-                        {new Date(v.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <div className="text-xs text-zinc-500 mt-0.5">
-                      {v.overlay_config.hook ? 'Hook' : ''}{v.overlay_config.captions?.length ? ` · ${v.overlay_config.captions.length} captions` : ''}{v.overlay_config.cta ? ' · CTA' : ''}
-                      {!v.overlay_config.hook && !v.overlay_config.captions?.length && !v.overlay_config.cta ? 'Style only' : ''}
-                    </div>
-                  </button>
+                    version={v}
+                    isActive={activeVersion === v.version}
+                    videoUrl={videoUrl}
+                    durationSec={durationSec}
+                    onLoad={(config) => {
+                      overlayConfigRef.current = config
+                      setAiGeneratedConfig(config) // Reuse same injection mechanism
+                      setActiveVersion(v.version)
+                      setShowVersions(false)
+                    }}
+                  />
                 ))}
               </div>
             )}
-          </Panel>
+          </div>
+
+          {/* Save to Library */}
+          <button
+            onClick={async () => {
+              if ((!jobId && !compositionId) || !user?.id || !currentAccountId) return
+              setIsSavingToLibrary(true)
+              try {
+                const res = await fetch('/api/creative-studio/save-video-to-library', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ videoJobId: jobId || compositionId, userId: user.id, adAccountId: currentAccountId }),
+                })
+                const data = await res.json()
+                if (data.success) setSavedToLibrary(true)
+                else alert(`Failed to save: ${data.error}`)
+              } catch (err) {
+                console.error('Save to library failed:', err)
+              } finally {
+                setIsSavingToLibrary(false)
+              }
+            }}
+            disabled={isSavingToLibrary || savedToLibrary}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              savedToLibrary
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/20'
+                : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/20 disabled:opacity-50'
+            }`}
+          >
+            {isSavingToLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedToLibrary ? <CheckCircle className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+            {savedToLibrary ? 'Saved' : 'Library'}
+          </button>
+
+          {/* Launch as Ad */}
+          {!isComposition && backCanvasId && (
+            <button
+              onClick={handleLaunchAsAd}
+              disabled={isPreparingLaunch}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border border-orange-500/20 disabled:opacity-50 transition-colors"
+            >
+              {isPreparingLaunch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+              Create Ad
+            </button>
+          )}
+
+          {/* Voiceover */}
+          <div className="relative">
+              <button
+                onClick={() => setShowVoiceMenu(!showVoiceMenu)}
+                disabled={isGeneratingVoiceover}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  hasVoiceover
+                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/20 hover:bg-blue-500/30'
+                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                } disabled:opacity-50`}
+              >
+                {isGeneratingVoiceover ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
+                {hasVoiceover ? 'Voiceover' : 'Add Voice'}
+              </button>
+              {showVoiceMenu && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+                  <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Select Voice</div>
+                  {VOICES.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => setSelectedVoice(v.id)}
+                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between ${
+                        selectedVoice === v.id ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span>{v.label}</span>
+                      <span className="text-zinc-600 text-[10px]">{v.desc}</span>
+                    </button>
+                  ))}
+                  <div className="border-t border-zinc-800 mt-1 pt-1 px-2 pb-1">
+                    <button
+                      onClick={handleGenerateVoiceover}
+                      disabled={isGeneratingVoiceover}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
+                    >
+                      {isGeneratingVoiceover ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mic className="w-3 h-3" />}
+                      {hasVoiceover ? 'Regenerate' : 'Generate'} Voiceover
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          {/* Save button */}
+          <SaveButton
+            jobId={effectiveJobId}
+            compositionId={compositionId}
+            isComposition={isComposition}
+            userId={user?.id}
+            isSaving={isSaving}
+            setIsSaving={setIsSaving}
+            overlayConfigRef={overlayConfigRef}
+            setActiveVersion={setActiveVersion}
+            loadVersions={isComposition ? loadCompositionVersions : loadVersions}
+          />
         </div>
       </div>
+
+      {/* Full RVE Editor */}
+      <div className="flex-1 min-h-0">
+        <ReactVideoEditor
+          projectId={stableProjectId}
+          defaultOverlays={initialOverlays}
+          defaultAspectRatio="9:16"
+          defaultBackgroundColor="#000000"
+          fps={FPS}
+          renderer={stubRenderer}
+          hideThemeToggle
+          defaultTheme="dark"
+          showAutosaveStatus={false}
+          videoWidth={1080}
+          videoHeight={1920}
+          sidebarWidth="24rem"
+          sidebarIconWidth="3.75rem"
+          disabledPanels={[OverlayType.TEMPLATE, OverlayType.LOCAL_DIR, OverlayType.STICKER]}
+          isLoadingProject={isLoading}
+          onAIGenerate={handleAIGenerate}
+          isAIGenerating={isGenerating}
+          hasAITranscript={!!cachedTranscript}
+          siblingClips={siblingClips}
+          onAppendSibling={handleAppendSibling}
+          appendedSiblings={appendedSiblings}
+        />
+      </div>
+
+      {/* AI overlay injector — reads EditorContext inside provider tree */}
+      {aiGeneratedConfig && videoUrl && (
+        <AIOverlayInjector
+          config={aiGeneratedConfig}
+          videoUrl={videoUrl}
+          durationSec={durationSec}
+          fps={FPS}
+          onInjected={() => setAiGeneratedConfig(null)}
+        />
+      )}
+
+      {/* Launch Wizard for creating Meta ads from video */}
+      {showLaunchWizard && currentAccountId && (
+        <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
+          <LaunchWizard
+            adAccountId={currentAccountId}
+            onComplete={async (result) => {
+              setShowLaunchWizard(false)
+              setWizardCreatives([])
+              setWizardCopy(null)
+
+              if (result?.createdEntity && user?.id) {
+                try {
+                  await fetch('/api/meta/hydrate-new-entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId: user.id,
+                      adAccountId: currentAccountId,
+                      entityType: result.createdEntity.entityType,
+                      entityId: result.createdEntity.entityId,
+                    })
+                  })
+                } catch (err) {
+                  console.warn('[Video Editor] Hydrate failed:', err)
+                }
+              }
+            }}
+            onCancel={() => {
+              setShowLaunchWizard(false)
+              setWizardCreatives([])
+              setWizardCopy(null)
+            }}
+            initialEntityType="ad"
+            preloadedCreatives={wizardCreatives}
+            initialCopy={wizardCopy || undefined}
+          />
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── Reusable Panel / Field Components ────────────────────────────────────
+/**
+ * Component that lives inside the RVE provider tree and injects
+ * AI-generated overlays into the editor.
+ * Note: This must be rendered as a child of ReactVideoEditor
+ * but ReactVideoEditor doesn't accept children. Instead, we use
+ * a portal-like approach — this component is a sibling but accesses
+ * the same context because it's rendered inside the provider wrapper.
+ *
+ * Actually — ReactVideoEditor wraps its children in the provider.
+ * Since this is rendered OUTSIDE the provider, we need a different approach.
+ * We'll use a ref callback pattern instead.
+ */
+function AIOverlayInjector({
+  config,
+  videoUrl,
+  durationSec,
+  fps,
+  onInjected,
+}: {
+  config: OverlayConfig
+  videoUrl: string
+  durationSec: number
+  fps: number
+  onInjected: () => void
+}) {
+  // Since we can't access EditorContext from outside ReactVideoEditor,
+  // we need to use a workaround. The cleanest approach is to update
+  // the defaultOverlays, but those are only read on mount.
+  // Instead, we'll dispatch a custom event that a listener inside RVE can catch.
+  useEffect(() => {
+    const overlays = overlayConfigToRVEOverlays(config, videoUrl, durationSec, fps)
+    const event = new CustomEvent('ks-inject-overlays', { detail: { overlays } })
+    window.dispatchEvent(event)
+    onInjected()
+  }, [config, videoUrl, durationSec, fps, onInjected])
 
-function Panel({ title, icon, isOpen, onToggle, children }: {
-  title: string
-  icon: React.ReactNode
-  isOpen: boolean
-  onToggle: () => void
-  children: React.ReactNode
+  return null
+}
+
+/**
+ * Save button that reads overlays from EditorContext.
+ * Needs to be outside the RVE tree, so it reads from ref instead.
+ */
+function SaveButton({
+  jobId,
+  compositionId,
+  isComposition,
+  userId,
+  isSaving,
+  setIsSaving,
+  overlayConfigRef,
+  setActiveVersion,
+  loadVersions,
+}: {
+  jobId: string | null
+  compositionId: string | null
+  isComposition: boolean
+  userId: string | undefined
+  isSaving: boolean
+  setIsSaving: (v: boolean) => void
+  overlayConfigRef: React.MutableRefObject<OverlayConfig | undefined>
+  setActiveVersion: (v: number) => void
+  loadVersions: () => void
+}) {
+  // We also listen for overlay changes via the custom event to keep the ref in sync
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<{ overlayConfig: OverlayConfig }>
+      if (customEvent.detail?.overlayConfig) {
+        overlayConfigRef.current = customEvent.detail.overlayConfig
+      }
+    }
+    window.addEventListener('ks-overlay-changed', handler)
+    return () => window.removeEventListener('ks-overlay-changed', handler)
+  }, [overlayConfigRef])
+
+  const handleSave = async () => {
+    if ((!jobId && !compositionId) || !userId || isSaving) return
+    setIsSaving(true)
+    try {
+      const config = overlayConfigRef.current || { style: 'clean' as const }
+
+      // Build request body based on mode
+      const body: Record<string, any> = { overlayConfig: config, userId }
+      if (isComposition && compositionId) {
+        body.compositionId = compositionId
+      } else if (jobId) {
+        body.videoJobId = jobId
+      }
+
+      const res = await fetch('/api/creative-studio/render-overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.status === 'saved') {
+        setActiveVersion(data.version)
+        loadVersions()
+      } else if (data.error) {
+        alert(`Save failed: ${data.error}`)
+      }
+    } catch (err) {
+      console.error('Save failed:', err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleSave}
+      disabled={isSaving}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
+    >
+      {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+      Save
+    </button>
+  )
+}
+
+/**
+ * Version load button
+ */
+function VersionButton({
+  version,
+  isActive,
+  videoUrl,
+  durationSec,
+  onLoad,
+}: {
+  version: { id: string; version: number; overlay_config: OverlayConfig; created_at: string }
+  isActive: boolean
+  videoUrl: string
+  durationSec: number
+  onLoad: (config: OverlayConfig) => void
 }) {
   return (
-    <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
-      <button onClick={onToggle} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-bg-hover transition-colors">
-        {icon}
-        <span className="text-sm font-medium text-white flex-1 text-left">{title}</span>
-        {isOpen ? <ChevronDown className="w-4 h-4 text-zinc-500" /> : <ChevronRight className="w-4 h-4 text-zinc-500" />}
-      </button>
-      {isOpen && <div className="px-4 pb-4">{children}</div>}
-    </div>
-  )
-}
-
-function TextField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="mt-2">
-      <label className="text-xs text-zinc-500 mb-1 block">{label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-bg-dark border border-border rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
-      />
-    </div>
-  )
-}
-
-function NumberField({ label, value, onChange, min, max, step }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
-  return (
-    <div>
-      <label className="text-xs text-zinc-500 mb-1 block">{label}</label>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        min={min}
-        max={max}
-        step={step}
-        className="w-full bg-bg-dark border border-border rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-      />
-    </div>
-  )
-}
-
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="text-xs text-zinc-500 flex-1">{label}</label>
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-8 h-8 rounded border border-border cursor-pointer bg-transparent"
-      />
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-20 bg-bg-dark border border-border rounded px-2 py-1 text-xs text-white font-mono focus:outline-none"
-      />
-    </div>
-  )
-}
-
-function SelectField({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
-  return (
-    <div className="mt-2">
-      <label className="text-xs text-zinc-500 mb-1 block">{label}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-bg-dark border border-border rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
-      >
-        {options.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-    </div>
+    <button
+      onClick={() => onLoad(version.overlay_config)}
+      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+        isActive ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-zinc-800'
+      }`}
+    >
+      v{version.version} &middot; {new Date(version.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+    </button>
   )
 }

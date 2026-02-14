@@ -8,16 +8,86 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { videoJobId, overlayConfig, userId } = await request.json()
+    const { videoJobId, compositionId, overlayConfig, userId } = await request.json()
 
-    if (!videoJobId || !overlayConfig || !userId) {
+    if (!overlayConfig || !userId) {
       return NextResponse.json(
-        { error: 'Missing required fields: videoJobId, overlayConfig, userId' },
+        { error: 'Missing required fields: overlayConfig, userId' },
         { status: 400 }
       )
     }
 
-    // Verify the job exists and belongs to the user
+    // Exactly one of videoJobId or compositionId must be provided
+    if ((!videoJobId && !compositionId) || (videoJobId && compositionId)) {
+      return NextResponse.json(
+        { error: 'Provide exactly one of videoJobId or compositionId' },
+        { status: 400 }
+      )
+    }
+
+    if (compositionId) {
+      // ── Composition mode ──
+      const { data: comp, error: compError } = await supabaseAdmin
+        .from('video_compositions')
+        .select('id, user_id')
+        .eq('id', compositionId)
+        .single()
+
+      if (compError || !comp) {
+        return NextResponse.json({ error: 'Composition not found' }, { status: 404 })
+      }
+      if (comp.user_id !== userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      }
+
+      // Next version number
+      const { data: maxVersionRow } = await supabaseAdmin
+        .from('video_overlays')
+        .select('version')
+        .eq('composition_id', compositionId)
+        .order('version', { ascending: false })
+        .limit(1)
+        .single()
+
+      const nextVersion = (maxVersionRow?.version ?? 0) + 1
+
+      // Insert overlay version
+      const { data: overlay, error: insertError } = await supabaseAdmin
+        .from('video_overlays')
+        .insert({
+          composition_id: compositionId,
+          video_job_id: null,
+          user_id: userId,
+          version: nextVersion,
+          overlay_config: overlayConfig,
+          render_status: 'saved',
+        })
+        .select('id, version')
+        .single()
+
+      if (insertError || !overlay) {
+        console.error('Failed to insert composition overlay:', insertError)
+        return NextResponse.json({ error: 'Failed to save overlay config' }, { status: 500 })
+      }
+
+      // Update the composition's overlay_config
+      const { error: updateError } = await supabaseAdmin
+        .from('video_compositions')
+        .update({ overlay_config: overlayConfig, updated_at: new Date().toISOString() })
+        .eq('id', compositionId)
+
+      if (updateError) {
+        console.error('Failed to update composition overlay_config:', updateError)
+      }
+
+      return NextResponse.json({
+        overlayId: overlay.id,
+        version: overlay.version,
+        status: 'saved',
+      })
+    }
+
+    // ── Single job mode (existing logic) ──
     const { data: job, error: jobError } = await supabaseAdmin
       .from('video_generation_jobs')
       .select('id, user_id')
@@ -25,17 +95,11 @@ export async function POST(request: Request) {
       .single()
 
     if (jobError || !job) {
-      return NextResponse.json(
-        { error: 'Video job not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Video job not found' }, { status: 404 })
     }
 
     if (job.user_id !== userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized: job does not belong to this user' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Unauthorized: job does not belong to this user' }, { status: 403 })
     }
 
     // Calculate next version number
@@ -64,10 +128,7 @@ export async function POST(request: Request) {
 
     if (insertError || !overlay) {
       console.error('Failed to insert overlay:', insertError)
-      return NextResponse.json(
-        { error: 'Failed to save overlay config' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to save overlay config' }, { status: 500 })
     }
 
     // Update the job's overlay_config with the latest
@@ -78,7 +139,6 @@ export async function POST(request: Request) {
 
     if (updateError) {
       console.error('Failed to update job overlay_config:', updateError)
-      // Non-fatal: overlay was saved, just log the warning
     }
 
     return NextResponse.json({
@@ -88,9 +148,6 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     console.error('render-overlay error:', err)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
