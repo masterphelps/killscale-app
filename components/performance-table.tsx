@@ -194,6 +194,8 @@ type PerformanceTableProps = {
   onBulkSelectItem?: (node: HierarchyNode, level: 'campaign' | 'adset' | 'ad') => void
   // API date range for fatigue chart (since/until from date preset)
   apiDateRange?: { since: string; until: string }
+  // Period-level frequency from Meta (deduplicated reach, correct frequency for date range)
+  frequencyOverrides?: Record<string, { reach: number; frequency: number }>
 }
 
 type BudgetType = 'CBO' | 'ABO' | null
@@ -242,11 +244,11 @@ export type HierarchyNode = {
   // Manual events (from workspace pixel)
   manualRevenue?: number
   manualCount?: number
-  // Frequency for fatigue detection (weighted avg of Meta's raw per-day frequency)
+  // Reach & frequency for fatigue detection
   reach?: number
   frequency?: number
-  _freqWeightedSum?: number   // internal: sum of (frequency × impressions)
-  _freqWeightedCount?: number // internal: sum of impressions where frequency > 0
+  _freqWeightedSum?: number   // internal: sum of (frequency × impressions) for rows with frequency data
+  _freqWeightedCount?: number // internal: sum of impressions for rows with frequency data
 }
 
 // Creative data type (from Meta API)
@@ -322,7 +324,7 @@ const typeLabels = {
   ad: 'Ad'
 }
 
-function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
+function buildHierarchy(data: AdRow[], rules: Rules, frequencyOverrides?: Record<string, { reach: number; frequency: number }>): HierarchyNode[] {
   const campaigns: Record<string, HierarchyNode & { _status?: string | null }> = {}
   // Use account-qualified keys to prevent collisions in workspace view (multiple accounts)
   const adsetStatuses: Record<string, string | null> = {}  // Track adset statuses by account::name
@@ -557,9 +559,17 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
         const adMetrics = calculateMetrics(ad)
         Object.assign(ad, adMetrics)
         ad.verdict = calculateVerdict(ad.spend, ad.roas, rules)
-        // Weighted average of Meta's per-day frequency (ignores pre-migration rows with freq=0)
-        ad.frequency = (ad._freqWeightedCount && ad._freqWeightedCount > 0)
-          ? ad._freqWeightedSum! / ad._freqWeightedCount : 0
+        // Use Meta's period-level frequency if available (deduplicated reach, correct for date range)
+        // Otherwise fall back to weighted average of daily values
+        const adFreqOverride = frequencyOverrides && ad.id ? frequencyOverrides[ad.id] : undefined
+        if (adFreqOverride && adFreqOverride.frequency > 0) {
+          ad.frequency = adFreqOverride.frequency
+          ad.reach = adFreqOverride.reach
+        } else {
+          // Weighted average of Meta's per-day frequency (skips pre-migration rows with freq=0)
+          ad.frequency = (ad._freqWeightedCount && ad._freqWeightedCount > 0)
+            ? ad._freqWeightedSum! / ad._freqWeightedCount : 0
+        }
       })
 
       // Roll up manual events from ads to adset
@@ -592,9 +602,20 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
       }
       
       adset.verdict = calculateVerdict(adset.spend, adset.roas, rules)
-      // Weighted average of Meta's per-day frequency
-      adset.frequency = (adset._freqWeightedCount && adset._freqWeightedCount > 0)
-        ? adset._freqWeightedSum! / adset._freqWeightedCount : 0
+      // Impression-weighted average of ad-level frequencies (already corrected by overrides)
+      if (frequencyOverrides && adset.children && adset.children.length > 0) {
+        let wSum = 0, wCount = 0
+        adset.children.forEach(ad => {
+          if (ad.frequency && ad.frequency > 0 && ad.impressions > 0) {
+            wSum += ad.frequency * ad.impressions
+            wCount += ad.impressions
+          }
+        })
+        adset.frequency = wCount > 0 ? wSum / wCount : 0
+      } else {
+        adset.frequency = (adset._freqWeightedCount && adset._freqWeightedCount > 0)
+          ? adset._freqWeightedSum! / adset._freqWeightedCount : 0
+      }
 
       // Set budget info on adset (use account-qualified keys)
       const adsetBudget = adsetBudgets[adsetLookupKey]
@@ -628,9 +649,20 @@ function buildHierarchy(data: AdRow[], rules: Rules): HierarchyNode[] {
     campaign.roas = campaign.spend > 0 ? campaign.revenue / campaign.spend : 0
     const campaignMetrics = calculateMetrics(campaign)
     Object.assign(campaign, campaignMetrics)
-    // Weighted average of Meta's per-day frequency
-    campaign.frequency = (campaign._freqWeightedCount && campaign._freqWeightedCount > 0)
-      ? campaign._freqWeightedSum! / campaign._freqWeightedCount : 0
+    // Impression-weighted average of adset-level frequencies (already corrected by overrides)
+    if (frequencyOverrides && campaign.children && campaign.children.length > 0) {
+      let wSum = 0, wCount = 0
+      campaign.children.forEach(adset => {
+        if (adset.frequency && adset.frequency > 0 && adset.impressions > 0) {
+          wSum += adset.frequency * adset.impressions
+          wCount += adset.impressions
+        }
+      })
+      campaign.frequency = wCount > 0 ? wSum / wCount : 0
+    } else {
+      campaign.frequency = (campaign._freqWeightedCount && campaign._freqWeightedCount > 0)
+        ? campaign._freqWeightedSum! / campaign._freqWeightedCount : 0
+    }
 
     // Use the direct campaign_status from Meta API if available (use account-qualified key)
     const campaignLookupKey = `${campaign.accountId}::${campaign.name}`
@@ -741,6 +773,7 @@ export function PerformanceTable({
   bulkSelectedItems,
   onBulkSelectItem,
   apiDateRange,
+  frequencyOverrides,
 }: PerformanceTableProps) {
   const { isPrivacyMode } = usePrivacyMode()
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -818,7 +851,7 @@ export function PerformanceTable({
 
   // Build hierarchy
   const hierarchy = useMemo(() => {
-    const baseHierarchy = buildHierarchy(data, rules)
+    const baseHierarchy = buildHierarchy(data, rules, frequencyOverrides)
 
     // If we have lastTouchAttribution (KillScale mode with Priority Merge),
     // apply Priority Merge per-ad, then re-aggregate to adsets → campaigns.
@@ -1074,7 +1107,7 @@ export function PerformanceTable({
     }
 
     return baseHierarchy
-  }, [data, rules, lastTouchAttribution, shopifyAttribution])
+  }, [data, rules, lastTouchAttribution, shopifyAttribution, frequencyOverrides])
 
   // Handle deep-linking highlight from alerts
   useEffect(() => {

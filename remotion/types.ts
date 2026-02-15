@@ -60,6 +60,18 @@ export interface AppendedClip {
   overlayConfig?: OverlayConfig  // sibling's hook/captions/CTA for round-trip
 }
 
+/** Persisted state of a video clip on the timeline (captures cuts/trims/splits) */
+export interface VideoClipEdit {
+  videoUrl: string
+  fromFrame: number           // timeline position
+  durationFrames: number      // timeline duration (may differ from source)
+  videoStartTime?: number     // source trim offset (seconds into source video)
+  speed?: number
+  segments?: Array<{ startFrame: number; endFrame: number; speed?: number }>
+  mediaSrcDuration?: number   // total source file duration in seconds
+  volume?: number
+}
+
 export interface OverlayConfig {
   hook?: HookOverlay
   captions?: CaptionOverlay[]
@@ -71,6 +83,7 @@ export interface OverlayConfig {
   accentColor?: string
   voiceoverUrl?: string
   appendedClips?: AppendedClip[]
+  videoClips?: VideoClipEdit[]  // persisted video clip edits (cuts/trims/splits)
 }
 
 // Full props passed to the Remotion composition

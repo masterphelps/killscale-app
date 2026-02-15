@@ -30,7 +30,6 @@ import {
   Pencil,
   Save,
   Trash2,
-  Minus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
@@ -210,37 +209,47 @@ export default function VideoStudioPage() {
   // Product images (kept for potential future use)
   const [productImages, setProductImages] = useState<ProductImage[]>([])
 
+  // Step 2: Video style
+  type VideoStyle = 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+  const VIDEO_STYLES: { value: VideoStyle; label: string }[] = [
+    { value: 'cinematic', label: 'Cinematic' },
+    { value: 'playful', label: 'Playful' },
+    { value: 'conceptual', label: 'Conceptual' },
+    { value: 'satisfying', label: 'Satisfying' },
+    { value: 'broll', label: 'B-Roll' },
+  ]
+  const [videoStyle, setVideoStyle] = useState<VideoStyle>('cinematic')
+  const [styleDropdownOpen, setStyleDropdownOpen] = useState(false)
+
+  // Per-concept video quality
+  type VideoQuality = 'standard' | 'premium'
+  const [conceptQuality, setConceptQuality] = useState<Record<number, VideoQuality>>({})
+
   // Step 2: Concepts
   const [isGeneratingConcepts, setIsGeneratingConcepts] = useState(false)
   const [concepts, setConcepts] = useState<AdConcept[]>([])
   const [expandedConcept, setExpandedConcept] = useState<number | null>(null)
-  // Per-concept provider + duration settings
-  type ProviderType = 'veo' | 'runway' | 'sora'
-  const PROVIDER_CONFIG: Record<ProviderType, { label: string; fixedDuration: number; baseCost: number }> = {
-    veo: { label: 'Veo 3.1', fixedDuration: 8, baseCost: 50 },
-    runway: { label: 'Runway', fixedDuration: 10, baseCost: 50 },
-    sora: { label: 'Sora', fixedDuration: 12, baseCost: 50 },
-  }
+  // Concept-driven duration + credits (Veo only)
+  const VEO_BASE_DURATION = 8
   const VEO_EXTENSION_STEP = 7
-  const VEO_EXTENSION_COST = 25
-  const [conceptSettings, setConceptSettings] = useState<Record<number, { provider: ProviderType; veoDuration: number }>>({})
-  const getConceptSettings = (i: number) => conceptSettings[i] || { provider: 'veo' as ProviderType, veoDuration: 8 }
+  const QUALITY_COSTS = {
+    standard: { base: 20, extension: 10 },   // Veo 3.1 Fast (720p)
+    premium:  { base: 50, extension: 25 },    // Veo 3.1 Standard (1080p)
+  }
+  const getConceptQuality = (i: number): VideoQuality => conceptQuality[i] || 'standard'
   const getConceptDuration = (i: number) => {
-    const s = getConceptSettings(i)
-    return s.provider === 'veo' ? s.veoDuration : PROVIDER_CONFIG[s.provider].fixedDuration
+    return concepts[i]?.estimatedDuration || VEO_BASE_DURATION
   }
   const getConceptCreditCost = (i: number) => {
-    const s = getConceptSettings(i)
-    if (s.provider !== 'veo') return PROVIDER_CONFIG[s.provider].baseCost
-    const extensions = Math.max(0, (s.veoDuration - 8) / VEO_EXTENSION_STEP)
-    return PROVIDER_CONFIG.veo.baseCost + extensions * VEO_EXTENSION_COST
+    const dur = getConceptDuration(i)
+    const q = getConceptQuality(i)
+    const costs = QUALITY_COSTS[q]
+    const extensions = dur > VEO_BASE_DURATION ? Math.round((dur - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
+    return costs.base + extensions * costs.extension
   }
   const getApiProvider = (i: number) => {
-    const s = getConceptSettings(i)
-    return s.provider === 'veo' && s.veoDuration > 8 ? 'veo-ext' : s.provider
-  }
-  const updateConceptSetting = (i: number, updates: Partial<{ provider: ProviderType; veoDuration: number }>) => {
-    setConceptSettings(prev => ({ ...prev, [i]: { ...getConceptSettings(i), ...updates } }))
+    const dur = getConceptDuration(i)
+    return dur > VEO_BASE_DURATION ? 'veo-ext' : 'veo'
   }
   const [conceptError, setConceptError] = useState<string | null>(null)
   const [canvasId, setCanvasId] = useState<string | null>(null)
@@ -389,8 +398,9 @@ export default function VideoStudioPage() {
 
   // ─── Step 2: Generate Concepts ──────────────────────────────────────────────
 
-  const handleGenerateConcepts = useCallback(async (overrideProduct?: ProductKnowledge) => {
+  const handleGenerateConcepts = useCallback(async (overrideProduct?: ProductKnowledge, overrideStyle?: VideoStyle) => {
     const product = overrideProduct || productKnowledge
+    const style = overrideStyle || videoStyle
     setIsGeneratingConcepts(true)
     setConcepts([])
     setConceptError(null)
@@ -401,7 +411,7 @@ export default function VideoStudioPage() {
       const res = await fetch('/api/creative-studio/generate-ad-concepts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product }),
+        body: JSON.stringify({ product, style }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -441,7 +451,7 @@ export default function VideoStudioPage() {
     } finally {
       setIsGeneratingConcepts(false)
     }
-  }, [productKnowledge, user?.id, currentAccountId, productUrl])
+  }, [productKnowledge, videoStyle, user?.id, currentAccountId, productUrl])
 
   // Assemble product knowledge from pill selections and go to step 2
   const handleGoToStep2 = useCallback(() => {
@@ -544,7 +554,10 @@ export default function VideoStudioPage() {
           productImageBase64: null,
           productImageMimeType: null,
           provider: apiProvider,
+          quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
+          extensionPrompts: concept.extensionPrompts || undefined,
+          adCopy: concept.adCopy || null,
           overlayConfig: {
             style: 'bold' as const,
             hook: {
@@ -603,7 +616,7 @@ export default function VideoStudioPage() {
     } finally {
       setGeneratingIndex(null)
     }
-  }, [user?.id, currentAccountId, concepts, canvasId, productKnowledge.name, refreshJobs, conceptSettings])
+  }, [user?.id, currentAccountId, concepts, canvasId, productKnowledge.name, refreshJobs])
 
   // ─── Extend a completed veo-ext job by +7s ──────────────────────────────────
 
@@ -653,7 +666,8 @@ export default function VideoStudioPage() {
 
   // ─── Add concept (AI or Custom) ─────────────────────────────────────────────
 
-  const [addConceptMode, setAddConceptMode] = useState<'idle' | 'choosing' | 'generating'>('idle')
+  const [addConceptMode, setAddConceptMode] = useState<'idle' | 'choosing' | 'prompting' | 'generating'>('idle')
+  const [promptDirection, setPromptDirection] = useState('')
   const [editingConceptIndex, setEditingConceptIndex] = useState<number | null>(null)
   const [editingConcept, setEditingConcept] = useState<AdConcept | null>(null)
 
@@ -700,6 +714,40 @@ export default function VideoStudioPage() {
       setAddConceptMode('idle')
     }
   }, [productKnowledge, concepts, saveConceptsToCanvas])
+
+  const handleAddPromptConcept = useCallback(async () => {
+    if (!promptDirection.trim()) return
+    setAddConceptMode('generating')
+    try {
+      const res = await fetch('/api/creative-studio/generate-ad-concepts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product: productKnowledge,
+          count: 1,
+          existingConcepts: concepts,
+          directionPrompt: promptDirection.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setConceptError(data.error || 'Failed to generate concept')
+        setAddConceptMode('idle')
+        return
+      }
+      if (data.concepts?.length > 0) {
+        const updated = [...concepts, data.concepts[0]]
+        setConcepts(updated)
+        setExpandedConcept(updated.length - 1)
+        saveConceptsToCanvas(updated)
+      }
+    } catch {
+      setConceptError('Failed to generate concept')
+    } finally {
+      setAddConceptMode('idle')
+      setPromptDirection('')
+    }
+  }, [productKnowledge, concepts, saveConceptsToCanvas, promptDirection])
 
   const handleAddCustomConcept = useCallback(() => {
     const blank: AdConcept = {
@@ -922,6 +970,30 @@ export default function VideoStudioPage() {
             </div>
           )}
 
+          {/* Video Style Pills */}
+          <div className="mb-6">
+            <label className="text-sm font-medium text-zinc-300 mb-2 block">
+              Video Style
+              <span className="text-xs text-zinc-600 ml-2">pick one</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {VIDEO_STYLES.map(s => (
+                <button
+                  key={s.value}
+                  onClick={() => setVideoStyle(s.value)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full text-xs font-medium transition-all border cursor-pointer',
+                    s.value === videoStyle
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                      : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button
             onClick={handleGoToStep2}
             disabled={!canProceedStep1}
@@ -999,13 +1071,45 @@ export default function VideoStudioPage() {
                   <h2 className="text-lg font-semibold text-white">{concepts.length} Creative Concept{concepts.length !== 1 ? 's' : ''}</h2>
                   <p className="text-sm text-zinc-500">Each one is a completely different approach. Pick the one that feels right.</p>
                 </div>
-                <button
-                  onClick={() => handleGenerateConcepts()}
-                  className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-purple-400 transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  New concepts
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <button
+                      onClick={() => setStyleDropdownOpen(!styleDropdownOpen)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:border-purple-500/30 hover:text-purple-300 transition-colors"
+                    >
+                      {VIDEO_STYLES.find(s => s.value === videoStyle)?.label}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                    {styleDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setStyleDropdownOpen(false)} />
+                        <div className="absolute right-0 top-full mt-1 z-50 bg-bg-card border border-zinc-700/50 rounded-lg shadow-xl py-1 min-w-[140px]">
+                          {VIDEO_STYLES.map(s => (
+                            <button
+                              key={s.value}
+                              onClick={() => { setVideoStyle(s.value); setStyleDropdownOpen(false) }}
+                              className={cn(
+                                'w-full text-left px-3 py-1.5 text-xs transition-colors',
+                                s.value === videoStyle
+                                  ? 'text-purple-300 bg-purple-500/10'
+                                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                              )}
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleGenerateConcepts()}
+                    className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-purple-400 transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Regenerate
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -1086,7 +1190,7 @@ export default function VideoStudioPage() {
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setEditingConceptIndex(i)
-                                  setEditingConcept({ ...concept, overlay: { ...concept.overlay, captions: [...concept.overlay.captions] }, script: { ...concept.script } })
+                                  setEditingConcept({ ...concept, overlay: { ...concept.overlay, captions: [...(concept.overlay?.captions || [])] }, script: concept.script ? { ...concept.script } : { scene: '', subject: '', action: '', mood: '' } })
                                   setExpandedConcept(i)
                                 }}
                                 className="p-1.5 rounded-lg text-zinc-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
@@ -1527,7 +1631,8 @@ export default function VideoStudioPage() {
                             <p className="text-sm text-zinc-300">{concept.visualMetaphor}</p>
                           </div>
 
-                          {/* Script sections */}
+                          {/* Script sections — guard for concepts without script (e.g. UGC from Ad Studio) */}
+                          {concept.script ? (
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
                             <div className="space-y-3">
                               <div>
@@ -1564,6 +1669,11 @@ export default function VideoStudioPage() {
                               </div>
                             </div>
                           </div>
+                          ) : concept.videoPrompt ? (
+                          <div className="mb-4">
+                            <p className="text-xs text-zinc-400 leading-relaxed line-clamp-4">{concept.videoPrompt}</p>
+                          </div>
+                          ) : null}
 
                           {/* Overlay preview */}
                           <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-4 mb-4">
@@ -1597,7 +1707,6 @@ export default function VideoStudioPage() {
 
                           {/* Provider + Duration + Generate — shown when no job or last attempt failed */}
                           {(!job || job.status === 'failed') && (() => {
-                            const cs = getConceptSettings(i)
                             const cDuration = getConceptDuration(i)
                             const cCost = getConceptCreditCost(i)
                             return (
@@ -1609,61 +1718,43 @@ export default function VideoStudioPage() {
                                   </div>
                                 )}
 
-                                {/* Provider + Duration row */}
-                                <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                  {/* Provider pills */}
-                                  <div className="flex gap-1.5">
-                                    {(['veo', 'runway', 'sora'] as ProviderType[]).map(p => (
+                                {/* Quality selector */}
+                                <div className="flex gap-2 mb-3">
+                                  {(['standard', 'premium'] as const).map(q => {
+                                    const isActive = getConceptQuality(i) === q
+                                    const qCosts = QUALITY_COSTS[q]
+                                    const extensions = cDuration > VEO_BASE_DURATION ? Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
+                                    const totalCost = qCosts.base + extensions * qCosts.extension
+                                    return (
                                       <button
-                                        key={p}
-                                        onClick={(e) => { e.stopPropagation(); updateConceptSetting(i, { provider: p }) }}
+                                        key={q}
+                                        onClick={(e) => { e.stopPropagation(); setConceptQuality(prev => ({ ...prev, [i]: q })) }}
                                         className={cn(
-                                          'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                                          cs.provider === p
-                                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                                            : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+                                          'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
+                                          isActive
+                                            ? 'bg-purple-500/10 border-purple-500/40'
+                                            : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
                                         )}
                                       >
-                                        {PROVIDER_CONFIG[p].label}
+                                        <div className="flex items-center justify-between">
+                                          <span className={cn('text-xs font-medium', isActive ? 'text-purple-300' : 'text-zinc-400')}>
+                                            {q === 'standard' ? 'Standard' : 'Premium'}
+                                          </span>
+                                          <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
                                       </button>
-                                    ))}
-                                  </div>
+                                    )
+                                  })}
+                                </div>
 
-                                  {/* Duration stepper — Veo only */}
-                                  {cs.provider === 'veo' && (
-                                    <div className="flex items-center gap-0 rounded-lg border border-zinc-700/50 bg-zinc-800/50 overflow-hidden">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          if (cs.veoDuration > 8) updateConceptSetting(i, { veoDuration: cs.veoDuration - VEO_EXTENSION_STEP })
-                                        }}
-                                        disabled={cs.veoDuration <= 8}
-                                        className="px-2 py-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                      >
-                                        <Minus className="w-3.5 h-3.5" />
-                                      </button>
-                                      <span className="px-3 py-1.5 text-xs font-bold text-white min-w-[3rem] text-center tabular-nums">
-                                        {cs.veoDuration}s
-                                      </span>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          updateConceptSetting(i, { veoDuration: cs.veoDuration + VEO_EXTENSION_STEP })
-                                        }}
-                                        className="px-2 py-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                                      >
-                                        <Plus className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
+                                {/* Duration info */}
+                                <div className="flex items-center gap-3 mb-3">
+                                  <span className="text-xs font-medium text-zinc-300">Veo 3.1{getConceptQuality(i) === 'standard' ? ' Fast' : ''}</span>
+                                  <span className="text-xs text-zinc-500">{cDuration}s</span>
+                                  {cDuration > VEO_BASE_DURATION && (
+                                    <span className="text-[10px] text-purple-400/80">({Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)} extension{Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) > 1 ? 's' : ''})</span>
                                   )}
-
-                                  {/* Fixed duration badge — Runway/Sora */}
-                                  {cs.provider !== 'veo' && (
-                                    <span className="text-xs text-zinc-500">{PROVIDER_CONFIG[cs.provider].fixedDuration}s</span>
-                                  )}
-
-                                  {/* Credit cost */}
-                                  <span className="text-xs text-zinc-500 ml-auto">{cCost} credits</span>
                                 </div>
 
                                 <button
@@ -1679,7 +1770,7 @@ export default function VideoStudioPage() {
                                   ) : (
                                     <>
                                       <Video className="w-4 h-4" />
-                                      Generate {cDuration}s Video
+                                      Generate {cDuration}s Video · {cCost} credits
                                     </>
                                   )}
                                 </button>
@@ -1715,6 +1806,13 @@ export default function VideoStudioPage() {
                       AI Generate
                     </button>
                     <button
+                      onClick={() => setAddConceptMode('prompting')}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors text-sm font-medium"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      Prompt
+                    </button>
+                    <button
                       onClick={handleAddCustomConcept}
                       className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-zinc-800 text-zinc-300 border border-border hover:bg-zinc-700 transition-colors text-sm font-medium"
                     >
@@ -1727,6 +1825,36 @@ export default function VideoStudioPage() {
                     >
                       <X className="w-4 h-4" />
                     </button>
+                  </div>
+                )}
+
+                {addConceptMode === 'prompting' && (
+                  <div className="py-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={promptDirection}
+                        onChange={(e) => setPromptDirection(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && promptDirection.trim()) handleAddPromptConcept() }}
+                        placeholder='e.g. "alligator walking through a carwash"'
+                        className="flex-1 px-4 py-2.5 bg-zinc-900 border border-border rounded-lg text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/50"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleAddPromptConcept}
+                        disabled={!promptDirection.trim()}
+                        className="px-5 py-2.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Generate
+                      </button>
+                      <button
+                        onClick={() => { setAddConceptMode('idle'); setPromptDirection('') }}
+                        className="p-2 rounded-lg text-zinc-500 hover:text-white transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-zinc-500 text-center">Describe your idea — AI will build a full concept around it</p>
                   </div>
                 )}
 

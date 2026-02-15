@@ -28,7 +28,11 @@ import { useVideoReplacement } from "../../../hooks/use-video-replacement";
  * <VideoOverlayPanel />
  * ```
  */
-export const VideoOverlayPanel: React.FC = () => {
+interface VideoOverlayPanelProps {
+  onAIGenerate?: (prompt: string) => Promise<void>;
+}
+
+export const VideoOverlayPanel: React.FC<VideoOverlayPanelProps> = ({ onAIGenerate }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [videos, setVideos] = useState<
     Array<StandardVideo & { _source: string; _sourceDisplayName: string }>
@@ -244,6 +248,7 @@ export const VideoOverlayPanel: React.FC = () => {
             localOverlay={localOverlay as ClipOverlay}
             setLocalOverlay={handleUpdateOverlay}
             onChangeVideo={startReplaceMode}
+            onAIGenerate={onAIGenerate}
           />
         ) : null
       }

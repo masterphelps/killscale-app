@@ -11,10 +11,10 @@ const supabase = createClient(
 
 // Credit pack pricing
 const CREDIT_PACKS: Record<string, { credits: number; amountCents: number; label: string }> = {
-  'pack_100': { credits: 100, amountCents: 2500, label: '100 Credits' },
+  'pack_100': { credits: 100, amountCents: 2000, label: '100 Credits' },
   'pack_250': { credits: 250, amountCents: 5000, label: '250 Credits' },
   'pack_500': { credits: 500, amountCents: 10000, label: '500 Credits' },
-  'pack_1000': { credits: 1000, amountCents: 17500, label: '1000 Credits' },
+  'pack_1000': { credits: 1000, amountCents: 20000, label: '1000 Credits' },
 }
 
 export async function POST(request: NextRequest) {

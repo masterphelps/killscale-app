@@ -133,13 +133,105 @@ function formatTranscript(transcript: { text: string; words: WhisperWord[] }): s
   return `Full transcript: "${transcript.text}"\n\nWord-level timestamps:\n${wordLines}`
 }
 
+interface VideoClipEdit {
+  videoUrl: string
+  fromFrame: number
+  durationFrames: number
+  videoStartTime?: number
+  speed?: number
+}
+
+/**
+ * Remap a source-video timestamp to a timeline timestamp using clip edits.
+ * Returns null if the source time falls outside all clips (i.e. was cut).
+ */
+function sourceTimeToTimeline(
+  sourceTime: number,
+  clips: Array<{ timelineStart: number; sourceStart: number; sourceEnd: number; speed: number }>,
+): number | null {
+  for (const clip of clips) {
+    if (sourceTime >= clip.sourceStart && sourceTime < clip.sourceEnd) {
+      return clip.timelineStart + (sourceTime - clip.sourceStart) / clip.speed
+    }
+  }
+  return null // word was in a cut section
+}
+
+/**
+ * Build caption entries directly from Whisper word-level timestamps.
+ * If videoClips are provided, remaps source timestamps to the edited timeline
+ * so captions sync with the video after trims/cuts/rearrangements.
+ */
+function buildCaptionsFromWhisper(
+  words: WhisperWord[],
+  durationSec: number,
+  videoClips?: VideoClipEdit[],
+  fps: number = 30,
+) {
+  // Build clip mapping for timestamp remapping
+  let mappedWords: WhisperWord[]
+
+  if (videoClips && videoClips.length > 0) {
+    const clips = videoClips.map(vc => ({
+      timelineStart: vc.fromFrame / fps,
+      sourceStart: vc.videoStartTime || 0,
+      sourceEnd: (vc.videoStartTime || 0) + (vc.durationFrames / fps) * (vc.speed || 1),
+      speed: vc.speed || 1,
+    }))
+
+    // Remap each word's timestamps through the clip edits
+    mappedWords = []
+    for (const w of words) {
+      const mappedStart = sourceTimeToTimeline(w.start, clips)
+      const mappedEnd = sourceTimeToTimeline(w.end, clips)
+      if (mappedStart !== null && mappedEnd !== null) {
+        mappedWords.push({ word: w.word, start: mappedStart, end: mappedEnd })
+      }
+    }
+  } else {
+    // No clip edits — use original timestamps directly
+    mappedWords = words
+  }
+
+  if (mappedWords.length === 0) return []
+
+  // Group mapped words into 2-4 word captions
+  const captions: Array<{
+    text: string; startSec: number; endSec: number;
+    highlight: boolean; highlightWord: string; position: 'bottom';
+  }> = []
+
+  let i = 0
+  while (i < mappedWords.length) {
+    const remaining = mappedWords.length - i
+    const groupSize = remaining <= 4 ? remaining : Math.min(3, remaining)
+    const group = mappedWords.slice(i, i + groupSize)
+
+    const text = group.map(w => w.word).join(' ')
+    const startSec = Math.max(0, group[0].start)
+    const endSec = Math.min(durationSec, group[group.length - 1].end)
+
+    // Pick the longest word as the highlight word
+    const highlightWord = group.reduce((best, w) =>
+      w.word.replace(/[^a-zA-Z]/g, '').length > best.replace(/[^a-zA-Z]/g, '').length ? w.word : best
+    , group[0].word)
+
+    captions.push({ text, startSec, endSec, highlight: true, highlightWord, position: 'bottom' })
+    i += groupSize
+  }
+
+  return captions
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { instruction, durationSeconds, currentConfig, videoUrl, transcript } = await req.json()
+    const { instruction, durationSeconds, currentConfig, videoUrl, transcript, videoClips, fps: reqFps } = await req.json()
 
     if (!instruction || typeof instruction !== 'string') {
       return NextResponse.json({ error: 'instruction is required' }, { status: 400 })
     }
+
+    const fps = reqFps || 30
 
     const duration = durationSeconds || 10
 
@@ -147,6 +239,36 @@ export async function POST(req: NextRequest) {
     let resolvedTranscript: { text: string; words: WhisperWord[] } | null = transcript || null
     if (!resolvedTranscript && videoUrl) {
       resolvedTranscript = await transcribeVideo(videoUrl)
+    }
+
+    // Fast path: for "generate captions" with a transcript, build directly from
+    // Whisper word timestamps instead of asking Claude to reproduce them.
+    // When videoClips are provided, remaps timestamps to the edited timeline.
+    const isCaptionRequest = /^generate\s+captions?\b/i.test(instruction.trim())
+    console.log('[generate-overlay] instruction:', instruction, '| isCaptionRequest:', isCaptionRequest,
+      '| hasTranscript:', !!resolvedTranscript, '| wordCount:', resolvedTranscript?.words?.length,
+      '| hasVideoClips:', !!videoClips, '| clipCount:', videoClips?.length,
+      '| duration:', duration, '| fps:', fps)
+    if (isCaptionRequest && resolvedTranscript && resolvedTranscript.words.length > 0) {
+      if (videoClips) {
+        console.log('[generate-overlay] videoClips:', JSON.stringify(videoClips.map((vc: any) => ({
+          fromFrame: vc.fromFrame, durationFrames: vc.durationFrames,
+          videoStartTime: vc.videoStartTime, speed: vc.speed
+        }))))
+      }
+      // Log first few Whisper word timestamps for debugging
+      console.log('[generate-overlay] Whisper words (first 6):', resolvedTranscript.words.slice(0, 6).map(w => `"${w.word}" ${w.start.toFixed(2)}-${w.end.toFixed(2)}s`).join(', '))
+      const captions = buildCaptionsFromWhisper(resolvedTranscript.words, duration, videoClips, fps)
+      console.log('[generate-overlay] fast path: built', captions.length, 'captions')
+      for (const c of captions.slice(0, 5)) {
+        console.log(`  caption: "${c.text}" @ ${c.startSec.toFixed(2)}-${c.endSec.toFixed(2)}s`)
+      }
+      const overlayConfig: OverlayConfig = {
+        ...(currentConfig || {}),
+        captions,
+        style: currentConfig?.style || 'capcut',
+      }
+      return NextResponse.json({ overlayConfig, transcript: resolvedTranscript })
     }
 
     let userMessage = `Video duration: ${duration} seconds\n\nInstruction: ${instruction}`
@@ -163,15 +285,47 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    const wasTruncated = response.stop_reason === 'max_tokens'
 
-    // Parse JSON — strip markdown fences if Claude wraps them
-    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    // Parse JSON — extract from markdown fences or find raw JSON object
+    let cleaned = text.trim()
+    const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (fenceMatch) {
+      cleaned = fenceMatch[1].trim()
+    } else {
+      // Strip any leading/trailing non-JSON text — find first { to last }
+      const firstBrace = cleaned.indexOf('{')
+      const lastBrace = cleaned.lastIndexOf('}')
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+      }
+    }
+    // Fix trailing commas before ] or } (common LLM mistake)
+    cleaned = cleaned.replace(/,\s*([\]}])/g, '$1')
+
+    // If truncated, try to repair by closing open arrays/objects
+    if (wasTruncated) {
+      // Remove any trailing incomplete object (partial key-value)
+      cleaned = cleaned.replace(/,?\s*\{[^}]*$/, '')
+      // Count unclosed brackets and braces, then close them
+      let openBraces = 0, openBrackets = 0
+      for (const ch of cleaned) {
+        if (ch === '{') openBraces++
+        else if (ch === '}') openBraces--
+        else if (ch === '[') openBrackets++
+        else if (ch === ']') openBrackets--
+      }
+      cleaned += ']'.repeat(Math.max(0, openBrackets)) + '}'.repeat(Math.max(0, openBraces))
+      // Clean trailing commas again after repair
+      cleaned = cleaned.replace(/,\s*([\]}])/g, '$1')
+    }
+
     const overlayConfig: OverlayConfig = JSON.parse(cleaned)
 
     // Clamp all time values to [0, duration]

@@ -273,7 +273,7 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                 </div>
               </div>
             )}
-            <VideoOverlayPanel />
+            <VideoOverlayPanel onAIGenerate={onAIGenerate} />
           </>
         );
       case OverlayType.CAPTION:

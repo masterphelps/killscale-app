@@ -221,6 +221,19 @@ async function triggerVeoExtension(
   return operation.name
 }
 
+/** Get the prompt for a specific extension step.
+ *  Uses per-segment extension_prompts if available, otherwise falls back to job.prompt. */
+function getExtensionPrompt(job: any, extensionStep: number): string {
+  const prompts = job.extension_prompts as string[] | null
+  if (prompts && Array.isArray(prompts) && prompts[extensionStep]) {
+    console.log(`[VideoStatus] Using per-segment extension prompt for step ${extensionStep} (${prompts[extensionStep].length} chars)`)
+    return prompts[extensionStep]
+  }
+  // Fallback: use original prompt (legacy behavior)
+  console.log(`[VideoStatus] No per-segment prompt for step ${extensionStep}, using original prompt`)
+  return job.prompt
+}
+
 export async function GET(request: NextRequest) {
   try {
     const jobId = request.nextUrl.searchParams.get('jobId')
@@ -242,7 +255,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // If already complete or failed, return cached result
+    // If already complete or failed, return current DB state (no-cache to reflect overlay edits)
     if (job.status === 'complete' || job.status === 'failed') {
       return NextResponse.json({
         jobId: job.id,
@@ -259,10 +272,13 @@ export async function GET(request: NextRequest) {
         ad_index: job.ad_index,
         product_name: job.product_name,
         provider: job.provider,
+        video_style: job.video_style,
+        dialogue: job.dialogue,
         extension_step: job.extension_step,
         extension_total: job.extension_total,
         target_duration_seconds: job.target_duration_seconds,
-      })
+        ad_copy: job.ad_copy,
+      }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     // No provider job ID — nothing to poll
@@ -393,7 +409,8 @@ export async function GET(request: NextRequest) {
           if (currentStep < totalExtensions) {
             // Trigger next extension — optimistic concurrency to prevent duplicates
             try {
-              const newOpName = await triggerVeoExtension(videoUri, job.prompt)
+              const extensionPrompt = getExtensionPrompt(job, currentStep)
+              const newOpName = await triggerVeoExtension(videoUri, extensionPrompt)
 
               const { data: updated } = await supabase
                 .from('video_generation_jobs')
@@ -897,10 +914,10 @@ export async function POST(request: NextRequest) {
 
     // List view: only fetch columns needed for job cards (NOT full overlay_config JSONB)
     // When filtering by canvasId, include overlay_config since we need it for sibling append
-    const extensionCols = ', provider, target_duration_seconds, extension_step, extension_total, extension_video_uri'
+    const extensionCols = ', provider, target_duration_seconds, extension_step, extension_total, extension_video_uri, extension_prompts'
     const selectCols = canvasId
-      ? `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, overlay_config, prompt, created_at, updated_at${extensionCols}`
-      : `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, created_at, updated_at${extensionCols}`
+      ? `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, overlay_config, prompt, ad_copy, created_at, updated_at${extensionCols}`
+      : `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, ad_copy, created_at, updated_at${extensionCols}`
 
     let query = supabase
       .from('video_generation_jobs')
@@ -1004,7 +1021,8 @@ export async function POST(request: NextRequest) {
                 // Need more extensions?
                 if (currentStep < totalExtensions) {
                   try {
-                    const newOpName = await triggerVeoExtension(videoUri, job.prompt)
+                    const extensionPrompt = getExtensionPrompt(job, currentStep)
+                    const newOpName = await triggerVeoExtension(videoUri, extensionPrompt)
 
                     const { data: updated } = await supabase
                       .from('video_generation_jobs')
@@ -1320,8 +1338,9 @@ export async function PATCH(request: NextRequest) {
     // Check credits (25 per extension)
     const extensionCreditCost = 25
 
-    // Trigger the extension
-    const newOpName = await triggerVeoExtension(job.extension_video_uri, job.prompt)
+    // Trigger the extension — use per-segment prompt if available
+    const extensionPrompt = getExtensionPrompt(job, job.extension_step || 0)
+    const newOpName = await triggerVeoExtension(job.extension_video_uri, extensionPrompt)
 
     const currentStep = job.extension_step || 0
     const currentTotal = job.extension_total || 0

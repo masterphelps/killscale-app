@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, Clapperboard, Pencil } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import type { MediaImage } from '@/app/api/meta/media/route'
-import { VideoJobCard } from '@/components/creative-studio/video-job-card'
 import type { VideoJob } from '@/remotion/types'
+import type { UGCSettings, UGCPromptResult } from '@/lib/video-prompt-templates'
+import { buildUGCVeoPrompt } from '@/lib/video-prompt-templates'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -365,11 +366,39 @@ export default function AdStudioPage() {
   const [i2vPrompt, setI2vPrompt] = useState('')
   const [i2vDuration, setI2vDuration] = useState(8) // Veo stepper: min 8, step 7
   const [i2vCanvasId, setI2vCanvasId] = useState<string | null>(null)
-  const [i2vJobs, setI2vJobs] = useState<Record<number, VideoJob>>({}) // keyed by ad_index
+  const [i2vJobs, setI2vJobs] = useState<Record<number, VideoJob[]>>({}) // keyed by ad_index, array per index (newest first)
+  const [i2vCurrentVideoVersion, setI2vCurrentVideoVersion] = useState<Record<number, number>>({})
   const [i2vGenerating, setI2vGenerating] = useState(false)
   const [i2vExtending, setI2vExtending] = useState(false)
   const [i2vError, setI2vError] = useState<string | null>(null)
   const [i2vGenerateCount, setI2vGenerateCount] = useState(0) // tracks ad_index for multiple generates
+  const [i2vSubMode, setI2vSubMode] = useState<'product' | 'ugc'>('ugc') // Product Video vs UGC
+  const [i2vQuality, setI2vQuality] = useState<'standard' | 'premium'>('standard')
+  const [i2vRemovingBg, setI2vRemovingBg] = useState(false)
+  const [i2vBgRemoved, setI2vBgRemoved] = useState(false)
+
+  // UGC state
+  const [ugcSettings, setUgcSettings] = useState<UGCSettings>({
+    gender: 'male',
+    ageRange: 'adult',
+    tone: 'authentic',
+    features: [],
+    clothing: 'Casual',
+    scene: 'indoors',
+    setting: 'Living Room',
+    notes: '',
+  })
+  const [ugcPrompt, setUgcPrompt] = useState<UGCPromptResult | null>(null)
+  const [ugcGenerating, setUgcGenerating] = useState(false)
+  const [ugcError, setUgcError] = useState<string | null>(null)
+
+  // Helpers for multi-variation video carousel
+  const getI2vJobsForIndex = (idx: number): VideoJob[] => i2vJobs[idx] || []
+  const getI2vActiveJob = (idx: number): VideoJob | null => {
+    const jobs = getI2vJobsForIndex(idx)
+    const version = i2vCurrentVideoVersion[idx] ?? 0
+    return jobs[version] || null
+  }
 
   const router = useRouter()
 
@@ -1519,16 +1548,25 @@ export default function AdStudioPage() {
     setCloneSource('competitor')
     // Reset i2v state
     setI2vSelectedImage(null)
+    setI2vRemovingBg(false)
+    setI2vBgRemoved(false)
     setI2vShowLibrary(false)
     setI2vDownloadingLibrary(false)
     setI2vPrompt('')
     setI2vDuration(8)
     setI2vCanvasId(null)
     setI2vJobs({})
+    setI2vCurrentVideoVersion({})
     setI2vGenerating(false)
     setI2vExtending(false)
     setI2vError(null)
     setI2vGenerateCount(0)
+    setI2vSubMode('product')
+    // Reset UGC state
+    setUgcSettings({ gender: 'female', ageRange: 'adult', tone: 'authentic', features: [], clothing: 'Casual', scene: 'indoors', setting: 'Living Room', notes: '' })
+    setUgcPrompt(null)
+    setUgcGenerating(false)
+    setUgcError(null)
     // Reset pill state
     setPools({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
     setSelected({ name: [], description: [], features: [], benefits: [], keyMessages: [], testimonials: [], painPoints: [] })
@@ -1682,29 +1720,37 @@ export default function AdStudioPage() {
   // ── Image-to-Video: Video Studio patterns ──────────────────────────────────
 
   const VEO_EXTENSION_STEP = 7
+  const I2V_QUALITY_COSTS = {
+    standard: { base: 20, extension: 10 },
+    premium:  { base: 50, extension: 25 },
+  }
+  // UGC always uses premium costs
   const VEO_EXTENSION_COST = 25
   const VEO_BASE_COST = 50
 
-  const i2vCreditCost = VEO_BASE_COST + Math.max(0, (i2vDuration - 8) / VEO_EXTENSION_STEP) * VEO_EXTENSION_COST
+  const i2vCosts = I2V_QUALITY_COSTS[i2vQuality]
+  const i2vCreditCost = i2vCosts.base + Math.max(0, (i2vDuration - 8) / VEO_EXTENSION_STEP) * i2vCosts.extension
   const i2vApiProvider = i2vDuration > 8 ? 'veo-ext' : 'veo'
 
   // Poll jobs by canvasId (same pattern as Video Studio)
   const pollI2vJobsRef = useRef<NodeJS.Timeout | null>(null)
 
-  const refreshI2vJobs = useCallback(async () => {
-    if (!user?.id || !i2vCanvasId) return
+  const refreshI2vJobs = useCallback(async (overrideCanvasId?: string) => {
+    const cId = overrideCanvasId || i2vCanvasId
+    if (!user?.id || !cId) return
     try {
       const res = await fetch('/api/creative-studio/video-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, canvasId: i2vCanvasId }),
+        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, canvasId: cId }),
       })
       if (res.ok) {
         const data = await res.json()
-        const jobMap: Record<number, VideoJob> = {}
+        const jobMap: Record<number, VideoJob[]> = {}
         for (const j of (data.jobs || [])) {
           if (j.ad_index !== null && j.ad_index !== undefined) {
-            if (!(j.ad_index in jobMap)) jobMap[j.ad_index] = j
+            if (!jobMap[j.ad_index]) jobMap[j.ad_index] = []
+            jobMap[j.ad_index].push(j)
           }
         }
         setI2vJobs(jobMap)
@@ -1715,7 +1761,7 @@ export default function AdStudioPage() {
   }, [user?.id, i2vCanvasId, currentAccountId])
 
   const i2vHasInProgressJobs = Object.values(i2vJobs).some(
-    j => j.status === 'generating' || j.status === 'queued' || j.status === 'rendering' || j.status === 'extending'
+    jobs => jobs.some(j => j.status === 'generating' || j.status === 'queued' || j.status === 'rendering' || j.status === 'extending')
   )
 
   // Initial fetch when canvasId is set
@@ -1796,7 +1842,21 @@ export default function AdStudioPage() {
         }
       }
 
-      const adIndex = i2vGenerateCount
+      // Always use adIndex 0 (single concept — variations stack under same index for carousel)
+      const adIndex = 0
+
+      // If re-generating, match existing video's duration
+      const existingJobs = getI2vJobsForIndex(adIndex)
+      const existingCompleted = existingJobs.find(j => j.status === 'complete')
+      const effectiveDuration = existingCompleted
+        ? (existingCompleted.target_duration_seconds || existingCompleted.duration_seconds || i2vDuration)
+        : i2vDuration
+      const effectiveProvider = existingCompleted
+        ? (effectiveDuration > 8 ? 'veo-ext' : 'veo')
+        : i2vApiProvider
+      const effectiveCreditCost = existingCompleted
+        ? (i2vCosts.base + Math.max(0, (effectiveDuration - 8) / VEO_EXTENSION_STEP) * i2vCosts.extension)
+        : i2vCreditCost
 
       const res = await fetch('/api/creative-studio/generate-video', {
         method: 'POST',
@@ -1806,14 +1866,15 @@ export default function AdStudioPage() {
           adAccountId: currentAccountId,
           prompt: i2vPrompt,
           videoStyle: 'image_to_video',
-          durationSeconds: i2vDuration,
+          durationSeconds: effectiveDuration,
           productName: productInfo.name,
           productImageBase64: i2vSelectedImage.base64,
           productImageMimeType: i2vSelectedImage.mimeType,
-          provider: i2vApiProvider,
+          provider: effectiveProvider,
+          quality: i2vQuality,
           canvasId: canvasId || null,
           adIndex,
-          targetDurationSeconds: i2vApiProvider === 'veo-ext' ? i2vDuration : undefined,
+          targetDurationSeconds: effectiveProvider === 'veo-ext' ? effectiveDuration : undefined,
         }),
       })
 
@@ -1827,11 +1888,15 @@ export default function AdStudioPage() {
       }
 
       // Optimistically deduct credits
-      setAiUsage(prev => prev ? { ...prev, used: prev.used + i2vCreditCost, remaining: Math.max(0, prev.remaining - i2vCreditCost) } : prev)
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + effectiveCreditCost, remaining: Math.max(0, prev.remaining - effectiveCreditCost) } : prev)
       setI2vGenerateCount(prev => prev + 1)
 
-      // Refresh jobs to pick up the new one
-      refreshI2vJobs()
+      // Navigate to version 0 (newest) so the new generating job is visible
+      setI2vCurrentVideoVersion(prev => ({ ...prev, [adIndex]: 0 }))
+
+      // Refresh jobs to pick up the new one — pass canvasId directly
+      // since setState is async and refreshI2vJobs closure may have stale i2vCanvasId
+      refreshI2vJobs(canvasId || undefined)
     } catch (err) {
       setI2vError(err instanceof Error ? err.message : 'Failed to generate video')
     } finally {
@@ -1842,7 +1907,7 @@ export default function AdStudioPage() {
   // Extend completed Veo job by +7s (same as Video Studio)
   const handleI2vExtend = useCallback(async (adIndex: number) => {
     if (!user?.id) return
-    const job = i2vJobs[adIndex]
+    const job = getI2vActiveJob(adIndex)
     if (!job || job.status !== 'complete') return
 
     setI2vExtending(true)
@@ -1861,23 +1926,194 @@ export default function AdStudioPage() {
       // Deduct 25 credits
       setAiUsage(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - VEO_EXTENSION_COST) } : prev)
 
-      // Optimistic update
-      setI2vJobs(prev => ({
-        ...prev,
-        [adIndex]: {
-          ...job,
-          status: 'extending' as const,
-          extension_total: data.extension_total,
-          extension_step: data.extension_step,
-          target_duration_seconds: data.target_duration_seconds,
-        },
-      }))
+      // Optimistic update — update the specific job in the array
+      const versionIdx = i2vCurrentVideoVersion[adIndex] ?? 0
+      setI2vJobs(prev => {
+        const arr = [...(prev[adIndex] || [])]
+        if (arr[versionIdx]) {
+          arr[versionIdx] = {
+            ...arr[versionIdx],
+            status: 'extending' as const,
+            extension_total: data.extension_total,
+            extension_step: data.extension_step,
+            target_duration_seconds: data.target_duration_seconds,
+          }
+        }
+        return { ...prev, [adIndex]: arr }
+      })
     } catch {
       setI2vError('Failed to extend video')
     } finally {
       setI2vExtending(false)
     }
-  }, [user?.id, i2vJobs])
+  }, [user?.id, i2vJobs, i2vCurrentVideoVersion])
+
+  // ── UGC Generate Flow (split: Write Script → Director Review → Action!) ───
+
+  // Stage 1: GPT 5.2 writes the script — stops for director review
+  const handleUgcWriteScript = useCallback(async () => {
+    if (!i2vSelectedImage || !user?.id || !currentAccountId || !productInfo) return
+
+    setUgcGenerating(true)
+    setUgcError(null)
+    setUgcPrompt(null)
+
+    try {
+      const promptRes = await fetch('/api/creative-studio/generate-ugc-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product: {
+            name: productInfo.name,
+            description: productInfo.description,
+            features: productInfo.features,
+            benefits: productInfo.benefits,
+            painPoints: productInfo.painPoints,
+            keyMessages: productInfo.keyMessages,
+            uniqueSellingPoint: productInfo.uniqueSellingPoint,
+            targetAudience: productInfo.targetAudience,
+            category: productInfo.category,
+          },
+          ugcSettings,
+        }),
+      })
+      const promptData = await promptRes.json()
+      if (!promptRes.ok) {
+        setUgcError(promptData.error || 'Failed to generate UGC script')
+        return
+      }
+
+      setUgcPrompt(promptData)
+      // Script is now visible for director review — user clicks "Action!" to proceed
+    } catch (err) {
+      setUgcError(err instanceof Error ? err.message : 'Failed to write script')
+    } finally {
+      setUgcGenerating(false)
+    }
+  }, [i2vSelectedImage, user?.id, currentAccountId, productInfo, ugcSettings])
+
+  // Stage 2: Director approved — send to Veo (uses current ugcPrompt state which may have been edited)
+  const handleUgcApproveGenerate = useCallback(async () => {
+    if (!i2vSelectedImage || !user?.id || !currentAccountId || !productInfo || !ugcPrompt) return
+
+    setUgcGenerating(true)
+    setUgcError(null)
+
+    try {
+      // Duration comes from the script, not the user
+      const scriptDuration = ugcPrompt.estimatedDuration || 8
+      const isExtended = scriptDuration > 8
+      const apiProvider = isExtended ? 'veo-ext' : 'veo'
+      const numExtensions = isExtended ? Math.round((scriptDuration - 8) / 7) : 0
+      const ugcCreditCost = VEO_BASE_COST + numExtensions * VEO_EXTENSION_COST
+
+      // Build Veo-formatted prompts from the (possibly edited) ugcPrompt
+      const fullPrompt = buildUGCVeoPrompt(ugcPrompt, isExtended ? 8 : scriptDuration)
+      const extensionPrompts = ugcPrompt.extensionPrompts?.map((ep: string) =>
+        buildUGCVeoPrompt({ prompt: ep, dialogue: '', sceneSummary: '' }, 7)
+      ) || undefined
+
+      // Create canvas if first generation
+      let canvasId = i2vCanvasId
+      if (!canvasId) {
+        const canvasRes = await fetch('/api/creative-studio/video-canvas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            productUrl: productUrl || null,
+            productKnowledge: {
+              name: productInfo.name,
+              description: productInfo.description,
+              features: productInfo.features,
+              benefits: productInfo.benefits,
+              painPoints: productInfo.painPoints,
+              keyMessages: productInfo.keyMessages,
+              uniqueSellingPoint: productInfo.uniqueSellingPoint,
+            },
+            concepts: [{
+              title: 'UGC Testimonial',
+              angle: 'Creator Testimonial',
+              logline: `${ugcSettings.gender === 'male' ? 'A man' : 'A woman'} shares their experience with ${productInfo.name}`,
+              visualMetaphor: 'Authentic creator testimonial — the person IS the hook',
+              whyItWorks: 'UGC outperforms polished ads. Real people build trust.',
+              videoPrompt: fullPrompt,
+              overlay: ugcPrompt.overlay || { hook: productInfo.name, captions: [], cta: 'Shop Now' },
+            }],
+          }),
+        })
+        const canvasData = await canvasRes.json()
+        if (canvasRes.ok && canvasData.canvas?.id) {
+          canvasId = canvasData.canvas.id
+          setI2vCanvasId(canvasId)
+        }
+      }
+
+      const adIndex = 0
+
+      // Build overlay config from GPT 5.2 overlay data (hook + CTA only — captions come from Whisper in the RVE)
+      const baseDuration = isExtended ? 8 : scriptDuration
+      const overlayConfig = ugcPrompt.overlay ? {
+        style: 'clean' as const,
+        hook: {
+          line1: ugcPrompt.overlay.hook,
+          startSec: 0,
+          endSec: 2,
+          animation: 'fade' as const,
+          fontSize: 48,
+          fontWeight: 700,
+          position: 'top' as const,
+        },
+        cta: {
+          buttonText: ugcPrompt.overlay.cta,
+          startSec: Math.max(baseDuration - 2, baseDuration * 0.8),
+          animation: 'slide' as const,
+          fontSize: 28,
+        },
+      } : undefined
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          prompt: fullPrompt,
+          videoStyle: 'ugc',
+          durationSeconds: scriptDuration,
+          productName: productInfo.name,
+          productImageBase64: i2vSelectedImage.base64,
+          productImageMimeType: i2vSelectedImage.mimeType,
+          provider: apiProvider,
+          canvasId: canvasId || null,
+          adIndex,
+          targetDurationSeconds: isExtended ? scriptDuration : undefined,
+          extensionPrompts: isExtended ? extensionPrompts : undefined,
+          adCopy: ugcPrompt.adCopy || null,
+          dialogue: ugcPrompt.dialogue || null,
+          overlayConfig,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        if (res.status === 429) {
+          setAiUsage(prev => prev ? { ...prev, remaining: data.remaining || 0 } : prev)
+        }
+        throw new Error(data.error || 'Failed to generate video')
+      }
+
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + ugcCreditCost, remaining: Math.max(0, prev.remaining - ugcCreditCost) } : prev)
+      setI2vGenerateCount(prev => prev + 1)
+      setI2vCurrentVideoVersion(prev => ({ ...prev, [adIndex]: 0 }))
+      refreshI2vJobs(canvasId || undefined)
+    } catch (err) {
+      setUgcError(err instanceof Error ? err.message : 'Failed to generate UGC video')
+    } finally {
+      setUgcGenerating(false)
+    }
+  }, [i2vSelectedImage, user?.id, currentAccountId, productInfo, ugcPrompt, ugcSettings, i2vCanvasId, productUrl, refreshI2vJobs])
 
   // Not Pro - show upgrade prompt
   if (!isPro) {
@@ -2014,7 +2250,7 @@ export default function AdStudioPage() {
                   </div>
                   <h3 className="text-xl font-semibold text-white mb-2">Create</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed">
-                    Generate AI video ads from your product page.
+                    Unique creative concept videos from product details.
                   </p>
                   <div className="mt-4 flex items-center gap-2 text-rose-400 text-sm font-medium">
                     Get started <ChevronRight className="w-4 h-4" />
@@ -2031,7 +2267,7 @@ export default function AdStudioPage() {
                   </div>
                   <h3 className="text-xl font-semibold text-white mb-2">Image to Video</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed">
-                    Animate an image from your library into a video ad.
+                    Product and UGC videos from images.
                   </p>
                   <div className="mt-4 flex items-center gap-2 text-indigo-400 text-sm font-medium">
                     Get started <ChevronRight className="w-4 h-4" />
@@ -3028,19 +3264,62 @@ export default function AdStudioPage() {
                         alt={i2vSelectedImage.name}
                         className="w-full h-full object-cover"
                       />
+                      {i2vRemovingBg && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="font-medium text-white truncate">{i2vSelectedImage.name}</div>
                       <div className="flex items-center gap-2 text-xs text-emerald-400">
                         <Check className="w-3 h-3" />
-                        Image selected
+                        {i2vBgRemoved ? 'Background removed' : 'Image selected'}
                       </div>
-                      <button
-                        onClick={() => setI2vSelectedImage(null)}
-                        className="text-sm text-zinc-500 hover:text-white transition-colors"
-                      >
-                        Remove
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {!i2vBgRemoved && (
+                          <button
+                            onClick={async () => {
+                              if (!i2vSelectedImage) return
+                              setI2vRemovingBg(true)
+                              setI2vError(null)
+                              try {
+                                const res = await fetch('/api/creative-studio/remove-background', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    imageBase64: i2vSelectedImage.base64,
+                                    imageMimeType: i2vSelectedImage.mimeType,
+                                  }),
+                                })
+                                const data = await res.json()
+                                if (!res.ok) throw new Error(data.error || 'Background removal failed')
+                                setI2vSelectedImage({
+                                  base64: data.base64,
+                                  mimeType: data.mimeType || 'image/png',
+                                  preview: `data:${data.mimeType || 'image/png'};base64,${data.base64}`,
+                                  name: i2vSelectedImage.name,
+                                })
+                                setI2vBgRemoved(true)
+                              } catch (err) {
+                                setI2vError(err instanceof Error ? err.message : 'Background removal failed')
+                              } finally {
+                                setI2vRemovingBg(false)
+                              }
+                            }}
+                            disabled={i2vRemovingBg}
+                            className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors disabled:opacity-50"
+                          >
+                            {i2vRemovingBg ? 'Removing...' : 'Remove Background'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setI2vSelectedImage(null); setI2vBgRemoved(false) }}
+                          className="text-sm text-zinc-500 hover:text-white transition-colors"
+                        >
+                          {i2vBgRemoved ? 'Use Original' : 'Remove'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -3170,7 +3449,48 @@ export default function AdStudioPage() {
                 )}
               </div>
 
-              {/* Motion Prompt + Duration + Generate */}
+              {/* Mode Cards — Product Video vs UGC Video */}
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => setI2vSubMode('product')}
+                  className={cn(
+                    'group p-5 rounded-xl border-2 text-left transition-all',
+                    i2vSubMode === 'product'
+                      ? 'border-indigo-500 bg-indigo-500/10'
+                      : 'border-zinc-700/50 bg-bg-card hover:border-indigo-500/40 hover:bg-bg-card/80'
+                  )}
+                >
+                  <div className={cn(
+                    'w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors',
+                    i2vSubMode === 'product' ? 'bg-indigo-500/30' : 'bg-indigo-500/10 group-hover:bg-indigo-500/20'
+                  )}>
+                    <Play className="w-5 h-5 text-indigo-400" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-1">Product Video</h3>
+                  <p className="text-xs text-zinc-400 leading-relaxed">Animate your image — describe the motion and Veo brings it to life.</p>
+                </button>
+                <button
+                  onClick={() => setI2vSubMode('ugc')}
+                  className={cn(
+                    'group p-5 rounded-xl border-2 text-left transition-all',
+                    i2vSubMode === 'ugc'
+                      ? 'border-cyan-500 bg-cyan-500/10'
+                      : 'border-zinc-700/50 bg-bg-card hover:border-cyan-500/40 hover:bg-bg-card/80'
+                  )}
+                >
+                  <div className={cn(
+                    'w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors',
+                    i2vSubMode === 'ugc' ? 'bg-cyan-500/30' : 'bg-cyan-500/10 group-hover:bg-cyan-500/20'
+                  )}>
+                    <User className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-white mb-1">UGC Video</h3>
+                  <p className="text-xs text-zinc-400 leading-relaxed">A real person talks about your product on camera.</p>
+                </button>
+              </div>
+
+              {/* Product Video — Motion Prompt + Duration + Generate */}
+              {i2vSubMode === 'product' && (
               <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Play className="w-5 h-5 text-indigo-400" />
@@ -3188,39 +3508,66 @@ export default function AdStudioPage() {
                   Describe camera movement, effects, and atmosphere. Veo will animate your still image.
                 </p>
 
-                {/* Duration Stepper — Veo style: min 8, step 7 */}
+                {/* Duration Stepper */}
                 <div>
                   <label className="text-sm font-medium text-zinc-300 mb-2 block">Duration</label>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-0 rounded-lg border border-zinc-700/50 bg-zinc-800/50 overflow-hidden">
-                      <button
-                        onClick={() => { if (i2vDuration > 8) setI2vDuration(i2vDuration - VEO_EXTENSION_STEP) }}
-                        disabled={i2vDuration <= 8}
-                        className="px-2.5 py-2 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span className="px-4 py-2 text-sm font-bold text-white min-w-[3.5rem] text-center tabular-nums">
-                        {i2vDuration}s
-                      </span>
-                      <button
-                        onClick={() => setI2vDuration(i2vDuration + VEO_EXTENSION_STEP)}
-                        className="px-2.5 py-2 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <span className="text-xs text-zinc-500">{i2vCreditCost} credits</span>
+                  <div className="flex items-center gap-0 rounded-lg border border-zinc-700/50 bg-zinc-800/50 overflow-hidden w-fit">
+                    <button
+                      onClick={() => { if (i2vDuration > 8) setI2vDuration(i2vDuration - VEO_EXTENSION_STEP) }}
+                      disabled={i2vDuration <= 8}
+                      className="px-2.5 py-2 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="px-4 py-2 text-sm font-bold text-white min-w-[3.5rem] text-center tabular-nums">
+                      {i2vDuration}s
+                    </span>
+                    <button
+                      onClick={() => setI2vDuration(i2vDuration + VEO_EXTENSION_STEP)}
+                      className="px-2.5 py-2 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Credits info */}
+                {/* Quality Selector */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Quality</label>
+                  <div className="flex gap-2">
+                    {(['standard', 'premium'] as const).map(q => {
+                      const isActive = i2vQuality === q
+                      const qCosts = I2V_QUALITY_COSTS[q]
+                      const extensions = Math.max(0, (i2vDuration - 8) / VEO_EXTENSION_STEP)
+                      const totalCost = qCosts.base + extensions * qCosts.extension
+                      return (
+                        <button
+                          key={q}
+                          onClick={() => setI2vQuality(q)}
+                          className={cn(
+                            'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
+                            isActive
+                              ? 'bg-indigo-500/10 border-indigo-500/40'
+                              : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={cn('text-xs font-medium', isActive ? 'text-indigo-300' : 'text-zinc-400')}>
+                              {q === 'standard' ? 'Standard' : 'Premium'}
+                            </span>
+                            <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Credits remaining */}
                 {aiUsage && (
                   <div className="text-xs text-zinc-500">
                     {aiUsage.remaining} credits remaining
-                    {i2vDuration > 8 && (
-                      <span className="text-amber-400/60"> · Base 50 + {Math.max(0, (i2vDuration - 8) / VEO_EXTENSION_STEP) * VEO_EXTENSION_COST} extension</span>
-                    )}
                   </div>
                 )}
 
@@ -3246,40 +3593,478 @@ export default function AdStudioPage() {
                   ) : (
                     <>
                       <Video className="w-4 h-4" />
-                      Generate {i2vDuration}s Video ({i2vCreditCost} credits)
+                      Generate {i2vDuration}s Video · {i2vCreditCost} credits
                     </>
                   )}
                 </button>
               </div>
+              )}
 
-              {/* Generated Videos */}
+              {/* UGC Video — Presenter Settings + Generate */}
+              {i2vSubMode === 'ugc' && (
+              <div className="bg-bg-card border border-border rounded-xl p-6 space-y-5">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <User className="w-5 h-5 text-cyan-400" />
+                  UGC Settings
+                </h2>
+
+                {/* Gender */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Gender</label>
+                  <div className="flex gap-2">
+                    {(['male', 'female'] as const).map((g) => (
+                      <button
+                        key={g}
+                        onClick={() => setUgcSettings(prev => ({ ...prev, gender: g, features: [] }))}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                          ugcSettings.gender === g
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                        )}
+                      >
+                        {g === 'male' ? 'Male' : 'Female'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Age Range */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Age Range</label>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: 'young-adult' as const, label: 'Young Adult (18-25)' },
+                      { value: 'adult' as const, label: 'Adult (25-40)' },
+                      { value: 'middle-aged' as const, label: 'Middle-aged (40-55)' },
+                    ]).map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => setUgcSettings(prev => ({ ...prev, ageRange: value }))}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                          ugcSettings.ageRange === value
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tone */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Tone</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(['authentic', 'excited', 'humorous', 'serious', 'empathetic'] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setUgcSettings(prev => ({ ...prev, tone: t }))}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium transition-all border capitalize',
+                          ugcSettings.tone === t
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Features — contextual on gender (multi-select) */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">
+                    Features <span className="text-xs text-zinc-600 font-normal">(optional, multi-select)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {(ugcSettings.gender === 'male'
+                      ? ['Glasses', 'Full Beard', 'Mustache', 'Bald', 'Hat']
+                      : ['Glasses', 'Hat', 'Make-up', 'No Make-up']
+                    ).map((feat) => {
+                      const isSelected = ugcSettings.features.includes(feat)
+                      // No Make-up and Make-up are mutually exclusive
+                      const isMakeupConflict = (feat === 'Make-up' && ugcSettings.features.includes('No Make-up'))
+                        || (feat === 'No Make-up' && ugcSettings.features.includes('Make-up'))
+                      return (
+                        <button
+                          key={feat}
+                          onClick={() => setUgcSettings(prev => {
+                            let next = isSelected
+                              ? prev.features.filter(f => f !== feat)
+                              : [...prev.features, feat]
+                            // Enforce mutual exclusion for Make-up / No Make-up
+                            if (!isSelected && feat === 'Make-up') next = next.filter(f => f !== 'No Make-up')
+                            if (!isSelected && feat === 'No Make-up') next = next.filter(f => f !== 'Make-up')
+                            return { ...prev, features: next }
+                          })}
+                          className={cn(
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                            isSelected
+                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                              : isMakeupConflict
+                                ? 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+                                : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}
+                        >
+                          {feat}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Clothing Style — single-select */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Clothing</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['Casual', 'Formal', 'Athletic', 'Streetwear'].map((style) => (
+                      <button
+                        key={style}
+                        onClick={() => setUgcSettings(prev => ({ ...prev, clothing: style }))}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                          ugcSettings.clothing === style
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                        )}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Scene */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Scene</label>
+                  <div className="flex gap-2">
+                    {(['indoors', 'outdoors'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setUgcSettings(prev => ({
+                          ...prev,
+                          scene: s,
+                          setting: s === 'indoors' ? 'Living Room' : 'Park',
+                        }))}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium transition-all border capitalize',
+                          ugcSettings.scene === s
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                        )}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Setting — contextual on scene */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Setting</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(ugcSettings.scene === 'indoors'
+                      ? ['Living Room', 'Kitchen', 'Bathroom', 'Office', 'Gym', 'Studio']
+                      : ['Park', 'Street', 'Beach', 'Backyard', 'Cafe Patio']
+                    ).map((setting) => (
+                      <button
+                        key={setting}
+                        onClick={() => setUgcSettings(prev => ({ ...prev, setting }))}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                          ugcSettings.setting === setting
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                        )}
+                      >
+                        {setting}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Additional Notes */}
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">Additional Notes <span className="text-zinc-600 text-xs font-normal">(optional)</span></label>
+                  <textarea
+                    value={ugcSettings.notes}
+                    onChange={(e) => setUgcSettings(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g., 'Mention the 30-day guarantee' or 'Show the product being applied to skin'"
+                    className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500 resize-none text-sm"
+                    rows={2}
+                  />
+                </div>
+
+                {/* Credits remaining — brief note */}
+                {aiUsage && (
+                  <div className="text-xs text-zinc-500">
+                    {aiUsage.remaining} credits remaining · Duration and cost determined by script
+                  </div>
+                )}
+
+                {/* Error */}
+                {ugcError && (
+                  <div className="flex items-center gap-2 text-red-400 text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    {ugcError}
+                  </div>
+                )}
+
+                {/* Stage 1: Write Script button — shown when no script yet */}
+                {!ugcPrompt && (
+                  <button
+                    onClick={handleUgcWriteScript}
+                    disabled={!i2vSelectedImage || ugcGenerating}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-cyan-500 text-white font-medium hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                  >
+                    {ugcGenerating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Writing script...
+                      </>
+                    ) : (
+                      <>
+                        <Pencil className="w-4 h-4" />
+                        Write Script
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {/* Stage 2: Director's Review — shown after GPT 5.2 returns script */}
+                {ugcPrompt && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+                      <Clapperboard className="w-4 h-4 text-amber-400" />
+                      <span className="text-sm font-semibold text-amber-300">Director&apos;s Review</span>
+                      <span className="ml-auto text-xs text-amber-400/60">Edit before sending to Veo</span>
+                    </div>
+
+                    <div className="p-4 space-y-4">
+                      {/* Scene Summary — editable */}
+                      <div>
+                        <label className="text-xs font-medium text-zinc-400 mb-1 block">Scene</label>
+                        <input
+                          type="text"
+                          value={ugcPrompt.sceneSummary}
+                          onChange={(e) => setUgcPrompt(prev => prev ? { ...prev, sceneSummary: e.target.value } : prev)}
+                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                        />
+                      </div>
+
+                      {/* Dialogue — editable */}
+                      <div>
+                        <label className="text-xs font-medium text-zinc-400 mb-1 block">Dialogue</label>
+                        <textarea
+                          value={ugcPrompt.dialogue}
+                          onChange={(e) => setUgcPrompt(prev => prev ? { ...prev, dialogue: e.target.value } : prev)}
+                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 resize-none"
+                          rows={3}
+                        />
+                      </div>
+
+                      {/* Full Prompt — collapsible */}
+                      <details className="group">
+                        <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                          Full Veo Prompt
+                        </summary>
+                        <textarea
+                          value={ugcPrompt.prompt}
+                          onChange={(e) => setUgcPrompt(prev => prev ? { ...prev, prompt: e.target.value } : prev)}
+                          className="w-full mt-2 bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                          rows={8}
+                        />
+                      </details>
+
+                      {/* Overlay — Hook + CTA (captions generated from audio transcription in the RVE) */}
+                      {ugcPrompt.overlay && (
+                        <div className="space-y-3 pt-1 border-t border-amber-500/10">
+                          <p className="text-xs font-medium text-amber-300/80">Text Overlays</p>
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-1 block">Hook Text <span className="text-zinc-600 font-normal">(first 2s)</span></label>
+                            <input
+                              type="text"
+                              value={ugcPrompt.overlay.hook}
+                              onChange={(e) => setUgcPrompt(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, hook: e.target.value } } : prev)}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                              placeholder="e.g. This Changed Everything"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-1 block">CTA Button</label>
+                            <input
+                              type="text"
+                              value={ugcPrompt.overlay.cta}
+                              onChange={(e) => setUgcPrompt(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, cta: e.target.value } } : prev)}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                              placeholder="e.g. Shop Now"
+                            />
+                          </div>
+                          <p className="text-xs text-zinc-600 italic">Captions are generated from audio transcription in the Video Editor</p>
+                        </div>
+                      )}
+
+                      {/* Extension Prompts — if segmented video */}
+                      {ugcPrompt.extensionPrompts && ugcPrompt.extensionPrompts.length > 0 && (
+                        <details className="group">
+                          <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                            Extension Prompts ({ugcPrompt.extensionPrompts.length})
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {ugcPrompt.extensionPrompts.map((ep, idx) => (
+                              <div key={idx}>
+                                <label className="text-xs text-zinc-500 mb-1 block">Segment {idx + 2}</label>
+                                <textarea
+                                  value={ep}
+                                  onChange={(e) => setUgcPrompt(prev => {
+                                    if (!prev?.extensionPrompts) return prev
+                                    const updated = [...prev.extensionPrompts!]
+                                    updated[idx] = e.target.value
+                                    return { ...prev, extensionPrompts: updated }
+                                  })}
+                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                                  rows={4}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* Budget line — duration + credit cost from script */}
+                      {(() => {
+                        const dur = ugcPrompt.estimatedDuration || 8
+                        const exts = dur > 8 ? Math.round((dur - 8) / 7) : 0
+                        const cost = VEO_BASE_COST + exts * VEO_EXTENSION_COST
+                        const canAfford = aiUsage ? aiUsage.remaining >= cost : true
+                        return (
+                          <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-white tabular-nums">{dur}s video</p>
+                              <p className="text-xs text-zinc-500">
+                                {exts === 0 ? 'Single clip' : `8s base + ${exts} extension${exts > 1 ? 's' : ''}`}
+                                {' · '}{ugcPrompt.dialogue.split(/\s+/).length} words
+                              </p>
+                            </div>
+                            <div className="text-right space-y-0.5">
+                              <p className={cn('text-sm font-bold tabular-nums', canAfford ? 'text-amber-400' : 'text-red-400')}>
+                                {cost} credits
+                              </p>
+                              {aiUsage && (
+                                <p className="text-xs text-zinc-500">{aiUsage.remaining} remaining</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Action buttons */}
+                      {(() => {
+                        const dur = ugcPrompt.estimatedDuration || 8
+                        const exts = dur > 8 ? Math.round((dur - 8) / 7) : 0
+                        const cost = VEO_BASE_COST + exts * VEO_EXTENSION_COST
+                        const canAfford = aiUsage ? aiUsage.remaining >= cost : true
+                        return (
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={handleUgcApproveGenerate}
+                              disabled={ugcGenerating || !canAfford}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                            >
+                              {ugcGenerating ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Generating {dur}s video...
+                                </>
+                              ) : (
+                                <>
+                                  <Clapperboard className="w-4 h-4" />
+                                  Action! ({cost} credits)
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => { setUgcPrompt(null); handleUgcWriteScript() }}
+                              disabled={ugcGenerating}
+                              className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                              title="Rewrite script"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+              )}
+
+              {/* Generated Videos — Carousel per ad_index */}
               {Object.keys(i2vJobs).length > 0 && (
                 <div className="space-y-4">
                   <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                     <Film className="w-5 h-5 text-indigo-400" />
                     Generated Videos
                   </h2>
-                  {Object.values(i2vJobs).map((job) => {
-                    const videoUrl = job.final_video_url || job.raw_video_url
-                    const hasVideo = job.status === 'complete' && videoUrl
+                  {Object.entries(i2vJobs).map(([adIdxStr, jobs]) => {
+                    const adIdx = Number(adIdxStr)
+                    const activeVersion = i2vCurrentVideoVersion[adIdx] ?? 0
+                    const activeJob = jobs[activeVersion] || null
+                    const completedJobs = jobs.filter(j => j.status === 'complete' && (j.final_video_url || j.raw_video_url))
+                    const videoUrl = activeJob?.final_video_url || activeJob?.raw_video_url
+                    const hasVideo = activeJob?.status === 'complete' && videoUrl
+                    const latestJob = jobs[0] || null
+                    const isLatestInProgress = latestJob && ['generating', 'queued', 'rendering', 'extending'].includes(latestJob.status)
 
                     return (
-                      <div key={job.id} className="bg-bg-card border border-border rounded-xl overflow-hidden">
+                      <div key={adIdxStr} className="bg-bg-card border border-border rounded-xl overflow-hidden">
+                        {/* Video carousel — show when active job is complete */}
                         {hasVideo ? (
                           <div className="p-4">
                             <div className="flex items-center gap-3 justify-center">
+                              {/* Left arrow */}
+                              {jobs.length > 1 && (
+                                <button
+                                  onClick={() => setI2vCurrentVideoVersion(prev => ({ ...prev, [adIdx]: Math.min(activeVersion + 1, jobs.length - 1) }))}
+                                  disabled={activeVersion >= jobs.length - 1}
+                                  className="p-1.5 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                  title="Older version"
+                                >
+                                  <ChevronLeft className="w-4 h-4" />
+                                </button>
+                              )}
                               <div className="rounded-xl overflow-hidden bg-zinc-900" style={{ maxHeight: 360, maxWidth: 202, aspectRatio: '9/16' }}>
                                 <video
+                                  key={activeJob?.id}
                                   src={videoUrl}
-                                  poster={job.thumbnail_url || undefined}
+                                  poster={activeJob?.thumbnail_url || undefined}
                                   controls
                                   playsInline
                                   className="w-full h-full object-contain"
                                 />
                               </div>
+                              {/* Right arrow */}
+                              {jobs.length > 1 && (
+                                <button
+                                  onClick={() => setI2vCurrentVideoVersion(prev => ({ ...prev, [adIdx]: Math.max(activeVersion - 1, 0) }))}
+                                  disabled={activeVersion <= 0}
+                                  className="p-1.5 rounded-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                  title="Newer version"
+                                >
+                                  <ChevronRight className="w-4 h-4" />
+                                </button>
+                              )}
                               {/* +7 sec extend button */}
                               <button
-                                onClick={() => handleI2vExtend(job.ad_index || 0)}
+                                onClick={() => handleI2vExtend(adIdx)}
                                 disabled={i2vExtending || (aiUsage ? aiUsage.remaining < VEO_EXTENSION_COST : false)}
                                 className="flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl text-sm font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                               >
@@ -3292,14 +4077,36 @@ export default function AdStudioPage() {
                                 <span className="text-[10px] text-amber-400/60">25 credits</span>
                               </button>
                             </div>
-                            {/* Duration badge */}
-                            <p className="text-center text-xs text-zinc-500 mt-2">
-                              {job.duration_seconds || job.target_duration_seconds || 8}s video
-                            </p>
+                            {/* Provider badge + duration */}
+                            <div className="flex items-center justify-center gap-2 mt-2">
+                              {activeJob?.provider && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-medium uppercase">
+                                  {activeJob.provider.startsWith('sora') ? 'Sora' : activeJob.provider.startsWith('runway') ? 'Runway' : 'Veo'}
+                                </span>
+                              )}
+                              <span className="text-xs text-zinc-500">
+                                {activeJob?.duration_seconds || activeJob?.target_duration_seconds || 8}s
+                              </span>
+                            </div>
+                            {/* Version dots */}
+                            {jobs.length > 1 && (
+                              <div className="flex items-center justify-center gap-1.5 mt-2">
+                                {jobs.map((_, vIdx) => (
+                                  <button
+                                    key={vIdx}
+                                    onClick={() => setI2vCurrentVideoVersion(prev => ({ ...prev, [adIdx]: vIdx }))}
+                                    className={cn(
+                                      'w-2 h-2 rounded-full transition-colors',
+                                      vIdx === activeVersion ? 'bg-indigo-400' : 'bg-zinc-700 hover:bg-zinc-500'
+                                    )}
+                                  />
+                                ))}
+                              </div>
+                            )}
                             {/* Action buttons */}
                             <div className="flex gap-2 mt-3">
                               <button
-                                onClick={() => router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}`)}
+                                onClick={() => router.push(`/dashboard/creative-studio/video-editor?jobId=${activeJob?.id}`)}
                                 className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
                               >
                                 <Film className="w-3.5 h-3.5" />
@@ -3311,23 +4118,98 @@ export default function AdStudioPage() {
                                 className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border disabled:opacity-50"
                               >
                                 <RefreshCw className={cn('w-3.5 h-3.5', i2vGenerating && 'animate-spin')} />
-                                Re-generate
+                                New Variation
                               </button>
                             </div>
+                            {/* Inline progress when generating new variation alongside existing video */}
+                            {isLatestInProgress && activeVersion !== 0 && (
+                              <div className="mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                                <div className="flex items-center gap-2">
+                                  <Loader2 className={cn('w-4 h-4 animate-spin', latestJob.status === 'extending' ? 'text-amber-400' : 'text-blue-400')} />
+                                  <span className="text-xs text-zinc-300">
+                                    {latestJob.status === 'extending'
+                                      ? `Extending... Step ${(latestJob.extension_step || 0) + 1}/${(latestJob.extension_total || 0) + 1}`
+                                      : 'Generating new variation...'}
+                                  </span>
+                                  {latestJob.progress_pct > 0 && (
+                                    <span className="text-xs text-zinc-500 ml-auto">{latestJob.progress_pct}%</span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        ) : job.status === 'failed' ? (
+                        ) : activeJob?.status === 'failed' ? (
+                          /* Failed state — show error + retry + full generate controls */
                           <div className="p-6 text-center">
                             <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-                            <p className="text-sm text-red-400">{job.error_message || 'Generation failed'}</p>
+                            <p className="text-sm text-red-400">{activeJob.error_message || 'Generation failed'}</p>
                             <button
                               onClick={() => handleI2vGenerate()}
                               className="mt-3 px-4 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
                             >
                               Try Again
                             </button>
+                            {/* Show completed videos in carousel if any exist alongside failed */}
+                            {completedJobs.length > 0 && (
+                              <p className="text-xs text-zinc-500 mt-2">
+                                {completedJobs.length} previous variation{completedJobs.length > 1 ? 's' : ''} available — use arrows to browse
+                              </p>
+                            )}
                           </div>
                         ) : (
-                          <VideoJobCard job={job} compact />
+                          /* Generating/extending state */
+                          <div className={cn(
+                            'p-6 text-center',
+                            activeJob?.status === 'extending' ? 'border-t border-amber-500/20' : ''
+                          )}>
+                            <RefreshCw className={cn(
+                              'w-8 h-8 animate-spin mx-auto mb-3',
+                              activeJob?.status === 'extending' ? 'text-amber-400' : 'text-blue-400'
+                            )} />
+                            <p className="text-sm font-medium text-white mb-1">
+                              {activeJob?.status === 'extending'
+                                ? `Extending video... Step ${(activeJob?.extension_step || 0) + 1} of ${(activeJob?.extension_total || 0) + 1}`
+                                : 'Generating Video...'}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              {activeJob?.status === 'extending'
+                                ? 'Adding 7 more seconds...'
+                                : activeJob?.status === 'rendering'
+                                  ? 'Rendering overlay...'
+                                  : activeJob?.provider?.startsWith('sora') ? 'Usually takes 5-10 minutes'
+                                  : activeJob?.provider?.startsWith('runway') ? 'Usually takes 1-2 minutes'
+                                  : 'Usually takes 2-5 minutes'}
+                            </p>
+                            {(activeJob?.progress_pct || 0) > 0 && (
+                              <div className="w-32 mx-auto mt-3">
+                                <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      'h-full rounded-full transition-all duration-1000',
+                                      activeJob?.status === 'extending' ? 'bg-amber-500' : 'bg-blue-500'
+                                    )}
+                                    style={{ width: `${activeJob?.progress_pct || 0}%` }}
+                                  />
+                                </div>
+                                <p className="text-xs text-zinc-500 mt-1">{activeJob?.progress_pct || 0}%</p>
+                              </div>
+                            )}
+                            {/* Show completed videos below if any exist while generating new one */}
+                            {completedJobs.length > 0 && (
+                              <div className="mt-4 pt-3 border-t border-border">
+                                <p className="text-xs text-zinc-400 mb-2">{completedJobs.length} completed variation{completedJobs.length > 1 ? 's' : ''}</p>
+                                <button
+                                  onClick={() => {
+                                    const firstCompletedIdx = jobs.findIndex(j => j.status === 'complete' && (j.final_video_url || j.raw_video_url))
+                                    if (firstCompletedIdx >= 0) setI2vCurrentVideoVersion(prev => ({ ...prev, [adIdx]: firstCompletedIdx }))
+                                  }}
+                                  className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                                >
+                                  View completed videos
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     )

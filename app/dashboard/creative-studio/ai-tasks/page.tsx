@@ -629,43 +629,51 @@ function AdSessionListItem({
   const productName = session.product_info?.name || 'Untitled Product'
   const competitorName = session.competitor_company?.name || session.competitor_ad?.page_name || 'Unknown'
   const adCount = session.generated_ads?.length || 0
-  const imageCount = session.generated_images?.length || 0
+  const images = session.generated_images || []
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors group',
+        'w-full flex flex-col gap-2 p-2 rounded-lg text-left transition-colors group',
         isSelected ? 'bg-purple-500/15 ring-1 ring-purple-500/50' : 'hover:bg-zinc-800/50'
       )}
     >
-      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center flex-shrink-0">
-        <Wand2 className="w-5 h-5 text-purple-400" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-white text-sm truncate leading-tight">{productName}</div>
-        <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500">
-          <span>vs {competitorName}</span>
-          {adCount > 0 && (
-            <>
-              <span>•</span>
-              <span>{adCount} ads</span>
-            </>
-          )}
-          {imageCount > 0 && (
-            <>
-              <span>•</span>
-              <span>{imageCount} images</span>
-            </>
-          )}
+      <div className="flex items-center gap-2.5">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-white text-sm truncate leading-tight">{productName}</div>
+          <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500">
+            <span>vs {competitorName}</span>
+            {adCount > 0 && (
+              <>
+                <span>•</span>
+                <span>{adCount} ads</span>
+              </>
+            )}
+            {images.length > 0 && (
+              <>
+                <span>•</span>
+                <span>{images.length} {images.length === 1 ? 'image' : 'images'}</span>
+              </>
+            )}
+          </div>
         </div>
+        {onDelete && (
+          <div
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </div>
+        )}
       </div>
-      {onDelete && (
-        <div
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
+      {images.length > 0 && (
+        <div className="flex items-center gap-1.5 pl-1">
+          {images.map((img, i) => (
+            <div key={i} className="w-9 h-9 rounded-md bg-zinc-800 overflow-hidden flex-shrink-0">
+              <img src={img.storageUrl} alt="" className="w-full h-full object-cover" />
+            </div>
+          ))}
         </div>
       )}
     </button>
@@ -1715,7 +1723,10 @@ function VideoJobDetailPanel({
           </div>
           <h3 className="text-lg font-semibold text-white mb-2">Generating Video...</h3>
           <p className="text-sm text-zinc-400 max-w-sm mb-4">
-            {job.status === 'rendering' ? 'Rendering overlay onto video...' : 'Sora is generating your video. This usually takes 5-10 minutes.'}
+            {job.status === 'rendering' ? 'Rendering overlay onto video...'
+              : job.provider?.startsWith('sora') ? 'Usually takes 5-10 minutes.'
+              : job.provider?.startsWith('runway') ? 'Usually takes 1-2 minutes.'
+              : 'Usually takes 2-5 minutes.'}
           </p>
           {job.progress_pct > 0 && (
             <div className="w-48">
@@ -1823,7 +1834,7 @@ function VideoJobDetailPanel({
       {/* Action Buttons */}
       <div className="flex gap-3">
         <button
-          onClick={() => router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}`)}
+          onClick={() => router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}&from=ai-tasks`)}
           className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
         >
           <Film className="w-4 h-4" />
@@ -1917,43 +1928,64 @@ function VideoJobDetailPanel({
 function CanvasListItem({
   canvas,
   videoCount,
+  jobs,
   isSelected,
   onClick,
   onDelete
 }: {
   canvas: ConceptCanvas
   videoCount: number
+  jobs: any[]
   isSelected: boolean
   onClick: () => void
   onDelete?: () => void
 }) {
   const productName = canvas.product_knowledge?.name || 'Untitled Product'
+  const completedJobs = jobs.filter((j: any) => j.status === 'complete' && (j.thumbnail_url || j.raw_video_url || j.final_video_url))
+  const generatingJobs = jobs.filter((j: any) => j.status === 'queued' || j.status === 'generating' || j.status === 'rendering' || j.status === 'extending')
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors group',
+        'w-full flex flex-col gap-2 p-2 rounded-lg text-left transition-colors group',
         isSelected ? 'bg-amber-500/15 ring-1 ring-amber-500/50' : 'hover:bg-zinc-800/50'
       )}
     >
-      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center flex-shrink-0">
-        <Lightbulb className="w-5 h-5 text-amber-400" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-white text-sm truncate leading-tight">{productName}</div>
-        <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500">
-          <span>{videoCount} {videoCount === 1 ? 'video' : 'videos'}</span>
-          <span>•</span>
-          <span>{formatRelativeTime(canvas.created_at)}</span>
+      <div className="flex items-center gap-2.5">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-white text-sm truncate leading-tight">{productName}</div>
+          <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500">
+            <span>{videoCount} {videoCount === 1 ? 'video' : 'videos'}</span>
+            <span>•</span>
+            <span>{formatRelativeTime(canvas.created_at)}</span>
+          </div>
         </div>
+        {onDelete && (
+          <div
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </div>
+        )}
       </div>
-      {onDelete && (
-        <div
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
+      {(completedJobs.length > 0 || generatingJobs.length > 0) && (
+        <div className="flex items-center gap-1.5 pl-1">
+          {completedJobs.map((job: any) => (
+            <div key={job.id} className="w-9 h-9 rounded-md bg-zinc-800 overflow-hidden flex-shrink-0">
+              {job.thumbnail_url ? (
+                <img src={job.thumbnail_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <video src={`${job.final_video_url || job.raw_video_url}#t=0.1`} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+              )}
+            </div>
+          ))}
+          {generatingJobs.map((job: any) => (
+            <div key={job.id} className="w-9 h-9 rounded-md bg-zinc-800/50 flex items-center justify-center flex-shrink-0">
+              <div className="w-5 h-5 rounded-full border-2 border-amber-500/30 border-t-amber-400 animate-spin" />
+            </div>
+          ))}
         </div>
       )}
     </button>
@@ -2067,9 +2099,15 @@ function ConceptCanvasDetailPanel({
     }
   }, [user?.id])
 
-  // Get the latest video job for a given concept index
-  const getJobForConcept = (conceptIndex: number) => {
-    return canvasJobs.find(j => j.ad_index === conceptIndex) || null
+  // Get all video jobs for a given concept index (newest first, matching parent sort)
+  const getJobsForConcept = (conceptIndex: number) => {
+    return canvasJobs.filter(j => j.ad_index === conceptIndex)
+  }
+  const [currentVideoVersion, setCurrentVideoVersion] = useState<Record<number, number>>({})
+  const getActiveJob = (conceptIndex: number) => {
+    const jobs = getJobsForConcept(conceptIndex)
+    const version = currentVideoVersion[conceptIndex] ?? 0
+    return jobs[version] || null
   }
 
   const handleGenerate = useCallback(async (conceptIndex: number) => {
@@ -2078,8 +2116,15 @@ function ConceptCanvasDetailPanel({
     const concept = canvas.concepts[conceptIndex]
     if (!concept) return
 
-    const conceptDuration = getConceptDuration(conceptIndex)
-    const apiProvider = getApiProvider(conceptIndex)
+    // If re-generating (existing completed job), match its duration
+    const existingJobs = getJobsForConcept(conceptIndex)
+    const existingCompleted = existingJobs.find(j => j.status === 'complete')
+    const conceptDuration = existingCompleted
+      ? (existingCompleted.target_duration_seconds || existingCompleted.duration_seconds || getConceptDuration(conceptIndex))
+      : getConceptDuration(conceptIndex)
+    const apiProvider = existingCompleted
+      ? (existingCompleted.provider?.startsWith('sora') ? 'sora' : existingCompleted.provider?.startsWith('runway') ? 'runway' : conceptDuration > 8 ? 'veo-ext' : 'veo')
+      : getApiProvider(conceptIndex)
 
     setGeneratingIndex(conceptIndex)
     setGenerateError(null)
@@ -2149,6 +2194,7 @@ function ConceptCanvasDetailPanel({
       }
 
       setGenerateError(null)
+      setCurrentVideoVersion(prev => ({ ...prev, [conceptIndex]: 0 }))
       onVideoGenerated?.()
     } catch {
       setGenerateError('Failed to generate video')
@@ -2160,7 +2206,7 @@ function ConceptCanvasDetailPanel({
   // ─── Extend a completed Veo job by +7s ──────────────────────────────────
   const handleExtend = useCallback(async (conceptIndex: number) => {
     if (!user?.id) return
-    const job = getJobForConcept(conceptIndex)
+    const job = getActiveJob(conceptIndex)
     if (!job || job.status !== 'complete' || (job.provider !== 'veo-ext' && job.provider !== 'veo')) return
 
     setExtendingIndex(conceptIndex)
@@ -2218,10 +2264,15 @@ function ConceptCanvasDetailPanel({
         {canvas.concepts.map((concept, i) => {
           const colors = CONCEPT_COLORS[i % CONCEPT_COLORS.length]
           const isExpanded = expandedConcept === i
-          const job = getJobForConcept(i)
+          const jobs = getJobsForConcept(i)
+          const activeVersion = currentVideoVersion[i] ?? 0
+          const job = jobs[activeVersion] || null
+          const completedJobs = jobs.filter(j => j.status === 'complete' && (j.final_video_url || j.raw_video_url))
           const videoUrl = job?.final_video_url || job?.raw_video_url
           const hasVideo = job?.status === 'complete' && videoUrl
           const isJobInProgress = job?.status === 'generating' || job?.status === 'queued' || job?.status === 'rendering' || job?.status === 'extending'
+          const latestJob = jobs[0] || null
+          const isLatestInProgress = latestJob != null && ['generating', 'queued', 'rendering', 'extending'].includes(latestJob.status)
 
 
 
@@ -2253,18 +2304,18 @@ function ConceptCanvasDetailPanel({
                           {concept.angle}
                         </span>
                       )}
-                      {hasVideo && (
+                      {completedJobs.length > 0 && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400">
-                          Video Ready
+                          {completedJobs.length > 1 ? `${completedJobs.length} Videos` : 'Video Ready'}
                         </span>
                       )}
-                      {isJobInProgress && (
+                      {isLatestInProgress && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-400 flex items-center gap-1">
                           <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                           Generating
                         </span>
                       )}
-                      {job?.status === 'failed' && (
+                      {latestJob?.status === 'failed' && !completedJobs.length && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/20 text-red-400">
                           Failed
                         </span>
@@ -2282,21 +2333,79 @@ function ConceptCanvasDetailPanel({
               {/* Expanded: script + overlay + video */}
               {isExpanded && (
                 <div className="px-4 pb-4 border-t border-border/50 pt-3">
-                  {/* Video section — shown first when a video exists */}
+                  {/* Video carousel */}
                   {hasVideo && (
                     <div className="mb-4">
                       <div className="flex items-center gap-3 justify-center">
-                        <div className="rounded-xl overflow-hidden bg-zinc-900" style={{ maxHeight: 360, maxWidth: 202, aspectRatio: '9/16' }}>
-                          <video
-                            src={videoUrl}
-                            poster={job.thumbnail_url || undefined}
-                            controls
-                            playsInline
-                            className="w-full h-full object-contain"
-                          />
+                        {completedJobs.length > 1 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              for (let t = activeVersion + 1; t < jobs.length; t++) {
+                                if (jobs[t].status === 'complete' && (jobs[t].final_video_url || jobs[t].raw_video_url)) {
+                                  setCurrentVideoVersion(prev => ({ ...prev, [i]: t })); break
+                                }
+                              }
+                            }}
+                            disabled={!jobs.slice(activeVersion + 1).some(j => j.status === 'complete' && (j.final_video_url || j.raw_video_url))}
+                            className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ChevronLeft className="w-5 h-5" />
+                          </button>
+                        )}
+                        <div className="flex flex-col items-center">
+                          <div className="rounded-xl overflow-hidden bg-zinc-900" style={{ maxHeight: 360, maxWidth: 202, aspectRatio: '9/16' }}>
+                            <video
+                              key={videoUrl}
+                              src={videoUrl}
+                              poster={job?.thumbnail_url || undefined}
+                              controls
+                              playsInline
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            {job?.provider && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-800 text-zinc-400">
+                                {job.provider === 'veo' || job.provider === 'veo-ext' ? 'Veo' : job.provider === 'runway' ? 'Runway' : 'Sora'}
+                                {' '}{job.duration_seconds || job.target_duration_seconds || ''}s
+                              </span>
+                            )}
+                            {completedJobs.length > 1 && (
+                              <span className="text-[10px] text-zinc-600">{completedJobs.indexOf(job!) + 1} / {completedJobs.length}</span>
+                            )}
+                          </div>
+                          {completedJobs.length > 1 && (
+                            <div className="flex items-center gap-1.5 mt-2">
+                              {completedJobs.map((cj, ci) => (
+                                <button
+                                  key={cj.id}
+                                  onClick={(e) => { e.stopPropagation(); const idx = jobs.indexOf(cj); if (idx >= 0) setCurrentVideoVersion(prev => ({ ...prev, [i]: idx })) }}
+                                  className={cn('w-2 h-2 rounded-full transition-all', jobs.indexOf(cj) === activeVersion ? 'bg-purple-400 scale-125' : 'bg-zinc-700 hover:bg-zinc-500')}
+                                  title={`Version ${ci + 1}`}
+                                />
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        {/* +7 sec extend button — for any Veo job */}
-                        {(job.provider === 'veo-ext' || job.provider === 'veo') && (
+                        {completedJobs.length > 1 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              for (let t = activeVersion - 1; t >= 0; t--) {
+                                if (jobs[t].status === 'complete' && (jobs[t].final_video_url || jobs[t].raw_video_url)) {
+                                  setCurrentVideoVersion(prev => ({ ...prev, [i]: t })); break
+                                }
+                              }
+                            }}
+                            disabled={!jobs.slice(0, activeVersion).some(j => j.status === 'complete' && (j.final_video_url || j.raw_video_url))}
+                            className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        )}
+                        {/* +7 sec extend button — for Veo jobs */}
+                        {job && (job.provider === 'veo-ext' || job.provider === 'veo') && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleExtend(i) }}
                             disabled={extendingIndex === i}
@@ -2312,15 +2421,9 @@ function ConceptCanvasDetailPanel({
                           </button>
                         )}
                       </div>
-                      {/* Duration badge */}
-                      {(job.provider === 'veo-ext' || job.provider === 'veo') && (
-                        <p className="text-center text-xs text-zinc-500 mt-2">
-                          {job.duration_seconds || job.target_duration_seconds || 8}s video
-                        </p>
-                      )}
                       <div className="flex gap-2 mt-3">
                         <button
-                          onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/creative-studio/video-editor?jobId=${job.id}`) }}
+                          onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/creative-studio/video-editor?jobId=${job!.id}&from=ai-tasks`) }}
                           className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
                         >
                           <Film className="w-3.5 h-3.5" />
@@ -2331,45 +2434,63 @@ function ConceptCanvasDetailPanel({
                           disabled={generatingIndex === i}
                           className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border disabled:opacity-50"
                         >
-                          <RefreshCw className={cn('w-3.5 h-3.5', generatingIndex === i && 'animate-spin')} />
-                          Re-generate
+                          <Plus className={cn('w-3.5 h-3.5', generatingIndex === i && 'animate-spin')} />
+                          New Variation
                         </button>
                       </div>
                     </div>
                   )}
 
-                  {/* Generating / Extending state */}
-                  {isJobInProgress && (
+                  {/* Inline progress — generating new variation while completed videos exist */}
+                  {isLatestInProgress && completedJobs.length > 0 && (
+                    <div className={cn(
+                      'mb-4 p-3 rounded-lg flex items-center gap-3',
+                      latestJob.status === 'extending' ? 'bg-amber-500/5 border border-amber-500/20' : 'bg-blue-500/5 border border-blue-500/20'
+                    )}>
+                      <RefreshCw className={cn('w-4 h-4 animate-spin flex-shrink-0', latestJob.status === 'extending' ? 'text-amber-400' : 'text-blue-400')} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-white">
+                          {latestJob.status === 'extending' ? `Extending... Step ${(latestJob.extension_step || 0) + 1} of ${(latestJob.extension_total || 0) + 1}` : 'Generating new variation...'}
+                        </p>
+                        <p className="text-[10px] text-zinc-500">
+                          {latestJob.status === 'rendering' ? 'Rendering overlay'
+                            : latestJob.provider?.startsWith('sora') ? 'Usually takes 5-10 minutes'
+                            : latestJob.provider?.startsWith('runway') ? 'Usually takes 1-2 minutes'
+                            : 'Usually takes 2-5 minutes'}
+                        </p>
+                      </div>
+                      {latestJob.progress_pct > 0 && (
+                        <div className="w-16 flex-shrink-0">
+                          <div className="h-1 rounded-full bg-zinc-800 overflow-hidden">
+                            <div className={cn('h-full rounded-full transition-all duration-1000', latestJob.status === 'extending' ? 'bg-amber-500' : 'bg-blue-500')} style={{ width: `${latestJob.progress_pct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-zinc-500 mt-0.5 text-right">{latestJob.progress_pct}%</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Full-size generating state — only when NO completed videos exist */}
+                  {isJobInProgress && completedJobs.length === 0 && (
                     <div className={cn(
                       'mb-4 p-6 rounded-xl bg-zinc-900/50 text-center',
-                      job.status === 'extending' ? 'border border-amber-500/20' : 'border border-blue-500/20'
+                      job?.status === 'extending' ? 'border border-amber-500/20' : 'border border-blue-500/20'
                     )}>
-                      <RefreshCw className={cn(
-                        'w-8 h-8 animate-spin mx-auto mb-3',
-                        job.status === 'extending' ? 'text-amber-400' : 'text-blue-400'
-                      )} />
+                      <RefreshCw className={cn('w-8 h-8 animate-spin mx-auto mb-3', job?.status === 'extending' ? 'text-amber-400' : 'text-blue-400')} />
                       <p className="text-sm font-medium text-white mb-1">
-                        {job.status === 'extending'
-                          ? `Extending video... Step ${(job.extension_step || 0) + 1} of ${(job.extension_total || 0) + 1}`
-                          : 'Generating Video...'}
+                        {job?.status === 'extending' ? `Extending video... Step ${(job.extension_step || 0) + 1} of ${(job.extension_total || 0) + 1}` : 'Generating Video...'}
                       </p>
                       <p className="text-xs text-zinc-500">
-                        {job.status === 'extending'
-                          ? 'Adding 7 more seconds...'
-                          : job.status === 'rendering'
-                            ? 'Rendering overlay...'
-                            : 'Usually takes 2-5 minutes'}
+                        {job?.status === 'extending' ? 'Adding 7 more seconds...'
+                          : job?.status === 'rendering' ? 'Rendering overlay...'
+                          : job?.provider?.startsWith('sora') ? 'Usually takes 5-10 minutes'
+                          : job?.provider?.startsWith('runway') ? 'Usually takes 1-2 minutes'
+                          : 'Usually takes 2-5 minutes'}
                       </p>
-                      {job.progress_pct > 0 && (
+                      {job && job.progress_pct > 0 && (
                         <div className="w-32 mx-auto mt-3">
                           <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                            <div
-                              className={cn(
-                                'h-full rounded-full transition-all duration-1000',
-                                job.status === 'extending' ? 'bg-amber-500' : 'bg-blue-500'
-                              )}
-                              style={{ width: `${job.progress_pct}%` }}
-                            />
+                            <div className={cn('h-full rounded-full transition-all duration-1000', job.status === 'extending' ? 'bg-amber-500' : 'bg-blue-500')} style={{ width: `${job.progress_pct}%` }} />
                           </div>
                           <p className="text-xs text-zinc-500 mt-1">{job.progress_pct}%</p>
                         </div>
@@ -2635,7 +2756,7 @@ function ConceptCanvasDetailPanel({
                     {/* Actions */}
                     <div className="flex gap-2 mt-2">
                       <button
-                        onClick={() => router.push(`/dashboard/creative-studio/video-editor?compositionId=${comp.id}`)}
+                        onClick={() => router.push(`/dashboard/creative-studio/video-editor?compositionId=${comp.id}&from=ai-tasks`)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/20"
                       >
                         <Film className="w-3 h-3" />
@@ -3227,6 +3348,7 @@ export default function AITasksPage() {
                             key={canvas.id}
                             canvas={canvas}
                             videoCount={videoJobs.length > 0 ? videoJobs.filter(j => j.canvas_id === canvas.id && j.status === 'complete').length : (canvas.completed_video_count || 0)}
+                            jobs={videoJobs.filter(j => j.canvas_id === canvas.id)}
                             isSelected={selectedType === 'canvas' && canvas.id === selectedCanvasId}
                             onClick={() => handleSelectCanvas(canvas.id)}
                             onDelete={() => setDeleteConfirm({ type: 'canvas', id: canvas.id, name: canvas.product_knowledge?.name || 'Untitled Canvas' })}

@@ -5,7 +5,7 @@ import sharp from 'sharp'
 import { getGoogleAI, isVertexAI } from '@/lib/google-ai'
 
 const VEO_GCS_OUTPUT_URI = 'gs://killscaleapp/video/'
-const VEO_EXTENSION_MODEL = 'veo-3.1-generate-preview'
+// Extension model now uses VEO_MODELS[qualityTier]
 
 // ── Video Model Config ──────────────────────────────────────────────────────
 const VIDEO_MODEL = process.env.VIDEO_MODEL || 'sora-2-pro'
@@ -19,9 +19,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Credit cost constants
-const VIDEO_CREDIT_COST = 50
-const VEO_EXT_CREDIT_COST = 75
+// Credit cost constants per quality tier
+const CREDIT_COSTS = {
+  standard: { base: 20, ext: 30 },   // Veo 3.1 Fast (720p)
+  premium:  { base: 50, ext: 75 },   // Veo 3.1 Standard (1080p)
+}
+const VEO_MODELS = {
+  standard: 'veo-3.1-fast-generate-preview',
+  premium: 'veo-3.1-generate-preview',
+}
 const PLAN_CREDITS: Record<string, number> = { pro: 500, scale: 500, launch: 500 }
 const TRIAL_CREDITS = 25
 
@@ -86,7 +92,13 @@ export async function POST(request: NextRequest) {
       overlayConfig,
       provider: requestedProvider,
       targetDurationSeconds,
+      extensionPrompts,
+      adCopy,
+      dialogue,
+      quality = 'premium',
     } = body
+
+    const qualityTier: 'standard' | 'premium' = (quality === 'standard' || quality === 'premium') ? quality : 'premium'
 
     // Determine provider: explicit param overrides env var detection
     const isVeoExt = requestedProvider === 'veo-ext'
@@ -146,7 +158,8 @@ export async function POST(request: NextRequest) {
     const purchased = (purchaseRows || []).reduce((sum: number, row: any) => sum + row.credits, 0)
 
     const totalAvailable = planLimit + purchased
-    const creditCost = isVeoExt ? VEO_EXT_CREDIT_COST : VIDEO_CREDIT_COST
+    const costs = CREDIT_COSTS[qualityTier]
+    const creditCost = isVeoExt ? costs.ext : costs.base
     if (used + creditCost > totalAvailable) {
       return NextResponse.json(
         { error: 'Insufficient credits for video generation', remaining: totalAvailable - used, required: creditCost },
@@ -249,6 +262,11 @@ export async function POST(request: NextRequest) {
         target_duration_seconds: isVeoExt ? targetDuration : null,
         extension_step: 0,
         extension_total: extensionTotal,
+        extension_prompts: isVeoExt && Array.isArray(extensionPrompts) && extensionPrompts.length > 0
+          ? extensionPrompts
+          : null,
+        ad_copy: adCopy || null,
+        dialogue: dialogue || null,
       })
       .select()
       .single()
@@ -281,7 +299,7 @@ export async function POST(request: NextRequest) {
         }
 
         const veoExtParams: Record<string, unknown> = {
-          model: VEO_EXTENSION_MODEL,   // Must use preview model for extensions
+          model: VEO_MODELS[qualityTier],   // Match quality tier for extensions
           prompt,
           config: veoExtConfig,
         }
@@ -373,11 +391,11 @@ export async function POST(request: NextRequest) {
           jobId: job.id,
           soraJobId: taskId,
           status: 'generating',
-          creditCost: VIDEO_CREDIT_COST,
+          creditCost,
         })
       } else if (effectiveIsVeo) {
         // ── Veo Path (Google GenAI) ──────────────────────────────────────────
-        const veoModel = VIDEO_MODEL.startsWith('veo') ? VIDEO_MODEL : 'veo-3.1-generate-preview'
+        const veoModel = VEO_MODELS[qualityTier]
         console.log(`[GenerateVideo] Sending to Veo: model=${veoModel}, duration=${finalDuration}s, hasImage=${!!imageBase64ForVeo}`)
         console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
 
@@ -430,7 +448,7 @@ export async function POST(request: NextRequest) {
           jobId: job.id,
           soraJobId: operationId,
           status: 'generating',
-          creditCost: VIDEO_CREDIT_COST,
+          creditCost,
         })
       } else {
         // ── Sora Path (OpenAI) ───────────────────────────────────────────────
@@ -468,7 +486,7 @@ export async function POST(request: NextRequest) {
           jobId: job.id,
           soraJobId: videoJob.id,
           status: 'generating',
-          creditCost: VIDEO_CREDIT_COST,
+          creditCost,
         })
       }
     } catch (apiError: any) {

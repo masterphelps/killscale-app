@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to fetch overlay versions' }, { status: 500 })
       }
 
-      return NextResponse.json({ versions: versions || [] })
+      return NextResponse.json({ versions: versions || [] }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     // ── Single job mode (existing logic) ──
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch overlay versions' }, { status: 500 })
     }
 
-    return NextResponse.json({ versions: versions || [] })
+    return NextResponse.json({ versions: versions || [] }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Overlay versions error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

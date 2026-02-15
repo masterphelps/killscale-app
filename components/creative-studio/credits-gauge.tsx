@@ -62,10 +62,10 @@ export function CreditsGauge() {
   }
 
   const PACKS = [
-    { id: 'pack_100', credits: 100, price: '$25' },
+    { id: 'pack_100', credits: 100, price: '$20' },
     { id: 'pack_250', credits: 250, price: '$50' },
     { id: 'pack_500', credits: 500, price: '$100' },
-    { id: 'pack_1000', credits: 1000, price: '$175' },
+    { id: 'pack_1000', credits: 1000, price: '$200' },
   ]
 
   return (

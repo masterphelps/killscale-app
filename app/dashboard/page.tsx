@@ -307,6 +307,7 @@ const fetchManualEvents = async (
 export default function DashboardPage() {
   const [data, setData] = useState<CSVRow[]>([])
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES)
+  const [frequencyOverrides, setFrequencyOverrides] = useState<Record<string, { reach: number; frequency: number }>>({})
   const [isLoading, setIsLoading] = useState(false) // Start false, only show on first load
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false) // Track if we've ever loaded
   const hasTriggeredInitialSync = useRef(false) // Track if we've triggered auto-sync on first load
@@ -1319,6 +1320,35 @@ export default function DashboardPage() {
     dataCache.set(cacheKey, cacheEntry)
     saveToSessionCache(cacheKey, cacheEntry)
 
+    // Fetch period-level frequency from Meta (non-blocking — updates async)
+    // Daily frequency values can't be summed because reach is deduplicated per period.
+    // This call gets the correct frequency for the selected date range.
+    const metaAccountIds = (workspaceAccountIds.length > 0 ? workspaceAccountIds : [currentAccountId])
+      .filter(id => id && id.startsWith('act_'))
+    if (metaAccountIds.length > 0) {
+      // Fire in background — don't block the main data render
+      Promise.all(
+        metaAccountIds.map(acctId =>
+          fetch('/api/meta/frequency', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id, adAccountId: acctId, since: dateRange.since, until: dateRange.until }),
+          })
+            .then(r => r.json())
+            .then(d => d.frequencyMap || {})
+            .catch(() => ({}))
+        )
+      ).then(maps => {
+        // Merge all account frequency maps into one
+        const merged: Record<string, { reach: number; frequency: number }> = {}
+        maps.forEach(m => Object.assign(merged, m))
+        if (Object.keys(merged).length > 0) {
+          console.log('[loadData] Got period-level frequency for', Object.keys(merged).length, 'ads')
+          setFrequencyOverrides(merged)
+        }
+      })
+    }
+
     // Note: Campaign selection is now handled by the useEffect that watches accountFilteredData
     // This ensures selection is always for the currently selected account
     setHasLoadedOnce(true)
@@ -1675,6 +1705,31 @@ export default function DashboardPage() {
     dataCache.set(cacheKey, cacheEntry)
     saveToSessionCache(cacheKey, cacheEntry)
     console.log('[Cache] Cached', cacheData.length, 'rows for', cacheKey)
+
+    // Fetch period-level frequency from Meta (non-blocking)
+    const metaAccountIds = (wsAccountIds.length > 0 ? wsAccountIds : [accountId])
+      .filter(id => id && id.startsWith('act_'))
+    if (metaAccountIds.length > 0 && user) {
+      Promise.all(
+        metaAccountIds.map(acctId =>
+          fetch('/api/meta/frequency', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id, adAccountId: acctId, since: dateRange.since, until: dateRange.until }),
+          })
+            .then(r => r.json())
+            .then(d => d.frequencyMap || {})
+            .catch(() => ({}))
+        )
+      ).then(maps => {
+        const merged: Record<string, { reach: number; frequency: number }> = {}
+        maps.forEach(m => Object.assign(merged, m))
+        if (Object.keys(merged).length > 0) {
+          console.log('[loadDataAndCache] Got period-level frequency for', Object.keys(merged).length, 'ads')
+          setFrequencyOverrides(merged)
+        }
+      })
+    }
 
     return rows
   }
@@ -3855,6 +3910,7 @@ export default function DashboardPage() {
               bulkSelectedItems={bulkSelectedItems}
               onBulkSelectItem={handleBulkSelectItem}
               apiDateRange={apiDateRange}
+              frequencyOverrides={frequencyOverrides}
             />
           </div>
         </>

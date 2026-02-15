@@ -54,9 +54,9 @@ export interface UseTimelineTracksReturn {
   }, currentFrame: number, fps: number) => void;
 }
 
-export const useTimelineTracks = ({ 
-  initialTracks, 
-  autoRemoveEmptyTracks, 
+export const useTimelineTracks = ({
+  initialTracks,
+  autoRemoveEmptyTracks,
   onTracksChange,
   selectedItemIds = [],
   onSelectedItemsChange
@@ -64,6 +64,32 @@ export const useTimelineTracks = ({
   const [tracks, setTracks] = useState<TimelineTrack[]>(initialTracks);
   const [isAutoRemoveEnabled, setIsAutoRemoveEnabled] = useState<boolean>(autoRemoveEmptyTracks);
   const prevInitialTracksRef = useRef<TimelineTrack[]>(initialTracks);
+
+  // Keep a stable ref to onTracksChange so we can call it from useEffect
+  // without including it in dependency arrays of every handler
+  const onTracksChangeRef = useRef(onTracksChange);
+  onTracksChangeRef.current = onTracksChange;
+
+  // Flag to distinguish internal track changes (user interactions) from
+  // external prop-driven syncs. We only fire onTracksChange for internal changes.
+  const isInternalChangeRef = useRef(false);
+
+  // Fire onTracksChange via useEffect (outside render) to avoid
+  // "Cannot update EditorProvider while rendering Timeline" warnings.
+  const prevTracksRef = useRef<TimelineTrack[]>(tracks);
+  useEffect(() => {
+    if (isInternalChangeRef.current && !tracksAreEqual(tracks, prevTracksRef.current)) {
+      onTracksChangeRef.current?.(tracks);
+    }
+    prevTracksRef.current = tracks;
+    isInternalChangeRef.current = false;
+  }, [tracks]);
+
+  // Wrapper that marks the next setTracks as an internal (user-driven) change
+  const setTracksInternal = useCallback((updater: React.SetStateAction<TimelineTrack[]>) => {
+    isInternalChangeRef.current = true;
+    setTracks(updater);
+  }, []);
 
   // Update internal state when props change — but skip if tracks are semantically identical
   // to prevent cascading state updates (overlay→tracks→setTracks→history) that can exceed React's update depth
@@ -122,11 +148,11 @@ export const useTimelineTracks = ({
         id: newId,
       };
       
-      setTracks(prevTracks => {
+      setTracksInternal(prevTracks => {
         const newTracks = prevTracks.map(track => {
           if (track.id === newItem.trackId) {
             const updatedTrack = { ...track };
-            
+
             if (track.magnetic) {
               // For magnetic tracks, use insertion logic
               const preview = calculateMagneticInsertionPreview(
@@ -191,19 +217,17 @@ export const useTimelineTracks = ({
         const updatedTracks = removeEmptyTracks(newTracks);
         
         // Call external callbacks
-        onTracksChange?.(updatedTracks);
-        
         return updatedTracks;
       });
-      
+
     } catch (error) {
       console.error('Failed to add new item:', error);
     }
-  }, [tracks, onTracksChange, removeEmptyTracks]);
+  }, [tracks, removeEmptyTracks]);
 
   // Internal handler for item moves - updates internal state
   const handleItemMove = useCallback((itemId: string, newStart: number, newEnd: number, newTrackId: string) => {
-    setTracks(prevTracks => {
+    setTracksInternal(prevTracks => {
       // Find the source track of the moved item for magnetic gap closing
       const sourceTrack = prevTracks.find(track => 
         track.items.some(item => item.id === itemId)
@@ -302,17 +326,14 @@ export const useTimelineTracks = ({
       
       // Apply auto-remove empty tracks logic
       const updatedTracks = removeEmptyTracks(newTracks);
-      
-      // Call external callback if provided
-      onTracksChange?.(updatedTracks);
-      
+
       return updatedTracks;
     });
-  }, [onTracksChange, removeEmptyTracks]);
+  }, [setTracksInternal, removeEmptyTracks]);
 
   // Internal handler for item resizes - updates internal state
   const handleItemResize = useCallback((itemId: string, newStart: number, newEnd: number) => {
-    setTracks(prevTracks => {
+    setTracksInternal(prevTracks => {
       // Handle track-specific resize behavior directly without intermediate state
       const newTracks = prevTracks.map(track => {
         // Check if this track contains the resized item
@@ -372,17 +393,14 @@ export const useTimelineTracks = ({
       
       // Apply auto-remove empty tracks logic
       const updatedTracks = removeEmptyTracks(newTracks);
-      
-      // Call external callback if provided
-      onTracksChange?.(updatedTracks);
-      
+
       return updatedTracks;
     });
-  }, [onTracksChange, removeEmptyTracks]);
+  }, [setTracksInternal, removeEmptyTracks]);
 
   // Internal handler for item deletion - updates internal state
   const handleItemsDelete = useCallback((itemIds: string[]) => {
-    setTracks(prevTracks => {
+    setTracksInternal(prevTracks => {
       const newTracks = prevTracks.map(track => {
         const sourceTrack = track.items.some(item => itemIds.includes(item.id)) ? track : null;
         const updatedTrack = {
@@ -401,18 +419,15 @@ export const useTimelineTracks = ({
       
       // Apply auto-remove empty tracks logic
       const updatedTracks = removeEmptyTracks(newTracks);
-      
-      // Call external callback if provided
-      onTracksChange?.(updatedTracks);
-      
+
       return updatedTracks;
     });
-  }, [onTracksChange, removeEmptyTracks]);
+  }, [setTracksInternal, removeEmptyTracks]);
 
   // Insert a new empty track at a given index and return its ID
   const handleInsertTrackAt = useCallback((index: number): string => {
     let newId = '';
-    setTracks(prev => {
+    setTracksInternal(prev => {
       const newTrack: TimelineTrack = {
         id: `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         name: undefined,
@@ -425,16 +440,15 @@ export const useTimelineTracks = ({
       const next = [...prev];
       const clampedIndex = Math.max(0, Math.min(next.length, index));
       next.splice(clampedIndex, 0, newTrack);
-      onTracksChange?.(next);
       return next;
     });
     return newId;
-  }, [onTracksChange]);
+  }, [setTracksInternal]);
 
   // Insert multiple new empty tracks starting at a given index and return their IDs
   const handleInsertMultipleTracksAt = useCallback((index: number, count: number): string[] => {
     const newIds: string[] = [];
-    setTracks(prev => {
+    setTracksInternal(prev => {
       const next = [...prev];
       const clampedIndex = Math.max(0, Math.min(next.length, index));
       
@@ -451,18 +465,17 @@ export const useTimelineTracks = ({
         next.splice(clampedIndex + i, 0, newTrack);
       }
       
-      onTracksChange?.(next);
       return next;
     });
     return newIds;
-  }, [onTracksChange]);
+  }, [setTracksInternal]);
 
   // Create multiple tracks with items atomically to avoid auto-remove race condition
   const handleCreateTracksWithItems = useCallback((
-    index: number, 
+    index: number,
     trackItems: Array<{ trackId: string; items: Array<{ itemId: string; start: number; end: number }> }>
   ): void => {
-    setTracks(prev => {
+    setTracksInternal(prev => {
       // First, remove all the items from their current tracks
       const next = prev.map(track => ({
         ...track,
@@ -510,14 +523,13 @@ export const useTimelineTracks = ({
       
       // Apply auto-remove empty tracks logic only at the end
       const updatedTracks = removeEmptyTracks(next);
-      onTracksChange?.(updatedTracks);
       return updatedTracks;
     });
-  }, [onTracksChange, removeEmptyTracks]);
+  }, [setTracksInternal, removeEmptyTracks]);
 
   // Track reordering
   const handleTrackReorder = useCallback((fromIndex: number, toIndex: number) => {
-    setTracks(prev => {
+    setTracksInternal(prev => {
       if (
         fromIndex < 0 ||
         toIndex < 0 ||
@@ -530,10 +542,9 @@ export const useTimelineTracks = ({
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
-      onTracksChange?.(next);
       return next;
     });
-  }, [onTracksChange]);
+  }, [setTracksInternal]);
 
   // Helper method to clear selection for items in a deleted track
   const clearSelectionForDeletedTrack = useCallback((trackToDelete: TimelineTrack) => {
@@ -557,7 +568,7 @@ export const useTimelineTracks = ({
 
   // Track deletion
   const handleTrackDelete = useCallback((trackId: string) => {
-    setTracks(prev => {
+    setTracksInternal(prev => {
       // Find the track being deleted to check if it contains selected items
       const trackToDelete = prev.find(t => t.id === trackId);
       
@@ -578,14 +589,13 @@ export const useTimelineTracks = ({
         muted: false,
       }] : removeEmptyTracks(newTracks);
       
-      onTracksChange?.(updatedTracks);
       return updatedTracks;
     });
-  }, [onTracksChange, removeEmptyTracks, clearSelectionForDeletedTrack]);
+  }, [setTracksInternal, removeEmptyTracks, clearSelectionForDeletedTrack]);
 
   // Toggle magnetic (magic) on a track
   const handleToggleMagnetic = useCallback((trackId: string) => {
-    setTracks(prev => {
+    setTracksInternal(prev => {
       const next = prev.map(t => {
         if (t.id === trackId) {
           const updatedTrack = { ...t, magnetic: !t.magnetic };
@@ -600,10 +610,9 @@ export const useTimelineTracks = ({
         }
         return t;
       });
-      onTracksChange?.(next);
       return next;
     });
-  }, [onTracksChange]);
+  }, [setTracksInternal]);
 
   return {
     tracks,

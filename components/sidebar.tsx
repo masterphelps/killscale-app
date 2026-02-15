@@ -11,17 +11,11 @@ import {
   Link as LinkIcon,
   ChevronDown,
   ChevronRight,
-  LogOut,
   Check,
   FileSpreadsheet,
   Lightbulb,
-  EyeOff,
-  Eye,
-  HelpCircle,
-  Rocket,
   SlidersHorizontal,
   Scale,
-  Users,
   Plug,
   Layers,
   Building2,
@@ -43,6 +37,8 @@ import { supabase } from '@/lib/supabase-browser'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAccount } from '@/lib/account'
 import { useSidebar } from '@/lib/sidebar-state'
+import { AccountSettingsModal, type SettingsPanel } from '@/components/account-settings/account-settings-modal'
+import { ProfilePopover } from '@/components/account-settings/profile-popover'
 
 interface Workspace {
   id: string
@@ -98,8 +94,10 @@ export function Sidebar() {
 
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [alertCount, setUnreadAlertCount] = useState(0)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [settingsInitialPanel, setSettingsInitialPanel] = useState<SettingsPanel>('profile')
+  const [showProfilePopover, setShowProfilePopover] = useState(false)
   const [settingsExpanded, setSettingsExpanded] = useState(() => {
-    // Auto-expand if currently on a settings page
     if (typeof window !== 'undefined') {
       return window.location.pathname.startsWith('/dashboard/settings')
     }
@@ -134,7 +132,6 @@ export function Sidebar() {
     }
   }, [pathname])
 
-  // Check if any settings page is active
   const isSettingsActive = pathname.startsWith('/dashboard/settings')
   const isCreativeStudioActive = pathname?.startsWith('/dashboard/creative-studio')
 
@@ -242,6 +239,11 @@ export function Sidebar() {
     setShowAccountDropdown(false)
     await switchAccount(accountId)
     router.push('/dashboard')
+  }
+
+  const openSettings = (panel: SettingsPanel = 'profile') => {
+    setSettingsInitialPanel(panel)
+    setShowSettingsModal(true)
   }
 
   // Show upgrade CTA for trial users or non-subscribers
@@ -410,25 +412,25 @@ export function Sidebar() {
                 </>
               )}
 
-              <Link
-                href="/dashboard/settings/accounts"
+              <button
+                onClick={() => { setShowAccountDropdown(false); openSettings('connections') }}
                 className="w-full px-3 py-2 text-left text-sm text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors border-t border-border flex items-center gap-2"
               >
                 <LinkIcon className="w-3 h-3" />
                 Manage accounts
-              </Link>
+              </button>
             </div>
           </>
         )}
 
         {/* No accounts tooltip */}
         {dataSource === 'none' && accounts.length === 0 && (
-          <Link
-            href="/dashboard/settings/accounts"
-            className="block mt-2 text-xs text-accent hover:text-accent-hover text-center"
+          <button
+            onClick={() => openSettings('connections')}
+            className="block mt-2 text-xs text-accent hover:text-accent-hover text-center w-full"
           >
             Connect an account →
-          </Link>
+          </button>
         )}
         </div>
       ) : (
@@ -717,67 +719,50 @@ export function Sidebar() {
       )}
 
       {/* User Menu */}
-      {isCollapsed ? (
-        <Link
-          href="/account"
-          className="flex justify-center p-2 rounded-lg hover:bg-bg-hover transition-colors"
-          title={userName}
-        >
-          <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-        </Link>
-      ) : (
-        <Link
-          href="/account"
-          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-bg-hover transition-colors"
-        >
-          <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate">{userName}</div>
-            <div className="text-xs text-zinc-500">{isTrialing ? 'Trial' : plan ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` : 'Free'}</div>
-          </div>
-        </Link>
-      )}
+      <div className="relative">
+        {isCollapsed ? (
+          <button
+            onClick={() => { expandSidebar(); setTimeout(() => setShowProfilePopover(true), 200) }}
+            className="flex justify-center p-2 rounded-lg hover:bg-bg-hover transition-colors w-full"
+            title={userName}
+          >
+            <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowProfilePopover(!showProfilePopover)}
+            className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-bg-hover transition-colors w-full text-left"
+          >
+            <div className="w-8 h-8 bg-gradient-to-br from-accent to-purple-500 rounded-lg flex items-center justify-center text-sm font-semibold">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{userName}</div>
+              <div className="text-xs text-zinc-500">{isTrialing ? 'Trial' : plan ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` : 'Free'}</div>
+            </div>
+          </button>
+        )}
 
-      {/* Support, Privacy & Logout */}
-      <div className={cn(
-        "flex items-center mt-2",
-        isCollapsed ? "flex-col gap-1" : "gap-2"
-      )}>
-        <a
-          href="mailto:contactkillscale@gmail.com"
-          className="flex items-center justify-center w-9 h-9 rounded-lg text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors"
-          title="Get Support"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </a>
-        <button
-          onClick={togglePrivacyMode}
-          className={cn(
-            "flex items-center justify-center w-9 h-9 rounded-lg transition-colors",
-            isPrivacyMode
-              ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
-              : "text-zinc-500 hover:text-white hover:bg-bg-hover"
-          )}
-          title={isPrivacyMode ? "Privacy mode ON" : "Privacy mode OFF"}
-        >
-          {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-        </button>
-        <button
-          onClick={signOut}
-          className={cn(
-            "flex items-center rounded-lg text-sm text-zinc-500 hover:bg-bg-hover hover:text-white transition-colors",
-            isCollapsed ? "justify-center w-9 h-9" : "flex-1 gap-3 px-3 py-2"
-          )}
-          title={isCollapsed ? "Sign out" : undefined}
-        >
-          <LogOut className="w-4 h-4" />
-          {!isCollapsed && "Sign out"}
-        </button>
+        {!isCollapsed && (
+          <ProfilePopover
+            isOpen={showProfilePopover}
+            onClose={() => setShowProfilePopover(false)}
+            onOpenSettings={() => openSettings('profile')}
+            isPrivacyMode={isPrivacyMode}
+            onTogglePrivacy={togglePrivacyMode}
+            onSignOut={signOut}
+          />
+        )}
       </div>
+
+      {/* Account Settings Modal */}
+      <AccountSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        initialPanel={settingsInitialPanel}
+      />
     </aside>
   )
 }

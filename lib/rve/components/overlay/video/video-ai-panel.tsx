@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { ClipOverlay, CaptionOverlay, OverlayType, GreenscreenConfig } from "../../../types";
 import { Button } from "../../ui/button";
 import { Wand2, Loader2, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
-import { useAICaptions } from "../../../hooks/use-ai-captions";
 import { useEditorContext } from "../../../contexts/editor-context";
 import { useTimelinePositioning } from "../../../hooks/use-timeline-positioning";
 import { Slider } from "../../ui/slider";
@@ -12,9 +11,11 @@ import { Switch } from "../../ui/switch";
  * Props for the VideoAIPanel component
  * @interface VideoAIPanelProps
  * @property {ClipOverlay} localOverlay - The current overlay object containing video settings
+ * @property {function} [onAIGenerate] - Callback to generate captions via Whisper+Claude endpoint
  */
 interface VideoAIPanelProps {
   localOverlay: ClipOverlay;
+  onAIGenerate?: (prompt: string) => Promise<void>;
 }
 
 /**
@@ -35,17 +36,21 @@ interface VideoAIPanelProps {
  */
 export const VideoAIPanel: React.FC<VideoAIPanelProps> = ({
   localOverlay,
+  onAIGenerate,
 }) => {
-  const {
-    progress,
-    error,
-    isProcessing,
-    isCompleted,
-    isError,
-    isServiceReady,
-    generateCaptions,
-    reset
-  } = useAICaptions();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isServiceReady = !!onAIGenerate;
+
+  const reset = () => {
+    setIsProcessing(false);
+    setIsCompleted(false);
+    setIsError(false);
+    setError(null);
+  };
 
   const {
     overlays,
@@ -129,57 +134,21 @@ export const VideoAIPanel: React.FC<VideoAIPanelProps> = ({
   };
 
   const handleGenerateCaptions = async () => {
-    if (!localOverlay.src) {
-      console.error("No video source available");
-      return;
-    }
+    if (!onAIGenerate) return;
+
+    setIsProcessing(true);
+    setIsCompleted(false);
+    setIsError(false);
+    setError(null);
 
     try {
-      const captions = await generateCaptions({
-        videoSrc: localOverlay.src,
-        language: 'en',
-        outputFormat: 'json'
-      });
-
-      if (captions && captions.length > 0) {
-        // Calculate total duration in frames based on the last caption
-        const lastCaption = captions[captions.length - 1];
-        const totalDurationMs = lastCaption.endMs + 500; // Add small buffer
-        const calculatedDurationInFrames = Math.ceil((totalDurationMs / 1000) * 30); // Assuming 30 FPS
-
-        // Add at playhead position
-        const { from, row, updatedOverlays } = addAtPlayhead(
-          currentFrame,
-          overlays,
-          'top'
-        );
-
-        // Generate ID
-        const newId = updatedOverlays.length > 0 ? Math.max(...updatedOverlays.map((o) => o.id)) + 1 : 0;
-
-        // Create new caption overlay
-        const newCaptionOverlay: CaptionOverlay = {
-          id: newId,
-          type: OverlayType.CAPTION,
-          from,
-          durationInFrames: calculatedDurationInFrames,
-          captions: captions,
-          left: 230,
-          top: 414,
-          width: 833,
-          height: 269,
-          rotation: 0,
-          isDragging: false,
-          row,
-        };
-
-        // Update overlays with both the shifted overlays and the new overlay in a single operation
-        const finalOverlays = [...updatedOverlays, newCaptionOverlay];
-        setOverlays(finalOverlays);
-        setSelectedOverlayId(newId);
-      }
-    } catch (error) {
-      console.error("Failed to generate captions:", error);
+      await onAIGenerate("Generate captions from the video audio");
+      setIsCompleted(true);
+    } catch (err) {
+      setIsError(true);
+      setError(err instanceof Error ? err.message : "Failed to generate captions");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -188,7 +157,7 @@ export const VideoAIPanel: React.FC<VideoAIPanelProps> = ({
       return (
         <>
           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          Generating... {progress !== undefined && `${Math.round(progress)}%`}
+          Generating...
         </>
       );
     }
@@ -411,18 +380,6 @@ export const VideoAIPanel: React.FC<VideoAIPanelProps> = ({
               {error && (
                 <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
                   <p className="text-xs text-destructive font-extralight">{error}</p>
-                </div>
-              )}
-              
-              {isProcessing && progress !== undefined && (
-                <div className="space-y-1">
-                  <div className="w-full bg-secondary rounded-full h-2">
-                    <div 
-                      className="bg-primary h-2 rounded-full transition-all duration-300" 
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground font-extralight">Processing audio...</p>
                 </div>
               )}
               

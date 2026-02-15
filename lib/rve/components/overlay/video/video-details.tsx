@@ -31,6 +31,8 @@ interface VideoDetailsProps {
   setLocalOverlay: (overlay: ClipOverlay) => void;
   /** Callback function to initiate video replacement */
   onChangeVideo?: () => void;
+  /** AI generation callback for captions via Whisper+Claude */
+  onAIGenerate?: (prompt: string) => Promise<void>;
 }
 
 /**
@@ -40,6 +42,7 @@ export const VideoDetails: React.FC<VideoDetailsProps> = ({
   localOverlay,
   setLocalOverlay,
   onChangeVideo,
+  onAIGenerate,
 }) => {
   const { checkAndAdjustOverlaps } = useOverlayOverlapCheck();
   const { overlays, setOverlays, changeOverlay } = useEditorContext();
@@ -159,6 +162,7 @@ export const VideoDetails: React.FC<VideoDetailsProps> = ({
             content: (
               <VideoAIPanel
                 localOverlay={localOverlay}
+                onAIGenerate={onAIGenerate}
               />
             ),
           },

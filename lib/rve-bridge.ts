@@ -8,6 +8,7 @@
 import type {
   OverlayConfig,
   AppendedClip,
+  VideoClipEdit,
   HookOverlay as KSHookOverlay,
   CaptionOverlay as KSCaptionOverlay,
   CTAOverlay as KSCTAOverlay,
@@ -292,38 +293,17 @@ export function overlayConfigToRVEOverlays(
     } satisfies SoundOverlay)
   }
 
-  // 6. Video clip (background, behind all overlays) — mute if voiceover present
-  overlays.push({
-    id: genId(),
-    type: OverlayType.VIDEO,
-    content: videoUrl,
-    src: videoUrl,
-    from: 0,
-    durationInFrames: totalFrames,
-    left: 0,
-    top: 0,
-    width: CANVAS_W,
-    height: CANVAS_H,
-    row: videoRow,
-    isDragging: false,
-    rotation: 0,
-    styles: {
-      objectFit: 'cover',
-      volume: hasVoiceover ? 0 : 1,
-    },
-  } satisfies ClipOverlay)
-
-  // 7. Appended clips (additional video segments)
-  if (config.appendedClips) {
-    for (const clip of config.appendedClips) {
-      const clipFrames = secToFrames(clip.durationSeconds, fps)
-      overlays.push({
+  // 6. Video clips — restore from saved edits (videoClips) or create full-length default
+  if (config.videoClips && config.videoClips.length > 0) {
+    // Restore saved video clip edits (cuts/trims/splits)
+    for (const vc of config.videoClips) {
+      const clip: ClipOverlay = {
         id: genId(),
         type: OverlayType.VIDEO,
-        content: clip.videoUrl,
-        src: clip.videoUrl,
-        from: clip.fromFrame,
-        durationInFrames: clipFrames,
+        content: vc.videoUrl,
+        src: vc.videoUrl,
+        from: vc.fromFrame,
+        durationInFrames: vc.durationFrames,
         left: 0,
         top: 0,
         width: CANVAS_W,
@@ -333,21 +313,73 @@ export function overlayConfigToRVEOverlays(
         rotation: 0,
         styles: {
           objectFit: 'cover',
-          volume: hasVoiceover ? 0 : 1,
+          volume: vc.volume ?? (hasVoiceover ? 0 : 1),
         },
-      } satisfies ClipOverlay)
+      }
+      if (vc.videoStartTime != null) clip.videoStartTime = vc.videoStartTime
+      if (vc.speed != null) clip.speed = vc.speed
+      if (vc.segments) clip.segments = vc.segments
+      if (vc.mediaSrcDuration != null) clip.mediaSrcDuration = vc.mediaSrcDuration
+      overlays.push(clip)
+    }
+  } else {
+    // No saved clip edits — create full-length base clip (legacy/first-load behavior)
+    overlays.push({
+      id: genId(),
+      type: OverlayType.VIDEO,
+      content: videoUrl,
+      src: videoUrl,
+      from: 0,
+      durationInFrames: totalFrames,
+      left: 0,
+      top: 0,
+      width: CANVAS_W,
+      height: CANVAS_H,
+      row: videoRow,
+      isDragging: false,
+      rotation: 0,
+      styles: {
+        objectFit: 'cover',
+        volume: hasVoiceover ? 0 : 1,
+      },
+    } satisfies ClipOverlay)
 
-      // Also create overlays from the appended clip's own overlay config (hook, captions, CTA)
-      // time-shifted to start at the clip's fromFrame
-      if (clip.overlayConfig) {
-        const subOverlays = overlayConfigToRVEOverlays(clip.overlayConfig, clip.videoUrl, clip.durationSeconds, fps)
-        for (const sub of subOverlays) {
-          // Skip the VIDEO overlay (we already placed the clip above)
-          if (sub.type === OverlayType.VIDEO) continue
-          // Time-shift: add the clip's fromFrame offset
-          sub.from += clip.fromFrame
-          sub.id = genId() // new unique ID
-          overlays.push(sub)
+    // 7. Appended clips (additional video segments) — legacy path
+    if (config.appendedClips) {
+      for (const clip of config.appendedClips) {
+        const clipFrames = secToFrames(clip.durationSeconds, fps)
+        overlays.push({
+          id: genId(),
+          type: OverlayType.VIDEO,
+          content: clip.videoUrl,
+          src: clip.videoUrl,
+          from: clip.fromFrame,
+          durationInFrames: clipFrames,
+          left: 0,
+          top: 0,
+          width: CANVAS_W,
+          height: CANVAS_H,
+          row: videoRow,
+          isDragging: false,
+          rotation: 0,
+          styles: {
+            objectFit: 'cover',
+            volume: hasVoiceover ? 0 : 1,
+          },
+        } satisfies ClipOverlay)
+
+        // Also create overlays from the appended clip's own overlay config (hook, captions, CTA)
+        // time-shifted to start at the clip's fromFrame
+        if (clip.overlayConfig) {
+          const subOverlays = overlayConfigToRVEOverlays(clip.overlayConfig, clip.videoUrl, clip.durationSeconds, fps)
+          for (const sub of subOverlays) {
+            // Skip the VIDEO overlay (we already placed the clip above)
+            if (sub.type === OverlayType.VIDEO) continue
+            // Time-shift: add the clip's fromFrame offset
+            sub.from += clip.fromFrame
+            sub.id = genId() // new unique ID
+            overlays.push(sub)
+          }
         }
       }
     }
@@ -608,7 +640,7 @@ export function rveOverlaysToOverlayConfig(
     }
   }
 
-  // Build appended clips with per-clip overlay configs
+  // Build appended clips with per-clip overlay configs (legacy format)
   const appendedClips: AppendedClip[] = []
   for (let i = 1; i < videoOverlays.length; i++) {
     const v = videoOverlays[i]
@@ -627,6 +659,21 @@ export function rveOverlaysToOverlayConfig(
       overlayConfig: hasOverlays ? clipOverlayConfig : undefined,
     })
   }
+
+  // Capture ALL video clip edits (cuts/trims/splits) for persistence
+  const videoClips: VideoClipEdit[] = videoOverlays.map(v => {
+    const vc: VideoClipEdit = {
+      videoUrl: v.src,
+      fromFrame: v.from,
+      durationFrames: v.durationInFrames,
+      volume: v.styles?.volume,
+    }
+    if (v.videoStartTime != null) vc.videoStartTime = v.videoStartTime
+    if (v.speed != null) vc.speed = v.speed
+    if (v.segments) vc.segments = v.segments
+    if (v.mediaSrcDuration != null) vc.mediaSrcDuration = v.mediaSrcDuration
+    return vc
+  })
 
   // Extract voiceover URL from sound overlays
   let voiceoverUrl: string | undefined
@@ -660,5 +707,6 @@ export function rveOverlaysToOverlayConfig(
     accentColor: existingConfig?.accentColor,
     voiceoverUrl: voiceoverUrl || existingConfig?.voiceoverUrl,
     appendedClips: appendedClips.length > 0 ? appendedClips : existingConfig?.appendedClips,
+    videoClips: videoClips.length > 0 ? videoClips : undefined,
   }
 }

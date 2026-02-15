@@ -11,7 +11,6 @@ import { ReactVideoEditor, type SiblingClip } from '@/lib/rve/components/react-v
 import { stubRenderer } from '@/lib/rve/stub-renderer'
 import { overlayConfigToRVEOverlays, rveOverlaysToOverlayConfig } from '@/lib/rve-bridge'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
-import type { AdConcept } from '@/lib/video-prompt-templates'
 import {
   ArrowLeft,
   Save,
@@ -42,6 +41,7 @@ export default function VideoEditorPage() {
   const router = useRouter()
   const jobId = searchParams.get('jobId')
   const compositionIdParam = searchParams.get('compositionId')
+  const fromParam = searchParams.get('from') // source page for back navigation
 
   // Composition state
   const [compositionId, setCompositionId] = useState<string | null>(compositionIdParam)
@@ -78,6 +78,9 @@ export default function VideoEditorPage() {
   // Script prompt for TTS voiceover
   const [scriptPrompt, setScriptPrompt] = useState<string | null>(null)
 
+  // Video style (e.g. 'ugc' from Ad Studio) — determines back navigation
+  const [videoStyle, setVideoStyle] = useState<string | null>(null)
+
   // Voiceover state
   const [isGeneratingVoiceover, setIsGeneratingVoiceover] = useState(false)
   const [selectedVoice, setSelectedVoice] = useState('onyx')
@@ -89,6 +92,9 @@ export default function VideoEditorPage() {
   const [wizardCreatives, setWizardCreatives] = useState<Creative[]>([])
   const [wizardCopy, setWizardCopy] = useState<{ primaryText?: string; headline?: string; description?: string } | null>(null)
   const [isPreparingLaunch, setIsPreparingLaunch] = useState(false)
+
+  // Ad copy from job (for Create Ad pre-loading)
+  const [adCopy, setAdCopy] = useState<{ primaryText: string; headline: string; description: string } | null>(null)
 
   // Sibling concept videos (from same canvas)
   const [siblingClips, setSiblingClips] = useState<SiblingClip[]>([])
@@ -109,7 +115,7 @@ export default function VideoEditorPage() {
     const loadComposition = async () => {
       setIsLoading(true)
       try {
-        const res = await fetch(`/api/creative-studio/video-composition?compositionId=${compositionIdParam}&userId=${user.id}`)
+        const res = await fetch(`/api/creative-studio/video-composition?compositionId=${compositionIdParam}&userId=${user.id}`, { cache: 'no-store' })
         const data = await res.json()
 
         if (!data.composition) {
@@ -208,7 +214,7 @@ export default function VideoEditorPage() {
     const loadJob = async () => {
       setIsLoading(true)
       try {
-        const res = await fetch(`/api/creative-studio/video-status?jobId=${jobId}&userId=${user.id}`)
+        const res = await fetch(`/api/creative-studio/video-status?jobId=${jobId}&userId=${user.id}`, { cache: 'no-store' })
         const data = await res.json()
 
         const rawVideoUrl: string | null = data.raw_video_url || null
@@ -224,6 +230,16 @@ export default function VideoEditorPage() {
         if (data.prompt) {
           setScriptPrompt(data.prompt)
         }
+        if (data.video_style) {
+          setVideoStyle(data.video_style)
+        }
+        if (data.ad_copy) {
+          setAdCopy(data.ad_copy)
+        }
+        // NOTE: We do NOT pre-seed cachedTranscript from dialogue anymore.
+        // The dialogue field contains the generation script with synthetic timestamps
+        // that don't match actual audio timing. "Generate Captions" should always
+        // run Whisper on the real video to get accurate word-level timestamps.
 
         if (rawVideoUrl) {
           setVideoUrl(rawVideoUrl)
@@ -264,7 +280,7 @@ export default function VideoEditorPage() {
   const loadVersions = useCallback(async () => {
     if (!jobId || !user?.id) return
     try {
-      const res = await fetch(`/api/creative-studio/overlay-versions?videoJobId=${jobId}&userId=${user.id}`)
+      const res = await fetch(`/api/creative-studio/overlay-versions?videoJobId=${jobId}&userId=${user.id}&_t=${Date.now()}`, { cache: 'no-store' })
       const data = await res.json()
       if (data.versions) {
         setVersions(data.versions)
@@ -279,7 +295,7 @@ export default function VideoEditorPage() {
     const cid = compositionIdParam || compositionId
     if (!cid || !user?.id) return
     try {
-      const res = await fetch(`/api/creative-studio/overlay-versions?compositionId=${cid}&userId=${user.id}`)
+      const res = await fetch(`/api/creative-studio/overlay-versions?compositionId=${cid}&userId=${user.id}&_t=${Date.now()}`, { cache: 'no-store' })
       const data = await res.json()
       if (data.versions) {
         setVersions(data.versions)
@@ -511,6 +527,12 @@ export default function VideoEditorPage() {
     try {
       const currentConfig = overlayConfigRef.current
       const hasExisting = currentConfig?.hook || currentConfig?.captions?.length || currentConfig?.cta
+
+      // Caption requests ALWAYS go through Whisper for accurate timing.
+      // Only use cached transcript for non-caption requests (hooks, CTAs, etc.)
+      const isCaptionRequest = /caption|subtitle/i.test(prompt)
+      const useTranscriptCache = !isCaptionRequest && !!cachedTranscript
+
       const res = await fetch('/api/creative-studio/generate-overlay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -518,8 +540,11 @@ export default function VideoEditorPage() {
           instruction: prompt,
           durationSeconds: durationSec,
           currentConfig: hasExisting ? currentConfig : undefined,
-          videoUrl: !cachedTranscript ? videoUrl : undefined,
-          transcript: cachedTranscript || undefined,
+          videoUrl: !useTranscriptCache ? videoUrl : undefined,
+          transcript: useTranscriptCache ? cachedTranscript : undefined,
+          // Send current clip edits so captions remap to the edited timeline
+          videoClips: currentConfig?.videoClips || undefined,
+          fps: FPS,
         }),
       })
       const data = await res.json()
@@ -527,7 +552,8 @@ export default function VideoEditorPage() {
         alert(data.error)
         return
       }
-      if (data.transcript && !cachedTranscript) {
+      // Cache real Whisper transcript for future non-caption requests
+      if (data.transcript) {
         setCachedTranscript(data.transcript)
       }
       if (data.overlayConfig) {
@@ -583,18 +609,11 @@ export default function VideoEditorPage() {
     }
   }, [jobId, compositionId, user?.id, selectedVoice, isGeneratingVoiceover])
 
-  // Launch as ad — fetch canvas concept's adCopy + create Creative from video
+  // Launch as ad — use ad_copy from job directly + create Creative from video
   const handleLaunchAsAd = useCallback(async () => {
-    if (!backCanvasId || !user?.id || !videoUrl || !currentAccountId) return
+    if (!user?.id || !videoUrl || !currentAccountId) return
     setIsPreparingLaunch(true)
     try {
-      // Fetch canvas data to get the concept's adCopy
-      const canvasRes = await fetch(`/api/creative-studio/video-canvas?userId=${user.id}&canvasId=${backCanvasId}`)
-      const canvasData = await canvasRes.json()
-      const concepts: AdConcept[] = canvasData.canvas?.concepts || []
-      const conceptIdx = backConceptIndex ?? 0
-      const concept = concepts[conceptIdx]
-
       // Download video blob to create a File for the wizard
       const videoRes = await fetch(videoUrl)
       const videoBlob = await videoRes.blob()
@@ -608,10 +627,10 @@ export default function VideoEditorPage() {
       }
 
       setWizardCreatives([creative])
-      setWizardCopy(concept?.adCopy ? {
-        primaryText: concept.adCopy.primaryText,
-        headline: concept.adCopy.headline,
-        description: concept.adCopy.description,
+      setWizardCopy(adCopy ? {
+        primaryText: adCopy.primaryText,
+        headline: adCopy.headline,
+        description: adCopy.description,
       } : null)
       setShowLaunchWizard(true)
     } catch (err) {
@@ -619,7 +638,7 @@ export default function VideoEditorPage() {
     } finally {
       setIsPreparingLaunch(false)
     }
-  }, [backCanvasId, backConceptIndex, user?.id, videoUrl, currentAccountId])
+  }, [user?.id, videoUrl, currentAccountId, adCopy])
 
   // State for AI-generated config that needs to be injected into RVE
   const [aiGeneratedConfig, setAiGeneratedConfig] = useState<OverlayConfig | null>(null)
@@ -651,7 +670,11 @@ export default function VideoEditorPage() {
       <div className="flex items-center justify-between px-4 lg:px-6 py-2 border-b border-zinc-800/50 flex-shrink-0 bg-bg-dark z-10">
         <button
           onClick={() => {
-            if (backCanvasId) {
+            if (fromParam === 'ai-tasks') {
+              router.push('/dashboard/creative-studio/ai-tasks')
+            } else if (videoStyle === 'ugc') {
+              router.push('/dashboard/creative-studio/ad-studio')
+            } else if (backCanvasId) {
               const params = new URLSearchParams({ canvasId: backCanvasId })
               if (backConceptIndex != null) params.set('conceptIndex', String(backConceptIndex))
               router.push(`/dashboard/creative-studio/video-studio?${params}`)
@@ -737,7 +760,7 @@ export default function VideoEditorPage() {
           </button>
 
           {/* Launch as Ad */}
-          {!isComposition && backCanvasId && (
+          {!isComposition && (adCopy || backCanvasId) && (
             <button
               onClick={handleLaunchAsAd}
               disabled={isPreparingLaunch}

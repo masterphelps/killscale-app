@@ -18,6 +18,7 @@ type DailyMetrics = {
   ctr: number
   cpm: number
   cpa: number
+  cpaSma: number  // 3-day simple moving average of CPA (smooths zero-sale days)
   results: number
 }
 
@@ -127,9 +128,24 @@ export async function GET(request: Request) {
         ctr: d.impressions > 0 ? (d.clicks / d.impressions) * 100 : 0,
         cpm: d.impressions > 0 ? (d.spend / d.impressions) * 1000 : 0,
         cpa: d.purchases > 0 ? d.spend / d.purchases : 0,
+        cpaSma: 0, // computed below
         results: d.results,
       }
     })
+
+  // 3-day SMA for CPA — smooths zero-sale days where CPA would be 0
+  const SMA_WINDOW = 3
+  for (let i = 0; i < dailyData.length; i++) {
+    const windowStart = Math.max(0, i - SMA_WINDOW + 1)
+    const window = dailyData.slice(windowStart, i + 1)
+    // Only average days that had purchases (skip 0-CPA days in the window)
+    const withPurchases = window.filter(d => d.purchases > 0)
+    if (withPurchases.length > 0) {
+      const totalSpend = withPurchases.reduce((s, d) => s + d.spend, 0)
+      const totalPurchases = withPurchases.reduce((s, d) => s + d.purchases, 0)
+      dailyData[i].cpaSma = totalPurchases > 0 ? totalSpend / totalPurchases : 0
+    }
+  }
 
   // Need at least 3 days for fatigue analysis
   if (dailyData.length < 3) {

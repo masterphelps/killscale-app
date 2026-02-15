@@ -51,12 +51,78 @@ export interface AdConcept {
     mood: string              // Color grade, energy, sound design
   }
   overlay: AdConceptOverlay   // Text overlays that connect metaphor to product
-  videoPrompt?: string        // Runway-native prompt, 300-500 chars, motion-first
+  videoPrompt?: string        // Veo-native prompt with block headers
+  estimatedDuration?: number  // Veo-snapped duration in seconds (8, 15, 22, 29...)
+  extensionPrompts?: string[] // Per-segment continuation prompts for Veo extensions
   adCopy?: {                  // Meta post copy (NOT video overlay text)
     primaryText: string       // Facebook post body text
     headline: string          // Ad headline
     description: string       // Ad description / link description
   }
+}
+
+// ─── UGC Video Types ────────────────────────────────────────────────────────
+
+export type UGCSettings = {
+  gender: 'male' | 'female'
+  ageRange: 'young-adult' | 'adult' | 'middle-aged'
+  tone: 'authentic' | 'excited' | 'humorous' | 'serious' | 'empathetic'
+  features: string[]   // Multi-select: "Glasses", "Full Beard", etc.
+  clothing: string     // "Casual", "Formal", "Athletic", "Streetwear"
+  scene: 'indoors' | 'outdoors'
+  setting: string  // "Living Room", "Park", etc.
+  notes: string    // Free text
+}
+
+export type UGCPromptResult = {
+  prompt: string
+  dialogue: string
+  sceneSummary: string
+  estimatedDuration?: number   // Veo-snapped duration in seconds (8, 15, 22, 29...)
+  extensionPrompts?: string[]  // Per-segment continuation prompts for Veo extensions
+  overlay?: {
+    hook: string        // Opening text overlay (first 2 seconds)
+    cta: string         // Call-to-action button text
+  }
+  adCopy?: {
+    primaryText: string   // Facebook post body text
+    headline: string      // Ad headline
+    description: string   // Ad description / link description
+  }
+}
+
+// ─── UGC Veo Prompt Builder ─────────────────────────────────────────────────
+// Takes GPT 5.2's output and formats it into Veo-compatible structured blocks
+// with image preservation rules for image-to-video generation.
+
+export function buildUGCVeoPrompt(
+  ugcResult: UGCPromptResult,
+  durationSeconds: number,
+): string {
+  // The GPT 5.2 prompt is already structured — just add the product preservation
+  // and technical blocks that Veo needs
+  const blocks: string[] = []
+
+  // The main prompt from GPT 5.2 already contains [Scene], [Subject], [Action], etc.
+  blocks.push(ugcResult.prompt)
+
+  // Ensure product preservation block exists
+  if (!ugcResult.prompt.includes('[Product Preservation]')) {
+    blocks.push(`[Product Preservation]\nThe product from the reference image must remain completely unchanged — same shape, colors, text, and proportions. Never alter, morph, or distort the product.`)
+  }
+
+  // Ensure technical block exists
+  if (!ugcResult.prompt.includes('[Technical]')) {
+    const pacingNote = durationSeconds <= 8
+      ? 'Pacing: Tight and immediate. Natural speech cadence with direct-to-camera energy.'
+      : durationSeconds <= 15
+        ? 'Pacing: Conversational flow. Opening hook, product demonstration, closing endorsement.'
+        : 'Pacing: Full testimonial arc. Hook, problem/context, product showcase, genuine recommendation, confident close.'
+
+    blocks.push(`[Technical]\nVertical 9:16 portrait. Natural UGC aesthetic — slightly imperfect, relatable, not overly polished. Selfie-style camera with subtle movement. ${durationSeconds}s.\n${pacingNote}`)
+  }
+
+  return blocks.join('\n\n')
 }
 
 // Prompt templates for each video style

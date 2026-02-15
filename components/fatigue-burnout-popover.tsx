@@ -27,6 +27,7 @@ type DailyMetrics = {
   ctr: number
   cpm: number
   cpa: number
+  cpaSma: number
   results: number
 }
 
@@ -312,8 +313,8 @@ export function FatigueBurnoutPopover({ entity, userId, since, until, anchorRect
                               <span className="font-medium text-white">${d.cpm.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between gap-6">
-                              <span style={{ color: CPA_COLOR }}>CPA</span>
-                              <span className="font-medium text-white">${d.cpa.toFixed(2)}</span>
+                              <span style={{ color: CPA_COLOR }}>CPA (3d avg)</span>
+                              <span className="font-medium text-white">${(d.cpaSma || d.cpa).toFixed(2)}</span>
                             </div>
                           </div>
                         </div>
@@ -374,12 +375,12 @@ export function FatigueBurnoutPopover({ entity, userId, since, until, anchorRect
                   <Line
                     yAxisId="left"
                     type="monotone"
-                    dataKey="cpa"
+                    dataKey="cpaSma"
                     stroke={CPA_COLOR}
                     strokeWidth={2}
                     dot={false}
                     activeDot={{ r: 5, fill: CPA_COLOR, stroke: '#fff', strokeWidth: 2 }}
-                    name="CPA"
+                    name="CPA (3d avg)"
                   />
                 </LineChart>
               </ResponsiveContainer>
