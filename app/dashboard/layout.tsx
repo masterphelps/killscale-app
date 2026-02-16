@@ -10,8 +10,50 @@ import { PrivacyProvider } from '@/lib/privacy-mode'
 import { AccountProvider } from '@/lib/account'
 import { AttributionProvider } from '@/lib/attribution'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-state'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, CheckCircle, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
+
+function TrialEndedSplash() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="max-w-lg w-full bg-bg-card border border-border rounded-2xl p-8 text-center">
+        <div className="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mx-auto mb-5">
+          <Zap className="w-6 h-6 text-accent" />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">Your trial has ended</h2>
+        <p className="text-zinc-400 mb-6">Choose a plan to keep using KillScale.</p>
+
+        <div className="space-y-3 text-left mb-8">
+          {[
+            'Instant verdicts on every campaign',
+            'AI-powered creative studio',
+            'First-party pixel tracking',
+            'Unlimited campaign management',
+          ].map((feature) => (
+            <div key={feature} className="flex items-center gap-3 text-sm text-zinc-300">
+              <CheckCircle className="w-4 h-4 text-verdict-scale flex-shrink-0" />
+              {feature}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link
+            href="/pricing"
+            className="flex-1 py-3 bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg transition-colors text-center"
+          >
+            View Plans
+          </Link>
+        </div>
+
+        <p className="text-xs text-zinc-600 mt-4">
+          Need to manage your account? Use the profile menu in the sidebar.
+        </p>
+      </div>
+    </div>
+  )
+}
 
 function DashboardContent({ children, sidebarOpen, setSidebarOpen }: {
   children: React.ReactNode
@@ -138,26 +180,23 @@ export default function DashboardLayout({
     }
   }, [user, loading, router])
 
-  // Subscription gate: redirect to account page if no active subscription
-  // Only redirect if we've never had a valid subscription (prevents false redirect on refresh)
+  // Subscription gate: track if user has a valid subscription
   // MUST wait for onboarding check to complete first — otherwise this fires before the async
-  // onboarding query returns and redirects new users to /account instead of /onboarding
+  // onboarding query returns and causes issues
+  const [showTrialEnded, setShowTrialEnded] = useState(false)
   useEffect(() => {
     if (!loading && !subLoading && user && onboardingChecked) {
-      // Safety: don't act on stale onboardingChecked state if the ref was just cleared
-      // (refs update synchronously, state updates are deferred to next render)
       if (!hadOnboardingChecked.current) return
 
       if (plan !== 'None') {
         hadValidSubscription.current = true
-        // Persist to sessionStorage to survive component remounts during navigation
         sessionStorage.setItem('ks_had_valid_subscription', 'true')
+        setShowTrialEnded(false)
       } else if (!hadValidSubscription.current) {
-        // Only redirect if we've never had a valid subscription
-        router.push('/account')
+        setShowTrialEnded(true)
       }
     }
-  }, [user, loading, plan, subLoading, router, onboardingChecked])
+  }, [user, loading, plan, subLoading, onboardingChecked])
 
   useEffect(() => {
     setSidebarOpen(false)
@@ -204,7 +243,7 @@ export default function DashboardLayout({
         <PrivacyProvider>
           <SidebarProvider>
             <DashboardContent sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}>
-              {children}
+              {showTrialEnded ? <TrialEndedSplash /> : children}
             </DashboardContent>
           </SidebarProvider>
         </PrivacyProvider>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, User, Plug, Settings, Database, Users, Radio, Bell, CreditCard, ChevronDown, Building2, ShoppingBag, Gift } from 'lucide-react'
+import { X, User, Plug, Settings, Database, Users, Radio, Bell, CreditCard, ChevronDown, Building2, ShoppingBag, Gift, Plus, Trash2, Loader2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase-browser'
@@ -33,6 +33,7 @@ interface AccountSettingsModalProps {
   isOpen: boolean
   onClose: () => void
   initialPanel?: SettingsPanel
+  standalone?: boolean // Renders as full page instead of overlay (used by /account)
 }
 
 type ModalWorkspace = {
@@ -69,6 +70,12 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false)
 
+  // Create workspace state
+  const MAX_WORKSPACES = 5
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [creating, setCreating] = useState(false)
+
   // Load workspaces when modal opens
   useEffect(() => {
     if (!isOpen || !user) return
@@ -91,6 +98,42 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
 
     load()
   }, [isOpen, user])
+
+  const handleCreateWorkspace = async () => {
+    if (!user || !newWorkspaceName.trim() || workspaces.length >= MAX_WORKSPACES) return
+    setCreating(true)
+
+    const { data, error } = await supabase
+      .from('workspaces')
+      .insert({ user_id: user.id, name: newWorkspaceName.trim(), is_default: false })
+      .select()
+      .single()
+
+    setCreating(false)
+    if (!error && data) {
+      setWorkspaces(prev => [...prev, data])
+      setSelectedWorkspaceId(data.id)
+      setNewWorkspaceName('')
+      setShowCreateForm(false)
+    }
+  }
+
+  const handleDeleteWorkspace = async (workspaceId: string) => {
+    if (!confirm('Delete this workspace? This cannot be undone.')) return
+
+    const { error } = await supabase
+      .from('workspaces')
+      .delete()
+      .eq('id', workspaceId)
+
+    if (!error) {
+      const remaining = workspaces.filter(w => w.id !== workspaceId)
+      setWorkspaces(remaining)
+      if (selectedWorkspaceId === workspaceId) {
+        setSelectedWorkspaceId(remaining[0]?.id || null)
+      }
+    }
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -190,7 +233,10 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
 
           {/* Workspace section with dropdown selector */}
           <div>
-            <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider px-3 mb-1.5">Workspace</div>
+            <div className="flex items-center justify-between px-3 mb-1.5">
+              <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Workspace</span>
+              <span className="text-[10px] text-zinc-600 tabular-nums">{workspaces.length}/{MAX_WORKSPACES}</span>
+            </div>
 
             {/* Workspace selector dropdown */}
             {workspaces.length > 0 ? (
@@ -207,19 +253,30 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
                 {showWorkspaceDropdown && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowWorkspaceDropdown(false)} />
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden max-h-40 overflow-y-auto">
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 overflow-hidden max-h-48 overflow-y-auto">
                       {workspaces.map(ws => (
-                        <button
+                        <div
                           key={ws.id}
-                          onClick={() => { setSelectedWorkspaceId(ws.id); setShowWorkspaceDropdown(false) }}
                           className={cn(
-                            'w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-bg-hover transition-colors',
-                            ws.id === selectedWorkspaceId && 'bg-purple-500/10 text-white'
+                            'flex items-center gap-2 hover:bg-bg-hover transition-colors',
+                            ws.id === selectedWorkspaceId && 'bg-purple-500/10'
                           )}
                         >
-                          <Building2 className="w-3.5 h-3.5 text-purple-400" />
-                          <span className="truncate">{ws.name}</span>
-                        </button>
+                          <button
+                            onClick={() => { setSelectedWorkspaceId(ws.id); setShowWorkspaceDropdown(false) }}
+                            className="flex-1 px-3 py-2 text-left text-sm flex items-center gap-2"
+                          >
+                            <Building2 className="w-3.5 h-3.5 text-purple-400" />
+                            <span className={cn('truncate', ws.id === selectedWorkspaceId && 'text-white')}>{ws.name}</span>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setShowWorkspaceDropdown(false); handleDeleteWorkspace(ws.id) }}
+                            className="p-1.5 mr-1 text-zinc-600 hover:text-red-400 transition-colors rounded"
+                            title="Delete workspace"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </>
@@ -228,6 +285,44 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
             ) : (
               <div className="px-3 py-2 text-xs text-zinc-500">No workspaces created</div>
             )}
+
+            {/* Create Workspace */}
+            {showCreateForm ? (
+              <div className="px-1 mb-1.5">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newWorkspaceName}
+                    onChange={(e) => setNewWorkspaceName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateWorkspace()}
+                    placeholder="Workspace name..."
+                    className="flex-1 px-2 py-1.5 bg-bg-dark border border-border rounded text-sm text-white focus:outline-none focus:border-accent min-w-0"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleCreateWorkspace}
+                    disabled={creating || !newWorkspaceName.trim()}
+                    className="p-1.5 text-accent hover:bg-accent/10 rounded disabled:opacity-50"
+                  >
+                    {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => { setShowCreateForm(false); setNewWorkspaceName('') }}
+                    className="p-1.5 text-zinc-500 hover:text-white rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ) : workspaces.length < MAX_WORKSPACES ? (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 mb-1.5 rounded-lg text-xs text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                New Workspace
+              </button>
+            ) : null}
 
             {workspaceNavItems.map(navItemButton)}
           </div>

@@ -7,6 +7,15 @@ import { supabase } from '@/lib/supabase-browser'
 import { DeleteAccountModal } from '@/components/account/delete-account-modal'
 import { useRouter } from 'next/navigation'
 
+const CURRENCIES = [
+  { value: 'USD', label: 'USD ($)' },
+  { value: 'EUR', label: 'EUR (€)' },
+  { value: 'GBP', label: 'GBP (£)' },
+  { value: 'CAD', label: 'CAD (C$)' },
+  { value: 'AUD', label: 'AUD (A$)' },
+  { value: 'JPY', label: 'JPY (¥)' },
+]
+
 const TIMEZONES = [
   { value: 'UTC', label: 'UTC' },
   { value: 'America/New_York', label: 'Eastern Time (ET)' },
@@ -29,6 +38,7 @@ export function ProfilePanel() {
 
   const [fullName, setFullName] = useState('')
   const [timezone, setTimezone] = useState('UTC')
+  const [currency, setCurrency] = useState('USD')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -53,6 +63,7 @@ export function ProfilePanel() {
         const data = await res.json()
         setFullName(data.profile?.full_name || user.user_metadata?.full_name || '')
         setTimezone(data.preferences?.timezone || 'UTC')
+        setCurrency(data.preferences?.currency || 'USD')
       }
       setLoading(false)
     }
@@ -71,7 +82,7 @@ export function ProfilePanel() {
       body: JSON.stringify({
         userId: user.id,
         profile: { full_name: fullName },
-        preferences: { timezone },
+        preferences: { timezone, currency },
       }),
     })
 
@@ -182,6 +193,20 @@ export function ProfilePanel() {
               <option key={tz.value} value={tz.value}>{tz.label}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="block text-sm text-zinc-400 mb-1.5">Display Currency</label>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="w-full px-3 py-2.5 bg-bg-card border border-border rounded-lg text-white focus:outline-none focus:border-accent text-sm"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-zinc-600 mt-1.5">Ad data is shown in your ad account's currency regardless of this setting</p>
         </div>
 
         <button

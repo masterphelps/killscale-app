@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, ExternalLink, Sparkles, Zap } from 'lucide-react'
+import { Loader2, ExternalLink, Sparkles, Zap, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import Link from 'next/link'
@@ -141,6 +141,30 @@ export function BillingPanel() {
             {isTrialing ? 'Subscribe' : plan === 'None' ? 'View Plans' : 'Change Plan'}
           </Link>
         </div>
+
+        {/* Plan Features */}
+        {(isActive || isTrialing) && (
+          <div className="mt-3 pt-3 border-t border-border">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                Unlimited campaigns
+              </div>
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                3 ad accounts
+              </div>
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                First Party Pixel
+              </div>
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle className="w-4 h-4 text-verdict-scale" />
+                Workspaces
+              </div>
+            </div>
+          </div>
+        )}
 
         {(isActive || isTrialing) && (
           <button

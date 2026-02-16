@@ -16,6 +16,13 @@ const DEFAULT_RULES = {
   max_cpr: '',
 }
 
+type WorkspaceAccount = {
+  id: string
+  ad_account_id: string
+  account_name: string | null
+  platform: string
+}
+
 interface GeneralPanelProps {
   workspaceId: string | null
 }
@@ -31,10 +38,46 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
+  // Per-account rules
+  const [workspaceAccounts, setWorkspaceAccounts] = useState<WorkspaceAccount[]>([])
+  const [rulesAccountId, setRulesAccountId] = useState<string | null>(null) // null = workspace default
+
   useEffect(() => {
     if (!user) return
     load()
   }, [user, workspaceId])
+
+  // Reload rules when account scope changes
+  useEffect(() => {
+    if (!user || loading) return
+    loadRules()
+  }, [rulesAccountId])
+
+  const loadRules = async () => {
+    if (!user) return
+
+    let query = supabase.from('rules').select('*').eq('user_id', user.id)
+    if (rulesAccountId) {
+      query = query.eq('ad_account_id', rulesAccountId)
+    } else {
+      query = query.is('ad_account_id', null)
+    }
+
+    const { data: rulesRows } = await query.limit(1)
+    const data = rulesRows?.[0]
+    if (data) {
+      setRules({
+        scale_roas: data.scale_roas?.toString() || DEFAULT_RULES.scale_roas,
+        min_roas: data.min_roas?.toString() || DEFAULT_RULES.min_roas,
+        learning_spend: data.learning_spend?.toString() || DEFAULT_RULES.learning_spend,
+        scale_percentage: data.scale_percentage?.toString() || DEFAULT_RULES.scale_percentage,
+        target_cpr: data.target_cpr?.toString() || '',
+        max_cpr: data.max_cpr?.toString() || '',
+      })
+    } else {
+      setRules(DEFAULT_RULES)
+    }
+  }
 
   const load = async () => {
     if (!user) return
@@ -51,11 +94,23 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
         setWorkspaceName(ws.name)
         setBusinessType(ws.business_type || 'ecommerce')
       }
+
+      // Load workspace accounts for rules scope selector
+      const { data: accounts } = await supabase
+        .from('workspace_accounts')
+        .select('id, ad_account_id, account_name, platform')
+        .eq('workspace_id', workspaceId)
+
+      setWorkspaceAccounts(accounts || [])
     }
 
     // Load rules (use null ad_account_id for workspace-level rules)
     let query = supabase.from('rules').select('*').eq('user_id', user.id)
-    query = query.is('ad_account_id', null)
+    if (rulesAccountId) {
+      query = query.eq('ad_account_id', rulesAccountId)
+    } else {
+      query = query.is('ad_account_id', null)
+    }
 
     const { data: rulesRows } = await query.limit(1)
     const data = rulesRows?.[0]
@@ -112,7 +167,7 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
       .from('rules')
       .upsert({
         user_id: user.id,
-        ad_account_id: null,
+        ad_account_id: rulesAccountId || null,
         scale_roas: parsedRules.scale_roas,
         min_roas: parsedRules.min_roas,
         learning_spend: parsedRules.learning_spend,
@@ -200,7 +255,23 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
 
         {/* Verdict Thresholds */}
         <div className="border-t border-border pt-5">
-          <h3 className="text-sm font-medium text-zinc-300 mb-4">Verdict Thresholds</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-zinc-300">Verdict Thresholds</h3>
+            {workspaceAccounts.length > 0 && (
+              <select
+                value={rulesAccountId || ''}
+                onChange={(e) => setRulesAccountId(e.target.value || null)}
+                className="px-2 py-1 bg-bg-card border border-border rounded text-xs text-zinc-400 focus:outline-none focus:border-accent"
+              >
+                <option value="">All accounts (default)</option>
+                {workspaceAccounts.map(acc => (
+                  <option key={acc.ad_account_id} value={acc.ad_account_id}>
+                    {acc.account_name || acc.ad_account_id}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           {/* Scale ROAS / Target CPR */}
           <div className="space-y-4">

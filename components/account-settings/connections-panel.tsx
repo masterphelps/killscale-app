@@ -51,7 +51,30 @@ export function ConnectionsPanel({ onClose }: ConnectionsPanelProps) {
   const [metaConnection, setMetaConnection] = useState<MetaConnection | null>(null)
   const [googleConnection, setGoogleConnection] = useState<GoogleConnection | null>(null)
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(() => {
+    // Check URL params for OAuth callback messages
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('meta') === 'success' || params.get('google') === 'success') {
+        return { type: 'success', text: 'Account connected successfully!' }
+      }
+      const errorParam = params.get('error')
+      if (errorParam) {
+        const messages: Record<string, string> = {
+          declined: 'Connection was declined or cancelled.',
+          missing_params: 'Missing parameters. Please try again.',
+          expired: 'Session expired. Please try again.',
+          token_failed: 'Failed to get access token. Please try again.',
+          no_refresh_token: 'No refresh token received. Please try again.',
+          no_google_ads_accounts: 'No Google Ads accounts found.',
+          no_client_accounts: 'No client accounts found.',
+          db_failed: 'Failed to save connection. Please try again.',
+        }
+        return { type: 'error', text: messages[errorParam] || `Connection error: ${errorParam}` }
+      }
+    }
+    return null
+  })
 
   // Expandable sections
   const [metaExpanded, setMetaExpanded] = useState(true)

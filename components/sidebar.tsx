@@ -740,7 +740,12 @@ export function Sidebar() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{userName}</div>
-              <div className="text-xs text-zinc-500">{isTrialing ? 'Trial' : plan ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` : 'Free'}</div>
+              <div className="text-xs text-zinc-500">{
+                plan === 'None' && isTrialing ? 'Trial ended' :
+                isTrialing ? 'Trial' :
+                plan && plan !== 'None' ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan` :
+                'Free'
+              }</div>
             </div>
           </button>
         )}
