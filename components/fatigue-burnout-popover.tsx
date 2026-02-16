@@ -260,13 +260,13 @@ export function FatigueBurnoutPopover({ entity, userId, since, until, anchorRect
                       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                     }}
                   />
-                  {/* Left Y-axis: Frequency / CPM / CPA */}
+                  {/* Left Y-axis: CPM / CPA (dollar metrics) */}
                   <YAxis
                     yAxisId="left"
                     stroke="#3f3f46"
                     tick={{ fill: '#a1a1aa', fontSize: 10, stroke: 'none' }}
                     tickLine={{ stroke: '#3f3f46' }}
-                    tickFormatter={(v) => v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : v >= 1 ? `$${v.toFixed(0)}` : v.toFixed(1)}
+                    tickFormatter={(v) => v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : v >= 1 ? `$${v.toFixed(0)}` : `$${v.toFixed(1)}`}
                     width={45}
                   />
                   {/* Right Y-axis: CTR% */}
@@ -278,6 +278,12 @@ export function FatigueBurnoutPopover({ entity, userId, since, until, anchorRect
                     tickLine={{ stroke: '#3f3f46' }}
                     tickFormatter={(v) => `${v.toFixed(1)}%`}
                     width={45}
+                  />
+                  {/* Hidden Y-axis for Frequency (own scale, range ~0-10) */}
+                  <YAxis
+                    yAxisId="freq"
+                    hide
+                    domain={[0, (dataMax: number) => Math.max(dataMax * 1.2, 4)]}
                   />
                   <Tooltip
                     content={({ active, payload, label }) => {
@@ -326,14 +332,14 @@ export function FatigueBurnoutPopover({ entity, userId, since, until, anchorRect
                   />
 
                   {/* Reference lines for frequency thresholds */}
-                  <ReferenceLine yAxisId="left" y={2} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.5} />
-                  <ReferenceLine yAxisId="left" y={3} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.5} />
+                  <ReferenceLine yAxisId="freq" y={2} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.5} />
+                  <ReferenceLine yAxisId="freq" y={3} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.5} />
 
                   {/* Crossover zones */}
                   {crossoverZones.map((zone, i) => (
                     <ReferenceArea
                       key={i}
-                      yAxisId="left"
+                      yAxisId="freq"
                       x1={zone.x1}
                       x2={zone.x2}
                       fill="rgba(239, 68, 68, 0.08)"
@@ -343,7 +349,7 @@ export function FatigueBurnoutPopover({ entity, userId, since, until, anchorRect
 
                   {/* Lines */}
                   <Line
-                    yAxisId="left"
+                    yAxisId="freq"
                     type="monotone"
                     dataKey="frequency"
                     stroke={FREQ_COLOR}

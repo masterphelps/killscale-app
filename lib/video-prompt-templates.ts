@@ -61,6 +61,17 @@ export interface AdConcept {
   }
 }
 
+// ─── Product Video Script Type (Director's Review) ─────────────────────────
+
+export type ProductVideoScript = {
+  videoPrompt: string
+  extensionPrompts?: string[]
+  scene: string
+  mood: string
+  estimatedDuration: number
+  overlay?: { hook: string; cta: string }
+}
+
 // ─── UGC Video Types ────────────────────────────────────────────────────────
 
 export type UGCSettings = {

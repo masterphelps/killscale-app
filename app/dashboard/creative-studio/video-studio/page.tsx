@@ -837,24 +837,34 @@ export default function VideoStudioPage() {
   return (
     <div className="max-w-[1800px] mx-auto px-4 lg:px-8 py-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Lightbulb className="w-7 h-7 text-amber-400" />
-            Video Studio
-          </h1>
-          <p className="text-sm text-zinc-400 mt-1">Concept-first video ads that stop the scroll</p>
-        </div>
-        {credits && (
-          <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400">
-            <Sparkles className="w-3 h-3" />
-            {credits.remaining} credits remaining
+      <div className={cn('mx-auto mb-6', step === 1 ? 'max-w-[1000px]' : 'max-w-3xl')}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push('/dashboard/creative-studio/ad-studio')}
+                className="text-zinc-500 hover:text-white transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+                <Lightbulb className="w-7 h-7 text-amber-400" />
+                Video Studio
+              </h1>
+            </div>
+            <p className="text-sm text-zinc-400 mt-1 ml-7">Concept-first video ads that stop the scroll</p>
           </div>
-        )}
+          {credits && (
+            <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400">
+              <Sparkles className="w-3 h-3" />
+              {credits.remaining} credits remaining
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Step indicator */}
-      <div className="flex items-center gap-3 mb-8">
+      <div className="flex items-center justify-center gap-3 mb-8">
         {[
           { num: 1, label: 'Your Product' },
           { num: 2, label: 'Creative Concepts' },
@@ -874,7 +884,7 @@ export default function VideoStudioPage() {
 
       {/* ═══════════════════════════ Step 1: Product ═══════════════════════════ */}
       {step === 1 && (
-        <div className="max-w-2xl space-y-6">
+        <div className="max-w-[1000px] mx-auto space-y-6">
           {/* Section A: Product Input */}
           <div className="bg-bg-card border border-border rounded-xl p-6">
             <h2 className="text-lg font-semibold text-white mb-1">What product is this ad for?</h2>
@@ -905,18 +915,18 @@ export default function VideoStudioPage() {
 
             {inputMode === 'url' && (
               <div className="mb-4">
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <input
                     value={productUrl}
                     onChange={(e) => setProductUrl(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeUrl()}
                     placeholder="https://yourstore.com/product"
-                    className="flex-1 bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-purple-500"
+                    className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-purple-500"
                   />
                   <button
                     onClick={handleAnalyzeUrl}
                     disabled={!productUrl.trim() || isAnalyzing}
-                    className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-300 text-sm font-medium hover:bg-purple-500/30 disabled:opacity-50 flex items-center gap-2"
+                    className="px-6 py-3 rounded-lg bg-purple-500/20 text-purple-300 font-medium hover:bg-purple-500/30 disabled:opacity-50 flex items-center gap-2"
                   >
                     {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                     {isAnalyzing ? 'Analyzing...' : 'Analyze'}
@@ -1007,7 +1017,7 @@ export default function VideoStudioPage() {
 
       {/* ═══════════════════════════ Step 2: Concepts ═══════════════════════════ */}
       {step === 2 && (
-        <div className="max-w-3xl">
+        <div className="max-w-3xl mx-auto">
           <button onClick={() => setStep(1)} className="flex items-center gap-1 text-sm text-zinc-400 hover:text-white mb-4 transition-colors">
             <ArrowLeft className="w-4 h-4" />
             Back to product info

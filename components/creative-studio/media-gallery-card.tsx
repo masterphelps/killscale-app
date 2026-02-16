@@ -123,14 +123,16 @@ export function MediaGalleryCard({
   }, [])
 
   // Request video source on hover (desktop) or when scrolled into view (mobile)
+  // For videos without storageUrl: eagerly fetch so we can use <video #t=0.3> as poster
   const hasRequestedSource = useRef(false)
   useEffect(() => {
+    const needsEagerFetch = isVideo && !storageUrl && !hasRequestedSource.current && onRequestVideoSource
     const shouldRequest = isTouchDevice.current ? isInView : isHovered
-    if (shouldRequest && isVideo && !effectiveVideoSource && !hasRequestedSource.current && onRequestVideoSource) {
+    if ((shouldRequest || needsEagerFetch) && isVideo && !effectiveVideoSource && !hasRequestedSource.current && onRequestVideoSource) {
       hasRequestedSource.current = true
       onRequestVideoSource()
     }
-  }, [isHovered, isInView, isVideo, effectiveVideoSource, onRequestVideoSource])
+  }, [isHovered, isInView, isVideo, effectiveVideoSource, onRequestVideoSource, storageUrl])
 
   // Intersection Observer — scroll-to-play on mobile
   useEffect(() => {
@@ -201,10 +203,10 @@ export function MediaGalleryCard({
     >
       {/* Media Container - 4:3 aspect ratio (hidden for copy-only cards) */}
       {!textContent && <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
-        {(storageUrl || thumbnailUrl) && !imageError ? (
+        {(storageUrl || effectiveVideoSource || thumbnailUrl) && !imageError ? (
           <>
-            {isVideo && storageUrl && !thumbnailUrl ? (
-              // Video with storage URL but no thumbnail — only option is <video> as poster
+            {isVideo && (storageUrl || effectiveVideoSource) && !thumbnailUrl ? (
+              // Video with playable source but no thumbnail — use <video> as poster
               <motion.div
                 initial={false}
                 animate={{
@@ -216,7 +218,7 @@ export function MediaGalleryCard({
               >
                 <video
                   ref={videoRef}
-                  src={`${storageUrl}#t=0.3`}
+                  src={`${storageUrl || effectiveVideoSource}#t=0.3`}
                   muted
                   loop
                   playsInline

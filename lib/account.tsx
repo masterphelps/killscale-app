@@ -5,7 +5,7 @@ import { useAuth } from './auth'
 import { FEATURES } from './feature-flags'
 import { supabase } from './supabase-browser'
 
-type AdAccount = {
+export type AdAccount = {
   id: string
   name: string
   account_status: number
@@ -14,7 +14,7 @@ type AdAccount = {
   platform: 'meta' | 'google'
 }
 
-type Workspace = {
+export type Workspace = {
   id: string
   name: string
   is_default: boolean
@@ -23,62 +23,65 @@ type Workspace = {
 
 type DataSource = 'none' | 'csv' | 'meta_api'
 
-type ViewMode = 'account' | 'workspace' | 'csv' | 'none'
-
 type AccountContextType = {
-  // Current state
-  currentAccountId: string | null
-  currentAccount: AdAccount | null
+  // Workspace (always set after loading)
+  currentWorkspaceId: string | null  // null only during initial load
+  currentWorkspace: Workspace | null
+  workspaceAccountIds: string[]
+
+  // Optional account filter (within workspace)
+  filterAccountId: string | null
+  filterAccount: AdAccount | null
+
+  // All connected accounts (for filter pills, launch wizard, etc.)
   accounts: AdAccount[]
   dataSource: DataSource
   loading: boolean
 
-  // Workspace state
-  currentWorkspaceId: string | null
-  currentWorkspace: Workspace | null
-  workspaceAccountIds: string[]  // All ad_account_ids in current workspace
-
-  // View mode (computed)
-  viewMode: ViewMode
-
   // Actions
-  switchAccount: (accountId: string) => Promise<void>
+  setFilterAccount: (accountId: string | null) => void
   switchWorkspace: (workspaceId: string) => Promise<void>
   refetch: () => Promise<void>
+
+  // Backward compat alias (filterAccountId ?? workspaceAccountIds[0] ?? null)
+  // Used by 100+ callsites that pass it to APIs
+  currentAccountId: string | null
+  currentAccount: AdAccount | null
 }
 
 const AccountContext = createContext<AccountContextType>({
-  currentAccountId: null,
-  currentAccount: null,
-  accounts: [],
-  dataSource: 'none',
-  loading: true,
   currentWorkspaceId: null,
   currentWorkspace: null,
   workspaceAccountIds: [],
-  viewMode: 'none',
-  switchAccount: async () => {},
+  filterAccountId: null,
+  filterAccount: null,
+  accounts: [],
+  dataSource: 'none',
+  loading: true,
+  setFilterAccount: () => {},
   switchWorkspace: async () => {},
   refetch: async () => {},
+  currentAccountId: null,
+  currentAccount: null,
 })
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  const [currentAccountId, setCurrentAccountId] = useState<string | null>(null)
   const [accounts, setAccounts] = useState<AdAccount[]>([])
   const [dataSource, setDataSource] = useState<DataSource>('none')
   const [loading, setLoading] = useState(true)
 
-  // Workspace state
+  // Workspace state (always populated after load)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
   const [workspaceAccountIds, setWorkspaceAccountIds] = useState<string[]>([])
 
-  // Load accounts and current selection
-  // Use user.id as dependency (not user object) to avoid re-fetching on token refresh
+  // Optional account filter within workspace
+  const [filterAccountId, setFilterAccountIdState] = useState<string | null>(null)
+
   const userId = user?.id
 
-  // Load workspace accounts when workspace is selected
+  // Load workspace accounts
   const loadWorkspaceAccounts = useCallback(async (workspaceId: string) => {
     const { data: wsAccounts } = await supabase
       .from('workspace_accounts')
@@ -90,48 +93,57 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     return accountIds
   }, [])
 
+  // Auto-link connected accounts to default workspace if missing
+  const autoLinkAccounts = useCallback(async (workspaceId: string, connectedAccounts: AdAccount[]) => {
+    if (connectedAccounts.length === 0) return
+
+    // Get existing workspace accounts
+    const { data: existing } = await supabase
+      .from('workspace_accounts')
+      .select('ad_account_id')
+      .eq('workspace_id', workspaceId)
+
+    const existingIds = new Set((existing || []).map(a => a.ad_account_id))
+
+    // Find accounts not yet linked
+    const toLink = connectedAccounts.filter(a => !existingIds.has(a.id))
+
+    if (toLink.length === 0) return
+
+    // Insert missing accounts
+    const rows = toLink.map(a => ({
+      workspace_id: workspaceId,
+      platform: a.platform,
+      ad_account_id: a.id,
+      ad_account_name: a.name,
+      currency: a.currency || 'USD',
+    }))
+
+    await supabase.from('workspace_accounts').insert(rows)
+  }, [])
+
   const fetchAccounts = useCallback(async () => {
     if (!userId) {
       setAccounts([])
-      setCurrentAccountId(null)
       setCurrentWorkspaceId(null)
       setCurrentWorkspace(null)
       setWorkspaceAccountIds([])
+      setFilterAccountIdState(null)
       setDataSource('none')
       setLoading(false)
       return
     }
 
     try {
-      // Check if user has a workspace selected (from profiles)
+      // Load profile to get selected workspace
       const { data: profile } = await supabase
         .from('profiles')
         .select('selected_workspace_id')
         .eq('id', userId)
         .single()
 
-      // If workspace is selected, load it
-      if (profile?.selected_workspace_id) {
-        const { data: workspace } = await supabase
-          .from('workspaces')
-          .select('id, name, is_default')
-          .eq('id', profile.selected_workspace_id)
-          .single()
-
-        if (workspace) {
-          setCurrentWorkspaceId(workspace.id)
-          setCurrentWorkspace(workspace)
-          await loadWorkspaceAccounts(workspace.id)
-          setCurrentAccountId(null)  // Clear individual account selection
-        }
-      } else {
-        setCurrentWorkspaceId(null)
-        setCurrentWorkspace(null)
-        setWorkspaceAccountIds([])
-      }
-
-      // Get meta connection with accounts and selected account
-      const { data: connection, error } = await supabase
+      // Get meta connection
+      const { data: connection, error: metaError } = await supabase
         .from('meta_connections')
         .select('ad_accounts, selected_account_id')
         .eq('user_id', userId)
@@ -150,16 +162,27 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           googleAccounts = googleConnection.customer_ids.map((c: any) => ({
             id: c.id,
             name: c.name,
-            account_status: 1, // Google doesn't have same status concept
+            account_status: 1,
             currency: c.currency || 'USD',
-            in_dashboard: true, // Google accounts are always in dashboard for now
+            in_dashboard: true,
             platform: 'google' as const,
           }))
         }
       }
 
-      if ((error || !connection) && googleAccounts.length === 0) {
-        // No Meta or Google connection - check for CSV data
+      // Combine Meta and Google accounts
+      const metaAccounts: AdAccount[] = (connection?.ad_accounts || []).map((a: any) => ({
+        ...a,
+        platform: 'meta' as const,
+      }))
+      const allAccounts: AdAccount[] = [...metaAccounts, ...googleAccounts]
+      const dashboardAccounts = allAccounts.filter(a => a.in_dashboard)
+      const displayAccounts = dashboardAccounts.length > 0 ? dashboardAccounts : allAccounts
+      setAccounts(displayAccounts)
+
+      // Check for CSV-only users
+      const hasConnectedAccounts = displayAccounts.length > 0
+      if (!hasConnectedAccounts) {
         const { data: csvData } = await supabase
           .from('ad_data')
           .select('id')
@@ -168,131 +191,104 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           .limit(1)
           .single()
 
-        if (csvData) {
-          setDataSource('csv')
-        } else {
-          setDataSource('none')
-        }
-        setAccounts([])
-        if (!profile?.selected_workspace_id) {
-          setCurrentAccountId(null)
-        }
-        setLoading(false)
-        return
-      }
-
-      // Combine Meta and Google accounts
-      const metaAccounts: AdAccount[] = (connection?.ad_accounts || []).map((a: any) => ({
-        ...a,
-        platform: 'meta' as const,
-      }))
-
-      const allAccounts: AdAccount[] = [...metaAccounts, ...googleAccounts]
-
-      // Filter to dashboard accounts, or use all if none marked
-      const dashboardAccounts = allAccounts.filter(a => a.in_dashboard)
-      const displayAccounts = dashboardAccounts.length > 0 ? dashboardAccounts : allAccounts
-
-      setAccounts(displayAccounts)
-
-      // Only set account if no workspace is selected
-      if (!profile?.selected_workspace_id) {
-        // Determine current account - prefer Meta selection, fall back to first available
-        let selectedId = connection?.selected_account_id || null
-
-        // If no selection or selection not in display accounts, pick first
-        if (!selectedId || !displayAccounts.find(a => a.id === selectedId)) {
-          selectedId = displayAccounts[0]?.id || null
-
-          // Save this selection to the appropriate connection table
-          if (selectedId) {
-            const selectedAccount = displayAccounts.find(a => a.id === selectedId)
-            if (selectedAccount?.platform === 'google') {
-              await supabase
-                .from('google_connections')
-                .update({ selected_customer_id: selectedId })
-                .eq('user_id', userId)
-            } else {
-              await supabase
-                .from('meta_connections')
-                .update({ selected_account_id: selectedId })
-                .eq('user_id', userId)
-            }
-          }
-        }
-
-        setCurrentAccountId(selectedId)
-        setDataSource(selectedId ? 'meta_api' : 'none')
+        setDataSource(csvData ? 'csv' : 'none')
       } else {
-        // Workspace selected - data source is meta_api if workspace has accounts
         setDataSource('meta_api')
       }
+
+      // --- Always resolve to a workspace ---
+      let workspaceId = profile?.selected_workspace_id
+
+      // If no workspace selected, find or ensure default
+      if (!workspaceId) {
+        const { data: defaultWs } = await supabase
+          .from('workspaces')
+          .select('id, name, is_default, business_type')
+          .eq('user_id', userId)
+          .eq('is_default', true)
+          .single()
+
+        if (defaultWs) {
+          workspaceId = defaultWs.id
+
+          // Persist selection so we don't re-query next time
+          await supabase
+            .from('profiles')
+            .update({ selected_workspace_id: defaultWs.id })
+            .eq('id', userId)
+
+          setCurrentWorkspaceId(defaultWs.id)
+          setCurrentWorkspace(defaultWs)
+        }
+      } else {
+        // Load the selected workspace
+        const { data: workspace } = await supabase
+          .from('workspaces')
+          .select('id, name, is_default, business_type')
+          .eq('id', workspaceId)
+          .single()
+
+        if (workspace) {
+          setCurrentWorkspaceId(workspace.id)
+          setCurrentWorkspace(workspace)
+        }
+      }
+
+      // Auto-link any unlinked connected accounts to the workspace
+      if (workspaceId && hasConnectedAccounts) {
+        await autoLinkAccounts(workspaceId, displayAccounts)
+      }
+
+      // Load workspace account IDs
+      if (workspaceId) {
+        await loadWorkspaceAccounts(workspaceId)
+      }
+
+      // Restore filter from localStorage
+      const savedFilter = typeof window !== 'undefined'
+        ? localStorage.getItem('ks_filter_account_id')
+        : null
+      if (savedFilter && displayAccounts.find(a => a.id === savedFilter)) {
+        setFilterAccountIdState(savedFilter)
+      }
+
     } catch (err) {
       console.error('Failed to load accounts:', err)
     } finally {
       setLoading(false)
     }
-  }, [userId, loadWorkspaceAccounts])
+  }, [userId, loadWorkspaceAccounts, autoLinkAccounts])
 
   // Initial load
   useEffect(() => {
     fetchAccounts()
   }, [fetchAccounts])
 
-  // Switch to individual account (clears workspace selection)
-  const switchAccount = useCallback(async (accountId: string) => {
-    if (!userId || accountId === currentAccountId) return
-
-    try {
-      // Clear workspace selection in profiles
-      await supabase
-        .from('profiles')
-        .update({ selected_workspace_id: null })
-        .eq('id', userId)
-
-      // Determine if this is a Meta or Google account
-      const isGoogleAccount = !accountId.startsWith('act_')
-
-      if (isGoogleAccount && FEATURES.GOOGLE_ADS_INTEGRATION) {
-        // Update selected customer in google_connections
-        await supabase
-          .from('google_connections')
-          .update({ selected_customer_id: accountId })
-          .eq('user_id', userId)
+  // Set optional account filter (within workspace)
+  const setFilterAccount = useCallback((accountId: string | null) => {
+    setFilterAccountIdState(accountId)
+    if (typeof window !== 'undefined') {
+      if (accountId) {
+        localStorage.setItem('ks_filter_account_id', accountId)
       } else {
-        // Update selected account in meta_connections
-        await supabase
-          .from('meta_connections')
-          .update({ selected_account_id: accountId })
-          .eq('user_id', userId)
+        localStorage.removeItem('ks_filter_account_id')
       }
-
-      // Update local state immediately
-      setCurrentAccountId(accountId)
-      setCurrentWorkspaceId(null)
-      setCurrentWorkspace(null)
-      setWorkspaceAccountIds([])
-      setDataSource('meta_api')
-    } catch (err) {
-      console.error('Failed to switch account:', err)
     }
-  }, [userId, currentAccountId])
+  }, [])
 
-  // Switch to workspace (clears individual account selection)
+  // Switch workspace (clears filter)
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     if (!userId || workspaceId === currentWorkspaceId) return
 
     try {
-      // Update workspace selection in profiles
       await supabase
         .from('profiles')
         .update({ selected_workspace_id: workspaceId })
         .eq('id', userId)
 
-      // Load workspace info
       const { data: workspace } = await supabase
         .from('workspaces')
-        .select('id, name, is_default')
+        .select('id, name, is_default, business_type')
         .eq('id', workspaceId)
         .single()
 
@@ -300,39 +296,43 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         setCurrentWorkspaceId(workspace.id)
         setCurrentWorkspace(workspace)
         await loadWorkspaceAccounts(workspace.id)
-        setCurrentAccountId(null)  // Clear individual account
+        setFilterAccount(null)
         setDataSource('meta_api')
       }
     } catch (err) {
       console.error('Failed to switch workspace:', err)
     }
-  }, [userId, currentWorkspaceId, loadWorkspaceAccounts])
+  }, [userId, currentWorkspaceId, loadWorkspaceAccounts, setFilterAccount])
 
-  // Get current account object
-  const currentAccount = accounts.find(a => a.id === currentAccountId) || null
+  // Backward compat: currentAccountId = filterAccountId ?? first workspace account
+  const currentAccountId = useMemo(() => {
+    return filterAccountId ?? workspaceAccountIds[0] ?? null
+  }, [filterAccountId, workspaceAccountIds])
 
-  // Compute view mode based on current selection
-  const viewMode: ViewMode = useMemo(() => {
-    if (currentWorkspaceId) return 'workspace'
-    if (dataSource === 'csv') return 'csv'
-    if (currentAccountId) return 'account'
-    return 'none'
-  }, [currentWorkspaceId, currentAccountId, dataSource])
+  // Resolve account objects
+  const filterAccount = useMemo(() => {
+    return filterAccountId ? accounts.find(a => a.id === filterAccountId) || null : null
+  }, [filterAccountId, accounts])
+
+  const currentAccount = useMemo(() => {
+    return currentAccountId ? accounts.find(a => a.id === currentAccountId) || null : null
+  }, [currentAccountId, accounts])
 
   return (
     <AccountContext.Provider value={{
-      currentAccountId,
-      currentAccount,
-      accounts,
-      dataSource,
-      loading,
       currentWorkspaceId,
       currentWorkspace,
       workspaceAccountIds,
-      viewMode,
-      switchAccount,
+      filterAccountId,
+      filterAccount,
+      accounts,
+      dataSource,
+      loading,
+      setFilterAccount,
       switchWorkspace,
       refetch: fetchAccounts,
+      currentAccountId,
+      currentAccount,
     }}>
       {children}
     </AccountContext.Provider>

@@ -82,12 +82,14 @@ export default function ActiveAdsPage() {
       return { storageUrl: ad.storageUrl, imageUrl: ad.imageUrl, thumbnailUrl: ad.thumbnailUrl }
     }
     // 3. Fallback to ad_data Meta CDN URLs (thumbnail_url / image_url with underscores)
+    // For videos: DON'T use the low-res ad.thumbnail_url — let it be null so the card
+    // can eagerly fetch the video source and use <video #t=0.3> for a sharp poster
     if (ad.thumbnail_url || ad.image_url) {
       const isVideo = ad.media_type === 'video' || !!ad.video_id
       return {
         storageUrl: null,
         imageUrl: isVideo ? null : (ad.image_url || ad.thumbnail_url),
-        thumbnailUrl: isVideo ? (ad.thumbnail_url || ad.image_url) : null,
+        thumbnailUrl: isVideo ? null : (ad.thumbnail_url || ad.image_url),
       }
     }
     return { storageUrl: null, imageUrl: null, thumbnailUrl: null }

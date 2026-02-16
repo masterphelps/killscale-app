@@ -6,7 +6,7 @@ import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import type { MediaImage } from '@/app/api/meta/media/route'
 import type { VideoJob } from '@/remotion/types'
-import type { UGCSettings, UGCPromptResult } from '@/lib/video-prompt-templates'
+import type { UGCSettings, UGCPromptResult, ProductVideoScript } from '@/lib/video-prompt-templates'
 import { buildUGCVeoPrompt } from '@/lib/video-prompt-templates'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -250,8 +250,8 @@ export default function AdStudioPage() {
 
   const isPro = !!plan
 
-  // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image, 'image-to-video' = animate image to video
-  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'image-to-video' | null>(null)
+  // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image, 'product-video' = AI-directed product video, 'ugc-video' = UGC testimonial video
+  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'product-video' | 'ugc-video' | null>(null)
 
   // Step tracking
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
@@ -359,7 +359,7 @@ export default function AdStudioPage() {
     mimeType?: string
   }>>([])
 
-  // Image-to-Video state
+  // Video generation state (shared between Product Video and UGC Video)
   const [i2vSelectedImage, setI2vSelectedImage] = useState<{ base64: string; mimeType: string; preview: string; name: string } | null>(null)
   const [i2vShowLibrary, setI2vShowLibrary] = useState(false)
   const [i2vDownloadingLibrary, setI2vDownloadingLibrary] = useState(false)
@@ -392,6 +392,11 @@ export default function AdStudioPage() {
   const [ugcGenerating, setUgcGenerating] = useState(false)
   const [ugcError, setUgcError] = useState<string | null>(null)
 
+  // Product Video state (Director's Review flow)
+  const [productVideoDescription, setProductVideoDescription] = useState('')
+  const [productVideoScript, setProductVideoScript] = useState<ProductVideoScript | null>(null)
+  const [productVideoGenerating, setProductVideoGenerating] = useState(false)
+
   // Helpers for multi-variation video carousel
   const getI2vJobsForIndex = (idx: number): VideoJob[] => i2vJobs[idx] || []
   const getI2vActiveJob = (idx: number): VideoJob | null => {
@@ -421,6 +426,18 @@ export default function AdStudioPage() {
   useEffect(() => {
     refreshCredits()
   }, [refreshCredits])
+
+  // Reset to landing page when sidebar link is clicked while already on this page
+  useEffect(() => {
+    const handleSidebarReset = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.href === '/dashboard/creative-studio/ad-studio' && mode !== null) {
+        resetToModeSelection()
+      }
+    }
+    window.addEventListener('sidebar-nav-reset', handleSidebarReset)
+    return () => window.removeEventListener('sidebar-nav-reset', handleSidebarReset)
+  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pill toggle + add callbacks
   const togglePill = useCallback((category: PillCategory, index: number) => {
@@ -483,10 +500,10 @@ export default function AdStudioPage() {
 
     setProductInfo(assembled)
 
-    // Image-to-video mode goes to step 2 (image selection)
+    // Video modes go to step 2 (image selection)
     // Create mode skips competitor search, goes straight to generate
     // Clone mode with pre-selected ad also skips to generate
-    if (mode === 'image-to-video') {
+    if (mode === 'product-video' || mode === 'ugc-video') {
       setCurrentStep(2)
     } else if (mode === 'create' || selectedAd) {
       setCurrentStep(3)
@@ -1562,6 +1579,10 @@ export default function AdStudioPage() {
     setI2vError(null)
     setI2vGenerateCount(0)
     setI2vSubMode('product')
+    // Reset Product Video state
+    setProductVideoDescription('')
+    setProductVideoScript(null)
+    setProductVideoGenerating(false)
     // Reset UGC state
     setUgcSettings({ gender: 'female', ageRange: 'adult', tone: 'authentic', features: [], clothing: 'Casual', scene: 'indoors', setting: 'Living Room', notes: '' })
     setUgcPrompt(null)
@@ -2115,6 +2136,171 @@ export default function AdStudioPage() {
     }
   }, [i2vSelectedImage, user?.id, currentAccountId, productInfo, ugcPrompt, ugcSettings, i2vCanvasId, productUrl, refreshI2vJobs])
 
+  // ── Product Video Flow (Describe → Write Script → Director's Review → Generate) ───
+
+  // Stage 1: GPT 5.2 writes the structured script from user's freeform description
+  const handleProductVideoWriteScript = useCallback(async () => {
+    if (!productVideoDescription.trim() || !productInfo) return
+
+    setProductVideoGenerating(true)
+    setI2vError(null)
+    setProductVideoScript(null)
+
+    try {
+      const res = await fetch('/api/creative-studio/generate-product-video-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product: {
+            name: productInfo.name,
+            description: productInfo.description,
+            features: productInfo.features,
+            benefits: productInfo.benefits,
+            painPoints: productInfo.painPoints,
+            keyMessages: productInfo.keyMessages,
+            uniqueSellingPoint: productInfo.uniqueSellingPoint,
+            targetAudience: productInfo.targetAudience,
+            category: productInfo.category,
+          },
+          description: productVideoDescription,
+          durationSeconds: i2vDuration,
+          hasProductImage: !!i2vSelectedImage,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setI2vError(data.error || 'Failed to generate script')
+        return
+      }
+
+      setProductVideoScript(data)
+    } catch (err) {
+      setI2vError(err instanceof Error ? err.message : 'Failed to write script')
+    } finally {
+      setProductVideoGenerating(false)
+    }
+  }, [productVideoDescription, productInfo, i2vDuration, i2vSelectedImage])
+
+  // Stage 2: Director approved — send polished script to Veo
+  const handleProductVideoGenerate = useCallback(async () => {
+    if (!i2vSelectedImage || !user?.id || !currentAccountId || !productInfo || !productVideoScript) return
+
+    setI2vGenerating(true)
+    setI2vError(null)
+
+    try {
+      const scriptDuration = productVideoScript.estimatedDuration || 8
+      const isExtended = scriptDuration > 8
+      const apiProvider = isExtended ? 'veo-ext' : 'veo'
+      const numExtensions = isExtended ? Math.round((scriptDuration - 8) / VEO_EXTENSION_STEP) : 0
+      const creditCost = i2vCosts.base + numExtensions * i2vCosts.extension
+
+      // Create canvas if first generation
+      let canvasId = i2vCanvasId
+      if (!canvasId) {
+        const hookText = productVideoScript.overlay?.hook
+          || productInfo.painPoints?.[0]
+          || productInfo.keyMessages?.[0]
+          || productInfo.uniqueSellingPoint
+          || productInfo.benefits?.[0]
+          || productInfo.name
+        const captionSources = [
+          ...(productInfo.benefits || []),
+          ...(productInfo.features || []),
+          ...(productInfo.keyMessages || []),
+        ]
+        const captions = captionSources.slice(0, 3).map(s =>
+          s.length > 60 ? s.slice(0, 57) + '...' : s
+        )
+        const ctaText = productVideoScript.overlay?.cta || (productInfo.price
+          ? `Get it for ${productInfo.price}`
+          : 'Shop Now')
+
+        const canvasRes = await fetch('/api/creative-studio/video-canvas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            productUrl: productUrl || null,
+            productKnowledge: {
+              name: productInfo.name,
+              description: productInfo.description,
+              features: productInfo.features,
+              benefits: productInfo.benefits,
+              painPoints: productInfo.painPoints,
+              keyMessages: productInfo.keyMessages,
+              uniqueSellingPoint: productInfo.uniqueSellingPoint,
+            },
+            concepts: [{
+              title: 'Product Video',
+              angle: 'AI-Directed',
+              logline: `${productVideoDescription.slice(0, 80)}`,
+              visualMetaphor: `AI-directed product showcase — ${productVideoScript.scene}`,
+              whyItWorks: 'Custom directed video brings your exact vision to life.',
+              videoPrompt: productVideoScript.videoPrompt,
+              overlay: { hook: hookText, captions, cta: ctaText },
+            }],
+          }),
+        })
+        const canvasData = await canvasRes.json()
+        if (canvasRes.ok && canvasData.canvas?.id) {
+          canvasId = canvasData.canvas.id
+          setI2vCanvasId(canvasId)
+        }
+      }
+
+      const adIndex = 0
+      const existingJobs = getI2vJobsForIndex(adIndex)
+      const existingCompleted = existingJobs.find(j => j.status === 'complete')
+      const effectiveDuration = existingCompleted
+        ? (existingCompleted.target_duration_seconds || existingCompleted.duration_seconds || scriptDuration)
+        : scriptDuration
+      const effectiveProvider = existingCompleted
+        ? (effectiveDuration > 8 ? 'veo-ext' : 'veo')
+        : apiProvider
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          prompt: productVideoScript.videoPrompt,
+          extensionPrompts: productVideoScript.extensionPrompts,
+          videoStyle: 'image_to_video',
+          durationSeconds: effectiveDuration,
+          productName: productInfo.name,
+          productImageBase64: i2vSelectedImage.base64,
+          productImageMimeType: i2vSelectedImage.mimeType,
+          provider: effectiveProvider,
+          quality: i2vQuality,
+          canvasId: canvasId || null,
+          adIndex,
+          targetDurationSeconds: effectiveProvider === 'veo-ext' ? effectiveDuration : undefined,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          setAiUsage(prev => prev ? { ...prev, remaining: data.remaining || 0 } : prev)
+        }
+        throw new Error(data.error || 'Failed to generate video')
+      }
+
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + creditCost, remaining: Math.max(0, prev.remaining - creditCost) } : prev)
+      setI2vGenerateCount(prev => prev + 1)
+      setI2vCurrentVideoVersion(prev => ({ ...prev, [adIndex]: 0 }))
+      refreshI2vJobs(canvasId || undefined)
+    } catch (err) {
+      setI2vError(err instanceof Error ? err.message : 'Failed to generate video')
+    } finally {
+      setI2vGenerating(false)
+    }
+  }, [i2vSelectedImage, user?.id, currentAccountId, productInfo, productVideoScript, productVideoDescription, i2vDuration, i2vQuality, i2vCanvasId, productUrl, refreshI2vJobs])
+
   // Not Pro - show upgrade prompt
   if (!isPro) {
     return (
@@ -2257,19 +2443,36 @@ export default function AdStudioPage() {
                   </div>
                 </Link>
 
-                {/* Image to Video */}
+                {/* Product Video */}
                 <button
-                  onClick={() => setMode('image-to-video')}
+                  onClick={() => setMode('product-video')}
                   className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-indigo-500/50 hover:bg-bg-card/80 transition-all"
                 >
                   <div className="w-14 h-14 rounded-xl bg-indigo-500/20 flex items-center justify-center mb-4 group-hover:bg-indigo-500/30 transition-colors">
                     <Play className="w-7 h-7 text-indigo-400" />
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Image to Video</h3>
+                  <h3 className="text-xl font-semibold text-white mb-2">Product Video</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed">
-                    Product and UGC videos from images.
+                    Describe your vision, AI directs the shoot.
                   </p>
                   <div className="mt-4 flex items-center gap-2 text-indigo-400 text-sm font-medium">
+                    Get started <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
+
+                {/* UGC Video */}
+                <button
+                  onClick={() => setMode('ugc-video')}
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-cyan-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-cyan-500/20 flex items-center justify-center mb-4 group-hover:bg-cyan-500/30 transition-colors">
+                    <User className="w-7 h-7 text-cyan-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">UGC Video</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    A real person talks about your product on camera.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-cyan-400 text-sm font-medium">
                     Get started <ChevronRight className="w-4 h-4" />
                   </div>
                 </button>
@@ -2286,10 +2489,12 @@ export default function AdStudioPage() {
     return (
       <div className="min-h-screen pb-24">
         <div className="px-4 lg:px-8 py-6">
-          <InspirationGallery
-            onSelectExample={handleSelectInspiration}
-            onBack={() => setMode(null)}
-          />
+          <div className="max-w-[1000px] mx-auto">
+            <InspirationGallery
+              onSelectExample={handleSelectInspiration}
+              onBack={() => setMode(null)}
+            />
+          </div>
         </div>
       </div>
     )
@@ -2454,13 +2659,13 @@ export default function AdStudioPage() {
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <h1 className="text-2xl lg:text-3xl font-bold text-white">
-                {mode === 'create' ? 'Create Ad' : mode === 'upload' ? 'Upload Ad' : mode === 'image-to-video' ? 'Image to Video' : isRefreshMode ? 'Refresh Ad' : 'Clone Ad'}
+                {mode === 'create' ? 'Create Ad' : mode === 'upload' ? 'Upload Ad' : mode === 'product-video' ? 'Product Video' : mode === 'ugc-video' ? 'UGC Video' : isRefreshMode ? 'Refresh Ad' : 'Clone Ad'}
               </h1>
               <span className={cn(
                 'px-2 py-0.5 text-xs font-semibold rounded',
-                mode === 'create' ? 'bg-accent/20 text-accent' : mode === 'upload' ? 'bg-cyan-500/20 text-cyan-400' : mode === 'image-to-video' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-purple-500/20 text-purple-400'
+                mode === 'create' ? 'bg-accent/20 text-accent' : mode === 'upload' ? 'bg-cyan-500/20 text-cyan-400' : mode === 'product-video' ? 'bg-indigo-500/20 text-indigo-400' : mode === 'ugc-video' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-purple-500/20 text-purple-400'
               )}>
-                {mode === 'create' ? 'ORIGINAL' : mode === 'upload' ? 'CUSTOM' : mode === 'image-to-video' ? 'ANIMATE' : isRefreshMode ? 'CREATIVE REFRESH' : 'STYLE MATCH'}
+                {mode === 'create' ? 'ORIGINAL' : mode === 'upload' ? 'CUSTOM' : mode === 'product-video' ? 'AI DIRECTED' : mode === 'ugc-video' ? 'UGC' : isRefreshMode ? 'CREATIVE REFRESH' : 'STYLE MATCH'}
               </span>
             </div>
             <p className="text-zinc-500 mt-1 ml-7">
@@ -2468,8 +2673,10 @@ export default function AdStudioPage() {
                 ? 'Generate original ads from your product page'
                 : mode === 'upload'
                 ? 'Generate ads from your uploaded image'
-                : mode === 'image-to-video'
-                ? 'Animate an image into a short video ad'
+                : mode === 'product-video'
+                ? 'Describe your vision, AI writes the script'
+                : mode === 'ugc-video'
+                ? 'A real person talks about your product on camera'
                 : isRefreshMode
                 ? 'Create fresh variations of your winning ad'
                 : 'Generate ads that match a winning style'}
@@ -2524,19 +2731,19 @@ export default function AdStudioPage() {
 
               <div className={cn(
                 'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-                currentStep === 3 || ((mode === 'create' || mode === 'image-to-video') && currentStep === 2) ? 'text-white' : 'text-zinc-500'
+                currentStep === 3 || ((mode === 'create' || mode === 'product-video' || mode === 'ugc-video') && currentStep === 2) ? 'text-white' : 'text-zinc-500'
               )}>
                 <span className={cn(
                   'w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold',
-                  (mode === 'image-to-video' ? Object.keys(i2vJobs).length > 0 : generatedAds.length > 0)
+                  ((mode === 'product-video' || mode === 'ugc-video') ? Object.keys(i2vJobs).length > 0 : generatedAds.length > 0)
                     ? 'bg-emerald-500 text-white'
-                    : (currentStep === 3 || ((mode === 'create' || mode === 'image-to-video') && currentStep === 2))
-                      ? (mode === 'image-to-video' ? 'bg-indigo-500 text-white' : 'bg-accent text-white')
+                    : (currentStep === 3 || ((mode === 'create' || mode === 'product-video' || mode === 'ugc-video') && currentStep === 2))
+                      ? (mode === 'product-video' ? 'bg-indigo-500 text-white' : mode === 'ugc-video' ? 'bg-cyan-500 text-white' : 'bg-accent text-white')
                       : 'bg-zinc-700'
                 )}>
-                  {(mode === 'image-to-video' ? Object.keys(i2vJobs).length > 0 : generatedAds.length > 0) ? '✓' : mode === 'clone' ? '3' : '2'}
+                  {((mode === 'product-video' || mode === 'ugc-video') ? Object.keys(i2vJobs).length > 0 : generatedAds.length > 0) ? '✓' : mode === 'clone' ? '3' : '2'}
                 </span>
-                {mode === 'image-to-video' ? 'Image + Generate' : 'Generate'}
+                {mode === 'product-video' ? 'Image + Generate' : mode === 'ugc-video' ? 'Image + Generate' : 'Generate'}
               </div>
             </div>
           )}
@@ -2664,8 +2871,8 @@ export default function AdStudioPage() {
                     </div>
 
                     <div className="space-y-4">
-                      {/* Product image upload — hidden for i2v since Step 2 handles images */}
-                      {mode !== 'image-to-video' && (
+                      {/* Product image upload — hidden for video modes since Step 2 handles images */}
+                      {mode !== 'product-video' && mode !== 'ugc-video' && (
                         <div>
                           <label className="block text-sm text-zinc-400 mb-2">Product Image</label>
                           {manualProductImage ? (
@@ -2845,64 +3052,69 @@ export default function AdStudioPage() {
                 </button>
               </div>
 
-              {/* Warning when no product image was extracted */}
-              {!productInfo.imageBase64 && (
-                <div className="mt-3 flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-amber-300">No product image found on this page. Image generation will use text-only mode which may produce lower quality results.</p>
-                    <label className="inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-sm cursor-pointer transition-colors">
-                      <Upload className="w-3.5 h-3.5" />
-                      Upload product image
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleAddProductImage}
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
+              {/* Image-related controls — hidden for video modes (they have their own image selection card) */}
+              {mode !== 'product-video' && mode !== 'ugc-video' && (
+                <>
+                  {/* Warning when no product image was extracted */}
+                  {!productInfo.imageBase64 && (
+                    <div className="mt-3 flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-amber-300">No product image found on this page. Image generation will use text-only mode which may produce lower quality results.</p>
+                        <label className="inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-sm cursor-pointer transition-colors">
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload product image
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleAddProductImage}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
 
-              {/* Success indicator when product image was added manually */}
-              {productInfo.imageBase64 && !productInfo.imageUrl && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-emerald-400">
-                  <Check className="w-4 h-4" />
-                  Product image added
-                </div>
-              )}
+                  {/* Success indicator when product image was added manually */}
+                  {productInfo.imageBase64 && !productInfo.imageUrl && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-emerald-400">
+                      <Check className="w-4 h-4" />
+                      Product image added
+                    </div>
+                  )}
 
-              {/* Product image picker — shown when multiple images extracted */}
-              {productImageOptions.length > 1 && (
-                <div className="mt-4">
-                  <label className="text-xs font-medium text-zinc-400 mb-2 block">Product image — click to change</label>
-                  <div className="flex flex-wrap gap-2">
-                    {productImageOptions.map((img, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSelectProductImage(i)}
-                        className={cn(
-                          'relative w-14 h-14 rounded-lg overflow-hidden border-2 transition-all',
-                          selectedProductImageIdx === i
-                            ? 'border-purple-500 ring-2 ring-purple-500/30'
-                            : 'border-border hover:border-zinc-500'
-                        )}
-                      >
-                        <img
-                          src={`data:${img.mimeType};base64,${img.base64}`}
-                          alt={img.description || `Image ${i + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                        {selectedProductImageIdx === i && (
-                          <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
-                            <Check className="w-3.5 h-3.5 text-white" />
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                  {/* Product image picker — shown when multiple images extracted */}
+                  {productImageOptions.length > 1 && (
+                    <div className="mt-4">
+                      <label className="text-xs font-medium text-zinc-400 mb-2 block">Product image — click to change</label>
+                      <div className="flex flex-wrap gap-2">
+                        {productImageOptions.map((img, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleSelectProductImage(i)}
+                            className={cn(
+                              'relative w-14 h-14 rounded-lg overflow-hidden border-2 transition-all',
+                              selectedProductImageIdx === i
+                                ? 'border-purple-500 ring-2 ring-purple-500/30'
+                                : 'border-border hover:border-zinc-500'
+                            )}
+                          >
+                            <img
+                              src={`data:${img.mimeType};base64,${img.base64}`}
+                              alt={img.description || `Image ${i + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {selectedProductImageIdx === i && (
+                              <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
+                                <Check className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -3242,8 +3454,8 @@ export default function AdStudioPage() {
             </div>
           )}
 
-          {/* Step 2: Image-to-Video — Select image, prompt, generate */}
-          {currentStep === 2 && mode === 'image-to-video' && (
+          {/* Step 2: Product Video / UGC Video — Select image, prompt, generate */}
+          {currentStep === 2 && (mode === 'product-video' || mode === 'ugc-video') && (
             <div className="space-y-6">
               {/* Image Selection */}
               <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
@@ -3449,63 +3661,23 @@ export default function AdStudioPage() {
                 )}
               </div>
 
-              {/* Mode Cards — Product Video vs UGC Video */}
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => setI2vSubMode('product')}
-                  className={cn(
-                    'group p-5 rounded-xl border-2 text-left transition-all',
-                    i2vSubMode === 'product'
-                      ? 'border-indigo-500 bg-indigo-500/10'
-                      : 'border-zinc-700/50 bg-bg-card hover:border-indigo-500/40 hover:bg-bg-card/80'
-                  )}
-                >
-                  <div className={cn(
-                    'w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors',
-                    i2vSubMode === 'product' ? 'bg-indigo-500/30' : 'bg-indigo-500/10 group-hover:bg-indigo-500/20'
-                  )}>
-                    <Play className="w-5 h-5 text-indigo-400" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-white mb-1">Product Video</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">Animate your image — describe the motion and Veo brings it to life.</p>
-                </button>
-                <button
-                  onClick={() => setI2vSubMode('ugc')}
-                  className={cn(
-                    'group p-5 rounded-xl border-2 text-left transition-all',
-                    i2vSubMode === 'ugc'
-                      ? 'border-cyan-500 bg-cyan-500/10'
-                      : 'border-zinc-700/50 bg-bg-card hover:border-cyan-500/40 hover:bg-bg-card/80'
-                  )}
-                >
-                  <div className={cn(
-                    'w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors',
-                    i2vSubMode === 'ugc' ? 'bg-cyan-500/30' : 'bg-cyan-500/10 group-hover:bg-cyan-500/20'
-                  )}>
-                    <User className="w-5 h-5 text-cyan-400" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-white mb-1">UGC Video</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">A real person talks about your product on camera.</p>
-                </button>
-              </div>
-
-              {/* Product Video — Motion Prompt + Duration + Generate */}
-              {i2vSubMode === 'product' && (
+              {/* Product Video — Describe Vision + Write Script + Director's Review + Generate */}
+              {mode === 'product-video' && (
               <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Play className="w-5 h-5 text-indigo-400" />
-                  Describe the Motion
+                  Describe Your Video
                 </h2>
 
                 <textarea
-                  value={i2vPrompt}
-                  onChange={(e) => setI2vPrompt(e.target.value)}
-                  placeholder="e.g., 'Slowly zoom in while the product rotates, particles float upward, cinematic lighting shifts from cool to warm'"
+                  value={productVideoDescription}
+                  onChange={(e) => setProductVideoDescription(e.target.value)}
+                  placeholder="e.g., 'I want the product floating in space, slowly rotating with soft particles drifting around it, cinematic lighting shifts from cool blue to warm gold, camera slowly orbits around...'"
                   className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 resize-none"
-                  rows={3}
+                  rows={5}
                 />
                 <p className="text-xs text-zinc-500">
-                  Describe camera movement, effects, and atmosphere. Veo will animate your still image.
+                  Describe what you want to see. AI will write the exact video prompts.
                 </p>
 
                 {/* Duration Stepper */}
@@ -3564,44 +3736,216 @@ export default function AdStudioPage() {
                   </div>
                 </div>
 
-                {/* Credits remaining */}
-                {aiUsage && (
-                  <div className="text-xs text-zinc-500">
-                    {aiUsage.remaining} credits remaining
-                  </div>
-                )}
-
                 {/* Error */}
-                {i2vError && (
+                {i2vError && !productVideoScript && (
                   <div className="flex items-center gap-2 text-red-400 text-sm">
                     <AlertCircle className="w-4 h-4" />
                     {i2vError}
                   </div>
                 )}
 
-                {/* Generate Button */}
-                <button
-                  onClick={handleI2vGenerate}
-                  disabled={!i2vSelectedImage || !i2vPrompt.trim() || i2vGenerating || (aiUsage ? aiUsage.remaining < i2vCreditCost : false)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-indigo-500 text-white font-medium hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                >
-                  {i2vGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Starting generation...
-                    </>
-                  ) : (
-                    <>
-                      <Video className="w-4 h-4" />
-                      Generate {i2vDuration}s Video · {i2vCreditCost} credits
-                    </>
-                  )}
-                </button>
+                {/* Stage 1: Write Script button — shown when no script yet */}
+                {!productVideoScript && (
+                  <button
+                    onClick={handleProductVideoWriteScript}
+                    disabled={!i2vSelectedImage || !productVideoDescription.trim() || productVideoGenerating}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-indigo-500 text-white font-medium hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                  >
+                    {productVideoGenerating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Writing script...
+                      </>
+                    ) : (
+                      <>
+                        <Pencil className="w-4 h-4" />
+                        Write Script · 0 credits
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {/* Stage 2: Director's Review — shown after GPT returns script */}
+                {productVideoScript && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+                      <Clapperboard className="w-4 h-4 text-amber-400" />
+                      <span className="text-sm font-semibold text-amber-300">Director&apos;s Review</span>
+                      <span className="ml-auto text-xs text-amber-400/60">Edit before generating</span>
+                    </div>
+
+                    <div className="p-4 space-y-4">
+                      {/* Scene — editable */}
+                      <div>
+                        <label className="text-xs font-medium text-zinc-400 mb-1 block">Scene</label>
+                        <input
+                          type="text"
+                          value={productVideoScript.scene}
+                          onChange={(e) => setProductVideoScript(prev => prev ? { ...prev, scene: e.target.value } : prev)}
+                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                        />
+                      </div>
+
+                      {/* Mood — editable */}
+                      <div>
+                        <label className="text-xs font-medium text-zinc-400 mb-1 block">Mood</label>
+                        <input
+                          type="text"
+                          value={productVideoScript.mood}
+                          onChange={(e) => setProductVideoScript(prev => prev ? { ...prev, mood: e.target.value } : prev)}
+                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                        />
+                      </div>
+
+                      {/* Full Veo Prompt — collapsible */}
+                      <details className="group" open>
+                        <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                          Veo Prompt (first 8s)
+                        </summary>
+                        <textarea
+                          value={productVideoScript.videoPrompt}
+                          onChange={(e) => setProductVideoScript(prev => prev ? { ...prev, videoPrompt: e.target.value } : prev)}
+                          className="w-full mt-2 bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                          rows={8}
+                        />
+                      </details>
+
+                      {/* Extension Prompts — if segmented video */}
+                      {productVideoScript.extensionPrompts && productVideoScript.extensionPrompts.length > 0 && (
+                        <details className="group">
+                          <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                            Extension Prompts ({productVideoScript.extensionPrompts.length})
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {productVideoScript.extensionPrompts.map((ep, idx) => (
+                              <div key={idx}>
+                                <label className="text-xs text-zinc-500 mb-1 block">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
+                                <textarea
+                                  value={ep}
+                                  onChange={(e) => setProductVideoScript(prev => {
+                                    if (!prev?.extensionPrompts) return prev
+                                    const updated = [...prev.extensionPrompts!]
+                                    updated[idx] = e.target.value
+                                    return { ...prev, extensionPrompts: updated }
+                                  })}
+                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                                  rows={4}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* Overlay — Hook + CTA */}
+                      {productVideoScript.overlay && (
+                        <div className="space-y-3 pt-1 border-t border-amber-500/10">
+                          <p className="text-xs font-medium text-amber-300/80">Text Overlays</p>
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-1 block">Hook Text <span className="text-zinc-600 font-normal">(first 2s)</span></label>
+                            <input
+                              type="text"
+                              value={productVideoScript.overlay.hook}
+                              onChange={(e) => setProductVideoScript(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, hook: e.target.value } } : prev)}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                              placeholder="e.g. See the Difference"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-1 block">CTA Button</label>
+                            <input
+                              type="text"
+                              value={productVideoScript.overlay.cta}
+                              onChange={(e) => setProductVideoScript(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, cta: e.target.value } } : prev)}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                              placeholder="e.g. Shop Now"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Budget line — duration + credit cost */}
+                      {(() => {
+                        const dur = productVideoScript.estimatedDuration || 8
+                        const exts = dur > 8 ? Math.round((dur - 8) / 7) : 0
+                        const cost = i2vCosts.base + exts * i2vCosts.extension
+                        const canAfford = aiUsage ? aiUsage.remaining >= cost : true
+                        return (
+                          <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-white tabular-nums">{dur}s video</p>
+                              <p className="text-xs text-zinc-500">
+                                {exts === 0 ? 'Single clip' : `8s base + ${exts} extension${exts > 1 ? 's' : ''}`}
+                                {' · '}{i2vQuality === 'premium' ? '1080p' : '720p'}
+                              </p>
+                            </div>
+                            <div className="text-right space-y-0.5">
+                              <p className={cn('text-sm font-bold tabular-nums', canAfford ? 'text-amber-400' : 'text-red-400')}>
+                                {cost} credits
+                              </p>
+                              {aiUsage && (
+                                <p className="text-xs text-zinc-500">{aiUsage.remaining} remaining</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Error */}
+                      {i2vError && (
+                        <div className="flex items-center gap-2 text-red-400 text-sm">
+                          <AlertCircle className="w-4 h-4" />
+                          {i2vError}
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      {(() => {
+                        const dur = productVideoScript.estimatedDuration || 8
+                        const exts = dur > 8 ? Math.round((dur - 8) / 7) : 0
+                        const cost = i2vCosts.base + exts * i2vCosts.extension
+                        const canAfford = aiUsage ? aiUsage.remaining >= cost : true
+                        return (
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={handleProductVideoGenerate}
+                              disabled={i2vGenerating || !canAfford}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                            >
+                              {i2vGenerating ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Generating {dur}s video...
+                                </>
+                              ) : (
+                                <>
+                                  <Clapperboard className="w-4 h-4" />
+                                  Generate ({cost} credits)
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => { setProductVideoScript(null); handleProductVideoWriteScript() }}
+                              disabled={productVideoGenerating || i2vGenerating}
+                              className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                              title="Rewrite script"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
               )}
 
               {/* UGC Video — Presenter Settings + Generate */}
-              {i2vSubMode === 'ugc' && (
+              {mode === 'ugc-video' && (
               <div className="bg-bg-card border border-border rounded-xl p-6 space-y-5">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <User className="w-5 h-5 text-cyan-400" />
@@ -4113,7 +4457,7 @@ export default function AdStudioPage() {
                                 Edit Video
                               </button>
                               <button
-                                onClick={() => handleI2vGenerate()}
+                                onClick={() => mode === 'product-video' ? handleProductVideoGenerate() : handleI2vGenerate()}
                                 disabled={i2vGenerating}
                                 className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border disabled:opacity-50"
                               >
@@ -4144,7 +4488,7 @@ export default function AdStudioPage() {
                             <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
                             <p className="text-sm text-red-400">{activeJob.error_message || 'Generation failed'}</p>
                             <button
-                              onClick={() => handleI2vGenerate()}
+                              onClick={() => mode === 'product-video' ? handleProductVideoGenerate() : handleI2vGenerate()}
                               className="mt-3 px-4 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
                             >
                               Try Again

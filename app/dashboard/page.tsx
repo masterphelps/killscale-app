@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity, Settings, Plus } from 'lucide-react'
+import { Lock, Trash2, RefreshCw, UserPlus, ShoppingBag, Activity, Plus } from 'lucide-react'
 import { StatCard, StatIcons } from '@/components/stat-card'
 import { PrimaryStatCard } from '@/components/primary-stat-card'
+import { MetaLogo } from '@/components/platform-logos'
 import { BudgetStatCard } from '@/components/budget-stat-card'
 import { SecondaryStatsPills } from '@/components/secondary-stats-pills'
 import { PerformanceTable, HierarchyNode } from '@/components/performance-table'
@@ -16,6 +17,7 @@ import { BulkActionToolbar, SelectedItem } from '@/components/bulk-action-toolba
 import { BulkOperationProgress } from '@/components/bulk-operation-progress'
 import { LogWalkinModal } from '@/components/log-walkin-modal'
 import { StarredAdsPopover } from '@/components/starred-ads-popover'
+import { AccountFilterPills } from '@/components/account-filter-pills'
 import { LaunchWizard, StarredAdForWizard } from '@/components/launch-wizard'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { SyncOverlay } from '@/components/sync-overlay'
@@ -405,9 +407,6 @@ export default function DashboardPage() {
   const [performanceSetAdIds, setPerformanceSetAdIds] = useState<string[]>([])
   // Manual events aggregated by ad_id: { [ad_id]: { revenue, count } }
   const [manualEventsByAd, setManualEventsByAd] = useState<Record<string, { revenue: number; count: number }>>({})
-  // Workspace attribution display toggle
-  const [showAttribution, setShowAttribution] = useState(true)
-  const [showAttributionSettings, setShowAttributionSettings] = useState(false)
   // Bulk selection state
   const [bulkSelectedItems, setBulkSelectedItems] = useState<Map<string, SelectedItem>>(new Map())
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -423,7 +422,7 @@ export default function DashboardPage() {
   } | null>(null)
   const { plan } = useSubscription()
   const { user } = useAuth()
-  const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId } = useAccount()
+  const { currentAccountId, accounts, workspaceAccountIds, currentWorkspaceId, filterAccountId, setFilterAccount } = useAccount()
   const {
     isKillScaleActive,
     attributionData,
@@ -442,6 +441,16 @@ export default function DashboardPage() {
     refreshUppromoteAttribution
   } = useAttribution()
   const searchParams = useSearchParams()
+
+  // Reset sort field when business type changes and current field is invalid
+  useEffect(() => {
+    const validFields = businessType === 'leadgen'
+      ? ['name', 'spend', 'results', 'cpr']
+      : ['name', 'spend', 'revenue', 'roas']
+    if (!validFields.includes(sortField)) {
+      setSortField('spend')
+    }
+  }, [businessType, sortField])
 
   // Shopify embed detection logging - TEMPORARY
   useEffect(() => {
@@ -483,24 +492,6 @@ export default function DashboardPage() {
   useEffect(() => {
     localStorage.setItem('killscale_viewMode', viewMode)
   }, [viewMode])
-
-  // Load/save showAttribution preference per workspace
-  useEffect(() => {
-    if (currentWorkspaceId) {
-      const saved = localStorage.getItem(`killscale_workspace_${currentWorkspaceId}_showAttribution`)
-      if (saved !== null) {
-        setShowAttribution(saved === 'true')
-      } else {
-        setShowAttribution(true) // default to true for new workspaces
-      }
-    }
-  }, [currentWorkspaceId])
-
-  useEffect(() => {
-    if (currentWorkspaceId) {
-      localStorage.setItem(`killscale_workspace_${currentWorkspaceId}_showAttribution`, String(showAttribution))
-    }
-  }, [currentWorkspaceId, showAttribution])
 
   // Save date preferences when they change
   useEffect(() => {
@@ -653,8 +644,6 @@ export default function DashboardPage() {
   }
   
   const canSync = true // All plans can sync via Meta API
-  const planLower = plan?.toLowerCase() || ''
-  const isProPlus = !!planLower
   
   // Initial data load - checks last_sync_at to decide if sync is needed
   useEffect(() => {
@@ -3029,36 +3018,35 @@ export default function DashboardPage() {
     })
     const totalSpend = metaSpend + googleSpend
 
-    // Calculate attributed revenue/results by platform (from Shopify attribution)
-    // Iterate over ALL Shopify attribution entries and detect platform
+    // Calculate ad-attributed revenue/results by platform
+    // Uses Meta/Google API reported revenue per ad — same source as `totals` computation
+    // "Attributed" = revenue that ad platforms claim their ads generated
     let metaAttributedRevenue = 0
     let metaAttributedResults = 0
     let googleAttributedRevenue = 0
     let googleAttributedResults = 0
 
-    // Iterate over all Shopify attribution entries and match to platform
-    // This catches revenue from paused/old ads not in current date selection
-    Object.entries(shopifyAttribution).forEach(([adId, shopifyData]) => {
-      const platform = detectPlatformFromAdId(adId)
-      if (platform === 'google') {
-        googleAttributedRevenue += shopifyData.revenue
-        googleAttributedResults += shopifyData.orders
-      } else if (platform === 'meta') {
-        metaAttributedRevenue += shopifyData.revenue
-        metaAttributedResults += shopifyData.orders
+    selectedData.forEach(row => {
+      const rev = (row as any)._metaRevenue || row.revenue || 0
+      const purchases = (row as any)._metaPurchases || row.purchases || 0
+      if (row._platform === 'google') {
+        googleAttributedRevenue += rev
+        googleAttributedResults += purchases
+      } else {
+        metaAttributedRevenue += rev
+        metaAttributedResults += purchases
       }
-      // If platform is null (e.g., "link_in_bio"), skip - it stays in "attributed" but not platform-specific
     })
+    const totalAttributedRevenue = metaAttributedRevenue + googleAttributedRevenue
+    const totalAttributedResults = metaAttributedResults + googleAttributedResults
 
     // Use shopifyTotals for the hero values - this is the source of truth from Shopify
-    // The per-platform breakdown shows what we can match to the current ads
     const shopifyTotalRevenue = shopifyTotals?.total_revenue ?? 0
     const shopifyTotalResults = shopifyTotals?.total_orders ?? 0
-    const totalAttributedRevenue = shopifyTotals?.attributed_revenue ?? 0
-    const totalAttributedResults = shopifyTotals?.attributed_orders ?? 0
 
     // Calculate ROAS values
     const blendedRoas = totalSpend > 0 ? shopifyTotalRevenue / totalSpend : 0
+    const attributedRoas = totalSpend > 0 ? totalAttributedRevenue / totalSpend : 0
     const metaRoas = metaSpend > 0 ? metaAttributedRevenue / metaSpend : 0
     const googleRoas = googleSpend > 0 ? googleAttributedRevenue / googleSpend : 0
 
@@ -3085,6 +3073,7 @@ export default function DashboardPage() {
       },
       roas: {
         blended: blendedRoas,
+        attributed: attributedRoas,
         meta: metaRoas,
         google: googleRoas
       },
@@ -3428,6 +3417,14 @@ export default function DashboardPage() {
             )}
           </div>
 
+          {/* Account filter pills */}
+          <AccountFilterPills
+            accounts={accounts}
+            workspaceAccountIds={workspaceAccountIds}
+            filterAccountId={filterAccountId}
+            onFilterChange={setFilterAccount}
+          />
+
           {/* Action buttons - wrap on mobile, single row on desktop */}
           <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap">
             {data.length > 0 && (
@@ -3480,8 +3477,8 @@ export default function DashboardPage() {
               )}
             </button>
 
-            {/* Log Walk-In Button - Pro+ with KillScale pixel only */}
-            {isProPlus && isKillScaleActive && currentWorkspaceId && (
+            {/* Log Walk-In Button - with KillScale pixel only */}
+            {isKillScaleActive && currentWorkspaceId && (
               <button
                 onClick={() => setShowWalkinModal(true)}
                 className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
@@ -3493,13 +3490,11 @@ export default function DashboardPage() {
             )}
 
             {/* Starred Ads Badge + Popover */}
-            {isProPlus && (
-              <StarredAdsPopover
+            <StarredAdsPopover
                 starredAds={starredAds}
                 onBuildPerformanceSet={handleBuildPerformanceSet}
                 onUnstarAd={handleUnstarAd}
               />
-            )}
 
             {/* Delete Button - always visible, far right */}
             {data.length > 0 && (
@@ -3589,71 +3584,54 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Revenue Source Indicator + Workspace Settings */}
-          <div className="flex items-center justify-between mb-3 max-w-[1400px]">
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              {revenueSource === 'shopify' && (
-                <>
-                  <ShoppingBag className="w-3 h-3 text-green-400" />
-                  <span>Revenue from Shopify</span>
-                </>
-              )}
-              {revenueSource === 'pixel' && (
-                <>
-                  <Activity className="w-3 h-3 text-blue-400" />
-                  <span>Revenue from KillScale Pixel</span>
-                </>
-              )}
-              {revenueSource === 'meta' && (
-                <span className="text-zinc-500">Revenue from Meta API</span>
-              )}
-            </div>
-
-            {/* Workspace Stats Settings */}
-            {currentWorkspaceId && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowAttributionSettings(!showAttributionSettings)}
-                  className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-bg-hover rounded-lg transition-colors"
-                  title="Stats display settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-
-                {showAttributionSettings && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setShowAttributionSettings(false)}
-                    />
-                    <div className="absolute right-0 top-full mt-1 z-50 bg-bg-card border border-border rounded-lg shadow-xl p-3 min-w-[200px]">
-                      <div className="text-xs font-medium text-zinc-400 mb-2">Display Settings</div>
-                      <label className="flex items-center justify-between gap-3 cursor-pointer group">
-                        <span className="text-sm text-zinc-300 group-hover:text-white">Show Attribution</span>
-                        <button
-                          onClick={() => setShowAttribution(!showAttribution)}
-                          className={`relative w-10 h-5 rounded-full transition-colors ${
-                            showAttribution ? 'bg-accent' : 'bg-zinc-600'
-                          }`}
-                        >
-                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                            showAttribution ? 'translate-x-5' : 'translate-x-0.5'
-                          }`} />
-                        </button>
-                      </label>
-                      <p className="text-xs text-zinc-500 mt-2">
-                        {showAttribution ? 'Platform breakdown visible' : 'Platform breakdown hidden'}
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Primary Stats Row - 4 cards, fixed height */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
-            {revenueSource === 'shopify' ? (
+            {businessType === 'leadgen' ? (() => {
+              // Per-platform results and CPR for lead gen cards
+              const metaResults = selectedData.filter(r => r._platform !== 'google').reduce((sum, r) => sum + (r.results || 0), 0)
+              const googleResults = selectedData.filter(r => r._platform === 'google').reduce((sum, r) => sum + (r.results || 0), 0)
+              const metaSpendLG = selectedData.filter(r => r._platform !== 'google').reduce((sum, r) => sum + r.spend, 0)
+              const googleSpendLG = selectedData.filter(r => r._platform === 'google').reduce((sum, r) => sum + r.spend, 0)
+              const metaCpr = metaResults > 0 ? metaSpendLG / metaResults : 0
+              const googleCpr = googleResults > 0 ? googleSpendLG / googleResults : 0
+              return (
+                <>
+                  <PrimaryStatCard
+                    label="Spend"
+                    value={totals.spend}
+                    prefix="$"
+                    platforms={{
+                      meta: metaSpendLG > 0 ? `$${metaSpendLG.toLocaleString()}` : null,
+                      google: googleSpendLG > 0 ? `$${googleSpendLG.toLocaleString()}` : null
+                    }}
+                  />
+                  <PrimaryStatCard
+                    label="Results"
+                    value={totals.results}
+                    subtitle={totals.results > 0 ? 'conversions' : undefined}
+                    platforms={{
+                      meta: metaResults > 0 ? `${metaResults.toLocaleString()}` : null,
+                      google: googleResults > 0 ? `${googleResults.toLocaleString()}` : null
+                    }}
+                  />
+                  <PrimaryStatCard
+                    label="Cost Per Result"
+                    value={totals.cpr > 0 ? totals.cpr.toFixed(2) : '—'}
+                    prefix={totals.cpr > 0 ? '$' : ''}
+                    subtitle="spend ÷ results"
+                    platforms={{
+                      meta: metaCpr > 0 ? `$${metaCpr.toFixed(2)}` : null,
+                      google: googleCpr > 0 ? `$${googleCpr.toFixed(2)}` : null
+                    }}
+                  />
+                  <BudgetStatCard
+                    total={budgetTotals.total}
+                    meta={budgetTotals.meta}
+                    google={budgetTotals.google}
+                  />
+                </>
+              )
+            })() : revenueSource === 'shopify' ? (
               <>
                 <PrimaryStatCard
                   label={FEATURES.UPPROMOTE && hasUppromote ? "Total Costs" : "Spend"}
@@ -3671,24 +3649,46 @@ export default function DashboardPage() {
                   label="Revenue"
                   value={blendedStats.revenue.total}
                   prefix="$"
+                  badge={{ icon: <ShoppingBag className="w-3 h-3 text-green-400" />, text: "Shopify" }}
                   subtitle={blendedStats.results.total > 0
                     ? `${blendedStats.results.total} orders`
                     : undefined
                   }
-                  platforms={showAttribution ? {
-                    meta: blendedStats.revenue.metaAttributed > 0 ? `$${blendedStats.revenue.metaAttributed.toLocaleString()}` : null,
-                    google: blendedStats.revenue.googleAttributed > 0 ? `$${blendedStats.revenue.googleAttributed.toLocaleString()}` : null
+                  attributionSplit={blendedStats.revenue.total > 0 ? {
+                    primaryLabel: "Ad-Attributed",
+                    primaryValue: `$${blendedStats.revenue.attributed.toLocaleString()}`,
+                    primaryColor: "text-emerald-400",
+                    secondaryLabel: "Organic",
+                    secondaryValue: `$${(blendedStats.revenue.total - blendedStats.revenue.attributed).toLocaleString()}`,
+                    barPercent: blendedStats.revenue.total > 0
+                      ? Math.round((blendedStats.revenue.attributed / blendedStats.revenue.total) * 100)
+                      : 0,
+                    barPrimaryColor: "bg-emerald-500",
+                    barSecondaryColor: "bg-zinc-600",
                   } : undefined}
+                  platforms={{
+                    meta: blendedStats.spend.meta > 0 ? `$${blendedStats.revenue.metaAttributed.toLocaleString()}` : null,
+                    google: blendedStats.spend.google > 0 ? `$${blendedStats.revenue.googleAttributed.toLocaleString()}` : null
+                  }}
                 />
                 <PrimaryStatCard
                   label={FEATURES.UPPROMOTE && hasUppromote ? "True ROAS" : "ROAS"}
                   value={FEATURES.UPPROMOTE && hasUppromote ? trueRoas.toFixed(2) : blendedStats.roas.blended.toFixed(2)}
                   suffix="x"
-                  subtitle={FEATURES.UPPROMOTE && hasUppromote ? "rev ÷ total costs" : "rev ÷ spend"}
-                  platforms={(!currentWorkspaceId || showAttribution) ? {
-                    meta: blendedStats.roas.meta > 0 ? `${blendedStats.roas.meta.toFixed(2)}x` : null,
-                    google: blendedStats.roas.google > 0 ? `${blendedStats.roas.google.toFixed(2)}x` : null
+                  subtitle={FEATURES.UPPROMOTE && hasUppromote ? "blended (rev ÷ total costs)" : "blended (all rev ÷ spend)"}
+                  attributionSplit={blendedStats.spend.total > 0 ? {
+                    primaryLabel: "Attributed",
+                    primaryValue: `${blendedStats.roas.attributed.toFixed(2)}x`,
+                    primaryColor: "text-blue-400",
+                    secondaryLabel: "Blended",
+                    secondaryValue: `${(FEATURES.UPPROMOTE && hasUppromote ? trueRoas : blendedStats.roas.blended).toFixed(2)}x`,
+                    barPrimaryColor: "bg-blue-500",
+                    barSecondaryColor: "bg-zinc-600",
                   } : undefined}
+                  platforms={{
+                    meta: blendedStats.spend.meta > 0 ? `${blendedStats.roas.meta.toFixed(2)}x` : null,
+                    google: blendedStats.spend.google > 0 ? `${blendedStats.roas.google.toFixed(2)}x` : null
+                  }}
                 />
                 <BudgetStatCard
                   total={budgetTotals.total}
@@ -3711,26 +3711,30 @@ export default function DashboardPage() {
                   label="Revenue"
                   value={totals.revenue}
                   prefix="$"
+                  badge={revenueSource === 'pixel'
+                    ? { icon: <Activity className="w-3 h-3 text-blue-400" />, text: "Pixel" }
+                    : { icon: <MetaLogo size="sm" />, text: "Meta" }
+                  }
                   subtitle={totals.results > 0
                     ? `${totals.results} results`
                     : totals.manualCount > 0
                       ? `+${totals.manualCount} manual`
                       : undefined
                   }
-                  platforms={(!currentWorkspaceId || showAttribution) ? {
+                  platforms={{
                     meta: isGoogleAccount(selectedAccountId) ? null : `$${totals.revenue.toLocaleString()}`,
                     google: isGoogleAccount(selectedAccountId) ? `$${totals.revenue.toLocaleString()}` : null
-                  } : undefined}
+                  }}
                 />
                 <PrimaryStatCard
                   label="ROAS"
                   value={totals.roas.toFixed(2)}
                   suffix="x"
                   subtitle="rev ÷ spend"
-                  platforms={(!currentWorkspaceId || showAttribution) ? {
+                  platforms={{
                     meta: isGoogleAccount(selectedAccountId) ? null : `${totals.roas.toFixed(2)}x`,
                     google: isGoogleAccount(selectedAccountId) ? `${totals.roas.toFixed(2)}x` : null
-                  } : undefined}
+                  }}
                 />
                 <BudgetStatCard
                   total={budgetTotals.total}
@@ -3743,7 +3747,12 @@ export default function DashboardPage() {
 
           {/* Secondary Stats Pills */}
           <SecondaryStatsPills
-            metrics={[
+            metrics={businessType === 'leadgen' ? [
+              { label: 'CPM', value: formatCPM(totals.spend, totals.impressions) },
+              { label: 'CPC', value: formatCPC(totals.spend, totals.clicks) },
+              { label: 'CPR', value: totals.cpr > 0 ? `$${totals.cpr.toFixed(2)}` : '—' },
+              { label: 'Result Rate', value: totals.clicks > 0 ? `${((totals.results / totals.clicks) * 100).toFixed(2)}%` : '—' },
+            ] : [
               { label: 'CPM', value: formatCPM(totals.spend, totals.impressions) },
               { label: 'CPC', value: formatCPC(totals.spend, totals.clicks) },
               { label: 'AOV', value: formatAOV(totals.revenue, totals.purchases) },
@@ -3789,43 +3798,55 @@ export default function DashboardPage() {
             <div className="ml-auto flex items-center gap-4">
               {/* Sort Dropdown */}
               <div className="relative">
-                <button
-                  onClick={() => setShowSortDropdown(!showSortDropdown)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-bg-card border-border text-zinc-300 hover:border-border/50"
-                >
-                  <span className="text-zinc-500">Sort:</span>
-                  <span>{sortField === 'name' ? 'Name' : sortField === 'spend' ? 'Spend' : sortField === 'revenue' ? 'Revenue' : sortField === 'roas' ? 'ROAS' : sortField === 'results' ? 'Results' : 'CPR'}</span>
-                  <span className="text-zinc-500">{sortDirection === 'desc' ? '↓' : '↑'}</span>
-                </button>
-
-                {showSortDropdown && (
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
-                    {(['name', 'spend', 'revenue', 'roas', 'results', 'cpr'] as const).map((option) => (
+                {(() => {
+                  const sortOptions = businessType === 'leadgen'
+                    ? (['name', 'spend', 'results', 'cpr'] as const)
+                    : (['name', 'spend', 'revenue', 'roas'] as const)
+                  const sortLabels: Record<string, string> = { name: 'Name', spend: 'Spend', revenue: 'Revenue', roas: 'ROAS', results: 'Results', cpr: 'CPR' }
+                  // If current sortField isn't valid for this business type, show first valid option
+                  const effectiveSortField = sortOptions.includes(sortField as any) ? sortField : sortOptions[1]
+                  return (
+                    <>
                       <button
-                        key={option}
-                        onClick={() => {
-                          if (sortField === option) {
-                            setSortDirection(sortDirection === 'desc' ? 'asc' : 'desc')
-                          } else {
-                            setSortField(option)
-                            setSortDirection('desc')
-                          }
-                          setShowSortDropdown(false)
-                        }}
-                        className={`w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors ${
-                          sortField === option
-                            ? 'bg-indigo-500/20 text-indigo-400'
-                            : 'text-zinc-300 hover:bg-white/5'
-                        }`}
+                        onClick={() => setShowSortDropdown(!showSortDropdown)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-bg-card border-border text-zinc-300 hover:border-border/50"
                       >
-                        <span>{option === 'name' ? 'Name' : option === 'spend' ? 'Spend' : option === 'revenue' ? 'Revenue' : option === 'roas' ? 'ROAS' : option === 'results' ? 'Results' : 'CPR'}</span>
-                        {sortField === option && (
-                          <span className="text-xs">{sortDirection === 'desc' ? '↓ High to Low' : '↑ Low to High'}</span>
-                        )}
+                        <span className="text-zinc-500">Sort:</span>
+                        <span>{sortLabels[effectiveSortField] || effectiveSortField}</span>
+                        <span className="text-zinc-500">{sortDirection === 'desc' ? '↓' : '↑'}</span>
                       </button>
-                    ))}
-                  </div>
-                )}
+
+                      {showSortDropdown && (
+                        <div className="absolute right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                          {sortOptions.map((option) => (
+                            <button
+                              key={option}
+                              onClick={() => {
+                                if (sortField === option) {
+                                  setSortDirection(sortDirection === 'desc' ? 'asc' : 'desc')
+                                } else {
+                                  setSortField(option)
+                                  setSortDirection('desc')
+                                }
+                                setShowSortDropdown(false)
+                              }}
+                              className={`w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors ${
+                                effectiveSortField === option
+                                  ? 'bg-indigo-500/20 text-indigo-400'
+                                  : 'text-zinc-300 hover:bg-white/5'
+                              }`}
+                            >
+                              <span>{sortLabels[option]}</span>
+                              {effectiveSortField === option && (
+                                <span className="text-xs">{sortDirection === 'desc' ? '↓ High to Low' : '↑ Low to High'}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
 
               {/* Include Paused checkbox */}

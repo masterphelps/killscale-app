@@ -1909,24 +1909,11 @@ export function PerformanceTable({
                 <div className="text-zinc-500 text-xs mb-0.5">Impr</div>
                 <div className="font-mono text-white">{formatNumber(node.impressions)}</div>
               </div>
-              {/* Frequency indicator — leading signal for audience saturation */}
-              <div className="text-right w-14">
-                <div className="text-zinc-500 text-xs mb-0.5">Freq</div>
-                <div className={cn(
-                  "font-mono text-sm",
-                  (node.frequency || 0) >= 3 ? "text-red-400" :     // 3+ burnout risk
-                  (node.frequency || 0) >= 2.5 ? "text-orange-400" : // 2.5+ elevated
-                  (node.frequency || 0) >= 2 ? "text-amber-400" :    // 2+ watch
-                  "text-white"                                        // < 2 normal
-                )}>
-                  {(node.frequency || 0) > 0 ? (node.frequency || 0).toFixed(1) : '—'}
-                </div>
-              </div>
-              {/* Burnout chart icon */}
-              {node.id && node.platform !== 'google' && userId && apiDateRange && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
+              {/* Frequency — label aligned with other metrics, blue chart icon as value */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (node.id && node.platform !== 'google' && userId && apiDateRange) {
                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                     setFatigueAnchorRect(rect)
                     setFatigueChartEntity({
@@ -1935,13 +1922,21 @@ export function PerformanceTable({
                       name: node.name,
                       accountId: node.accountId || '',
                     })
-                  }}
-                  className="flex items-center justify-center w-7 h-7 rounded hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-colors"
-                  title="Burnout Chart"
-                >
-                  <Activity className="w-3.5 h-3.5" />
-                </button>
-              )}
+                  }
+                }}
+                className={cn(
+                  "text-center w-12",
+                  node.id && node.platform !== 'google' && userId && apiDateRange
+                    ? "hover:opacity-80 cursor-pointer"
+                    : "cursor-default"
+                )}
+                title={(node.frequency || 0) > 0 ? `Frequency: ${(node.frequency || 0).toFixed(2)}` : 'Frequency'}
+              >
+                <div className="text-zinc-500 text-xs mb-0.5">Freq</div>
+                <div className="flex justify-center">
+                  <Activity className="w-3.5 h-3.5 text-blue-400" />
+                </div>
+              </button>
             </div>
           )}
         </div>

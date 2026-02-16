@@ -17,6 +17,7 @@ import { Rules, calculateVerdict } from '@/lib/supabase'
 import { useSubscription } from '@/lib/subscription'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
+import { AccountFilterPills } from '@/components/account-filter-pills'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAttribution } from '@/lib/attribution'
 import { cn } from '@/lib/utils'
@@ -110,15 +111,8 @@ export default function InsightsPage() {
   const router = useRouter()
   const { plan } = useSubscription()
   const { user } = useAuth()
-  const { currentAccountId, currentAccount, workspaceAccountIds, viewMode } = useAccount()
+  const { currentAccountId, currentAccount, accounts, workspaceAccountIds, filterAccountId, setFilterAccount } = useAccount()
   const { isPrivacyMode, maskText } = usePrivacyMode()
-
-  // Redirect to dashboard if in workspace mode (Insights not available for workspaces)
-  useEffect(() => {
-    if (viewMode === 'workspace') {
-      router.push('/dashboard')
-    }
-  }, [viewMode, router])
   const { isKillScaleActive, attributionData, refreshAttribution } = useAttribution()
 
   // Privacy mode helper for entity names
@@ -725,6 +719,14 @@ export default function InsightsPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Account filter pills */}
+            <AccountFilterPills
+              accounts={accounts}
+              workspaceAccountIds={workspaceAccountIds}
+              filterAccountId={filterAccountId}
+              onFilterChange={setFilterAccount}
+            />
+
             {/* Fixed date range label */}
             <span className="text-sm text-zinc-500 bg-bg-card px-3 py-1.5 rounded-lg border border-border">
               Last {INSIGHTS_DAYS} Days

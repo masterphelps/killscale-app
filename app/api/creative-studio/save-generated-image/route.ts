@@ -169,6 +169,7 @@ export async function POST(request: NextRequest) {
         download_status: 'complete',
         file_size_bytes: fileBuffer.length,
         name: imageName,
+        synced_at: new Date().toISOString(),
       })
       .select()
       .single()

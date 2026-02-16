@@ -41,6 +41,7 @@ import { useRouter } from 'next/navigation'
 import { cn, formatCurrency, formatNumber, formatROAS } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
+import { AccountFilterPills } from '@/components/account-filter-pills'
 import { usePrivacyMode } from '@/lib/privacy-mode'
 import { useAttribution } from '@/lib/attribution'
 import { StatCard } from '@/components/stat-card'
@@ -379,15 +380,8 @@ export default function TrendsPage() {
   })
   const router = useRouter()
   const { user } = useAuth()
-  const { viewMode: accountViewMode } = useAccount()
+  const { currentAccountId, accounts, workspaceAccountIds, filterAccountId, setFilterAccount } = useAccount()
   const { isKillScaleActive, attributionData } = useAttribution()
-
-  // Redirect to dashboard if in workspace mode (Trends not available for workspaces)
-  useEffect(() => {
-    if (accountViewMode === 'workspace') {
-      router.push('/dashboard')
-    }
-  }, [accountViewMode, router])
 
   // Persist pinned state to localStorage
   useEffect(() => {
@@ -832,11 +826,19 @@ export default function TrendsPage() {
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold mb-1">Trends Explorer</h1>
           <p className="text-zinc-500 text-sm lg:text-base hidden sm:block">Drill down into your performance data</p>
         </div>
+
+        {/* Account filter pills */}
+        <AccountFilterPills
+          accounts={accounts}
+          workspaceAccountIds={workspaceAccountIds}
+          filterAccountId={filterAccountId}
+          onFilterChange={setFilterAccount}
+        />
 
         {/* Controls */}
         <div className="flex items-center gap-2 sm:gap-3">

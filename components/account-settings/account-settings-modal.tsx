@@ -39,6 +39,7 @@ interface AccountSettingsModalProps {
 type ModalWorkspace = {
   id: string
   name: string
+  is_default?: boolean
 }
 
 const accountNavItems: { id: SettingsPanel; label: string; icon: typeof User }[] = [
@@ -76,19 +77,19 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
   const [creating, setCreating] = useState(false)
 
-  // Load workspaces when modal opens
+  // Load workspaces when modal opens (includes default workspace)
   useEffect(() => {
     if (!isOpen || !user) return
 
     const load = async () => {
       const { data } = await supabase
         .from('workspaces')
-        .select('id, name')
+        .select('id, name, is_default')
         .eq('user_id', user.id)
-        .eq('is_default', false)
+        .order('is_default', { ascending: false })
         .order('created_at', { ascending: true })
 
-      const list = data || []
+      const list = (data || []).map(w => ({ id: w.id, name: w.name, is_default: w.is_default }))
       setWorkspaces(list)
       // Auto-select first workspace if none selected
       if (list.length > 0 && !selectedWorkspaceId) {
@@ -269,13 +270,15 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
                             <Building2 className="w-3.5 h-3.5 text-purple-400" />
                             <span className={cn('truncate', ws.id === selectedWorkspaceId && 'text-white')}>{ws.name}</span>
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setShowWorkspaceDropdown(false); handleDeleteWorkspace(ws.id) }}
-                            className="p-1.5 mr-1 text-zinc-600 hover:text-red-400 transition-colors rounded"
-                            title="Delete workspace"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          {!ws.is_default && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setShowWorkspaceDropdown(false); handleDeleteWorkspace(ws.id) }}
+                              className="p-1.5 mr-1 text-zinc-600 hover:text-red-400 transition-colors rounded"
+                              title="Delete workspace"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

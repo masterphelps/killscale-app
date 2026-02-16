@@ -84,24 +84,24 @@ export function InspirationGallery({ onSelectExample, onBack }: InspirationGalle
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div>
+        <div className="flex items-center gap-2">
           <button
             onClick={onBack}
-            className="p-2 rounded-lg hover:bg-bg-hover transition-colors"
+            className="text-zinc-500 hover:text-white transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 text-zinc-400" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h1 className="text-2xl font-semibold text-white flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-amber-400" />
-              Inspiration Gallery
-            </h1>
-            <p className="text-zinc-500 text-sm mt-1">
-              Browse curated examples of winning ad formats
-            </p>
-          </div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-white">
+            Inspiration Gallery
+          </h1>
+          <span className="px-2 py-0.5 text-xs font-semibold bg-amber-500/20 text-amber-400 rounded">
+            BROWSE
+          </span>
         </div>
+        <p className="text-zinc-500 mt-1 ml-7">
+          Browse curated examples of winning ad formats
+        </p>
       </div>
 
       {/* Format Tabs */}

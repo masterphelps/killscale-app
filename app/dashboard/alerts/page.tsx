@@ -19,6 +19,7 @@ import {
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { useAccount } from '@/lib/account'
+import { AccountFilterPills } from '@/components/account-filter-pills'
 import { StatusChangeModal } from '@/components/confirm-modal'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase-browser'
@@ -164,15 +165,8 @@ export default function AlertsPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { user } = useAuth()
   const { plan } = useSubscription()
-  const { currentAccountId, currentAccount, viewMode } = useAccount()
+  const { currentAccountId, currentAccount, accounts, workspaceAccountIds, filterAccountId, setFilterAccount } = useAccount()
   const router = useRouter()
-
-  // Redirect to dashboard if in workspace mode (Alerts not available for workspaces)
-  useEffect(() => {
-    if (viewMode === 'workspace') {
-      router.push('/dashboard')
-    }
-  }, [viewMode, router])
 
   const canManageAds = !!plan
 
@@ -435,6 +429,14 @@ export default function AlertsPage() {
             )}
           </p>
         </div>
+
+        {/* Account filter pills */}
+        <AccountFilterPills
+          accounts={accounts}
+          workspaceAccountIds={workspaceAccountIds}
+          filterAccountId={filterAccountId}
+          onFilterChange={setFilterAccount}
+        />
 
         {/* Tab Switcher */}
         <div className="flex bg-bg-card border border-border rounded-lg p-1">

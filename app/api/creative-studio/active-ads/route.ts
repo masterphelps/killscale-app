@@ -343,10 +343,15 @@ export async function GET(request: NextRequest) {
 
         // Resolve URLs — waterfall:
         // 1. Direct match by media_hash in media_library
+        // 1.5. Try video_id as media_hash (original videos in media_library use video_id as media_hash,
+        //       but derivative ads get a different media_hash per placement)
         // 2. Fallback via creative_id
         // 3. Use ad.storage_url from ad_data
         // 4. Fallback via video_id from other ad_data rows
         let media = ad.media_hash ? mediaLookup.get(ad.media_hash) : undefined
+        if (!media && ad.video_id) {
+          media = mediaLookup.get(ad.video_id)
+        }
         if (!media && ad.creative_id) {
           const originalHash = creativeToOriginalHash.get(ad.creative_id)
           if (originalHash) media = mediaLookup.get(originalHash)
@@ -357,6 +362,7 @@ export async function GET(request: NextRequest) {
         if (!resolvedStorageUrl && ad.video_id) {
           resolvedStorageUrl = videoIdToStorageUrl.get(ad.video_id) || null
         }
+
 
         return {
           ...ad,
@@ -370,9 +376,15 @@ export async function GET(request: NextRequest) {
           aov,
           // Same three fields the media API returns per asset
           // Falls back to ad_data columns, then video_id lookup for derivatives
+          // For videos with storageUrl: omit low-res ad.thumbnail_url so MediaGalleryCard
+          // uses <video src={storageUrl}#t=0.3> for a sharp poster frame
           storageUrl: resolvedStorageUrl,
-          imageUrl: (media?.media_type === 'image' ? media.url : null) || ad.image_url || null,
-          thumbnailUrl: (media?.media_type === 'video' ? media.video_thumbnail_url : null) || ad.thumbnail_url || null,
+          imageUrl: isVideo ? null : (media?.url || ad.image_url || null),
+          // Videos with storageUrl: return null so MediaGalleryCard uses <video #t=0.3> for sharp frame
+          // Videos without storageUrl: try media_library high-res thumbnail, then low-res ad.thumbnail_url
+          thumbnailUrl: isVideo
+            ? (resolvedStorageUrl ? null : (media?.video_thumbnail_url || ad.thumbnail_url || null))
+            : (ad.thumbnail_url || ad.image_url || null),
           thumbstopRate,
           holdRate,
           completionRate,

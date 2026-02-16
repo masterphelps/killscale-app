@@ -10,6 +10,7 @@ import { TheaterModal } from '@/components/creative-studio'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CreativeStudioContext } from './creative-studio-context'
 import { CreditsGauge } from '@/components/creative-studio/credits-gauge'
+import { AccountFilterPills } from '@/components/account-filter-pills'
 
 // Compute date range from preset (same logic as dashboard)
 function getDateRange(preset: string, customStart?: string, customEnd?: string): { since: string; until: string } {
@@ -37,7 +38,7 @@ import type { CreativeStudioContextValue, ActiveAd, CopyVariation } from './crea
 
 export default function CreativeStudioLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
-  const { currentAccountId } = useAccount()
+  const { currentAccountId, accounts, workspaceAccountIds, filterAccountId, setFilterAccount } = useAccount()
   const { plan, loading: subscriptionLoading } = useSubscription()
   const pathname = usePathname()
 
@@ -210,6 +211,18 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
     }
     lastDateKeyRef.current = dateKey
   }, [datePreset, customStartDate, customEndDate, loadData])
+
+  // Re-fetch when navigating to media page (picks up newly saved images)
+  const lastPathnameRef = useRef<string>(pathname || '')
+  useEffect(() => {
+    if (pathname && pathname !== lastPathnameRef.current) {
+      const navigatedToMedia = pathname.includes('/media') && !lastPathnameRef.current.includes('/media')
+      lastPathnameRef.current = pathname
+      if (navigatedToMedia && hasLoadedRef.current) {
+        loadData()
+      }
+    }
+  }, [pathname, loadData])
 
   // Handle sync — two-phase
   const handleSync = useCallback(async () => {
@@ -558,6 +571,13 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
       {!hideHeader && (
         <div className="max-w-[1800px] mx-auto px-4 lg:px-8 pt-4">
           <div className="flex items-center justify-end gap-3">
+            <AccountFilterPills
+              accounts={accounts}
+              workspaceAccountIds={workspaceAccountIds}
+              filterAccountId={filterAccountId}
+              onFilterChange={setFilterAccount}
+              compact
+            />
             <CreditsGauge />
             {!hideDatePicker && (
               <div className="relative">
