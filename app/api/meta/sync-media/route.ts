@@ -9,6 +9,8 @@ const supabaseAdmin = createClient(
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+const COOLDOWN_HOURS = 24
+
 interface MetaImage {
   hash: string
   name: string
@@ -40,20 +42,44 @@ interface MediaLibraryRow {
 }
 
 /**
- * Syncs all images and videos from a Meta ad account's media library
- * into the media_library table, then pushes URLs into ad_data rows.
+ * Delta sync: fetches only NEW images/videos from Meta ad account media library.
  *
- * Called fire-and-forget from the main sync process.
+ * Params:
+ *   - userId, adAccountId: required
+ *   - force: boolean (default false). When false, enforces 24h cooldown.
+ *     Main sync passes force=false; Creative Suite manual sync passes force=true.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { userId, adAccountId } = await request.json() as {
+    const { userId, adAccountId, force = false } = await request.json() as {
       userId: string
       adAccountId: string
+      force?: boolean
     }
 
     if (!userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing userId or adAccountId' }, { status: 400 })
+    }
+
+    const cleanAdAccountId = adAccountId.replace(/^act_/, '')
+
+    // ─── Cooldown check (auto-trigger only) ──────────────────────────────
+    if (!force) {
+      const { data: syncLog } = await supabaseAdmin
+        .from('media_sync_log')
+        .select('synced_at')
+        .eq('user_id', userId)
+        .eq('ad_account_id', cleanAdAccountId)
+        .single()
+
+      if (syncLog?.synced_at) {
+        const lastSync = new Date(syncLog.synced_at)
+        const hoursSince = (Date.now() - lastSync.getTime()) / (1000 * 60 * 60)
+        if (hoursSince < COOLDOWN_HOURS) {
+          console.log(`[Media Sync] Skipped — cooldown active (${hoursSince.toFixed(1)}h since last sync)`)
+          return NextResponse.json({ skipped: true, reason: 'cooldown', hoursSinceLastSync: hoursSince })
+        }
+      }
     }
 
     // Get user's Meta connection
@@ -74,89 +100,185 @@ export async function POST(request: NextRequest) {
     }
 
     const accessToken = connection.access_token
-    const cleanAdAccountId = adAccountId.replace(/^act_/, '')
 
-    // ─── Step A: Fetch all images ───────────────────────────────────────────
+    // ─── Get existing media hashes from media_library ──────────────────
+    const { data: existingImages } = await supabaseAdmin
+      .from('media_library')
+      .select('media_hash')
+      .eq('user_id', userId)
+      .eq('ad_account_id', cleanAdAccountId)
+      .eq('media_type', 'image')
+      .limit(50000)
 
-    console.log(`[Media Sync] Fetching images for act_${cleanAdAccountId}`)
-    const allImages: MetaImage[] = []
+    const { data: existingVideos } = await supabaseAdmin
+      .from('media_library')
+      .select('media_hash')
+      .eq('user_id', userId)
+      .eq('ad_account_id', cleanAdAccountId)
+      .eq('media_type', 'video')
+      .limit(50000)
+
+    const existingImageHashes = new Set((existingImages || []).map(r => r.media_hash))
+    const existingVideoIds = new Set((existingVideos || []).map(r => r.media_hash))
+
+    // ─── Step A: Lightweight image inventory ───────────────────────────
+    console.log(`[Media Sync] Fetching image inventory for act_${cleanAdAccountId}`)
+    const allImageHashes: string[] = []
 
     let imagesUrl: string | null =
-      `${META_GRAPH_URL}/act_${cleanAdAccountId}/adimages?fields=hash,name,url,width,height&limit=200&access_token=${accessToken}`
+      `${META_GRAPH_URL}/act_${cleanAdAccountId}/adimages?fields=hash&limit=500&access_token=${accessToken}`
 
     while (imagesUrl) {
       const res: Response = await fetch(imagesUrl)
       const data = await res.json()
 
       if (data.error) {
-        console.error('[Media Sync] Images fetch error:', data.error)
+        console.error('[Media Sync] Images inventory error:', data.error)
         break
       }
 
       if (data.data && Array.isArray(data.data)) {
         for (const img of data.data) {
-          allImages.push({
-            hash: img.hash,
-            name: img.name || 'Untitled',
-            url: img.url || '',
-            width: img.width || 0,
-            height: img.height || 0,
-          })
+          if (img.hash) allImageHashes.push(img.hash)
         }
       }
 
       imagesUrl = data.paging?.next || null
-      if (imagesUrl) {
-        await delay(1000)
-      }
+      if (imagesUrl) await delay(500)
     }
 
-    console.log(`[Media Sync] Fetched ${allImages.length} images`)
+    // Compute new image hashes
+    const newImageHashes = allImageHashes.filter(h => !existingImageHashes.has(h))
+    console.log(`[Media Sync] Image inventory: ${allImageHashes.length} total, ${newImageHashes.length} new`)
 
-    // ─── Step B: Fetch all videos (2s delay after images) ───────────────────
+    // ─── Step A2: Fetch full details for new images only ───────────────
+    const newImages: MetaImage[] = []
 
-    await delay(2000)
+    if (newImageHashes.length > 0) {
+      // Use Batch API to fetch full details for new images (batches of 50)
+      for (let i = 0; i < newImageHashes.length; i += 50) {
+        const batch = newImageHashes.slice(i, i + 50)
+        const batchReqs = batch.map(hash => ({
+          method: 'GET',
+          relative_url: `act_${cleanAdAccountId}/adimages?fields=hash,name,url,width,height&hashes=${JSON.stringify([hash])}`
+        }))
 
-    console.log(`[Media Sync] Fetching videos for act_${cleanAdAccountId}`)
-    const allVideos: MetaVideo[] = []
+        try {
+          const batchRes = await fetch(
+            `${META_GRAPH_URL}/?batch=${encodeURIComponent(JSON.stringify(batchReqs))}&access_token=${accessToken}&include_headers=false`,
+            { method: 'POST' }
+          )
+          const batchData = await batchRes.json()
+
+          if (Array.isArray(batchData)) {
+            for (const resp of batchData) {
+              if (resp.code === 200) {
+                try {
+                  const body = JSON.parse(resp.body)
+                  if (body.data && Array.isArray(body.data)) {
+                    for (const img of body.data) {
+                      newImages.push({
+                        hash: img.hash,
+                        name: img.name || 'Untitled',
+                        url: img.url || '',
+                        width: img.width || 0,
+                        height: img.height || 0,
+                      })
+                    }
+                  }
+                } catch { /* skip parse errors */ }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[Media Sync] Batch image fetch error:', err)
+        }
+
+        if (i + 50 < newImageHashes.length) await delay(1000)
+      }
+
+      console.log(`[Media Sync] Fetched full details for ${newImages.length} new images`)
+    }
+
+    // ─── Step B: Lightweight video inventory ───────────────────────────
+    await delay(1000)
+
+    console.log(`[Media Sync] Fetching video inventory for act_${cleanAdAccountId}`)
+    const allVideoIds: string[] = []
 
     let videosUrl: string | null =
-      `${META_GRAPH_URL}/act_${cleanAdAccountId}/advideos?fields=id,title,thumbnails,length&limit=100&access_token=${accessToken}`
+      `${META_GRAPH_URL}/act_${cleanAdAccountId}/advideos?fields=id&limit=500&access_token=${accessToken}`
 
     while (videosUrl) {
       const res: Response = await fetch(videosUrl)
       const data = await res.json()
 
       if (data.error) {
-        console.error('[Media Sync] Videos fetch error:', data.error)
+        console.error('[Media Sync] Videos inventory error:', data.error)
         break
       }
 
       if (data.data && Array.isArray(data.data)) {
         for (const vid of data.data) {
-          allVideos.push({
-            id: vid.id,
-            title: vid.title || 'Untitled Video',
-            thumbnails: vid.thumbnails,
-            length: vid.length || 0,
-          })
+          if (vid.id) allVideoIds.push(vid.id)
         }
       }
 
       videosUrl = data.paging?.next || null
-      if (videosUrl) {
-        await delay(1000)
-      }
+      if (videosUrl) await delay(500)
     }
 
-    console.log(`[Media Sync] Fetched ${allVideos.length} videos`)
+    // Compute new video IDs
+    const newVideoIds = allVideoIds.filter(id => !existingVideoIds.has(id))
+    console.log(`[Media Sync] Video inventory: ${allVideoIds.length} total, ${newVideoIds.length} new`)
 
-    // ─── Step C: Upsert to media_library ────────────────────────────────────
+    // ─── Step B2: Fetch full details for new videos only ───────────────
+    const newVideos: MetaVideo[] = []
 
+    if (newVideoIds.length > 0) {
+      for (let i = 0; i < newVideoIds.length; i += 50) {
+        const batch = newVideoIds.slice(i, i + 50)
+        const batchReqs = batch.map(id => ({
+          method: 'GET',
+          relative_url: `${id}?fields=id,title,thumbnails,length`
+        }))
+
+        try {
+          const batchRes = await fetch(
+            `${META_GRAPH_URL}/?batch=${encodeURIComponent(JSON.stringify(batchReqs))}&access_token=${accessToken}&include_headers=false`,
+            { method: 'POST' }
+          )
+          const batchData = await batchRes.json()
+
+          if (Array.isArray(batchData)) {
+            for (const resp of batchData) {
+              if (resp.code === 200) {
+                try {
+                  const body = JSON.parse(resp.body)
+                  newVideos.push({
+                    id: body.id,
+                    title: body.title || 'Untitled Video',
+                    thumbnails: body.thumbnails,
+                    length: body.length || 0,
+                  })
+                } catch { /* skip parse errors */ }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[Media Sync] Batch video fetch error:', err)
+        }
+
+        if (i + 50 < newVideoIds.length) await delay(1000)
+      }
+
+      console.log(`[Media Sync] Fetched full details for ${newVideos.length} new videos`)
+    }
+
+    // ─── Step C: Upsert only new items to media_library ────────────────
     const now = new Date().toISOString()
 
-    // Map images to media_library rows
-    const imageRows: MediaLibraryRow[] = allImages.map(img => ({
+    const imageRows: MediaLibraryRow[] = newImages.map(img => ({
       user_id: userId,
       ad_account_id: cleanAdAccountId,
       media_hash: img.hash,
@@ -168,9 +290,7 @@ export async function POST(request: NextRequest) {
       synced_at: now,
     }))
 
-    // Map videos to media_library rows
-    const videoRows: MediaLibraryRow[] = allVideos.map(vid => {
-      // Sort thumbnails by width descending and take the best one
+    const videoRows: MediaLibraryRow[] = newVideos.map(vid => {
       let bestThumbUri = ''
       let bestThumbWidth = 0
       let bestThumbHeight = 0
@@ -197,37 +317,38 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    const allRows = [...imageRows, ...videoRows]
-
-    // Upsert in batches of 200
+    const allNewRows = [...imageRows, ...videoRows]
     let upsertErrors = 0
-    for (let i = 0; i < allRows.length; i += 200) {
-      const batch = allRows.slice(i, i + 200)
-      const { error: upsertError } = await supabaseAdmin
-        .from('media_library')
-        .upsert(batch, { onConflict: 'user_id,ad_account_id,media_hash' })
 
-      if (upsertError) {
-        console.error('[Media Sync] Upsert error (batch starting at index ' + i + '):', upsertError)
-        upsertErrors++
+    if (allNewRows.length > 0) {
+      for (let i = 0; i < allNewRows.length; i += 200) {
+        const batch = allNewRows.slice(i, i + 200)
+        const { error: upsertError } = await supabaseAdmin
+          .from('media_library')
+          .upsert(batch, { onConflict: 'user_id,ad_account_id,media_hash' })
+
+        if (upsertError) {
+          console.error('[Media Sync] Upsert error (batch starting at index ' + i + '):', upsertError)
+          upsertErrors++
+        }
       }
+
+      console.log(`[Media Sync] Upserted ${allNewRows.length} new media rows (${upsertErrors} batch errors)`)
+    } else {
+      console.log('[Media Sync] No new media to upsert')
     }
 
-    console.log(`[Media Sync] Upserted ${allRows.length} media rows (${upsertErrors} batch errors)`)
-
-    // ─── Step C2: Resolve video derivatives in ad_data ────────────────────
-    // Meta assigns derivative video IDs per placement. The main sync stores
-    // creative.video_id (derivative) as ad_data.media_hash for videos.
-    // media_library has original IDs from advideos. We resolve derivatives
-    // so Creative Studio can join ad_data performance to media_library items.
+    // ─── Step C2: Resolve video derivatives in ad_data ─────────────────
+    // Only run if there are new videos OR if force=true (manual sync)
     let derivativesResolved = 0
     let derivativesTotal = 0
 
-    if (allVideos.length > 0) {
-      const originalVideoIds = new Set(allVideos.map(v => v.id))
+    const shouldResolveDerivatives = newVideos.length > 0 || force
+    // Build full video set: existing + new for derivative matching
+    const allOriginalVideoIds = new Set(Array.from(existingVideoIds).concat(newVideos.map(v => v.id)))
 
+    if (shouldResolveDerivatives && allOriginalVideoIds.size > 0) {
       // Get unique video hashes from ad_data that aren't in media_library
-      // Override PostgREST 1000-row default — need all rows to find unique hashes
       const { data: adVideoRows } = await supabaseAdmin
         .from('ad_data')
         .select('media_hash')
@@ -239,14 +360,43 @@ export async function POST(request: NextRequest) {
 
       if (adVideoRows && adVideoRows.length > 0) {
         const uniqueDerivatives = Array.from(new Set(adVideoRows.map(r => r.media_hash)))
-          .filter(id => !originalVideoIds.has(id))
+          .filter(id => !allOriginalVideoIds.has(id))
 
         derivativesTotal = uniqueDerivatives.length
 
         if (uniqueDerivatives.length > 0) {
           console.log(`[Media Sync] Resolving ${uniqueDerivatives.length} video derivatives to originals`)
 
-          // Fetch metadata (title, duration) for each derivative via Meta Batch API
+          // We need ALL original videos for title matching, not just new ones
+          // Fetch titles for all originals from media_library
+          const { data: allOrigRows } = await supabaseAdmin
+            .from('media_library')
+            .select('media_hash, name')
+            .eq('user_id', userId)
+            .eq('ad_account_id', cleanAdAccountId)
+            .eq('media_type', 'video')
+            .limit(50000)
+
+          // Build a combined video list for matching (library rows + newly fetched)
+          const allVideosForMatching: MetaVideo[] = []
+
+          // Add existing library videos (we only have name, not length — use 0)
+          if (allOrigRows) {
+            for (const row of allOrigRows) {
+              // Don't add duplicates of newly fetched videos
+              if (!newVideoIds.includes(row.media_hash)) {
+                allVideosForMatching.push({
+                  id: row.media_hash,
+                  title: row.name || 'Untitled Video',
+                  length: 0,
+                })
+              }
+            }
+          }
+          // Add newly fetched videos (have full metadata)
+          allVideosForMatching.push(...newVideos)
+
+          // Fetch metadata for derivatives via Meta Batch API
           const derivMeta: Record<string, { title: string; length: number }> = {}
 
           for (let i = 0; i < uniqueDerivatives.length; i += 50) {
@@ -284,7 +434,6 @@ export async function POST(request: NextRequest) {
           }
 
           // Match derivatives to originals by title + duration
-          // Normalize titles: lowercase, strip file extensions and Meta DCO prefixes
           const normalizeTitle = (t: string): string => {
             return t
               .toLowerCase()
@@ -294,10 +443,9 @@ export async function POST(request: NextRequest) {
               .trim()
           }
 
-          // Build lookup maps with both raw and normalized titles
           const rawTitleToOriginals = new Map<string, MetaVideo[]>()
           const normTitleToOriginals = new Map<string, MetaVideo[]>()
-          for (const vid of allVideos) {
+          for (const vid of allVideosForMatching) {
             const raw = (vid.title || '').toLowerCase().trim()
             const norm = normalizeTitle(vid.title || '')
             if (raw) {
@@ -311,7 +459,6 @@ export async function POST(request: NextRequest) {
           }
 
           const findMatch = (title: string, duration: number): MetaVideo | null => {
-            // Try raw title first (exact match minus case)
             const raw = title.toLowerCase().trim()
             let candidates = rawTitleToOriginals.get(raw) || []
             if (candidates.length === 1) return candidates[0]
@@ -320,7 +467,6 @@ export async function POST(request: NextRequest) {
               if (durMatch) return durMatch
             }
 
-            // Try normalized title (strip extension + DCO prefix)
             const norm = normalizeTitle(title)
             if (!norm) return null
             candidates = normTitleToOriginals.get(norm) || []
@@ -330,7 +476,6 @@ export async function POST(request: NextRequest) {
               if (durMatch) return durMatch
             }
 
-            // Try substring: if derivative title contains an original's normalized title
             for (const [origNorm, vids] of Array.from(normTitleToOriginals)) {
               if (norm.includes(origNorm) || origNorm.includes(norm)) {
                 if (vids.length === 1) return vids[0]
@@ -348,7 +493,7 @@ export async function POST(request: NextRequest) {
           for (let di = 0; di < derivEntries.length; di++) {
             const [derivId, meta] = derivEntries[di]
             const title = (meta.title || '').trim()
-            if (!title) continue // Can't match without a title
+            if (!title) continue
 
             const match = findMatch(title, meta.length)
 
@@ -362,101 +507,134 @@ export async function POST(request: NextRequest) {
 
               if (!updateErr) derivativesResolved++
               else console.error(`[Media Sync] Failed to update derivative ${derivId}:`, updateErr)
-            } else {
-              console.log(`[Media Sync] No match for derivative ${derivId} title="${title}" len=${meta.length}`)
             }
 
-            // Throttle: pause every 10 updates to avoid overwhelming the DB
             if ((di + 1) % 10 === 0) await delay(200)
           }
 
           console.log(`[Media Sync] Resolved ${derivativesResolved}/${uniqueDerivatives.length} video derivatives`)
         }
       }
+    } else if (!shouldResolveDerivatives) {
+      console.log('[Media Sync] Skipping derivative resolution (no new videos and not forced)')
     }
 
-    await delay(1000)
+    await delay(500)
 
-    // ─── Step D: Push URLs into ad_data ─────────────────────────────────────
-
+    // ─── Step D: Push URLs into ad_data (only for new media) ──────────
     let imageUrlsUpdated = 0
     let videoThumbsUpdated = 0
 
-    // Fetch all media_library rows for this user+account
-    const { data: mediaRows, error: mediaFetchError } = await supabaseAdmin
-      .from('media_library')
-      .select('media_hash, media_type, url, video_thumbnail_url')
-      .eq('user_id', userId)
-      .eq('ad_account_id', cleanAdAccountId)
+    if (allNewRows.length > 0 || force) {
+      // When force=true, push all media URLs (full refresh)
+      // When delta, only push newly synced hashes
+      const hashesToPush = force
+        ? null // null = push all
+        : new Set([...newImages.map(i => i.hash), ...newVideos.map(v => v.id)])
 
-    if (mediaFetchError) {
-      console.error('[Media Sync] Failed to fetch media_library rows:', mediaFetchError)
-    }
+      // Fetch relevant media_library rows
+      let mediaQuery = supabaseAdmin
+        .from('media_library')
+        .select('media_hash, media_type, url, video_thumbnail_url')
+        .eq('user_id', userId)
+        .eq('ad_account_id', cleanAdAccountId)
 
-    if (mediaRows && mediaRows.length > 0) {
-      // Build lookups
-      const imageLookup = new Map<string, string>()
-      const videoLookup = new Map<string, string>()
-
-      for (const row of mediaRows) {
-        if (row.media_type === 'image' && row.url) {
-          imageLookup.set(row.media_hash, row.url)
-        }
-        if (row.media_type === 'video' && row.video_thumbnail_url) {
-          videoLookup.set(row.media_hash, row.video_thumbnail_url)
-        }
+      if (hashesToPush) {
+        // Only fetch the new hashes
+        mediaQuery = mediaQuery.in('media_hash', Array.from(hashesToPush))
       }
 
-      // Update image URLs in ad_data (batched with throttling)
-      const imageEntries = Array.from(imageLookup)
-      for (let i = 0; i < imageEntries.length; i++) {
-        const [hash, url] = imageEntries[i]
-        const { error: updateError, count } = await supabaseAdmin
-          .from('ad_data')
-          .update({ image_url: url }, { count: 'exact' })
-          .eq('user_id', userId)
-          .eq('ad_account_id', `act_${cleanAdAccountId}`)
-          .eq('media_hash', hash)
+      const { data: mediaRows, error: mediaFetchError } = await mediaQuery
 
-        if (updateError) {
-          console.error(`[Media Sync] Failed to update image_url for hash ${hash}:`, updateError)
-        } else {
-          imageUrlsUpdated += count || 0
-        }
-
-        // Throttle: pause every 10 updates to avoid overwhelming the DB
-        if ((i + 1) % 10 === 0) await delay(200)
+      if (mediaFetchError) {
+        console.error('[Media Sync] Failed to fetch media_library rows:', mediaFetchError)
       }
 
-      // Update video thumbnail URLs in ad_data (batched with throttling)
-      const videoEntries = Array.from(videoLookup)
-      for (let i = 0; i < videoEntries.length; i++) {
-        const [hash, thumbUrl] = videoEntries[i]
-        const { error: updateError, count } = await supabaseAdmin
-          .from('ad_data')
-          .update({ thumbnail_url: thumbUrl }, { count: 'exact' })
-          .eq('user_id', userId)
-          .eq('ad_account_id', `act_${cleanAdAccountId}`)
-          .eq('media_hash', hash)
+      if (mediaRows && mediaRows.length > 0) {
+        const imageLookup = new Map<string, string>()
+        const videoLookup = new Map<string, string>()
 
-        if (updateError) {
-          console.error(`[Media Sync] Failed to update thumbnail_url for hash ${hash}:`, updateError)
-        } else {
-          videoThumbsUpdated += count || 0
+        for (const row of mediaRows) {
+          if (row.media_type === 'image' && row.url) {
+            imageLookup.set(row.media_hash, row.url)
+          }
+          if (row.media_type === 'video' && row.video_thumbnail_url) {
+            videoLookup.set(row.media_hash, row.video_thumbnail_url)
+          }
         }
 
-        // Throttle: pause every 10 updates to avoid overwhelming the DB
-        if ((i + 1) % 10 === 0) await delay(200)
+        // Update image URLs in ad_data
+        const imageEntries = Array.from(imageLookup)
+        for (let i = 0; i < imageEntries.length; i++) {
+          const [hash, url] = imageEntries[i]
+          const { error: updateError, count } = await supabaseAdmin
+            .from('ad_data')
+            .update({ image_url: url }, { count: 'exact' })
+            .eq('user_id', userId)
+            .eq('ad_account_id', `act_${cleanAdAccountId}`)
+            .eq('media_hash', hash)
+
+          if (updateError) {
+            console.error(`[Media Sync] Failed to update image_url for hash ${hash}:`, updateError)
+          } else {
+            imageUrlsUpdated += count || 0
+          }
+
+          if ((i + 1) % 10 === 0) await delay(200)
+        }
+
+        // Update video thumbnail URLs in ad_data
+        const videoEntries = Array.from(videoLookup)
+        for (let i = 0; i < videoEntries.length; i++) {
+          const [hash, thumbUrl] = videoEntries[i]
+          const { error: updateError, count } = await supabaseAdmin
+            .from('ad_data')
+            .update({ thumbnail_url: thumbUrl }, { count: 'exact' })
+            .eq('user_id', userId)
+            .eq('ad_account_id', `act_${cleanAdAccountId}`)
+            .eq('media_hash', hash)
+
+          if (updateError) {
+            console.error(`[Media Sync] Failed to update thumbnail_url for hash ${hash}:`, updateError)
+          } else {
+            videoThumbsUpdated += count || 0
+          }
+
+          if ((i + 1) % 10 === 0) await delay(200)
+        }
       }
+    } else {
+      console.log('[Media Sync] No new media — skipping ad_data URL push')
     }
 
     console.log(`[Media Sync] Updated ad_data: ${imageUrlsUpdated} image URLs, ${videoThumbsUpdated} video thumbnails`)
 
+    // ─── Step E: Update sync log ──────────────────────────────────────
+    const { error: logError } = await supabaseAdmin
+      .from('media_sync_log')
+      .upsert({
+        user_id: userId,
+        ad_account_id: cleanAdAccountId,
+        synced_at: now,
+        image_count: allImageHashes.length,
+        video_count: allVideoIds.length,
+        new_images: newImages.length,
+        new_videos: newVideos.length,
+      }, { onConflict: 'user_id,ad_account_id' })
+
+    if (logError) {
+      console.error('[Media Sync] Failed to update sync log:', logError)
+    }
+
+    console.log(`[Media Sync] Delta: ${newImages.length} new images, ${newVideos.length} new videos out of ${allImageHashes.length + allVideoIds.length} total`)
+
     return NextResponse.json({
       success: true,
-      imageCount: allImages.length,
-      videoCount: allVideos.length,
-      upsertedMedia: allRows.length,
+      imageCount: allImageHashes.length,
+      videoCount: allVideoIds.length,
+      newImages: newImages.length,
+      newVideos: newVideos.length,
+      upsertedMedia: allNewRows.length,
       derivativesResolved,
       derivativesTotal,
       updatedAds: {

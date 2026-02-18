@@ -1147,7 +1147,7 @@ export async function POST(request: NextRequest) {
       fetch(`${baseUrl}/api/meta/sync-media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, adAccountId: normalizedAccountId })
+        body: JSON.stringify({ userId, adAccountId: normalizedAccountId, force: false })
       }).catch(err => console.error('[Sync] Media library sync failed:', err))
     } catch (mediaErr) {
       console.error('[Sync] Failed to trigger media sync:', mediaErr)

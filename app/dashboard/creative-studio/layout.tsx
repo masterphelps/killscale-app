@@ -236,7 +236,7 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
       await fetch('/api/meta/sync-media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: u.id, adAccountId: cleanAccountId }),
+        body: JSON.stringify({ userId: u.id, adAccountId: cleanAccountId, force: true }),
       })
       await loadData()
     } catch (error) {
