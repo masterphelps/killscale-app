@@ -90,6 +90,7 @@ export default function SignupPage() {
       provider,
       options: {
         redirectTo: `${window.location.origin}/dashboard`,
+        scopes: provider === 'facebook' ? 'public_profile,ads_read,ads_management,business_management,pages_show_list,pages_read_engagement,pages_manage_ads,leads_retrieval' : undefined,
       },
     })
 
