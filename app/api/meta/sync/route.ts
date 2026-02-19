@@ -312,13 +312,26 @@ export async function POST(request: NextRequest) {
     const formatDate = (d: Date) => d.toISOString().split('T')[0]
     const todayStr = formatDate(today)
 
-    // Check workspace_accounts for initial_sync_complete flag
-    const { data: wsAccount } = await supabase
-      .from('workspace_accounts')
-      .select('initial_sync_complete')
-      .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
-      .limit(1)
-      .single()
+    // Get user's workspace IDs so we only check THEIR workspace_accounts (not other users')
+    const { data: userWorkspaces } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', userId)
+
+    const userWorkspaceIds = (userWorkspaces || []).map(w => w.workspace_id)
+
+    // Check workspace_accounts for initial_sync_complete flag (scoped to user's workspaces)
+    let wsAccount: { initial_sync_complete: boolean } | null = null
+    if (userWorkspaceIds.length > 0) {
+      const { data } = await supabase
+        .from('workspace_accounts')
+        .select('initial_sync_complete')
+        .in('workspace_id', userWorkspaceIds)
+        .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
+        .limit(1)
+        .single()
+      wsAccount = data
+    }
 
     // Determine sync mode
     let isInitialSync = forceFullSync || !wsAccount?.initial_sync_complete
@@ -1107,11 +1120,18 @@ export async function POST(request: NextRequest) {
     // After initial sync, mark workspace_accounts as complete so future syncs use append mode
     // GUARD: Only set the flag if we actually got insights data — a broken sync with zero rows
     // must NOT poison the flag, otherwise all future syncs run as append-only with no historical data
+    // SCOPED: Only update the current user's workspace_accounts (not other users sharing same ad account)
     if (isInitialSync && allAdData.length > 0) {
-      const { error: flagError } = await supabase
+      let flagQuery = supabase
         .from('workspace_accounts')
         .update({ initial_sync_complete: true })
         .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
+
+      if (userWorkspaceIds.length > 0) {
+        flagQuery = flagQuery.in('workspace_id', userWorkspaceIds)
+      }
+
+      const { error: flagError } = await flagQuery
 
       if (flagError) {
         console.error('[Sync] Failed to set initial_sync_complete:', flagError)
@@ -1154,15 +1174,19 @@ export async function POST(request: NextRequest) {
       // Don't fail the sync if media sync fails
     }
 
-    // Trigger attribution merge for workspaces that include this ad account
+    // Trigger attribution merge for workspaces that include this ad account (scoped to user's workspaces)
     try {
-      // Find workspace(s) containing this ad account
-      // Try both with and without act_ prefix since storage format may vary
-      const { data: workspaceAccounts, error: waError } = await supabase
+      let mergeQuery = supabase
         .from('workspace_accounts')
         .select('workspace_id')
         .or(`ad_account_id.eq.${normalizedAccountId},ad_account_id.eq.${cleanAccountId}`)
         .eq('platform', 'meta')
+
+      if (userWorkspaceIds.length > 0) {
+        mergeQuery = mergeQuery.in('workspace_id', userWorkspaceIds)
+      }
+
+      const { data: workspaceAccounts, error: waError } = await mergeQuery
 
       console.log('[Sync] Merge lookup:', { normalizedAccountId, cleanAccountId, found: workspaceAccounts?.length || 0, error: waError?.message })
 
