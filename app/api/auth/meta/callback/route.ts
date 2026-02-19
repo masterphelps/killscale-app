@@ -31,12 +31,12 @@ export async function GET(request: NextRequest) {
   // Handle user declining permissions
   if (error) {
     console.error('Meta OAuth error:', error)
-    const errorUrl = returnTo ? `${returnTo}?meta_error=declined` : '/dashboard/connect?error=declined'
+    const errorUrl = returnTo ? `${returnTo}?meta_error=declined` : '/dashboard?error=declined'
     return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 
   if (!code || !state) {
-    const errorUrl = returnTo ? `${returnTo}?meta_error=missing_params` : '/dashboard/connect?error=missing_params'
+    const errorUrl = returnTo ? `${returnTo}?meta_error=missing_params` : '/dashboard?error=missing_params'
     return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
   
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     
     // Check state is not too old (10 minutes)
     if (Date.now() - timestamp > 10 * 60 * 1000) {
-      const errorUrl = returnTo ? `${returnTo}?meta_error=expired` : '/dashboard/connect?error=expired'
+      const errorUrl = returnTo ? `${returnTo}?meta_error=expired` : '/dashboard?error=expired'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
     
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     
     if (tokenData.error) {
       console.error('Token exchange error:', tokenData.error)
-      const errorUrl = returnTo ? `${returnTo}?meta_error=token_failed` : '/dashboard/connect?error=token_failed'
+      const errorUrl = returnTo ? `${returnTo}?meta_error=token_failed` : '/dashboard?error=token_failed'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
     
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
     
     if (adAccountsData.error) {
       console.error('Ad accounts fetch error:', adAccountsData.error)
-      const errorUrl = returnTo ? `${returnTo}?meta_error=no_ad_accounts` : '/dashboard/connect?error=no_ad_accounts'
+      const errorUrl = returnTo ? `${returnTo}?meta_error=no_ad_accounts` : '/dashboard?error=no_ad_accounts'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
     
@@ -137,11 +137,11 @@ export async function GET(request: NextRequest) {
     
     if (dbError) {
       console.error('Database error:', dbError)
-      const errorUrl = returnTo ? `${returnTo}?meta_error=db_failed` : '/dashboard/connect?error=db_failed'
+      const errorUrl = returnTo ? `${returnTo}?meta_error=db_failed` : '/dashboard?error=db_failed'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
-    const successUrl = returnTo ? `${returnTo}?meta=success` : '/dashboard/connect?success=true'
+    const successUrl = returnTo ? `${returnTo}?meta=success` : '/dashboard'
     return NextResponse.redirect(`${baseUrl}${successUrl}`)
     
   } catch (err) {
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
     const errorMessage = err instanceof Error ? err.message : 'unknown'
     const errorUrl = returnTo
       ? `${returnTo}?meta_error=unknown&details=${encodeURIComponent(errorMessage)}`
-      : `/dashboard/connect?error=unknown&details=${encodeURIComponent(errorMessage)}`
+      : `/dashboard?settings=connections&error=unknown&details=${encodeURIComponent(errorMessage)}`
     return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 }

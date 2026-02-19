@@ -4,8 +4,8 @@ const META_APP_ID = process.env.META_APP_ID!
 const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.killscale.com'}/api/auth/meta/callback`
 
 // Scopes needed for Marketing API + Page access for campaign creation
+// Note: ads_read removed — ads_management is a superset and was approved
 const SCOPES = [
-  'ads_read',
   'ads_management',
   'business_management',
   'public_profile',
