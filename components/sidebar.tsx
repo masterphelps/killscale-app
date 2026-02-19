@@ -34,6 +34,7 @@ import { useAccount } from '@/lib/account'
 import { useSidebar } from '@/lib/sidebar-state'
 import { AccountSettingsModal, type SettingsPanel } from '@/components/account-settings/account-settings-modal'
 import { ProfilePopover } from '@/components/account-settings/profile-popover'
+import { CreditsGauge } from '@/components/creative-studio/credits-gauge'
 
 interface Workspace {
   id: string
@@ -480,6 +481,13 @@ export function Sidebar() {
           <div className="text-sm font-semibold text-accent">{upgradeText.title}</div>
           <div className="text-xs text-zinc-500">{upgradeText.subtitle}</div>
         </Link>
+      )}
+
+      {/* AI Credits */}
+      {!isCollapsed && (
+        <div className="mb-3 px-1">
+          <CreditsGauge />
+        </div>
       )}
 
       {/* User Menu */}

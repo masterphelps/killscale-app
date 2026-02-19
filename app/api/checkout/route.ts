@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { createClient } from '@supabase/supabase-js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,6 +19,18 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Check if user already had a subscription (trial or paid) — no second trial
+    const { data: existingSub } = await supabaseAdmin
+      .from('subscriptions')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1)
+      .single()
+
+    const subscriptionData: Stripe.Checkout.SessionCreateParams['subscription_data'] = existingSub
+      ? {}
+      : { trial_period_days: 7 }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -29,9 +47,7 @@ export async function POST(request: NextRequest) {
       metadata: {
         userId: userId,
       },
-      subscription_data: {
-        trial_period_days: 7,
-      },
+      subscription_data: subscriptionData,
       allow_promotion_codes: true,
     })
 

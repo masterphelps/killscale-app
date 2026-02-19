@@ -97,7 +97,7 @@ const MAX_WORKSPACES = 5
 export default function WorkspacesPage() {
   const { user } = useAuth()
   const { plan } = useSubscription()
-  const { accounts } = useAccount()
+  const { accounts, currentWorkspaceId, refetch: refetchAccountContext } = useAccount()
   const { reloadConfig } = useAttribution()
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -388,6 +388,8 @@ export default function WorkspacesPage() {
           }
         ]
       }))
+      // Refresh global account context if this is the active workspace
+      if (workspaceId === currentWorkspaceId) refetchAccountContext()
     }
 
     setAddingToWorkspace(null)
@@ -405,6 +407,8 @@ export default function WorkspacesPage() {
         ...prev,
         [workspaceId]: prev[workspaceId].filter(a => a.ad_account_id !== accountId)
       }))
+      // Refresh global account context if this is the active workspace
+      if (workspaceId === currentWorkspaceId) refetchAccountContext()
     }
   }
 

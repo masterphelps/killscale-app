@@ -93,8 +93,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     return accountIds
   }, [])
 
-  // Auto-link connected accounts to default workspace if missing
-  const autoLinkAccounts = useCallback(async (workspaceId: string, connectedAccounts: AdAccount[]) => {
+  // Auto-link connected accounts to DEFAULT workspace only if missing
+  const autoLinkAccounts = useCallback(async (workspaceId: string, connectedAccounts: AdAccount[], isDefault: boolean) => {
+    if (!isDefault) return
     if (connectedAccounts.length === 0) return
 
     // Get existing workspace accounts
@@ -198,6 +199,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
       // --- Always resolve to a workspace ---
       let workspaceId = profile?.selected_workspace_id
+      let isDefaultWorkspace = false
 
       // If no workspace selected, find or ensure default
       if (!workspaceId) {
@@ -210,6 +212,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
         if (defaultWs) {
           workspaceId = defaultWs.id
+          isDefaultWorkspace = true
 
           // Persist selection so we don't re-query next time
           await supabase
@@ -231,12 +234,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         if (workspace) {
           setCurrentWorkspaceId(workspace.id)
           setCurrentWorkspace(workspace)
+          isDefaultWorkspace = workspace.is_default
         }
       }
 
-      // Auto-link any unlinked connected accounts to the workspace
+      // Auto-link any unlinked connected accounts to the DEFAULT workspace only
       if (workspaceId && hasConnectedAccounts) {
-        await autoLinkAccounts(workspaceId, displayAccounts)
+        await autoLinkAccounts(workspaceId, displayAccounts, isDefaultWorkspace)
       }
 
       // Load workspace account IDs

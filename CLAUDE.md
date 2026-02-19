@@ -300,7 +300,7 @@ Tracks affiliate commissions to calculate True ROAS = Revenue ÷ (Ad Spend + Aff
 - `uppromote_connections` - One per workspace (API key storage)
 - `uppromote_referrals` - Synced affiliate referral data
 
-**Tier Access:** Scale + Pro only
+**Tier Access:** Pro only
 
 **Dashboard Changes:**
 - Spend card → "Total Costs" (Ad Spend + Affiliate Commission)
@@ -323,7 +323,7 @@ Virtual business containers with role-based access.
 
 **Features:**
 - Default workspace on signup (via trigger)
-- Pro+ can create additional workspaces
+- Pro users can create additional workspaces
 - Ad accounts linked to workspaces
 - Workspace-scoped rules, pixels, settings
 - Email invites with token-based acceptance
@@ -573,7 +573,7 @@ Generate scroll-stopping short-form video ads using Sora 2 Pro, Veo 3.1, or Runw
 Credits replace count-based limits for AI generation.
 
 - **Credit costs:** Images = 5 credits, Videos = 50 credits
-- **Plan limits:** Pro/Scale/Launch = 500/month, Trial = 25 total
+- **Plan limits:** Pro = 500/month (roll over), Trial = 25 total
 - **Tables:** `ai_generation_usage` (tracks with `credit_cost`), `ai_credit_purchases` (top-ups), `ai_credit_overrides` (admin)
 - **API response:** `{ used, planLimit, purchased, totalAvailable, remaining, status }`
 - **Refund pattern:** Failed generations insert negative `credit_cost` row
@@ -631,7 +631,7 @@ AI-powered creative analysis of video ads using Gemini's native multimodal video
 | 3 | Select Accounts | Pick ad accounts to track | Auto-skipped if ≤1 account |
 
 **Trial Details:**
-- Plan: Launch (lowest tier — upsell to Scale/Pro for Shopify, Workspaces, Pixel)
+- Plan: Pro (full-featured 7-day trial, no credit card required)
 - Duration: 7 days from wizard completion
 - Status: `trialing` in subscriptions table
 - Expiry: `lib/subscription.tsx` checks `current_period_end` — expired trials treated as no subscription
@@ -985,11 +985,12 @@ Redesigning so same ad account can show different results in different workspace
 
 ---
 
-## Pricing Tiers
+## Pricing
 
-- **Launch ($29/mo):** Meta API sync, unlimited campaigns, 1 ad account, Campaign Launcher, Insights, Trends, Alerts
-- **Scale ($49/mo):** Everything in Launch + First Party Pixel, Dynamic Attribution, 2 ad accounts, Workspaces, Manual Events
-- **Pro ($99/mo):** Everything in Scale + unlimited ad accounts, AI recommendations, priority support
+- **Pro ($129/mo | $83/mo yearly):** All features, 3 ad accounts, 500 AI credits/mo (roll over), first-party pixel, workspaces, Campaign Launcher, up to $100k tracked spend
+- **Agency (Custom):** 10+ ad accounts, custom AI limits, unlimited tracked spend, dedicated support + Slack, white-label options (sales@killscale.com)
+- **Trial:** 7-day fully functional Pro trial (no credit card required)
+- **Credit Packs:** 100/$20, 250/$50, 500/$100, 1000/$200
 
 ---
 

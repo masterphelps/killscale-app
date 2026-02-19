@@ -85,6 +85,11 @@ export default function PricingPage() {
     }
   }
 
+  const isAuthenticated = !!user
+  const hasExpiredTrial = isAuthenticated && currentPlan === 'None'
+  const isTrialing = isAuthenticated && currentPlan !== 'None' &&
+    (currentPlan === 'pro' || currentPlan === 'Pro')
+
   return (
     <div className="min-h-screen bg-bg-dark">
       <nav className="border-b border-border">
@@ -107,7 +112,9 @@ export default function PricingPage() {
       <div className="max-w-6xl mx-auto px-4 py-16">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-4">One plan. Everything you need.</h1>
-          <p className="text-zinc-500 text-lg">7-day free trial. No credit card required.</p>
+          <p className="text-zinc-500 text-lg">
+            {isAuthenticated ? 'Subscribe to unlock KillScale.' : '7-day free trial. No credit card required.'}
+          </p>
         </div>
 
         {/* Billing Toggle */}
@@ -187,14 +194,14 @@ export default function PricingPage() {
                     disabled={loading !== null}
                     className="w-full py-3 rounded-lg font-semibold transition-colors text-sm bg-accent hover:bg-accent-hover text-white disabled:opacity-50"
                   >
-                    {loading === plan.name ? 'Loading...' : 'Start 7-Day Free Trial'}
+                    {loading === plan.name ? 'Loading...' : isAuthenticated ? 'Subscribe to Pro' : 'Start 7-Day Free Trial'}
                   </button>
                 ) : (
                   <Link
                     href={user ? '/dashboard' : '/signup'}
                     className="block w-full py-3 rounded-lg font-semibold text-center text-sm bg-accent hover:bg-accent-hover text-white transition-colors"
                   >
-                    Start 7-Day Free Trial
+                    {isAuthenticated ? 'Subscribe to Pro' : 'Start 7-Day Free Trial'}
                   </Link>
                 )}
               </div>
@@ -232,7 +239,7 @@ export default function PricingPage() {
         </div>
 
         <div className="mt-12 text-center text-zinc-500 text-sm">
-          <p>All plans include a 7-day money-back guarantee. Cancel anytime.</p>
+          <p>{isAuthenticated ? 'Cancel anytime. 7-day money-back guarantee.' : 'All plans include a 7-day money-back guarantee. Cancel anytime.'}</p>
         </div>
       </div>
     </div>

@@ -9,7 +9,6 @@ import type { StudioAsset, StudioAssetDetail, VideoAnalysis, ScriptSuggestion } 
 import { TheaterModal } from '@/components/creative-studio'
 import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import { CreativeStudioContext } from './creative-studio-context'
-import { CreditsGauge } from '@/components/creative-studio/credits-gauge'
 import { AccountFilterPills } from '@/components/account-filter-pills'
 
 // Compute date range from preset (same logic as dashboard)
@@ -578,7 +577,6 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
               onFilterChange={setFilterAccount}
               compact
             />
-            <CreditsGauge />
             {!hideDatePicker && (
               <div className="relative">
                 <DatePickerButton
