@@ -159,24 +159,35 @@ export default function DashboardLayout({
   }, [user, loading])
 
   // Onboarding gate: redirect to /onboarding if not completed
+  // Demo account always sees onboarding wizard (for live demos)
+  const DEMO_USER_ID = 'cab4a74f-dce0-45a2-ba75-dc53331624cc'
+
   useEffect(() => {
-    if (!loading && user && !hadOnboardingChecked.current) {
-      supabase
-        .from('profiles')
-        .select('onboarding_completed')
-        .eq('id', user.id)
-        .single()
-        .then(({ data, error }) => {
-          if (data?.onboarding_completed === true) {
-            // Explicitly completed — let through
-            hadOnboardingChecked.current = true
-            sessionStorage.setItem('ks_onboarding_checked', 'true')
-            setOnboardingChecked(true)
-          } else {
-            // false, null, or query error (no profile row yet) — all mean onboarding needed
-            router.push('/onboarding')
-          }
-        })
+    if (!loading && user) {
+      // Demo account: always redirect to onboarding, bypass session cache
+      if (user.id === DEMO_USER_ID) {
+        router.push('/onboarding')
+        return
+      }
+
+      if (!hadOnboardingChecked.current) {
+        supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('id', user.id)
+          .single()
+          .then(({ data, error }) => {
+            if (data?.onboarding_completed === true) {
+              // Explicitly completed — let through
+              hadOnboardingChecked.current = true
+              sessionStorage.setItem('ks_onboarding_checked', 'true')
+              setOnboardingChecked(true)
+            } else {
+              // false, null, or query error (no profile row yet) — all mean onboarding needed
+              router.push('/onboarding')
+            }
+          })
+      }
     }
   }, [user, loading, router])
 
