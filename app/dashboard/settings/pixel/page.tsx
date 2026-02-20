@@ -11,7 +11,7 @@ export default function PixelRedirectPage() {
   const router = useRouter()
 
   useEffect(() => {
-    router.replace('/dashboard/settings/workspaces')
+    router.replace('/dashboard')
   }, [router])
 
   return (

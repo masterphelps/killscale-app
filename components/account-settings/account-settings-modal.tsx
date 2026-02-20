@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { X, User, Plug, Settings, Database, Users, Radio, Bell, CreditCard, ChevronDown, Building2, ShoppingBag, Gift, Plus, Trash2, Loader2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { useAccount } from '@/lib/account'
 import { supabase } from '@/lib/supabase-browser'
 import { FEATURES } from '@/lib/feature-flags'
 import { ProfilePanel } from './profile-panel'
@@ -63,10 +64,11 @@ const billingNavItems: { id: SettingsPanel; label: string; icon: typeof CreditCa
 
 export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile' }: AccountSettingsModalProps) {
   const { user } = useAuth()
+  const { currentWorkspaceId } = useAccount()
   const [activePanel, setActivePanel] = useState<SettingsPanel>(initialPanel)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-  // Workspace selector state (self-contained, not dependent on sidebar selection)
+  // Workspace selector state (syncs with sidebar's active workspace on open)
   const [workspaces, setWorkspaces] = useState<ModalWorkspace[]>([])
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false)
@@ -77,7 +79,7 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
   const [creating, setCreating] = useState(false)
 
-  // Load workspaces when modal opens (includes default workspace)
+  // Load workspaces when modal opens — sync with sidebar's active workspace
   useEffect(() => {
     if (!isOpen || !user) return
 
@@ -91,14 +93,15 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
 
       const list = (data || []).map(w => ({ id: w.id, name: w.name, is_default: w.is_default }))
       setWorkspaces(list)
-      // Auto-select first workspace if none selected
-      if (list.length > 0 && !selectedWorkspaceId) {
-        setSelectedWorkspaceId(list[0].id)
-      }
+      // Sync with sidebar's active workspace, fallback to first
+      const targetId = currentWorkspaceId && list.some(w => w.id === currentWorkspaceId)
+        ? currentWorkspaceId
+        : list[0]?.id || null
+      setSelectedWorkspaceId(targetId)
     }
 
     load()
-  }, [isOpen, user])
+  }, [isOpen, user, currentWorkspaceId])
 
   const handleCreateWorkspace = async () => {
     if (!user || !newWorkspaceName.trim() || workspaces.length >= MAX_WORKSPACES) return

@@ -30,12 +30,12 @@ export async function GET(request: NextRequest) {
   // Handle user declining permissions
   if (error) {
     console.error('Shopify OAuth error:', error)
-    const errorUrl = returnTo ? `${returnTo}?shopify_error=declined` : '/dashboard/settings/workspaces?shopify_error=declined'
+    const errorUrl = returnTo ? `${returnTo}?shopify_error=declined` : '/dashboard?shopify_error=declined'
     return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 
   if (!code || !shop || !state) {
-    const errorUrl = returnTo ? `${returnTo}?shopify_error=missing_params` : '/dashboard/settings/workspaces?shopify_error=missing_params'
+    const errorUrl = returnTo ? `${returnTo}?shopify_error=missing_params` : '/dashboard?shopify_error=missing_params'
     return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 
@@ -46,13 +46,13 @@ export async function GET(request: NextRequest) {
     returnTo = stateReturnTo || null
 
     if (!userId || !workspaceId) {
-      const errorUrl = returnTo ? `${returnTo}?shopify_error=invalid_state` : '/dashboard/settings/workspaces?shopify_error=invalid_state'
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=invalid_state` : '/dashboard?shopify_error=invalid_state'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
     // Check state is not too old (10 minutes)
     if (Date.now() - timestamp > 10 * 60 * 1000) {
-      const errorUrl = returnTo ? `${returnTo}?shopify_error=expired` : '/dashboard/settings/workspaces?shopify_error=expired'
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=expired` : '/dashboard?shopify_error=expired'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
       if (!membership) {
         console.error('Workspace access check failed')
-        const errorUrl = returnTo ? `${returnTo}?shopify_error=access_denied` : '/dashboard/settings/workspaces?error=access_denied'
+        const errorUrl = returnTo ? `${returnTo}?shopify_error=access_denied` : '/dashboard?error=access_denied'
         return NextResponse.redirect(`${baseUrl}${errorUrl}`)
       }
     }
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error) {
       console.error('Token exchange error:', tokenData.error, tokenData.error_description)
-      const errorUrl = returnTo ? `${returnTo}?shopify_error=token_failed` : '/dashboard/settings/workspaces?shopify_error=token_failed'
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=token_failed` : '/dashboard?shopify_error=token_failed'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
 
     if (!access_token) {
       console.error('No access token received from Shopify')
-      const errorUrl = returnTo ? `${returnTo}?shopify_error=no_access_token` : '/dashboard/settings/workspaces?shopify_error=no_access_token'
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=no_access_token` : '/dashboard?shopify_error=no_access_token'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
 
     if (dbError) {
       console.error('Database error:', dbError)
-      const errorUrl = returnTo ? `${returnTo}?shopify_error=db_failed` : '/dashboard/settings/workspaces?shopify_error=db_failed'
+      const errorUrl = returnTo ? `${returnTo}?shopify_error=db_failed` : '/dashboard?shopify_error=db_failed'
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const successUrl = returnTo ? `${returnTo}?shopify=success` : '/dashboard/settings/workspaces?shopify=success'
+    const successUrl = returnTo ? `${returnTo}?shopify=success` : '/dashboard?shopify=success'
     return NextResponse.redirect(`${baseUrl}${successUrl}`)
 
   } catch (err) {
@@ -181,7 +181,7 @@ export async function GET(request: NextRequest) {
     const errorMessage = err instanceof Error ? err.message : 'unknown'
     const errorUrl = returnTo
       ? `${returnTo}?shopify_error=unknown&details=${encodeURIComponent(errorMessage)}`
-      : `/dashboard/settings/workspaces?shopify_error=unknown&details=${encodeURIComponent(errorMessage)}`
+      : `/dashboard?shopify_error=unknown&details=${encodeURIComponent(errorMessage)}`
     return NextResponse.redirect(`${baseUrl}${errorUrl}`)
   }
 }
