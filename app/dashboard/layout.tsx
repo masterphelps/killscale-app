@@ -162,17 +162,15 @@ export default function DashboardLayout({
   // Demo account always sees onboarding wizard (for live demos)
   const DEMO_USER_ID = 'cab4a74f-dce0-45a2-ba75-dc53331624cc'
 
-  const demoRedirectedRef = useRef(false)
-
   useEffect(() => {
     if (!loading && user) {
-      // Demo account: redirect to onboarding once per page load (for live demos)
-      if (user.id === DEMO_USER_ID && !demoRedirectedRef.current) {
-        demoRedirectedRef.current = true
-        // Mark as checked so layout renders briefly before redirect
-        hadOnboardingChecked.current = true
-        setOnboardingChecked(true)
-        router.push('/onboarding')
+      // Demo account: reset onboarding_completed so the wizard shows, then redirect once
+      if (user.id === DEMO_USER_ID && !sessionStorage.getItem('ks_demo_redirected')) {
+        sessionStorage.setItem('ks_demo_redirected', 'true')
+        // Reset the flag in DB so onboarding page doesn't bounce back to /dashboard
+        supabase.from('profiles').update({ onboarding_completed: false }).eq('id', DEMO_USER_ID).then(() => {
+          router.push('/onboarding')
+        })
         return
       }
 
