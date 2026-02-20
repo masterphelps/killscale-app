@@ -49,7 +49,7 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
   // Also hide on AI Tasks page (not date-dependent)
   // Also hide on Active page (has its own date picker in the header)
   // Also hide on Ad Studio page (not date-dependent)
-  const hideDatePicker = pathname?.includes('/best-copy') || pathname?.includes('/media') || pathname?.includes('/ai-tasks') || pathname?.includes('/active') || pathname?.includes('/ad-studio')
+  const hideDatePicker = pathname?.includes('/best-copy') || pathname?.includes('/media') || pathname?.includes('/ai-tasks') || pathname?.includes('/active') || pathname?.includes('/ad-studio') || pathname?.includes('/video-studio') || pathname?.includes('/direct')
   // Hide entire CS header for video editor (maximize vertical space)
   const hideHeader = pathname?.includes('/video-editor')
 
@@ -222,6 +222,62 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
       }
     }
   }, [pathname, loadData])
+
+  // ─── Background video job poller ────────────────────────────────────────────
+  // Polls in-progress video jobs every 30s regardless of which sub-page is active.
+  // This ensures the DB reflects actual provider status even when the user isn't
+  // on AI Tasks or Video Studio. Dispatches 'video-jobs-updated' event on changes.
+  const bgPollerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const bgHasInProgressRef = useRef(false)
+
+  useEffect(() => {
+    const u = userRef.current
+    const acct = accountRef.current
+    if (!u?.id || !acct) return
+
+    // Lightweight check: are there any in-progress video jobs?
+    const checkAndPoll = async () => {
+      try {
+        const res = await fetch('/api/creative-studio/video-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: u.id, adAccountId: acct, skipPolling: false }),
+        })
+        const data = await res.json()
+        if (data.jobs) {
+          const hadInProgress = bgHasInProgressRef.current
+          const hasInProgress = data.jobs.some((j: { status: string }) =>
+            j.status === 'queued' || j.status === 'generating' || j.status === 'rendering' || j.status === 'extending'
+          )
+          bgHasInProgressRef.current = hasInProgress
+
+          // If jobs just completed (had in-progress → no longer), notify sub-pages
+          if (hadInProgress && !hasInProgress) {
+            window.dispatchEvent(new Event('video-jobs-updated'))
+          }
+          // Also notify on every poll so sub-pages can pick up progress changes
+          if (hadInProgress || hasInProgress) {
+            window.dispatchEvent(new Event('video-jobs-updated'))
+          }
+        }
+      } catch {
+        // Silently ignore — sub-page pollers are the primary mechanism
+      }
+    }
+
+    // Start interval — polls every 30s
+    bgPollerRef.current = setInterval(checkAndPoll, 30000)
+
+    // Also run once immediately to seed the in-progress flag
+    checkAndPoll()
+
+    return () => {
+      if (bgPollerRef.current) {
+        clearInterval(bgPollerRef.current)
+        bgPollerRef.current = null
+      }
+    }
+  }, [user?.id, currentAccountId])
 
   // Handle sync — two-phase
   const handleSync = useCallback(async () => {

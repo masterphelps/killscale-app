@@ -13,6 +13,13 @@ interface CreditUsage {
   status: string
 }
 
+/** Dispatch from any page after using credits to refresh the sidebar gauge */
+export function notifyCreditsChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('credits-changed'))
+  }
+}
+
 export function CreditsGauge() {
   const { user } = useAuth()
   const [usage, setUsage] = useState<CreditUsage | null>(null)
@@ -31,6 +38,13 @@ export function CreditsGauge() {
 
   useEffect(() => {
     fetchUsage()
+  }, [fetchUsage])
+
+  // Listen for credit usage events from any page
+  useEffect(() => {
+    const handler = () => fetchUsage()
+    window.addEventListener('credits-changed', handler)
+    return () => window.removeEventListener('credits-changed', handler)
   }, [fetchUsage])
 
   if (!usage || usage.totalAvailable === 0) return null

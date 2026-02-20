@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { buildProductAdCopyPrompt, buildProductContext } from '@/lib/prompts/ad-copy'
 
 // Detect actual MIME type from base64 magic bytes (browser file.type can lie)
 function detectMimeType(base64: string): string {
@@ -37,48 +38,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Build rich product context (skip "Custom Product" placeholder name)
-    const hasRealName = product.name && product.name !== 'Custom Product'
-    const productContext = [
-      hasRealName ? `Name: ${product.name}` : null,
-      product.brand && product.brand !== product.name ? `Brand: ${product.brand}` : null,
-      product.description ? `Description: ${product.description}` : null,
-      product.price ? `Price: ${product.currency || '$'}${product.price}` : null,
-      product.category ? `Category: ${product.category}` : null,
-      product.uniqueSellingPoint ? `Unique Selling Point: ${product.uniqueSellingPoint}` : null,
-      product.features?.length ? `Key Features:\n${product.features.map(f => `- ${f}`).join('\n')}` : null,
-      product.targetAudience ? `Target Audience: ${product.targetAudience}` : null,
-    ].filter(Boolean).join('\n')
+    const productContext = buildProductContext(product, { skipPlaceholderName: true })
 
     const hasImage = product.imageBase64 && product.imageMimeType
 
-    const prompt = `You are an expert Facebook/Instagram ad copywriter. Create compelling ad copy variations for this product.
-
-MY PRODUCT:
-${productContext}
-${hasImage ? '\nA product image is also attached — use what you see in the image to inform the ad copy (product appearance, colors, branding, use case, etc.).' : ''}
-
-Generate 4 unique ad copy variations for this product. Each variation should use a different angle/hook to appeal to different customer motivations. Use the specific product details, features, and price point in the copy where relevant.
-
-Advertising angles to consider:
-- Social Proof / Testimonial style
-- Problem-Solution (what pain does this solve?)
-- FOMO / Urgency / Scarcity
-- Benefit-focused (what transformation does the customer get?)
-- Curiosity / Pattern interrupt
-- Authority / Expert endorsement
-- Emotional appeal
-- Value proposition / ROI
-
-For each variation, provide:
-1. angle: A 2-3 word description of the angle (e.g., "Social Proof", "FOMO/Urgency", "Problem-Solution", "Benefit-Focused")
-2. headline: A compelling headline (under 40 characters)
-3. primaryText: The main ad copy (2-4 short paragraphs, use emojis sparingly, include a clear CTA)
-4. description: A short link description (under 30 characters)
-5. whyItWorks: One sentence explaining why this approach works
-
-Respond ONLY with a valid JSON array of 4 objects with these exact fields: angle, headline, primaryText, description, whyItWorks
-
-Do not include any other text, markdown, or explanation - just the JSON array.`
+    const prompt = buildProductAdCopyPrompt({ productContext, hasImage: !!hasImage })
 
     // Build message content - text only or multimodal with image
     const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []

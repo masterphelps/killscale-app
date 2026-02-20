@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  buildCompetitorAdCopyPrompt,
+  buildRefreshAdCopyPrompt,
+  buildProductContext,
+  type ProductInfo,
+} from '@/lib/prompts/ad-copy'
 
 interface CompetitorAd {
   pageName: string
   bodies?: string[]
   headlines?: string[]
   descriptions?: string[]
-}
-
-interface ProductInfo {
-  name: string
-  description?: string
-  price?: string
-  currency?: string
-  features?: string[]
-  brand?: string
-  category?: string
-  uniqueSellingPoint?: string
-  targetAudience?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -50,58 +44,11 @@ export async function POST(request: NextRequest) {
     ].filter(Boolean).join('\n\n')
 
     // Build rich product context
-    const productContext = [
-      `Name: ${finalProduct.name}`,
-      finalProduct.brand && finalProduct.brand !== finalProduct.name ? `Brand: ${finalProduct.brand}` : null,
-      finalProduct.description ? `Description: ${finalProduct.description}` : null,
-      finalProduct.price ? `Price: ${finalProduct.currency || '$'}${finalProduct.price}` : null,
-      finalProduct.category ? `Category: ${finalProduct.category}` : null,
-      finalProduct.uniqueSellingPoint ? `Unique Selling Point: ${finalProduct.uniqueSellingPoint}` : null,
-      finalProduct.features?.length ? `Key Features:\n${finalProduct.features.map(f => `- ${f}`).join('\n')}` : null,
-      finalProduct.targetAudience ? `Target Audience: ${finalProduct.targetAudience}` : null,
-    ].filter(Boolean).join('\n')
+    const productContext = buildProductContext(finalProduct)
 
     const prompt = isRefresh
-      ? `You are an expert Facebook/Instagram ad copywriter. This is a winning ad for a product that is showing signs of creative fatigue. Create fresh variations that preserve the core value proposition and winning angle, but with completely new hooks, framing, and language.
-
-ORIGINAL AD COPY:
-${competitorCopy}
-
-MY PRODUCT:
-${productContext}
-
-The audience has seen the original ad too many times — surprise them while keeping what works. Generate 4 unique ad copy variations that refresh this ad's approach. Each variation should keep the core value proposition but change the hook, framing, and execution style.
-
-For each variation, provide:
-1. angle: A 2-3 word description of the angle (e.g., "Fresh Hook", "New Framing", "Flip the Script", "Reframe Value")
-2. headline: A compelling headline (under 40 characters) — must be noticeably different from the original
-3. primaryText: The main ad copy (2-4 short paragraphs, use emojis sparingly, include a clear CTA) — same value proposition, completely new language
-4. description: A short link description (under 30 characters)
-5. whyItWorks: One sentence explaining why this fresh approach works
-
-Respond ONLY with a valid JSON array of 4 objects with these exact fields: angle, headline, primaryText, description, whyItWorks
-
-Do not include any other text, markdown, or explanation - just the JSON array.`
-      : `You are an expert Facebook/Instagram ad copywriter. Analyze this competitor ad and create new ad copy variations for a different product.
-
-COMPETITOR AD (from ${competitorAd.pageName}):
-${competitorCopy}
-
-MY PRODUCT:
-${productContext}
-
-Generate 4 unique ad copy variations inspired by the competitor's approach but for MY product. Each variation should use a different angle/hook. Use the specific product details, features, and price point in the copy where relevant.
-
-For each variation, provide:
-1. angle: A 2-3 word description of the angle (e.g., "Social Proof", "FOMO/Urgency", "Problem-Solution", "Testimonial Style")
-2. headline: A compelling headline (under 40 characters)
-3. primaryText: The main ad copy (2-4 short paragraphs, use emojis sparingly, include a clear CTA)
-4. description: A short link description (under 30 characters)
-5. whyItWorks: One sentence explaining why this approach works
-
-Respond ONLY with a valid JSON array of 4 objects with these exact fields: angle, headline, primaryText, description, whyItWorks
-
-Do not include any other text, markdown, or explanation - just the JSON array.`
+      ? buildRefreshAdCopyPrompt({ competitorCopy, productContext })
+      : buildCompetitorAdCopyPrompt({ competitorCopy, pageName: competitorAd.pageName, productContext })
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

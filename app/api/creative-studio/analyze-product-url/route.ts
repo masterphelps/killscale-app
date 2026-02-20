@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { buildProductAnalysisPrompt } from '@/lib/prompts/product-analysis'
 
-async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string; byteSize: number } | null> {
   try {
-    const response = await fetch(imageUrl, {
+    // Try upgraded (full-res) URL first, fall back to original
+    const upgradedUrl = upgradeToFullRes(imageUrl)
+    let response = await fetch(upgradedUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
       },
     })
+
+    if (!response.ok && upgradedUrl !== imageUrl) {
+      // Full-res URL 404'd — fall back to original
+      response = await fetch(imageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        },
+      })
+    }
 
     if (!response.ok) {
       console.error('[Analyze] Failed to download image:', response.status)
@@ -16,14 +28,15 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
     const contentType = response.headers.get('content-type') || 'image/jpeg'
     const arrayBuffer = await response.arrayBuffer()
 
-    // Skip tiny images (likely icons/tracking pixels) - minimum 2KB
-    if (arrayBuffer.byteLength < 2048) return null
+    // Skip tiny images (likely icons/tracking pixels) - minimum 10KB
+    if (arrayBuffer.byteLength < 10240) return null
 
     const base64 = Buffer.from(arrayBuffer).toString('base64')
 
     return {
       base64,
-      mimeType: contentType.split(';')[0], // Remove charset if present
+      mimeType: contentType.split(';')[0],
+      byteSize: arrayBuffer.byteLength,
     }
   } catch (err) {
     console.error('[Analyze] Error downloading image:', err)
@@ -50,29 +63,103 @@ function resolveImageUrl(imageUrl: string, pageUrl: string): string {
   }
 }
 
+function upgradeToFullRes(url: string): string {
+  let upgraded = url
+
+  // Shopify: strip _WIDTHx or _WIDTHxHEIGHT before extension
+  // e.g., image_100x.jpg → image.jpg, image_200x200.jpg → image.jpg
+  upgraded = upgraded.replace(/_\d+x\d*(\.[a-z]{3,4})/i, '$1')
+
+  // WooCommerce: strip -WIDTHxHEIGHT before extension
+  // e.g., image-150x150.jpg → image.jpg
+  upgraded = upgraded.replace(/-\d+x\d+(\.[a-z]{3,4})/i, '$1')
+
+  // Strip common thumbnail query params
+  try {
+    const u = new URL(upgraded)
+    const stripParams = ['width', 'w', 'h', 'height', 'resize', 'size', 'fit', 'crop', 'quality', 'q']
+    let changed = false
+    for (const p of stripParams) {
+      if (u.searchParams.has(p)) { u.searchParams.delete(p); changed = true }
+    }
+    if (changed) upgraded = u.toString()
+  } catch {
+    // Not a valid URL — skip query param stripping
+  }
+
+  return upgraded
+}
+
 function extractImageUrls(html: string): string[] {
   const urls: string[] = []
-  // Match <img> tags and extract src
-  const imgRegex = /<img\s+[^>]*src\s*=\s*["']([^"']+)["'][^>]*>/gi
+  const seen = new Set<string>()
+  const addUrl = (u: string) => {
+    if (!u || seen.has(u)) return
+    if (u.startsWith('data:')) return
+    if (u.includes('pixel') || u.includes('tracking') || u.includes('spacer')) return
+    if (u.includes('.gif') && u.includes('1x1')) return
+    if (u.includes('.svg')) return // Skip SVG icons
+    seen.add(u)
+    urls.push(u)
+  }
+
   let match
-  while ((match = imgRegex.exec(html)) !== null) {
-    const src = match[1]
-    // Skip data URIs, tracking pixels, tiny placeholder images
-    if (src.startsWith('data:')) continue
-    if (src.includes('pixel') || src.includes('tracking') || src.includes('spacer')) continue
-    if (src.includes('.gif') && src.includes('1x1')) continue
-    urls.push(src)
+
+  // 1. JSON-LD structured data — often has the best product images
+  const jsonLdRegex = /<script\s+type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  while ((match = jsonLdRegex.exec(html)) !== null) {
+    try {
+      const ld = JSON.parse(match[1])
+      const extractLdImages = (obj: Record<string, unknown>) => {
+        if (typeof obj.image === 'string') addUrl(obj.image)
+        if (Array.isArray(obj.image)) obj.image.forEach((img: unknown) => { if (typeof img === 'string') addUrl(img); if (typeof img === 'object' && img && 'url' in img) addUrl((img as { url: string }).url) })
+        if (typeof obj.image === 'object' && obj.image && 'url' in obj.image) addUrl((obj.image as { url: string }).url)
+      }
+      if (Array.isArray(ld)) ld.forEach((item) => extractLdImages(item))
+      else extractLdImages(ld)
+    } catch { /* invalid JSON-LD — skip */ }
   }
-  // Also extract from og:image meta tags
+
+  // 2. og:image meta tags (high priority)
   const ogRegex = /<meta\s+[^>]*property\s*=\s*["']og:image["'][^>]*content\s*=\s*["']([^"']+)["'][^>]*/gi
-  while ((match = ogRegex.exec(html)) !== null) {
-    if (!urls.includes(match[1])) urls.unshift(match[1]) // Priority — prepend
-  }
-  // Reverse order og:image check
+  while ((match = ogRegex.exec(html)) !== null) addUrl(match[1])
   const ogRegex2 = /<meta\s+[^>]*content\s*=\s*["']([^"']+)["'][^>]*property\s*=\s*["']og:image["'][^>]*/gi
-  while ((match = ogRegex2.exec(html)) !== null) {
-    if (!urls.includes(match[1])) urls.unshift(match[1])
+  while ((match = ogRegex2.exec(html)) !== null) addUrl(match[1])
+
+  // 3. <img> tags — src, data-src, data-lazy-src, data-zoom-image, data-large, srcset
+  const imgTagRegex = /<img\s+[^>]*>/gi
+  while ((match = imgTagRegex.exec(html)) !== null) {
+    const tag = match[0]
+
+    // data-zoom-image / data-large (zoom gallery — usually highest res)
+    const zoomMatch = tag.match(/data-(?:zoom-image|large|full|highres)\s*=\s*["']([^"']+)["']/i)
+    if (zoomMatch) addUrl(zoomMatch[1])
+
+    // srcset — pick the largest
+    const srcsetMatch = tag.match(/srcset\s*=\s*["']([^"']+)["']/i)
+    if (srcsetMatch) {
+      const candidates = srcsetMatch[1].split(',').map(s => s.trim()).filter(Boolean)
+      let bestUrl = '', bestWidth = 0
+      for (const candidate of candidates) {
+        const parts = candidate.split(/\s+/)
+        const cUrl = parts[0]
+        const descriptor = parts[1] || ''
+        const w = parseInt(descriptor) || 0
+        if (w > bestWidth) { bestWidth = w; bestUrl = cUrl }
+      }
+      if (bestUrl) addUrl(bestUrl)
+      else if (candidates.length > 0) addUrl(candidates[candidates.length - 1].split(/\s+/)[0]) // last = usually largest
+    }
+
+    // data-src / data-lazy-src (lazy-loaded images)
+    const lazySrcMatch = tag.match(/data-(?:lazy-)?src\s*=\s*["']([^"']+)["']/i)
+    if (lazySrcMatch && !lazySrcMatch[1].startsWith('data:')) addUrl(lazySrcMatch[1])
+
+    // Regular src
+    const srcMatch = tag.match(/src\s*=\s*["']([^"']+)["']/i)
+    if (srcMatch && !srcMatch[1].startsWith('data:')) addUrl(srcMatch[1])
   }
+
   return urls
 }
 
@@ -175,37 +262,7 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: 'user',
-            content: `Analyze this product/service page and extract comprehensive information. Read the ENTIRE page content carefully — features, benefits, and details may appear throughout.
-
-URL: ${url}
-
-META TAGS:
-${metaTags}
-
-PAGE CONTENT:
-${truncatedText}${imageContext}
-
-Extract and return a JSON object with these fields:
-- name: Product/service name
-- description: Brief product description (2-3 sentences covering what it does and who it's for)
-- price: Price if visible (or null)
-- currency: Currency code (USD, EUR, etc.) or null
-- features: Array of up to 10 key features/benefits found anywhere on the page
-- brand: Brand name if different from product name
-- category: Product category (e.g., "fitness equipment", "SaaS", "skincare", "clothing")
-- uniqueSellingPoint: The main thing that makes this product special
-- targetAudience: Who this product is for (1 sentence)
-- imageUrl: The main product image URL (from og:image meta tag or primary product image)
-- images: Array of up to 8 product-relevant image objects. Each: { "url": "full URL", "description": "what the image shows", "type": "product|screenshot|lifestyle|hero|packaging" }. Focus on product photos, screenshots, hero images. SKIP icons, logos, decorative backgrounds, and tiny UI elements. From the IMAGES FOUND ON PAGE list, identify which ones are product-relevant.
-- benefits: Array of up to 5 customer-facing benefits (phrased as outcomes the customer gets, e.g., "Launch campaigns in under 60 seconds")
-- painPoints: Array of up to 3 problems this product solves (phrased as frustrations, e.g., "Hours wasted in Ads Manager")
-- testimonialPoints: Array of 3 lines that a satisfied customer would say about this product (authentic UGC style, first person, e.g., "I used to spend hours in Ads Manager. KillScale cut that to under a minute.")
-- keyMessages: Array of 3 short punchy hook lines for ads (scroll-stopping, e.g., "Make ads like a pro, scale them like a boss")
-- motionOpportunities: Array of up to 5 ways this product could be shown in motion or physical interaction (e.g., "Pouring creates a satisfying cascade", "Snapping the lid shut with a confident click", "Fabric draping and flowing over surfaces"). Think about what's physically INTERESTING about this product — what movements, textures, transformations, or interactions would look satisfying on camera.
-- sensoryDetails: Array of up to 5 tactile/visual/sensory qualities (e.g., "Matte black finish with brushed metal accents", "Thick, creamy texture that holds its shape", "Translucent amber color that catches light"). Focus on textures, materials, colors, weight, sound.
-- visualHooks: Array of up to 3 visual concepts that would stop someone scrolling (e.g., "Before/after transformation", "Satisfying pour in slow motion", "Macro shot revealing hidden detail"). Think about what would make someone pause their thumb.
-
-Respond ONLY with the JSON object, no other text.`
+            content: buildProductAnalysisPrompt(url, metaTags, truncatedText, imageContext)
           }
         ],
       })
@@ -249,7 +306,7 @@ Respond ONLY with the JSON object, no other text.`
       if (imageData) {
         productInfo.imageBase64 = imageData.base64
         productInfo.imageMimeType = imageData.mimeType
-        console.log('[Analyze] Product image downloaded successfully, size:', Math.round(imageData.base64.length / 1024), 'KB')
+        console.log('[Analyze] Product image downloaded:', Math.round(imageData.byteSize / 1024), 'KB')
       } else {
         console.log('[Analyze] Failed to download product image from:', resolvedUrl)
       }
@@ -258,7 +315,7 @@ Respond ONLY with the JSON object, no other text.`
     }
 
     // Download multiple product images (up to 6, skip primary which is already downloaded)
-    const productImages: Array<{ base64: string; mimeType: string; description: string; type: string }> = []
+    const productImages: Array<{ base64: string; mimeType: string; description: string; type: string; byteSize: number }> = []
 
     if (productInfo.images && Array.isArray(productInfo.images)) {
       const imagesToDownload = productInfo.images.slice(0, 6)
@@ -273,6 +330,7 @@ Respond ONLY with the JSON object, no other text.`
             mimeType: imageData.mimeType,
             description: img.description || '',
             type: img.type || 'product',
+            byteSize: imageData.byteSize,
           }
         }
         return null
@@ -282,7 +340,9 @@ Respond ONLY with the JSON object, no other text.`
       for (const r of results) {
         if (r) productImages.push(r)
       }
-      console.log(`[Analyze] Successfully downloaded ${productImages.length} product images`)
+      // Sort by file size descending — largest (highest quality) first
+      productImages.sort((a, b) => b.byteSize - a.byteSize)
+      console.log(`[Analyze] Downloaded ${productImages.length} images, sizes:`, productImages.map(i => `${Math.round(i.byteSize / 1024)}KB`).join(', '))
     }
 
     // If primary image was downloaded but not in productImages, add it as first
@@ -292,6 +352,7 @@ Respond ONLY with the JSON object, no other text.`
         mimeType: productInfo.imageMimeType || 'image/jpeg',
         description: productInfo.name || 'Primary product image',
         type: 'product',
+        byteSize: Math.round(productInfo.imageBase64.length * 0.75), // approximate from base64
       })
     } else if (productInfo.imageBase64 && productImages.length > 0) {
       // Check if primary image is already in the list (by checking first few chars of base64)
@@ -303,16 +364,18 @@ Respond ONLY with the JSON object, no other text.`
           mimeType: productInfo.imageMimeType || 'image/jpeg',
           description: productInfo.name || 'Primary product image',
           type: 'product',
+          byteSize: Math.round(productInfo.imageBase64.length * 0.75),
         })
       }
     }
 
-    // Clean up — don't send the raw image URL list in the response
+    // Clean up — don't send the raw image URL list or byteSize in the response
     delete productInfo.images
+    const cleanedImages = productImages.map(({ byteSize: _bs, ...rest }) => rest)
 
     return NextResponse.json({
       product: productInfo,
-      productImages,
+      productImages: cleanedImages,
     })
 
   } catch (err) {

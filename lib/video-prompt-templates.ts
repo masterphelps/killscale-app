@@ -102,6 +102,20 @@ export type UGCPromptResult = {
   }
 }
 
+// ─── Direct Video Types ─────────────────────────────────────────────────────
+
+export type DirectConceptResult = {
+  videoPrompt: string
+  extensionPrompts?: string[]
+  scene: string
+  subject: string
+  action: string
+  mood: string
+  estimatedDuration: number
+  overlay: { hook: string; captions: string[]; cta: string }
+  adCopy?: { primaryText: string; headline: string; description: string }
+}
+
 // ─── UGC Veo Prompt Builder ─────────────────────────────────────────────────
 // Takes GPT 5.2's output and formats it into Veo-compatible structured blocks
 // with image preservation rules for image-to-video generation.
@@ -338,9 +352,7 @@ export function buildConceptSoraPrompt(
     blocks.push(`[Mood & Atmosphere]\n${script.mood}`)
   }
 
-  const pacingNote = durationSeconds === 12
-    ? 'Pacing: Opening beat (2-3s) to establish, development (5-7s) for the core action, closing beat (2-3s) to land the message. Room to breathe between beats.'
-    : 'Pacing: Tight and immediate. 2-3 fast beats with no wasted frames. Hook in the first second, payoff by the last.'
+  const pacingNote = 'Pacing: ONE continuous fluid camera move for this segment. Use dynamic camera motion (dolly, orbit, crane, push-in) to keep the viewer engaged. This segment will be joined with others at different angles to create an edited commercial feel — so make this single shot visually compelling on its own.'
 
   blocks.push(`[Technical]\nVertical 9:16 portrait (1024x1792). Professional ad quality. Cinematic lighting. No text, logos, or UI elements in the video — overlays are added in post.\n${pacingNote}`)
 

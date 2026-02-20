@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils'
 import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
 import type { ProductKnowledge, ProductImage, AdConcept } from '@/lib/video-prompt-templates'
 import type { VideoJob } from '@/remotion/types'
+import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 
 // ─── Pill categories ──────────────────────────────────────────────────────────
 
@@ -206,8 +207,9 @@ export default function VideoStudioPage() {
   // Product knowledge assembled from pills (used by Step 2)
   const [productKnowledge, setProductKnowledge] = useState<ProductKnowledge>({ name: '' })
 
-  // Product images (kept for potential future use)
+  // Product images from analysis + picker state
   const [productImages, setProductImages] = useState<ProductImage[]>([])
+  const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
 
   // Step 2: Video style
   type VideoStyle = 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
@@ -523,6 +525,14 @@ export default function VideoStudioPage() {
     }
   }, [hasInProgressJobs, canvasId, refreshJobs])
 
+  // Listen for background poller updates from Creative Studio layout
+  useEffect(() => {
+    if (!canvasId) return
+    const handler = () => refreshJobs()
+    window.addEventListener('video-jobs-updated', handler)
+    return () => window.removeEventListener('video-jobs-updated', handler)
+  }, [canvasId, refreshJobs])
+
   const handleGenerate = useCallback(async (conceptIndex: number) => {
     if (!user?.id || !currentAccountId) return
 
@@ -551,8 +561,8 @@ export default function VideoStudioPage() {
           canvasId: canvasId || null,
           productName: productKnowledge.name || null,
           adIndex: conceptIndex,
-          productImageBase64: null,
-          productImageMimeType: null,
+          productImageBase64: productImages[selectedProductImageIdx]?.base64 || null,
+          productImageMimeType: productImages[selectedProductImageIdx]?.mimeType || null,
           provider: apiProvider,
           quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
@@ -571,20 +581,27 @@ export default function VideoStudioPage() {
             },
             captions: (() => {
               const caps = concept.overlay.captions
-              const captionCount = caps.length
+              // Speech-paced timing: ~0.6s per word, min 1.2s, max 2.5s, small gaps
               const captionStart = 3
-              const captionEnd = conceptDuration - 0.5
-              const segmentDuration = (captionEnd - captionStart) / captionCount
-              return caps.map((text, idx) => ({
-                text,
-                startSec: Math.round((captionStart + idx * segmentDuration) * 10) / 10,
-                endSec: Math.round((captionStart + (idx + 1) * segmentDuration) * 10) / 10,
-                highlight: idx < captionCount - 1,
-                highlightWord: undefined as string | undefined,
-                fontSize: 40,
-                fontWeight: 700,
-                position: 'bottom' as const,
-              }))
+              const gap = 0.15
+              let cursor = captionStart
+              return caps.map((text, idx) => {
+                const wordCount = text.split(/\s+/).length
+                const duration = Math.min(2.5, Math.max(1.2, wordCount * 0.6))
+                const start = Math.round(cursor * 10) / 10
+                const end = Math.round((cursor + duration) * 10) / 10
+                cursor += duration + gap
+                return {
+                  text,
+                  startSec: start,
+                  endSec: end,
+                  highlight: idx < caps.length - 1,
+                  highlightWord: undefined as string | undefined,
+                  fontSize: 40,
+                  fontWeight: 700,
+                  position: 'bottom' as const,
+                }
+              })
             })(),
             cta: {
               buttonText: concept.overlay.cta,
@@ -605,6 +622,7 @@ export default function VideoStudioPage() {
 
       setGenerateError(null)
       setCredits(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - conceptCreditCost) } : prev)
+      notifyCreditsChanged()
 
       // Navigate to version 0 so user sees the new (newest) job
       setCurrentVideoVersion(prev => ({ ...prev, [conceptIndex]: 0 }))
@@ -641,6 +659,7 @@ export default function VideoStudioPage() {
       }
       // Deduct 25 credits locally
       setCredits(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - 25) } : prev)
+      notifyCreditsChanged()
       // Optimistic update: update the specific job in the array
       const version = currentVideoVersion[conceptIndex] ?? 0
       setConceptJobs(prev => {
@@ -945,6 +964,38 @@ export default function VideoStudioPage() {
               <div className="flex items-center gap-2 text-sm text-emerald-400">
                 <Check className="w-4 h-4" />
                 Found {totalPillsFound} items — select the ones you want in your creative brief
+              </div>
+            )}
+
+            {/* Product image picker */}
+            {productImages.length > 1 && (
+              <div className="mt-4">
+                <label className="text-xs font-medium text-zinc-400 mb-2 block">Product image for video generation — click to change</label>
+                <div className="flex flex-wrap gap-2">
+                  {productImages.map((img, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedProductImageIdx(i)}
+                      className={cn(
+                        'relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-all',
+                        selectedProductImageIdx === i
+                          ? 'border-purple-500 ring-2 ring-purple-500/30'
+                          : 'border-border hover:border-zinc-500'
+                      )}
+                    >
+                      <img
+                        src={`data:${img.mimeType};base64,${img.base64}`}
+                        alt={img.description || `Image ${i + 1}`}
+                        className="w-full h-full object-contain bg-zinc-900"
+                      />
+                      {selectedProductImageIdx === i && (
+                        <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

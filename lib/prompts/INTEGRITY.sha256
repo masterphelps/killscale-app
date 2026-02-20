@@ -1,0 +1,15 @@
+8cd715f457f0597816ab19b8c3e9dffb9a1a60d47ab0c70f5556f8ec2c0b66ad  lib/prompts/ad-copy.ts
+859a1153a023dfdebf5d7d2b024402f18734189b0d128bf2f4ace666991236cd  lib/prompts/adjust-image.ts
+4e9b2129d35934217a50a5e9f2fc0f2400b7b513774e3cf8517bc562116fff98  lib/prompts/image-generation.ts
+68caf19b1396a1c7252cf26f16ad399362f92044ccddffba8b0925baab08b4c0  lib/prompts/index.ts
+821ad75c8e0e94b7e9cda5a00642502e95d86d78551268218e808fce99af9995  lib/prompts/product-analysis.ts
+ddde4d17aeeb09ed902e29f52d097bce3067cf9bed2ada3a17e38b831147b1b0  lib/prompts/recommendations.ts
+21e66782ca25fd400101baa739d8242f92101cc428b265d7bf888d729eaf5d9b  lib/prompts/video-analysis.ts
+2e079eee6beefb231e44e6c190a7d24a25d0075aa759a8ceb87ec04c24621548  lib/prompts/video-concepts.ts
+8a355f2a921672ada0a11b3bc60391a8f512d9a60bea1ec0467262ef467d373a  lib/prompts/video-generation.ts
+443026e3fa0ec35de50bbc6e136d342d73f7558fc3ed67a6f764d95ef6260a7f  lib/prompts/video-overlays.ts
+6f149615ea3c079f5770918e4ec4e5c19e603f3d63caccc4aa0e61da332e0bf7  lib/prompts/video-scripts.ts
+8219860913d1d056d858a4796851a41f6d1191992133bf3a51cf44b6d87f7359  lib/prompts/video-ugc.ts
+f51f27f469f237a742c611546a530d362d9ac088c6e3deb47d5f162765a02581  lib/prompts/video-direct.ts
+# Generated: 2026-02-20T20:00:00Z
+# To verify: shasum -a 256 -c lib/prompts/INTEGRITY.sha256

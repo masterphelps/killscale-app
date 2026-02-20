@@ -1,0 +1,8 @@
+# KillScale CODEOWNERS
+# Changes to protected paths require explicit approval from @masterphelps
+
+# AI Prompt IP — the "soul" of the creative engine
+/lib/prompts/ @masterphelps
+
+# Integrity manifest — must be updated when prompts change
+/lib/prompts/INTEGRITY.sha256 @masterphelps

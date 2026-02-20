@@ -14,6 +14,7 @@ import { useAccount } from '@/lib/account'
 import { useSubscription } from '@/lib/subscription'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 import {
   CompetitorSearchInput,
   CompetitorAdsGrid,
@@ -1226,6 +1227,7 @@ export default function AdStudioPage() {
 
       // Optimistically update credit usage
       setAiUsage(prev => prev ? { ...prev, used: prev.used + 5, remaining: Math.max(0, prev.remaining - 5) } : prev)
+      notifyCreditsChanged()
 
       // Calculate version index
       const existingImages = generatedImages[index] || []
@@ -1910,6 +1912,7 @@ export default function AdStudioPage() {
 
       // Optimistically deduct credits
       setAiUsage(prev => prev ? { ...prev, used: prev.used + effectiveCreditCost, remaining: Math.max(0, prev.remaining - effectiveCreditCost) } : prev)
+      notifyCreditsChanged()
       setI2vGenerateCount(prev => prev + 1)
 
       // Navigate to version 0 (newest) so the new generating job is visible
@@ -1946,6 +1949,7 @@ export default function AdStudioPage() {
 
       // Deduct 25 credits
       setAiUsage(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - VEO_EXTENSION_COST) } : prev)
+      notifyCreditsChanged()
 
       // Optimistic update — update the specific job in the array
       const versionIdx = i2vCurrentVideoVersion[adIndex] ?? 0
@@ -2126,6 +2130,7 @@ export default function AdStudioPage() {
       }
 
       setAiUsage(prev => prev ? { ...prev, used: prev.used + ugcCreditCost, remaining: Math.max(0, prev.remaining - ugcCreditCost) } : prev)
+      notifyCreditsChanged()
       setI2vGenerateCount(prev => prev + 1)
       setI2vCurrentVideoVersion(prev => ({ ...prev, [adIndex]: 0 }))
       refreshI2vJobs(canvasId || undefined)
@@ -2291,6 +2296,7 @@ export default function AdStudioPage() {
       }
 
       setAiUsage(prev => prev ? { ...prev, used: prev.used + creditCost, remaining: Math.max(0, prev.remaining - creditCost) } : prev)
+      notifyCreditsChanged()
       setI2vGenerateCount(prev => prev + 1)
       setI2vCurrentVideoVersion(prev => ({ ...prev, [adIndex]: 0 }))
       refreshI2vJobs(canvasId || undefined)
@@ -2476,6 +2482,23 @@ export default function AdStudioPage() {
                     Get started <ChevronRight className="w-4 h-4" />
                   </div>
                 </button>
+
+                {/* Direct */}
+                <Link
+                  href="/dashboard/creative-studio/direct"
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
+                    <Clapperboard className="w-7 h-7 text-amber-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">Direct</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Describe your concept, AI builds the shot list.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
+                    Get started <ChevronRight className="w-4 h-4" />
+                  </div>
+                </Link>
               </div>
             </div>
           </div>
@@ -3093,7 +3116,7 @@ export default function AdStudioPage() {
                             key={i}
                             onClick={() => handleSelectProductImage(i)}
                             className={cn(
-                              'relative w-14 h-14 rounded-lg overflow-hidden border-2 transition-all',
+                              'relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-all',
                               selectedProductImageIdx === i
                                 ? 'border-purple-500 ring-2 ring-purple-500/30'
                                 : 'border-border hover:border-zinc-500'
@@ -3102,7 +3125,7 @@ export default function AdStudioPage() {
                             <img
                               src={`data:${img.mimeType};base64,${img.base64}`}
                               alt={img.description || `Image ${i + 1}`}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-contain bg-zinc-900"
                             />
                             {selectedProductImageIdx === i && (
                               <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">

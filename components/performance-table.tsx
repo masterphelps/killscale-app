@@ -1576,15 +1576,24 @@ export function PerformanceTable({
             previewUrl={(() => {
               // Prefer storage URL from Supabase Storage (zero external calls)
               if (node.storage_url) return node.storage_url
-              // Prefer row-level data from sync (no API call needed)
-              // Videos: prefer thumbnail_url (video thumbnail from media_library)
-              // Images: prefer image_url (high-quality permanent CDN URL from media_library)
-              const rowUrl = node.media_type?.toUpperCase() === 'VIDEO'
-                ? (node.thumbnail_url || node.image_url)
-                : (node.image_url || node.thumbnail_url)
-              if (rowUrl) return rowUrl
+              // For images: use row-level CDN URLs
+              if (node.media_type?.toUpperCase() !== 'VIDEO') {
+                const imgUrl = node.image_url || node.thumbnail_url
+                if (imgUrl) return imgUrl
+              }
+              // For videos: skip Meta thumbnail — videoSource prop handles it
+              // Fall through to creative data for images without row data
               const creative = creativesData[node.creativeId!]
               return creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
+            })()}
+            videoSource={(() => {
+              const isVideo = node.media_type?.toUpperCase() === 'VIDEO'
+              if (!isVideo) return undefined
+              // Prefer Supabase storage URL
+              if (node.storage_url) return node.storage_url
+              // Use lazy-loaded creative video source
+              const creative = node.creativeId ? creativesData[node.creativeId] : undefined
+              return creative?.videoSource
             })()}
             mediaType={(() => {
               if (node.storage_url || node.thumbnail_url || node.image_url) return node.media_type?.toUpperCase() === 'VIDEO' ? 'video' : 'image'
@@ -1593,6 +1602,7 @@ export function PerformanceTable({
             alt={nameToShow}
             onFullPreview={async () => {
               const isVideo = node.media_type?.toUpperCase() === 'VIDEO'
+              const creative = node.creativeId ? creativesData[node.creativeId] : undefined
 
               // If we have a storage URL, use it directly (zero API calls)
               if (node.storage_url) {
@@ -1608,34 +1618,71 @@ export function PerformanceTable({
                 return
               }
 
-              // Prefer row-level data from sync
-              const rowUrl = isVideo
-                ? (node.thumbnail_url || node.image_url)
-                : (node.image_url || node.thumbnail_url)
-              if (rowUrl) {
-                // For videos, fetch playable source on demand
-                let videoSource: string | undefined
-                if (isVideo && node.media_hash && userId) {
-                  try {
-                    const res = await fetch(`/api/creative-studio/video-source?userId=${userId}&videoId=${node.media_hash}`)
-                    if (res.ok) {
-                      const data = await res.json()
-                      videoSource = data.source
-                    }
-                  } catch (e) { /* ignore */ }
-                }
+              // For videos: prefer already-loaded creative.videoSource (no extra API call)
+              if (isVideo && creative?.videoSource) {
                 setPreviewModal({
                   isOpen: true,
-                  previewUrl: rowUrl,
-                  videoSource,
-                  thumbnailUrl: rowUrl,
-                  mediaType: isVideo ? 'video' : 'image',
+                  previewUrl: creative.videoSource,
+                  videoSource: creative.videoSource,
+                  thumbnailUrl: node.thumbnail_url || node.image_url || creative.previewUrl,
+                  mediaType: 'video',
                   name: nameToShow,
                   adId: node.id || undefined
                 })
                 return
               }
-              const creative = creativesData[node.creativeId!]
+
+              // For images: use row-level data from sync
+              if (!isVideo) {
+                const imgUrl = node.image_url || node.thumbnail_url || creative?.previewUrl || creative?.imageUrl
+                if (imgUrl) {
+                  setPreviewModal({
+                    isOpen: true,
+                    previewUrl: imgUrl,
+                    mediaType: 'image',
+                    name: nameToShow,
+                    adId: node.id || undefined
+                  })
+                  return
+                }
+              }
+
+              // For videos without loaded creative: fetch video source on demand
+              if (isVideo && node.media_hash && userId) {
+                const thumbUrl = node.thumbnail_url || node.image_url
+                try {
+                  const res = await fetch(`/api/creative-studio/video-source?userId=${userId}&videoId=${node.media_hash}`)
+                  if (res.ok) {
+                    const data = await res.json()
+                    if (data.source) {
+                      setPreviewModal({
+                        isOpen: true,
+                        previewUrl: data.source,
+                        videoSource: data.source,
+                        thumbnailUrl: thumbUrl || undefined,
+                        mediaType: 'video',
+                        name: nameToShow,
+                        adId: node.id || undefined
+                      })
+                      return
+                    }
+                  }
+                } catch (e) { /* ignore */ }
+                // If fetch failed, show thumbnail with no-video message
+                if (thumbUrl) {
+                  setPreviewModal({
+                    isOpen: true,
+                    previewUrl: thumbUrl,
+                    thumbnailUrl: thumbUrl,
+                    mediaType: 'video',
+                    name: nameToShow,
+                    adId: node.id || undefined
+                  })
+                  return
+                }
+              }
+
+              // Last resort: any creative data we have
               const previewUrl = creative?.previewUrl || creative?.thumbnailUrl || creative?.imageUrl
               if (previewUrl || creative?.videoSource) {
                 setPreviewModal({

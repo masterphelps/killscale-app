@@ -41,7 +41,6 @@ import {
   Search,
   Layers,
   Trash2,
-  Minus,
   Plus,
 } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
@@ -53,6 +52,7 @@ import type { VideoAnalysis, ScriptSuggestion } from '@/components/creative-stud
 import type { VideoJob, OverlayConfig, VideoComposition } from '@/remotion/types'
 import type { ProductKnowledge, AdConcept } from '@/lib/video-prompt-templates'
 import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
+import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -888,6 +888,7 @@ function AdSessionDetailPanel({
 
       // Optimistically update credit usage
       setAiUsage(prev => prev ? { ...prev, used: prev.used + 5, remaining: Math.max(0, prev.remaining - 5) } : prev)
+      notifyCreditsChanged()
 
       const newImage: GeneratedImage = {
         base64: data.image.base64,
@@ -2024,34 +2025,40 @@ function ConceptCanvasDetailPanel({
 
   const [expandedConcept, setExpandedConcept] = useState<number | null>(initialExpandedConcept ?? null)
 
-  // Per-concept provider + duration settings
-  type ProviderType = 'veo' | 'runway' | 'sora'
-  const PROVIDER_CONFIG: Record<ProviderType, { label: string; fixedDuration: number; baseCost: number }> = {
-    veo: { label: 'Veo 3.1', fixedDuration: 8, baseCost: 50 },
-    runway: { label: 'Runway', fixedDuration: 10, baseCost: 50 },
-    sora: { label: 'Sora', fixedDuration: 12, baseCost: 50 },
-  }
+  // Per-concept video quality (matches Video Studio)
+  type VideoQuality = 'standard' | 'premium'
+  const [conceptQuality, setConceptQuality] = useState<Record<number, VideoQuality>>({})
+  const VEO_BASE_DURATION = 8
   const VEO_EXTENSION_STEP = 7
-  const VEO_EXTENSION_COST = 25
-  const [conceptSettings, setConceptSettings] = useState<Record<number, { provider: ProviderType; veoDuration: number }>>({})
-  const getConceptSettings = (i: number) => conceptSettings[i] || { provider: 'veo' as ProviderType, veoDuration: 8 }
+  const QUALITY_COSTS = {
+    standard: { base: 20, extension: 10 },   // Veo 3.1 Fast (720p)
+    premium:  { base: 50, extension: 25 },    // Veo 3.1 Standard (1080p)
+  }
+  const getConceptQuality = (i: number): VideoQuality => conceptQuality[i] || 'standard'
   const getConceptDuration = (i: number) => {
-    const s = getConceptSettings(i)
-    return s.provider === 'veo' ? s.veoDuration : PROVIDER_CONFIG[s.provider].fixedDuration
+    return canvas.concepts[i]?.estimatedDuration || VEO_BASE_DURATION
   }
   const getConceptCreditCost = (i: number) => {
-    const s = getConceptSettings(i)
-    if (s.provider !== 'veo') return PROVIDER_CONFIG[s.provider].baseCost
-    const extensions = Math.max(0, (s.veoDuration - 8) / VEO_EXTENSION_STEP)
-    return PROVIDER_CONFIG.veo.baseCost + extensions * VEO_EXTENSION_COST
+    const dur = getConceptDuration(i)
+    const q = getConceptQuality(i)
+    const costs = QUALITY_COSTS[q]
+    const extensions = dur > VEO_BASE_DURATION ? Math.round((dur - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
+    return costs.base + extensions * costs.extension
   }
   const getApiProvider = (i: number) => {
-    const s = getConceptSettings(i)
-    return s.provider === 'veo' && s.veoDuration > 8 ? 'veo-ext' : s.provider
+    const dur = getConceptDuration(i)
+    return dur > VEO_BASE_DURATION ? 'veo-ext' : 'veo'
   }
-  const updateConceptSetting = (i: number, updates: Partial<{ provider: ProviderType; veoDuration: number }>) => {
-    setConceptSettings(prev => ({ ...prev, [i]: { ...getConceptSettings(i), ...updates } }))
-  }
+
+  // Credits
+  const [credits, setCredits] = useState<{ remaining: number; totalAvailable: number } | null>(null)
+  useEffect(() => {
+    if (!user?.id) return
+    fetch(`/api/ai/usage?userId=${user.id}`)
+      .then(r => r.json())
+      .then(d => { if (d.remaining !== undefined) setCredits({ remaining: d.remaining, totalAvailable: d.totalAvailable }) })
+      .catch(() => {})
+  }, [user?.id])
 
   const [generatingIndex, setGeneratingIndex] = useState<number | null>(null)
   const [generateError, setGenerateError] = useState<string | null>(null)
@@ -2116,15 +2123,8 @@ function ConceptCanvasDetailPanel({
     const concept = canvas.concepts[conceptIndex]
     if (!concept) return
 
-    // If re-generating (existing completed job), match its duration
-    const existingJobs = getJobsForConcept(conceptIndex)
-    const existingCompleted = existingJobs.find(j => j.status === 'complete')
-    const conceptDuration = existingCompleted
-      ? (existingCompleted.target_duration_seconds || existingCompleted.duration_seconds || getConceptDuration(conceptIndex))
-      : getConceptDuration(conceptIndex)
-    const apiProvider = existingCompleted
-      ? (existingCompleted.provider?.startsWith('sora') ? 'sora' : existingCompleted.provider?.startsWith('runway') ? 'runway' : conceptDuration > 8 ? 'veo-ext' : 'veo')
-      : getApiProvider(conceptIndex)
+    const conceptDuration = getConceptDuration(conceptIndex)
+    const apiProvider = getApiProvider(conceptIndex)
 
     setGeneratingIndex(conceptIndex)
     setGenerateError(null)
@@ -2147,7 +2147,10 @@ function ConceptCanvasDetailPanel({
           productImageBase64: null,
           productImageMimeType: null,
           provider: apiProvider,
+          quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
+          extensionPrompts: concept.extensionPrompts || undefined,
+          adCopy: concept.adCopy || null,
           overlayConfig: {
             style: 'bold' as const,
             hook: {
@@ -2161,20 +2164,27 @@ function ConceptCanvasDetailPanel({
             },
             captions: (() => {
               const caps = concept.overlay.captions
-              const captionCount = caps.length
+              // Speech-paced timing: ~0.6s per word, min 1.2s, max 2.5s, small gaps
               const captionStart = 3
-              const captionEnd = conceptDuration - 0.5
-              const segmentDuration = (captionEnd - captionStart) / captionCount
-              return caps.map((text, idx) => ({
-                text,
-                startSec: Math.round((captionStart + idx * segmentDuration) * 10) / 10,
-                endSec: Math.round((captionStart + (idx + 1) * segmentDuration) * 10) / 10,
-                highlight: idx < captionCount - 1,
-                highlightWord: undefined as string | undefined,
-                fontSize: 40,
-                fontWeight: 700,
-                position: 'bottom' as const,
-              }))
+              const gap = 0.15
+              let cursor = captionStart
+              return caps.map((text, idx) => {
+                const wordCount = text.split(/\s+/).length
+                const duration = Math.min(2.5, Math.max(1.2, wordCount * 0.6))
+                const start = Math.round(cursor * 10) / 10
+                const end = Math.round((cursor + duration) * 10) / 10
+                cursor += duration + gap
+                return {
+                  text,
+                  startSec: start,
+                  endSec: end,
+                  highlight: idx < caps.length - 1,
+                  highlightWord: undefined as string | undefined,
+                  fontSize: 40,
+                  fontWeight: 700,
+                  position: 'bottom' as const,
+                }
+              })
             })(),
             cta: {
               buttonText: concept.overlay.cta,
@@ -2194,6 +2204,9 @@ function ConceptCanvasDetailPanel({
       }
 
       setGenerateError(null)
+      const cCost = getConceptCreditCost(conceptIndex)
+      setCredits(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - cCost) } : prev)
+      notifyCreditsChanged()
       setCurrentVideoVersion(prev => ({ ...prev, [conceptIndex]: 0 }))
       onVideoGenerated?.()
     } catch {
@@ -2603,9 +2616,8 @@ function ConceptCanvasDetailPanel({
                     </div>
                   )}
 
-                  {/* Provider + Duration + Generate — shown when no job exists */}
+                  {/* Quality + Generate — shown when no job exists */}
                   {!job && (() => {
-                    const cs = getConceptSettings(i)
                     const cDuration = getConceptDuration(i)
                     const cCost = getConceptCreditCost(i)
                     return (
@@ -2617,66 +2629,48 @@ function ConceptCanvasDetailPanel({
                           </div>
                         )}
 
-                        {/* Provider + Duration row */}
-                        <div className="flex items-center gap-3 mt-3 mb-3 flex-wrap">
-                          {/* Provider pills */}
-                          <div className="flex gap-1.5">
-                            {(['veo', 'runway', 'sora'] as ProviderType[]).map(p => (
+                        {/* Quality selector */}
+                        <div className="flex gap-2 mt-3 mb-3">
+                          {(['standard', 'premium'] as const).map(q => {
+                            const isActive = getConceptQuality(i) === q
+                            const qCosts = QUALITY_COSTS[q]
+                            const extensions = cDuration > VEO_BASE_DURATION ? Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
+                            const totalCost = qCosts.base + extensions * qCosts.extension
+                            return (
                               <button
-                                key={p}
-                                onClick={(e) => { e.stopPropagation(); updateConceptSetting(i, { provider: p }) }}
+                                key={q}
+                                onClick={(e) => { e.stopPropagation(); setConceptQuality(prev => ({ ...prev, [i]: q })) }}
                                 className={cn(
-                                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                                  cs.provider === p
-                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                                    : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+                                  'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
+                                  isActive
+                                    ? 'bg-purple-500/10 border-purple-500/40'
+                                    : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
                                 )}
                               >
-                                {PROVIDER_CONFIG[p].label}
+                                <div className="flex items-center justify-between">
+                                  <span className={cn('text-xs font-medium', isActive ? 'text-purple-300' : 'text-zinc-400')}>
+                                    {q === 'standard' ? 'Standard' : 'Premium'}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
                               </button>
-                            ))}
-                          </div>
+                            )
+                          })}
+                        </div>
 
-                          {/* Duration stepper — Veo only */}
-                          {cs.provider === 'veo' && (
-                            <div className="flex items-center gap-0 rounded-lg border border-zinc-700/50 bg-zinc-800/50 overflow-hidden">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (cs.veoDuration > 8) updateConceptSetting(i, { veoDuration: cs.veoDuration - VEO_EXTENSION_STEP })
-                                }}
-                                disabled={cs.veoDuration <= 8}
-                                className="px-2 py-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                              >
-                                <Minus className="w-3.5 h-3.5" />
-                              </button>
-                              <span className="px-3 py-1.5 text-xs font-bold text-white min-w-[3rem] text-center tabular-nums">
-                                {cs.veoDuration}s
-                              </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  updateConceptSetting(i, { veoDuration: cs.veoDuration + VEO_EXTENSION_STEP })
-                                }}
-                                className="px-2 py-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                        {/* Duration info */}
+                        <div className="flex items-center gap-3 mb-3">
+                          <span className="text-xs font-medium text-zinc-300">Veo 3.1{getConceptQuality(i) === 'standard' ? ' Fast' : ''}</span>
+                          <span className="text-xs text-zinc-500">{cDuration}s</span>
+                          {cDuration > VEO_BASE_DURATION && (
+                            <span className="text-[10px] text-purple-400/80">({Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)} extension{Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) > 1 ? 's' : ''})</span>
                           )}
-
-                          {/* Fixed duration badge — Runway/Sora */}
-                          {cs.provider !== 'veo' && (
-                            <span className="text-xs text-zinc-500">{PROVIDER_CONFIG[cs.provider].fixedDuration}s</span>
-                          )}
-
-                          {/* Credit cost */}
-                          <span className="text-xs text-zinc-500 ml-auto">{cCost} credits</span>
                         </div>
 
                         <button
                           onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
-                          disabled={generatingIndex !== null}
+                          disabled={generatingIndex !== null || (credits !== null && credits.remaining < cCost)}
                           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                         >
                           {generatingIndex === i ? (
@@ -2687,7 +2681,7 @@ function ConceptCanvasDetailPanel({
                           ) : (
                             <>
                               <Video className="w-4 h-4" />
-                              Generate {cDuration}s Video
+                              Generate {cDuration}s Video &middot; {cCost} credits
                             </>
                           )}
                         </button>
@@ -2980,6 +2974,29 @@ export default function AITasksPage() {
     loadVideoJobs(true) // skipPolling=true on initial load (fast DB-only read)
     loadCanvases()
   }, [loadAnalyses, loadSessions, loadVideoJobs, loadCanvases])
+
+  // Immediately poll in-progress jobs after initial fast load
+  // This catches jobs that completed while the user was on another page
+  const hasPolledOnMountRef = useRef(false)
+  useEffect(() => {
+    if (hasPolledOnMountRef.current) return
+    const hasInProgress = videoJobs.some(j => j.status === 'queued' || j.status === 'generating' || j.status === 'rendering' || j.status === 'extending')
+    if (videoJobs.length > 0 && hasInProgress) {
+      hasPolledOnMountRef.current = true
+      loadVideoJobs(false) // Full poll — checks actual provider status
+    } else if (videoJobs.length > 0) {
+      hasPolledOnMountRef.current = true // No in-progress jobs, no need to poll
+    }
+  }, [videoJobs, loadVideoJobs])
+
+  // Listen for background poller updates from Creative Studio layout
+  useEffect(() => {
+    const handler = () => {
+      loadVideoJobs(true) // Fast DB read — layout poller already updated the DB
+    }
+    window.addEventListener('video-jobs-updated', handler)
+    return () => window.removeEventListener('video-jobs-updated', handler)
+  }, [loadVideoJobs])
 
   // Poll for video analysis updates (15s interval, stop after 10 min)
   useEffect(() => {

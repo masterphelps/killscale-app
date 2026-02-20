@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 
 interface CreativePreviewTooltipProps {
   previewUrl?: string
+  videoSource?: string
   mediaType?: 'image' | 'video' | 'unknown'
   alt: string
   children: React.ReactNode
@@ -14,6 +15,7 @@ interface CreativePreviewTooltipProps {
 
 export function CreativePreviewTooltip({
   previewUrl,
+  videoSource,
   mediaType,
   alt,
   children,
@@ -95,7 +97,8 @@ export function CreativePreviewTooltip({
     setShowTooltip(false)
   }
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
     clearTimeouts()
     setShowTooltip(false)
     onFullPreview?.()
@@ -122,7 +125,7 @@ export function CreativePreviewTooltip({
       </div>
 
       {/* Tooltip */}
-      {showTooltip && previewUrl && (
+      {showTooltip && (previewUrl || videoSource) && (
         <div
           ref={tooltipRef}
           className="fixed z-50"
@@ -135,14 +138,28 @@ export function CreativePreviewTooltip({
           onClick={handleClick}
         >
           <div className="w-[200px] h-[200px] bg-bg-card border border-border rounded-xl shadow-xl overflow-hidden cursor-pointer hover:border-accent/50 transition-colors">
-            {previewUrl ? (
+            {mediaType === 'video' && videoSource ? (
+              <div className="relative w-full h-full">
+                <video
+                  src={`${videoSource}#t=0.1`}
+                  muted
+                  playsInline
+                  preload="auto"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                  <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
+                    <Play className="w-6 h-6 text-black ml-1" />
+                  </div>
+                </div>
+              </div>
+            ) : previewUrl ? (
               <div className="relative w-full h-full">
                 <img
                   src={previewUrl}
                   alt={alt}
                   className="w-full h-full object-cover"
                 />
-                {/* Video overlay */}
                 {mediaType === 'video' && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                     <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">

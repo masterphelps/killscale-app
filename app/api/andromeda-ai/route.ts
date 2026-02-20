@@ -1,25 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const SYSTEM_PROMPT = `You are an expert Meta Ads consultant specializing in Andromeda ML optimization.
-
-Andromeda best practices:
-- Use CBO (Campaign Budget Optimization) instead of ABO - lets Meta allocate budget optimally
-- Have 3-6 creatives per ad set for proper testing and optimization
-- Keep to 5 or fewer ad sets per campaign to avoid fragmenting data
-- Ad sets need 50+ conversions per week to exit learning phase
-- Keep budget changes under 25% to avoid destabilizing the algorithm
-
-When analyzing an account:
-1. Start with a 2-3 sentence summary of the overall situation
-2. Identify the top 3 priorities in order of impact
-3. Be specific - reference actual campaign/ad set names when available
-4. Be direct and actionable - tell them exactly what to do
-5. Keep responses concise but helpful
-
-When answering follow-up questions:
-- Reference the account context you already have
-- Give specific, actionable advice
-- Be conversational but professional`
+import { ANDROMEDA_AI_SYSTEM_PROMPT } from '@/lib/prompts/recommendations'
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -109,7 +89,7 @@ ${scoreData.issues.map(issue =>
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: ANDROMEDA_AI_SYSTEM_PROMPT,
         messages
       })
     })

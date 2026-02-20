@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getGoogleAI } from '@/lib/google-ai'
+import { buildAdjustImagePrompt } from '@/lib/prompts/adjust-image'
 
 // Use shared Vertex AI / AI Studio client
 const getGenAI = getGoogleAI
@@ -35,21 +36,7 @@ export async function POST(request: NextRequest) {
     console.log('[Adjust Image] Using model:', MODEL_NAME)
     console.log('[Adjust Image] Adjusting image with prompt:', body.adjustmentPrompt.slice(0, 100))
 
-    const prompt = `Here is an advertisement image. Please modify it according to these instructions:
-
-"${body.adjustmentPrompt}"
-
-Requirements:
-- Keep the same product/subject from the original image
-- Maintain professional ad quality
-- Apply the requested changes accurately
-- Keep any text that was in the original (unless asked to change it)
-- Output a high-resolution image
-- Make sure all text fits in the image section where it's placed
-- Ensure no cutoff sentences or words
-- Any text must be spelled correctly
-
-Generate the modified advertisement image.`
+    const prompt = buildAdjustImagePrompt(body.adjustmentPrompt)
 
     const client = getGenAI()
     if (!client) {
