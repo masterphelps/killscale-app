@@ -162,10 +162,16 @@ export default function DashboardLayout({
   // Demo account always sees onboarding wizard (for live demos)
   const DEMO_USER_ID = 'cab4a74f-dce0-45a2-ba75-dc53331624cc'
 
+  const demoRedirectedRef = useRef(false)
+
   useEffect(() => {
     if (!loading && user) {
-      // Demo account: always redirect to onboarding, bypass session cache
-      if (user.id === DEMO_USER_ID) {
+      // Demo account: redirect to onboarding once per page load (for live demos)
+      if (user.id === DEMO_USER_ID && !demoRedirectedRef.current) {
+        demoRedirectedRef.current = true
+        // Mark as checked so layout renders briefly before redirect
+        hadOnboardingChecked.current = true
+        setOnboardingChecked(true)
         router.push('/onboarding')
         return
       }
