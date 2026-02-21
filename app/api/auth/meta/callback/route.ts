@@ -114,10 +114,28 @@ export async function GET(request: NextRequest) {
       ...account,
       in_dashboard: index === 0 // First account auto-added to dashboard
     }))
-    
+
+    // Preserve demo account (act_999888777666) across reconnects — it's not a real Meta
+    // account so Meta's API won't return it, but the demo workspace depends on it
+    const DEMO_ACCOUNT_ID = 'act_999888777666'
+    const { data: existingConn } = await supabase
+      .from('meta_connections')
+      .select('ad_accounts')
+      .eq('user_id', userId)
+      .single()
+
+    if (existingConn?.ad_accounts) {
+      const demoAccount = (existingConn.ad_accounts as any[]).find(
+        (a: any) => a.id === DEMO_ACCOUNT_ID
+      )
+      if (demoAccount && !accountsWithDashboard.some((a: any) => a.id === DEMO_ACCOUNT_ID)) {
+        accountsWithDashboard.push(demoAccount)
+      }
+    }
+
     // Set the first account as selected
     const firstAccountId = accountsWithDashboard.length > 0 ? accountsWithDashboard[0].id : null
-    
+
     // Upsert meta_connections record
     const { error: dbError } = await supabase
       .from('meta_connections')
