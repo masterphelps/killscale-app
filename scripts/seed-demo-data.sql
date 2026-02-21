@@ -37,19 +37,6 @@ DECLARE
   v_freq FLOAT;
   v_ctr FLOAT;
   v_rand FLOAT;
-
-  -- Campaign configs: daily_spend, base_roas, num_ads, days_active, status, is_cbo
-  TYPE camp_config IS RECORD (
-    camp_id TEXT,
-    camp_name TEXT,
-    daily_spend FLOAT,
-    base_roas FLOAT,
-    num_ads INT,
-    days_active INT,
-    camp_status TEXT,
-    is_cbo BOOLEAN
-  );
-
 BEGIN
   -- =========================================================================
   -- 1. Clean up existing demo data
@@ -115,14 +102,14 @@ BEGIN
       v_freq := ROUND((v_impressions::float / GREATEST(v_reach, 1))::numeric, 4);
 
       INSERT INTO ad_data (
-        id, ad_account_id, date_start, date_end,
+        id, user_id, ad_account_id, date_start, date_end,
         campaign_name, campaign_id, campaign_status, campaign_daily_budget,
         adset_name, adset_id, adset_status,
         ad_name, ad_id, status, creative_id,
         impressions, clicks, spend, purchases, revenue,
         reach, frequency, source
       ) VALUES (
-        gen_random_uuid(), v_account_id, v_day, v_day,
+        gen_random_uuid(), v_demo_user_id, v_account_id, v_day, v_day,
         'CBO - Summer Collection Launch', 'demo_c1', 'ACTIVE', 165,
         'Broad Interest - Fashion', 'demo_as1', 'ACTIVE',
         'Ad ' || i || ' - Summer Vibes', 'demo_ad1_' || i, 'ACTIVE', 'demo_cr1_' || i,
@@ -151,14 +138,14 @@ BEGIN
       v_freq := ROUND((v_impressions::float / GREATEST(v_reach, 1))::numeric, 4);
 
       INSERT INTO ad_data (
-        id, ad_account_id, date_start, date_end,
+        id, user_id, ad_account_id, date_start, date_end,
         campaign_name, campaign_id, campaign_status, campaign_daily_budget,
         adset_name, adset_id, adset_status,
         ad_name, ad_id, status, creative_id,
         impressions, clicks, spend, purchases, revenue,
         reach, frequency, source
       ) VALUES (
-        gen_random_uuid(), v_account_id, v_day, v_day,
+        gen_random_uuid(), v_demo_user_id, v_account_id, v_day, v_day,
         'CBO - Retargeting Warm Audiences', 'demo_c2', 'ACTIVE', 90,
         'Website Visitors 30d', 'demo_as2', 'ACTIVE',
         'Ad ' || i || ' - Come Back', 'demo_ad2_' || i, 'ACTIVE', 'demo_cr2_' || i,
@@ -195,14 +182,14 @@ BEGIN
       v_freq := ROUND((v_impressions::float / GREATEST(v_reach, 1))::numeric, 4);
 
       INSERT INTO ad_data (
-        id, ad_account_id, date_start, date_end,
+        id, user_id, ad_account_id, date_start, date_end,
         campaign_name, campaign_id, campaign_status,
         adset_name, adset_id, adset_status, adset_daily_budget,
         ad_name, ad_id, status, creative_id,
         impressions, clicks, spend, purchases, revenue,
         reach, frequency, source
       ) VALUES (
-        gen_random_uuid(), v_account_id, v_day, v_day,
+        gen_random_uuid(), v_demo_user_id, v_account_id, v_day, v_day,
         'ABO - Broad Prospecting', 'demo_c3', 'ACTIVE',
         'Interest - Health & Fitness', 'demo_as3', 'ACTIVE', 72,
         'Ad ' || i || ' - Discovery', 'demo_ad3_' || i, 'ACTIVE', 'demo_cr3_' || i,
@@ -231,14 +218,14 @@ BEGIN
       v_freq := ROUND((v_impressions::float / GREATEST(v_reach, 1))::numeric, 4);
 
       INSERT INTO ad_data (
-        id, ad_account_id, date_start, date_end,
+        id, user_id, ad_account_id, date_start, date_end,
         campaign_name, campaign_id, campaign_status, campaign_daily_budget,
         adset_name, adset_id, adset_status,
         ad_name, ad_id, status, creative_id,
         impressions, clicks, spend, purchases, revenue,
         reach, frequency, source
       ) VALUES (
-        gen_random_uuid(), v_account_id, v_day, v_day,
+        gen_random_uuid(), v_demo_user_id, v_account_id, v_day, v_day,
         'CBO - New Product Test', 'demo_c4', 'ACTIVE', 84,
         'Lookalike - Purchasers 1%', 'demo_as4', 'ACTIVE',
         'Ad ' || i || ' - New Drop', 'demo_ad4_' || i, 'ACTIVE', 'demo_cr4_' || i,
@@ -276,14 +263,14 @@ BEGIN
       v_purchases := GREATEST(0, (v_revenue / (55 + random() * 15))::int);
 
       INSERT INTO ad_data (
-        id, ad_account_id, date_start, date_end,
+        id, user_id, ad_account_id, date_start, date_end,
         campaign_name, campaign_id, campaign_status,
         adset_name, adset_id, adset_status, adset_daily_budget,
         ad_name, ad_id, status, creative_id,
         impressions, clicks, spend, purchases, revenue,
         reach, frequency, source
       ) VALUES (
-        gen_random_uuid(), v_account_id, v_day, v_day,
+        gen_random_uuid(), v_demo_user_id, v_account_id, v_day, v_day,
         'ABO - Lookalike Cold', 'demo_c5', 'PAUSED',
         'LAL - Email List 5%', 'demo_as5', 'PAUSED', 63,
         'Ad ' || i || ' - Cold Reach', 'demo_ad5_' || i, 'PAUSED', 'demo_cr5_' || i,
@@ -312,14 +299,14 @@ BEGIN
       v_freq := ROUND((v_impressions::float / GREATEST(v_reach, 1))::numeric, 4);
 
       INSERT INTO ad_data (
-        id, ad_account_id, date_start, date_end,
+        id, user_id, ad_account_id, date_start, date_end,
         campaign_name, campaign_id, campaign_status, campaign_daily_budget,
         adset_name, adset_id, adset_status,
         ad_name, ad_id, status, creative_id,
         impressions, clicks, spend, purchases, revenue,
         reach, frequency, source
       ) VALUES (
-        gen_random_uuid(), v_account_id, v_day, v_day,
+        gen_random_uuid(), v_demo_user_id, v_account_id, v_day, v_day,
         'CBO - Holiday Promo', 'demo_c6', 'PAUSED', 57,
         'Holiday Shoppers', 'demo_as6', 'PAUSED',
         'Ad ' || i || ' - Holiday Deal', 'demo_ad6_' || i, 'PAUSED', 'demo_cr6_' || i,
