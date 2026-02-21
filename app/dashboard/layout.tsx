@@ -150,6 +150,7 @@ export default function DashboardLayout({
         // Different user (or first visit) — clear cached checks
         sessionStorage.removeItem('ks_onboarding_checked')
         sessionStorage.removeItem('ks_had_valid_subscription')
+        sessionStorage.removeItem('ks_demo_redirected')
         sessionStorage.setItem('ks_session_user_id', user.id)
         hadOnboardingChecked.current = false
         hadValidSubscription.current = false
