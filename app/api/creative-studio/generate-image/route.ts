@@ -225,6 +225,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Map aspect ratio to Gemini format (e.g. '9:16' → '9:16')
+    const aspectRatio = body.aspectRatio || '1:1'
+
     const hasProductImage = body.product.imageBase64 && body.product.imageMimeType
     const hasReferenceAd = body.referenceAd?.imageBase64 && body.referenceAd?.imageMimeType
     let geminiFallbackReason = ''
@@ -308,6 +311,7 @@ export async function POST(request: NextRequest) {
           ],
           config: {
             responseModalities: ['IMAGE', 'TEXT'],
+            imageConfig: { aspectRatio },
           }
         }))
 
@@ -376,6 +380,7 @@ export async function POST(request: NextRequest) {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         responseModalities: ['IMAGE', 'TEXT'],
+        imageConfig: { aspectRatio },
       },
     }))
 

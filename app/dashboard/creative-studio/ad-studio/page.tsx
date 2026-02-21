@@ -325,6 +325,8 @@ export default function AdStudioPage() {
   const [currentImageVersion, setCurrentImageVersion] = useState<Record<number, number>>({}) // Track which version is shown
   const [imageErrors, setImageErrors] = useState<Record<number, string>>({})
   const [imageStyles, setImageStyles] = useState<Record<number, 'clone' | 'lifestyle' | 'product' | 'minimal' | 'bold' | 'refresh'>>({})
+  const [imageAspectRatios, setImageAspectRatios] = useState<Record<number, '1:1' | '9:16' | '16:9'>>({})
+  const [includeProductImage, setIncludeProductImage] = useState<Record<number, boolean>>({})
   const [imagePrompts, setImagePrompts] = useState<Record<number, string>>({}) // For Create mode - required prompt per ad
 
   // Upload mode state
@@ -1177,6 +1179,12 @@ export default function AdStudioPage() {
 
     try {
       // Build request body - include reference ad image if available
+      // If user toggled off product image, strip it from the product info sent to API
+      const shouldIncludeProductImage = includeProductImage[index] !== false // default true
+      const productPayload = shouldIncludeProductImage
+        ? productInfo
+        : { ...productInfo, imageBase64: undefined, imageMimeType: undefined }
+
       const requestBody: Record<string, unknown> = {
         userId: user.id,
         adCopy: {
@@ -1185,13 +1193,13 @@ export default function AdStudioPage() {
           description: ad.description,
           angle: ad.angle,
         },
-        product: productInfo,
+        product: productPayload,
         style: imageStyles[index] || (referenceAdImage ? (isRefreshMode ? 'refresh' : 'clone') : 'lifestyle'),
-        aspectRatio: '1:1',
+        aspectRatio: imageAspectRatios[index] || '1:1',
         isRefresh: isRefreshMode,
       }
 
-      console.log('[Ad Studio] Product image present:', Boolean(productInfo.imageBase64), 'length:', productInfo.imageBase64?.length || 0)
+      console.log('[Ad Studio] Product image present:', Boolean(productPayload.imageBase64), 'length:', productPayload.imageBase64?.length || 0, '| Aspect ratio:', imageAspectRatios[index] || '1:1')
 
       // Add reference ad image for style matching (Clone mode)
       if (referenceAdImage) {
@@ -1274,7 +1282,7 @@ export default function AdStudioPage() {
     } finally {
       setGeneratingImageIndex(null)
     }
-  }, [productInfo, imageStyles, referenceAdImage, user?.id, currentAccountId, sessionId, generatedImages, saveImageToSession, imagePrompts, isRefreshMode])
+  }, [productInfo, imageStyles, imageAspectRatios, includeProductImage, referenceAdImage, user?.id, currentAccountId, sessionId, generatedImages, saveImageToSession, imagePrompts, isRefreshMode])
 
   // Adjust an existing image with a prompt
   const handleAdjustImage = useCallback(async (adIndex: number) => {
@@ -5076,27 +5084,27 @@ export default function AdStudioPage() {
                       {/* No images - show generate button (with prompt field for Create/Upload mode) */}
                       {(!generatedImages[index] || generatedImages[index].length === 0) && (
                         <div className="space-y-3">
-                          {/* Image prompt + style row */}
-                          <div className="flex gap-2 items-end">
-                            {(mode === 'create' || mode === 'upload') ? (
-                              <div className="flex-1">
-                                <label className="block text-xs text-zinc-500 mb-1.5">
-                                  {mode === 'upload' ? 'Creative direction' : 'Describe how you want the ad to look'} <span className="text-red-400">*</span>
-                                </label>
-                                <textarea
-                                  value={imagePrompts[index] || ''}
-                                  onChange={(e) => setImagePrompts(prev => ({ ...prev, [index]: e.target.value }))}
-                                  placeholder="e.g., 'Lifestyle photo of someone using the product outdoors with warm sunset lighting'"
-                                  className={cn(
-                                    'w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none resize-none',
-                                    mode === 'upload' ? 'focus:border-cyan-500' : 'focus:border-accent'
-                                  )}
-                                  rows={2}
-                                />
+                          {/* Aspect ratio + style + product image toggle row */}
+                          <div className="flex flex-wrap gap-2 items-end">
+                            <div className="shrink-0">
+                              <label className="block text-xs text-zinc-500 mb-1.5">Ratio</label>
+                              <div className="flex rounded-lg border border-border overflow-hidden">
+                                {([['1:1', 'Square'], ['9:16', 'Portrait'], ['16:9', 'Landscape']] as const).map(([ratio, label]) => (
+                                  <button
+                                    key={ratio}
+                                    onClick={() => setImageAspectRatios(prev => ({ ...prev, [index]: ratio }))}
+                                    className={cn(
+                                      'px-2.5 py-[6px] text-xs transition-colors',
+                                      (imageAspectRatios[index] || '1:1') === ratio
+                                        ? 'bg-accent/20 text-white font-medium'
+                                        : 'bg-bg-dark text-zinc-400 hover:text-white hover:bg-bg-hover'
+                                    )}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
                               </div>
-                            ) : (
-                              <div className="flex-1" />
-                            )}
+                            </div>
                             <div className="shrink-0">
                               <label className="block text-xs text-zinc-500 mb-1.5">Style</label>
                               <select
@@ -5116,7 +5124,41 @@ export default function AdStudioPage() {
                                 <option value="bold">Bold</option>
                               </select>
                             </div>
+                            {productInfo?.imageBase64 && (
+                              <div className="shrink-0">
+                                <label className="block text-xs text-zinc-500 mb-1.5">Source Image</label>
+                                <button
+                                  onClick={() => setIncludeProductImage(prev => ({ ...prev, [index]: prev[index] === false ? true : false }))}
+                                  className={cn(
+                                    'px-2.5 py-[6px] rounded-lg border text-xs transition-colors',
+                                    includeProductImage[index] !== false
+                                      ? 'border-green-500/40 bg-green-500/10 text-green-400'
+                                      : 'border-border bg-bg-dark text-zinc-500 hover:text-zinc-300'
+                                  )}
+                                >
+                                  {includeProductImage[index] !== false ? 'Included' : 'Excluded'}
+                                </button>
+                              </div>
+                            )}
                           </div>
+                          {/* Image prompt for Create/Upload mode */}
+                          {(mode === 'create' || mode === 'upload') && (
+                            <div>
+                              <label className="block text-xs text-zinc-500 mb-1.5">
+                                {mode === 'upload' ? 'Creative direction' : 'Describe how you want the ad to look'} <span className="text-red-400">*</span>
+                              </label>
+                              <textarea
+                                value={imagePrompts[index] || ''}
+                                onChange={(e) => setImagePrompts(prev => ({ ...prev, [index]: e.target.value }))}
+                                placeholder="e.g., 'Lifestyle photo of someone using the product outdoors with warm sunset lighting'"
+                                className={cn(
+                                  'w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none resize-none',
+                                  mode === 'upload' ? 'focus:border-cyan-500' : 'focus:border-accent'
+                                )}
+                                rows={2}
+                              />
+                            </div>
+                          )}
                           <button
                             onClick={() => handleGenerateImage(ad, index)}
                             disabled={generatingImageIndex !== null || ((mode === 'create' || mode === 'upload') && !imagePrompts[index]?.trim()) || (aiUsage != null && aiUsage.remaining < 5)}
