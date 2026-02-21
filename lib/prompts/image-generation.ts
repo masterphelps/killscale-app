@@ -414,7 +414,34 @@ Generate an advertisement image with text overlay.`
 // ── Text-Only Prompt (no images at all) ───────────────────────────────────
 
 export function buildTextOnlyPrompt(req: ImagePromptRequest, curatedText: CuratedAdText): string {
-  const { product, style = 'lifestyle' } = req
+  const { product, style = 'lifestyle', imagePrompt } = req
+
+  // If user provided creative direction, use it as primary guidance
+  if (imagePrompt) {
+    return `Create an advertisement image for this product: ${product.name}
+
+Product details:
+- Category: ${product.category || 'consumer product'}
+- Brand: ${product.brand || product.name}
+${product.description ? `- Description: ${product.description}` : ''}
+
+USER'S CREATIVE DIRECTION:
+"${imagePrompt}"
+
+The ad text MUST be exactly:
+Line 1 (big/bold text): "${curatedText.headline}"
+Line 2 (smaller supporting text): "${curatedText.supportingLine}"
+
+Requirements:
+- Follow the user's creative direction above
+- Include ONLY the two lines of text above - no other text, no labels
+- Spell the text EXACTLY as provided
+- Feature or represent the product prominently
+- Professional quality suitable for Facebook/Instagram ads
+- High resolution output${TEXT_REQUIREMENTS}
+
+Generate an advertisement image with text overlay.`
+  }
 
   if (style === 'bold') {
     return `Create a BOLD, scroll-stopping, pattern-interrupting advertisement image for: ${product.name}
