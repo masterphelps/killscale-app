@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useCallback, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Star, Rocket, DollarSign, TrendingUp, Eye, MousePointer, Users, Layers, Play, ChevronRight, ChevronDown, Image, Film, HardDrive, Calendar, Ruler, AlertTriangle } from 'lucide-react'
+import { X, Star, Rocket, Pencil, DollarSign, TrendingUp, Eye, MousePointer, Users, Layers, Play, ChevronRight, ChevronDown, Image, Film, HardDrive, Calendar, Ruler, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FatigueTrendChart } from './fatigue-trend-chart'
 import { PeriodComparison } from './period-comparison'
@@ -100,6 +101,7 @@ export function TheaterModal({
   onAnalyze,
   onReanalyze,
 }: TheaterModalProps) {
+  const router = useRouter()
   const [isPlaying, setIsPlaying] = useState(false)
   const [isTogglingStarred, setIsTogglingStarred] = useState(false)
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
@@ -636,6 +638,19 @@ export function TheaterModal({
                       <Star className={cn('w-5 h-5', isStarred && 'fill-yellow-500')} />
                       {isStarred ? 'Starred' : 'Star'}
                     </button>
+
+                    {!isVideo && displayUrl && (
+                      <button
+                        onClick={() => {
+                          onClose()
+                          router.push(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(displayUrl)}`)
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border border-purple-500/50 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20"
+                      >
+                        <Pencil className="w-5 h-5" />
+                        Edit Image
+                      </button>
+                    )}
 
                     {onBuildNewAds && (
                       <button

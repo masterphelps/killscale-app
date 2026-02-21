@@ -5002,6 +5002,15 @@ export default function AdStudioPage() {
                               >
                                 <Download className="w-4 h-4" />
                               </button>
+                              {currentImage.storageUrl && (
+                                <button
+                                  onClick={() => router.push(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(currentImage.storageUrl!)}`)}
+                                  className="p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white transition-colors"
+                                  title="Edit in Image Editor"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleSaveToLibrary(index, ad)}
                                 disabled={savingToLibrary[index] || savedToLibrary[`${index}-${safeVersion}`]}

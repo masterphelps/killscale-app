@@ -42,6 +42,7 @@ import {
   Layers,
   Trash2,
   Plus,
+  Pencil,
 } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { cn } from '@/lib/utils'
@@ -707,6 +708,7 @@ function AdSessionDetailPanel({
 }) {
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
+  const router = useRouter()
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
@@ -1458,6 +1460,18 @@ function AdSessionDetailPanel({
                           >
                             <Download className="w-4 h-4" />
                           </button>
+                          {currentImage.storageUrl && (
+                            <button
+                              onClick={() => {
+                                const returnTo = encodeURIComponent(`/dashboard/creative-studio/ai-tasks?openSessionId=${session.id}`)
+                                router.push(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(currentImage.storageUrl!)}&returnTo=${returnTo}`)
+                              }}
+                              className="p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white transition-colors"
+                              title="Edit in Image Editor"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleSaveToLibrary(index, ad)}
                             disabled={savingToLibrary[index] || savedToLibrary[`${index}-${safeVersion}`]}
@@ -2835,6 +2849,7 @@ export default function AITasksPage() {
   // Deep-link state: which concept to auto-expand when returning from video editor
   const [initialConceptIndex, setInitialConceptIndex] = useState<number | null>(null)
   const deepLinkHandledRef = useRef(false)
+  const sessionDeepLinkHandledRef = useRef(false)
 
   const router = useRouter()
 
@@ -3194,6 +3209,17 @@ export default function AITasksPage() {
     setCanvasExpanded(true)
     handleSelectCanvas(canvasIdParam)
   }, [isLoadingCanvases, canvases, searchParams, handleSelectCanvas])
+
+  // Deep-link: auto-select session when returning from image editor
+  useEffect(() => {
+    if (sessionDeepLinkHandledRef.current || isLoadingSessions) return
+    const openSessionId = searchParams.get('openSessionId')
+    if (!openSessionId) return
+    const found = sessions.find(s => s.id === openSessionId)
+    if (!found) return
+    sessionDeepLinkHandledRef.current = true
+    handleSelectSession(openSessionId)
+  }, [isLoadingSessions, sessions, searchParams, handleSelectSession])
 
   // Not Pro - show upgrade prompt
   if (!isPro) {
