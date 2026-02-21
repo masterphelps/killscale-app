@@ -62,88 +62,92 @@ export async function POST(request: NextRequest) {
     // Parse the order data
     const order = JSON.parse(rawBody)
 
-    // Find the workspace for this shop
-    const { data: connection, error: connError } = await supabase
+    // Find ALL workspaces connected to this shop.
+    // The same Shopify store can be linked to multiple workspaces, so we must NOT
+    // use .single() here — it throws when there are 0 or 2+ matching rows,
+    // which silently drops all webhook orders (returns 200 so Shopify doesn't retry).
+    const { data: connections, error: connError } = await supabase
       .from('shopify_connections')
       .select('workspace_id, user_id')
       .eq('shop_domain', shopDomain)
-      .single()
 
-    if (connError || !connection) {
+    if (connError || !connections || connections.length === 0) {
       console.log('[Shopify Webhook] No connection found for shop:', shopDomain)
       // Return 200 to prevent Shopify from retrying - this shop is disconnected
       return NextResponse.json({ received: true, skipped: 'no_connection' })
     }
 
-    // Handle different topics
-    if (topic === 'orders/cancelled') {
-      // Delete the order from our database
-      await supabase
-        .from('shopify_orders')
-        .delete()
-        .eq('workspace_id', connection.workspace_id)
-        .eq('shopify_order_id', `gid://shopify/Order/${order.id}`)
-
-      console.log('[Shopify Webhook] Deleted cancelled order:', order.id)
-      return NextResponse.json({ received: true, action: 'deleted' })
-    }
-
-    // For orders/create and orders/updated, upsert the order
-    // Extract UTM params from customer journey if available
+    // Extract shared order data before looping
     const customerJourney = order.customer_journey_summary || order.customerJourneySummary || {}
     const lastVisit = customerJourney.last_visit || customerJourney.lastVisit || {}
     const firstVisit = customerJourney.first_visit || customerJourney.firstVisit || {}
     const lastUtm = lastVisit.utm_parameters || lastVisit.utmParameters || {}
     const firstUtm = firstVisit.utm_parameters || firstVisit.utmParameters || {}
-
-    // Map financial_status - webhook uses snake_case, we store UPPERCASE
     const financialStatus = (order.financial_status || 'pending').toUpperCase()
+    const shopifyOrderId = `gid://shopify/Order/${order.id}`
 
-    const orderData = {
-      user_id: connection.user_id,
-      workspace_id: connection.workspace_id,
-      shopify_order_id: `gid://shopify/Order/${order.id}`,
-      shopify_order_number: order.name || `#${order.order_number}`,
-      total_price: parseFloat(order.total_price || '0'),
-      subtotal_price: parseFloat(order.subtotal_price || order.total_price || '0'),
-      currency: order.currency || 'USD',
-      financial_status: financialStatus,
-      order_created_at: order.created_at,
+    // Deliver to each connected workspace
+    let successCount = 0
+    for (const connection of connections) {
+      if (topic === 'orders/cancelled') {
+        await supabase
+          .from('shopify_orders')
+          .delete()
+          .eq('workspace_id', connection.workspace_id)
+          .eq('shopify_order_id', shopifyOrderId)
+        successCount++
+        continue
+      }
 
-      // Last visit UTM params (last-touch attribution)
-      last_utm_source: lastUtm.source || null,
-      last_utm_medium: lastUtm.medium || null,
-      last_utm_campaign: lastUtm.campaign || null,
-      last_utm_content: lastUtm.content || null,
-      last_utm_term: lastUtm.term || null,
+      // For orders/create and orders/updated, upsert the order
+      const orderData = {
+        user_id: connection.user_id,
+        workspace_id: connection.workspace_id,
+        shopify_order_id: shopifyOrderId,
+        shopify_order_number: order.name || `#${order.order_number}`,
+        total_price: parseFloat(order.total_price || '0'),
+        subtotal_price: parseFloat(order.subtotal_price || order.total_price || '0'),
+        currency: order.currency || 'USD',
+        financial_status: financialStatus,
+        order_created_at: order.created_at,
 
-      // First visit UTM params (first-touch attribution)
-      first_utm_source: firstUtm.source || null,
-      first_utm_medium: firstUtm.medium || null,
-      first_utm_campaign: firstUtm.campaign || null,
-      first_utm_content: firstUtm.content || null,
-      first_utm_term: firstUtm.term || null,
+        // Last visit UTM params (last-touch attribution)
+        last_utm_source: lastUtm.source || null,
+        last_utm_medium: lastUtm.medium || null,
+        last_utm_campaign: lastUtm.campaign || null,
+        last_utm_content: lastUtm.content || null,
+        last_utm_term: lastUtm.term || null,
 
-      // Journey metadata
-      days_to_conversion: customerJourney.days_to_conversion || customerJourney.daysToConversion || null,
+        // First visit UTM params (first-touch attribution)
+        first_utm_source: firstUtm.source || null,
+        first_utm_medium: firstUtm.medium || null,
+        first_utm_campaign: firstUtm.campaign || null,
+        first_utm_content: firstUtm.content || null,
+        first_utm_term: firstUtm.term || null,
 
-      synced_at: new Date().toISOString(),
+        // Journey metadata
+        days_to_conversion: customerJourney.days_to_conversion || customerJourney.daysToConversion || null,
+
+        synced_at: new Date().toISOString(),
+      }
+
+      const { error: upsertError } = await supabase
+        .from('shopify_orders')
+        .upsert(orderData, {
+          onConflict: 'user_id,shopify_order_id',
+          ignoreDuplicates: false,
+        })
+
+      if (upsertError) {
+        console.error('[Shopify Webhook] Upsert error for workspace', connection.workspace_id, ':', upsertError)
+      } else {
+        successCount++
+      }
     }
 
-    const { error: upsertError } = await supabase
-      .from('shopify_orders')
-      .upsert(orderData, {
-        onConflict: 'user_id,shopify_order_id',
-        ignoreDuplicates: false,
-      })
-
-    if (upsertError) {
-      console.error('[Shopify Webhook] Upsert error:', upsertError)
-      return NextResponse.json({ error: 'Failed to save order' }, { status: 500 })
-    }
-
-    console.log('[Shopify Webhook] Upserted order:', order.id, 'topic:', topic, 'status:', financialStatus)
-    return NextResponse.json({ received: true, action: topic === 'orders/create' ? 'created' : 'updated' })
+    const action = topic === 'orders/cancelled' ? 'deleted' : (topic === 'orders/create' ? 'created' : 'updated')
+    console.log('[Shopify Webhook] Processed order:', order.id, 'topic:', topic, 'status:', financialStatus, 'workspaces:', successCount + '/' + connections.length)
+    return NextResponse.json({ received: true, action, workspaces: successCount })
 
   } catch (err) {
     console.error('[Shopify Webhook] Error:', err)

@@ -159,6 +159,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}${errorUrl}`)
     }
 
+    // Auto-link newly connected accounts to the user's default workspace
+    try {
+      const { data: defaultWs } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_default', true)
+        .single()
+
+      if (defaultWs && accountsWithDashboard.length > 0) {
+        const { data: existing } = await supabase
+          .from('workspace_accounts')
+          .select('ad_account_id')
+          .eq('workspace_id', defaultWs.id)
+
+        const existingIds = new Set((existing || []).map((a: any) => a.ad_account_id))
+        const toLink = accountsWithDashboard.filter((a: any) => !existingIds.has(a.id))
+
+        if (toLink.length > 0) {
+          await supabase.from('workspace_accounts').insert(
+            toLink.map((a: any) => ({
+              workspace_id: defaultWs.id,
+              platform: 'meta',
+              ad_account_id: a.id,
+              ad_account_name: a.name,
+              currency: a.currency || 'USD',
+            }))
+          )
+        }
+      }
+    } catch (linkErr) {
+      // Non-fatal — accounts still saved in meta_connections
+      console.error('Failed to auto-link accounts to workspace:', linkErr)
+    }
+
     const successUrl = returnTo ? `${returnTo}?meta=success` : '/dashboard'
     return NextResponse.redirect(`${baseUrl}${successUrl}`)
     

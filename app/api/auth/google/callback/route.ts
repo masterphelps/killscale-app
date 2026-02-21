@@ -202,6 +202,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/dashboard/connect?error=db_failed`)
     }
 
+    // Auto-link newly connected accounts to the user's default workspace
+    try {
+      const { data: defaultWs } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_default', true)
+        .single()
+
+      if (defaultWs && validCustomers.length > 0) {
+        const { data: existing } = await supabase
+          .from('workspace_accounts')
+          .select('ad_account_id')
+          .eq('workspace_id', defaultWs.id)
+
+        const existingIds = new Set((existing || []).map((a: any) => a.ad_account_id))
+        const toLink = validCustomers.filter(c => !existingIds.has(c.id))
+
+        if (toLink.length > 0) {
+          await supabase.from('workspace_accounts').insert(
+            toLink.map(c => ({
+              workspace_id: defaultWs.id,
+              platform: 'google',
+              ad_account_id: c.id,
+              ad_account_name: c.name,
+              currency: c.currency || 'USD',
+            }))
+          )
+        }
+      }
+    } catch (linkErr) {
+      // Non-fatal — accounts still saved in google_connections
+      console.error('Failed to auto-link Google accounts to workspace:', linkErr)
+    }
+
     return NextResponse.redirect(`${baseUrl}/dashboard/connect?google=success`)
 
   } catch (err) {

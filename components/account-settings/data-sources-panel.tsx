@@ -22,7 +22,7 @@ interface DataSourcesPanelProps {
 
 export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
   const { user } = useAuth()
-  const { accounts } = useAccount()
+  const { accounts, refetch, currentWorkspaceId } = useAccount()
 
   const [wsAccounts, setWsAccounts] = useState<WorkspaceAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +65,8 @@ export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
 
     if (!error) {
       load()
+      // Refresh sidebar account count if editing the active workspace
+      if (workspaceId === currentWorkspaceId) refetch()
     }
     setAddingAccount(false)
   }
@@ -79,6 +81,8 @@ export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
       .eq('ad_account_id', accountId)
 
     setWsAccounts(prev => prev.filter(a => a.ad_account_id !== accountId))
+    // Refresh sidebar account count if editing the active workspace
+    if (workspaceId === currentWorkspaceId) refetch()
   }
 
   if (!workspaceId) {

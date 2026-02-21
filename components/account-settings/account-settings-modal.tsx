@@ -64,7 +64,7 @@ const billingNavItems: { id: SettingsPanel; label: string; icon: typeof CreditCa
 
 export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile' }: AccountSettingsModalProps) {
   const { user } = useAuth()
-  const { currentWorkspaceId } = useAccount()
+  const { currentWorkspaceId, switchWorkspace } = useAccount()
   const [activePanel, setActivePanel] = useState<SettingsPanel>(initialPanel)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -119,6 +119,8 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
       setSelectedWorkspaceId(data.id)
       setNewWorkspaceName('')
       setShowCreateForm(false)
+      // Also switch the sidebar/app to this workspace so it stays in sync
+      switchWorkspace(data.id)
     }
   }
 
