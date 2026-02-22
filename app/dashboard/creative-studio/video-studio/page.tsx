@@ -210,6 +210,7 @@ export default function VideoStudioPage() {
   // Product images from analysis + picker state
   const [productImages, setProductImages] = useState<ProductImage[]>([])
   const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
+  const [includeProductImage, setIncludeProductImage] = useState(true)
 
   // Step 2: Video style
   type VideoStyle = 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
@@ -413,7 +414,7 @@ export default function VideoStudioPage() {
       const res = await fetch('/api/creative-studio/generate-ad-concepts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product, style }),
+        body: JSON.stringify({ product, style, includeProductImage }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -453,7 +454,7 @@ export default function VideoStudioPage() {
     } finally {
       setIsGeneratingConcepts(false)
     }
-  }, [productKnowledge, videoStyle, user?.id, currentAccountId, productUrl])
+  }, [productKnowledge, videoStyle, user?.id, currentAccountId, productUrl, includeProductImage])
 
   // Assemble product knowledge from pill selections and go to step 2
   const handleGoToStep2 = useCallback(() => {
@@ -561,8 +562,8 @@ export default function VideoStudioPage() {
           canvasId: canvasId || null,
           productName: productKnowledge.name || null,
           adIndex: conceptIndex,
-          productImageBase64: productImages[selectedProductImageIdx]?.base64 || null,
-          productImageMimeType: productImages[selectedProductImageIdx]?.mimeType || null,
+          productImageBase64: includeProductImage ? (productImages[selectedProductImageIdx]?.base64 || null) : null,
+          productImageMimeType: includeProductImage ? (productImages[selectedProductImageIdx]?.mimeType || null) : null,
           provider: apiProvider,
           quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
@@ -713,6 +714,7 @@ export default function VideoStudioPage() {
           product: productKnowledge,
           count: 1,
           existingConcepts: concepts,
+          includeProductImage,
         }),
       })
       const data = await res.json()
@@ -732,7 +734,7 @@ export default function VideoStudioPage() {
     } finally {
       setAddConceptMode('idle')
     }
-  }, [productKnowledge, concepts, saveConceptsToCanvas])
+  }, [productKnowledge, concepts, saveConceptsToCanvas, includeProductImage])
 
   const handleAddPromptConcept = useCallback(async () => {
     if (!promptDirection.trim()) return
@@ -746,6 +748,7 @@ export default function VideoStudioPage() {
           count: 1,
           existingConcepts: concepts,
           directionPrompt: promptDirection.trim(),
+          includeProductImage,
         }),
       })
       const data = await res.json()
@@ -766,7 +769,7 @@ export default function VideoStudioPage() {
       setAddConceptMode('idle')
       setPromptDirection('')
     }
-  }, [productKnowledge, concepts, saveConceptsToCanvas, promptDirection])
+  }, [productKnowledge, concepts, saveConceptsToCanvas, promptDirection, includeProductImage])
 
   const handleAddCustomConcept = useCallback(() => {
     const blank: AdConcept = {
@@ -997,6 +1000,19 @@ export default function VideoStudioPage() {
                   ))}
                 </div>
               </div>
+            )}
+
+            {/* Include product image toggle */}
+            {productImages.length > 0 && (
+              <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeProductImage}
+                  onChange={(e) => setIncludeProductImage(e.target.checked)}
+                  className="rounded border-zinc-600 bg-zinc-800 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+                />
+                <span className="text-xs text-zinc-400">Include product image in video</span>
+              </label>
             )}
           </div>
 

@@ -352,9 +352,7 @@ export function buildConceptSoraPrompt(
     blocks.push(`[Mood & Atmosphere]\n${script.mood}`)
   }
 
-  const pacingNote = 'Pacing: ONE continuous fluid camera move for this segment. Use dynamic camera motion (dolly, orbit, crane, push-in) to keep the viewer engaged. This segment will be joined with others at different angles to create an edited commercial feel — so make this single shot visually compelling on its own.'
-
-  blocks.push(`[Technical]\nVertical 9:16 portrait (1024x1792). Professional ad quality. Cinematic lighting. No text, logos, or UI elements in the video — overlays are added in post.\n${pacingNote}`)
+  blocks.push(`[Technical]\nVertical 9:16 portrait. Cinematic lighting. No text or logos.`)
 
   if (dialogueLines.length > 0) {
     const formattedLines = dialogueLines.map(line => `Speaker: "${line}"`).join('\n')

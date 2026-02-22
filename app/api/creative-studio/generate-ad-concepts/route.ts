@@ -8,12 +8,13 @@ export async function POST(request: NextRequest) {
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
     const body = await request.json()
-    const { product, count = 4, existingConcepts = [], directionPrompt, style = 'cinematic' } = body as {
+    const { product, count = 4, existingConcepts = [], directionPrompt, style = 'cinematic', includeProductImage = true } = body as {
       product: ProductKnowledge
       count?: number
       existingConcepts?: Array<{ angle?: string; script?: { scene?: string } }>
       directionPrompt?: string
       style?: 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+      includeProductImage?: boolean
     }
 
     if (!product?.name) {
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const prompt = buildConceptGenerationPrompt({ product, count, existingConcepts, directionPrompt, style })
+    const prompt = buildConceptGenerationPrompt({ product, count, existingConcepts, directionPrompt, style, includeProductImage })
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-5.2',

@@ -29,11 +29,9 @@ import {
   FileText,
   Wand2,
   Package,
-  ImagePlus,
   ExternalLink,
   Download,
   FolderPlus,
-  Send,
   Megaphone,
   Loader2,
   Video,
@@ -41,7 +39,6 @@ import {
   Search,
   Layers,
   Trash2,
-  Plus,
   Pencil,
 } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
@@ -52,8 +49,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import type { VideoAnalysis, ScriptSuggestion } from '@/components/creative-studio/types'
 import type { VideoJob, OverlayConfig, VideoComposition } from '@/remotion/types'
 import type { ProductKnowledge, AdConcept } from '@/lib/video-prompt-templates'
-import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
-import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -716,39 +711,15 @@ function AdSessionDetailPanel({
   const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
   const [savedCopyIds, setSavedCopyIds] = useState<Record<number, boolean>>({})
 
-  // AI credit usage tracking
-  const [aiUsage, setAiUsage] = useState<{ used: number; planLimit: number; purchased: number; totalAvailable: number; remaining: number; status: string } | null>(null)
-
-  const refreshCredits = useCallback(() => {
-    if (!user?.id) return
-    fetch(`/api/ai/usage?userId=${user.id}`)
-      .then(res => res.json())
-      .then(data => { if (data.totalAvailable !== undefined) setAiUsage(data) })
-      .catch(() => {})
-  }, [user?.id])
-
-  useEffect(() => {
-    refreshCredits()
-  }, [refreshCredits])
-
-  // Image generation state - stores array of versions per ad
-  const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null)
+  // Image display state - stores array of versions per ad (loaded from session, no generation)
   const [generatedImages, setGeneratedImages] = useState<Record<number, GeneratedImage[]>>({})
   const [currentImageVersion, setCurrentImageVersion] = useState<Record<number, number>>({})
   const [imageErrors, setImageErrors] = useState<Record<number, string>>({})
-  const [imageStyle, setImageStyle] = useState<'lifestyle' | 'product' | 'minimal' | 'bold'>(
-    (session.image_style as 'lifestyle' | 'product' | 'minimal' | 'bold') || 'lifestyle'
-  )
-  const [hdText, setHdText] = useState(false) // Use Gemini 3 Pro for better text rendering
 
   // Track session images for persistence
   const [sessionImages, setSessionImages] = useState<SessionImage[]>(
     (session.generated_images as SessionImage[]) || []
   )
-
-  // Image adjustment
-  const [adjustmentPrompts, setAdjustmentPrompts] = useState<Record<number, string>>({})
-  const [adjustingImageIndex, setAdjustingImageIndex] = useState<number | null>(null)
 
   // Saving to media library
   const [savingToLibrary, setSavingToLibrary] = useState<Record<number, boolean>>({})
@@ -848,198 +819,6 @@ function AdSessionDetailPanel({
       setSavingCopyIndex(null)
     }
   }, [user?.id, currentAccountId, savedCopyIds, session.id])
-
-  // Generate image for an ad
-  const handleGenerateImage = useCallback(async (ad: AdStudioSession['generated_ads'][0], index: number) => {
-    if (!session.product_info || !user?.id || !currentAccountId) return
-
-    setGeneratingImageIndex(index)
-    setImageErrors(prev => ({ ...prev, [index]: '' }))
-
-    try {
-      // 1. Generate image
-      const requestBody: Record<string, unknown> = {
-        userId: user.id,
-        adCopy: {
-          headline: ad.headline,
-          primaryText: ad.primaryText,
-          description: ad.description,
-          angle: ad.angle,
-        },
-        product: session.product_info,
-        style: imageStyle,
-        aspectRatio: '1:1',
-        hdText,
-      }
-
-      const res = await fetch('/api/creative-studio/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        if (res.status === 429 && data.totalAvailable) {
-          setAiUsage({ used: data.used, planLimit: data.totalAvailable, purchased: 0, totalAvailable: data.totalAvailable, remaining: data.remaining || 0, status: data.status })
-        }
-        setImageErrors(prev => ({ ...prev, [index]: data.error || 'Failed to generate image' }))
-        return
-      }
-
-      // Optimistically update credit usage
-      setAiUsage(prev => prev ? { ...prev, used: prev.used + 5, remaining: Math.max(0, prev.remaining - 5) } : prev)
-      notifyCreditsChanged()
-
-      const newImage: GeneratedImage = {
-        base64: data.image.base64,
-        mimeType: data.image.mimeType,
-      }
-
-      // 2. Upload to storage for persistence (NOT to media library)
-      const saveRes = await fetch('/api/creative-studio/save-generated-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base64: data.image.base64,
-          mimeType: data.image.mimeType,
-          adAccountId: currentAccountId,
-          name: `AI Ad - ${ad.angle} - ${session.id}`,
-          userId: user.id,
-          saveToLibrary: false,
-        }),
-      })
-
-      const saveData = await saveRes.json()
-
-      if (saveRes.ok && saveData.storageUrl) {
-        newImage.storageUrl = saveData.storageUrl
-
-        // 3. Calculate version index
-        const existingImages = generatedImages[index] || []
-        const versionIndex = existingImages.length
-
-        // 4. Save to session for persistence
-        const newSessionImage: SessionImage = {
-          adIndex: index,
-          versionIndex,
-          storageUrl: saveData.storageUrl,
-          mediaHash: saveData.mediaHash,
-          mimeType: data.image.mimeType,
-        }
-        const updatedSessionImages = [...sessionImages, newSessionImage]
-        await saveImagesToSession(updatedSessionImages)
-      }
-
-      // 5. Update local state
-      setGeneratedImages(prev => {
-        const existing = prev[index] || []
-        return { ...prev, [index]: [...existing, newImage] }
-      })
-      setCurrentImageVersion(prev => {
-        const existing = generatedImages[index] || []
-        return { ...prev, [index]: existing.length } // Point to the new image
-      })
-    } catch (err) {
-      setImageErrors(prev => ({ ...prev, [index]: 'Failed to generate image' }))
-    } finally {
-      setGeneratingImageIndex(null)
-    }
-  }, [session.product_info, session.id, imageStyle, hdText, user?.id, currentAccountId, generatedImages, sessionImages, saveImagesToSession])
-
-  // Adjust an existing image
-  const handleAdjustImage = useCallback(async (adIndex: number) => {
-    if (!user?.id || !currentAccountId) return
-
-    const images = generatedImages[adIndex]
-    const currentVersion = currentImageVersion[adIndex] ?? 0
-    const currentImage = images?.[currentVersion]
-    const prompt = adjustmentPrompts[adIndex]
-
-    if (!currentImage || !prompt?.trim()) return
-
-    // Need base64 to adjust - if we only have storageUrl, we can't adjust
-    if (!currentImage.base64) {
-      setImageErrors(prev => ({ ...prev, [adIndex]: 'Cannot adjust saved images - generate a new one first' }))
-      return
-    }
-
-    setAdjustingImageIndex(adIndex)
-    setImageErrors(prev => ({ ...prev, [adIndex]: '' }))
-
-    try {
-      const res = await fetch('/api/creative-studio/adjust-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: currentImage.base64,
-          imageMimeType: currentImage.mimeType,
-          adjustmentPrompt: prompt,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setImageErrors(prev => ({ ...prev, [adIndex]: data.error || 'Failed to adjust image' }))
-        return
-      }
-
-      const newImage: GeneratedImage = {
-        base64: data.image.base64,
-        mimeType: data.image.mimeType,
-      }
-
-      // Upload to storage for persistence (NOT to media library)
-      const saveRes = await fetch('/api/creative-studio/save-generated-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base64: data.image.base64,
-          mimeType: data.image.mimeType,
-          adAccountId: currentAccountId,
-          name: `AI Ad Adjusted - ${session.id}`,
-          userId: user.id,
-          saveToLibrary: false,
-        }),
-      })
-
-      const saveData = await saveRes.json()
-
-      if (saveRes.ok && saveData.storageUrl) {
-        newImage.storageUrl = saveData.storageUrl
-
-        // Save to session
-        const versionIndex = (generatedImages[adIndex] || []).length
-        const newSessionImage: SessionImage = {
-          adIndex,
-          versionIndex,
-          storageUrl: saveData.storageUrl,
-          mediaHash: saveData.mediaHash,
-          mimeType: data.image.mimeType,
-        }
-        const updatedSessionImages = [...sessionImages, newSessionImage]
-        await saveImagesToSession(updatedSessionImages)
-      }
-
-      setGeneratedImages(prev => {
-        const newImages = [...(prev[adIndex] || []), newImage]
-        setTimeout(() => {
-          setCurrentImageVersion(curr => ({
-            ...curr,
-            [adIndex]: newImages.length - 1
-          }))
-        }, 0)
-        return { ...prev, [adIndex]: newImages }
-      })
-      setAdjustmentPrompts(prev => ({ ...prev, [adIndex]: '' }))
-    } catch (err) {
-      setImageErrors(prev => ({ ...prev, [adIndex]: 'Failed to adjust image' }))
-    } finally {
-      setAdjustingImageIndex(null)
-    }
-  }, [generatedImages, currentImageVersion, adjustmentPrompts, user?.id, currentAccountId, session.id, sessionImages, saveImagesToSession])
 
   // Navigate between versions
   const navigateVersion = (adIndex: number, direction: 'prev' | 'next') => {
@@ -1265,50 +1044,14 @@ function AdSessionDetailPanel({
         <h4 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
           Generated Ad Copy ({session.generated_ads?.length || 0})
         </h4>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500">Image style:</span>
-          <select
-            value={imageStyle}
-            onChange={(e) => setImageStyle(e.target.value as typeof imageStyle)}
-            className="bg-bg-dark border border-border rounded-lg px-2 py-1 text-sm text-white focus:outline-none focus:border-accent"
-          >
-            <option value="lifestyle">Lifestyle</option>
-            <option value="product">Product</option>
-            <option value="minimal">Minimal</option>
-            <option value="bold">Bold</option>
-          </select>
-          {/* HD Text Toggle */}
-          <button
-            onClick={() => setHdText(!hdText)}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border',
-              hdText
-                ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                : 'bg-bg-dark text-zinc-500 border-border hover:text-zinc-300'
-            )}
-            title="Use HD model for better text rendering (slower)"
-          >
-            <span className="text-[10px]">Aa</span>
-            HD Text
-          </button>
-        </div>
+        <Link
+          href={`/dashboard/creative-studio/ad-studio?sessionId=${session.id}`}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/30"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          Continue in Ad Studio
+        </Link>
       </div>
-
-      {/* AI Credits */}
-      {aiUsage && (
-        <div className={cn(
-          'flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg w-fit',
-          aiUsage.remaining <= 0
-            ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-            : 'bg-zinc-800 text-zinc-400'
-        )}>
-          <ImagePlus className="w-3 h-3" />
-          {aiUsage.remaining <= 0
-            ? `Credit limit reached (${aiUsage.totalAvailable}${aiUsage.status === 'active' ? '/mo' : ' total'})`
-            : `${aiUsage.remaining} credits remaining — Image (5 cr)${aiUsage.status === 'active' ? ' · resets monthly' : ''}`
-          }
-        </div>
-      )}
 
       {/* Generated Ads Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1492,16 +1235,8 @@ function AdSessionDetailPanel({
                             )}
                           </button>
                           <button
-                            onClick={() => handleGenerateImage(ad, index)}
-                            disabled={generatingImageIndex !== null || adjustingImageIndex !== null}
-                            className="p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white transition-colors"
-                            title="Generate new version"
-                          >
-                            <Sparkles className="w-4 h-4" />
-                          </button>
-                          <button
                             onClick={() => handleCreateAd(index, ad)}
-                            disabled={creatingAd[index] || generatingImageIndex !== null || adjustingImageIndex !== null}
+                            disabled={creatingAd[index]}
                             className="p-2 rounded-lg bg-accent/80 hover:bg-accent text-white transition-colors"
                             title="Create Ad"
                           >
@@ -1514,34 +1249,6 @@ function AdSessionDetailPanel({
                         </div>
                       </div>
 
-                      {/* Adjust Image Input */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={adjustmentPrompts[index] || ''}
-                          onChange={(e) => setAdjustmentPrompts(prev => ({ ...prev, [index]: e.target.value }))}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAdjustImage(index)}
-                          placeholder="Adjust image... (e.g., 'make background blue')"
-                          className="flex-1 bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
-                          disabled={adjustingImageIndex !== null || generatingImageIndex !== null}
-                        />
-                        <button
-                          onClick={() => handleAdjustImage(index)}
-                          disabled={!adjustmentPrompts[index]?.trim() || adjustingImageIndex !== null || generatingImageIndex !== null}
-                          className={cn(
-                            'px-3 py-2 rounded-lg transition-colors flex items-center gap-1',
-                            'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30',
-                            (!adjustmentPrompts[index]?.trim() || adjustingImageIndex !== null || generatingImageIndex !== null) && 'opacity-50 cursor-not-allowed'
-                          )}
-                        >
-                          {adjustingImageIndex === index ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-
                       {imageErrors[index] && (
                         <div className="flex items-center gap-2 text-red-400 text-xs">
                           <AlertCircle className="w-3 h-3" />
@@ -1550,36 +1257,14 @@ function AdSessionDetailPanel({
                       )}
                     </div>
                   ) : (
-                    /* No images - show generate button */
-                    <div className="space-y-2">
-                      <button
-                        onClick={() => handleGenerateImage(ad, index)}
-                        disabled={generatingImageIndex !== null || (aiUsage != null && aiUsage.remaining < 5)}
-                        className={cn(
-                          'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
-                          'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30',
-                          (generatingImageIndex !== null || (aiUsage != null && aiUsage.remaining < 5)) && 'opacity-50 cursor-not-allowed'
-                        )}
-                      >
-                        {generatingImageIndex === index ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Generating Image...
-                          </>
-                        ) : (
-                          <>
-                            <ImagePlus className="w-4 h-4" />
-                            Generate Image (5 credits)
-                          </>
-                        )}
-                      </button>
-                      {imageErrors[index] && (
-                        <div className="flex items-center gap-2 text-red-400 text-xs">
-                          <AlertCircle className="w-3 h-3" />
-                          {imageErrors[index]}
-                        </div>
-                      )}
-                    </div>
+                    /* No images - link to Ad Studio for generation */
+                    <Link
+                      href={`/dashboard/creative-studio/ad-studio?sessionId=${session.id}`}
+                      className="w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Generate in Ad Studio
+                    </Link>
                   )}
                 </div>
               </div>
@@ -2039,45 +1724,6 @@ function ConceptCanvasDetailPanel({
 
   const [expandedConcept, setExpandedConcept] = useState<number | null>(initialExpandedConcept ?? null)
 
-  // Per-concept video quality (matches Video Studio)
-  type VideoQuality = 'standard' | 'premium'
-  const [conceptQuality, setConceptQuality] = useState<Record<number, VideoQuality>>({})
-  const VEO_BASE_DURATION = 8
-  const VEO_EXTENSION_STEP = 7
-  const QUALITY_COSTS = {
-    standard: { base: 20, extension: 10 },   // Veo 3.1 Fast (720p)
-    premium:  { base: 50, extension: 25 },    // Veo 3.1 Standard (1080p)
-  }
-  const getConceptQuality = (i: number): VideoQuality => conceptQuality[i] || 'standard'
-  const getConceptDuration = (i: number) => {
-    return canvas.concepts[i]?.estimatedDuration || VEO_BASE_DURATION
-  }
-  const getConceptCreditCost = (i: number) => {
-    const dur = getConceptDuration(i)
-    const q = getConceptQuality(i)
-    const costs = QUALITY_COSTS[q]
-    const extensions = dur > VEO_BASE_DURATION ? Math.round((dur - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
-    return costs.base + extensions * costs.extension
-  }
-  const getApiProvider = (i: number) => {
-    const dur = getConceptDuration(i)
-    return dur > VEO_BASE_DURATION ? 'veo-ext' : 'veo'
-  }
-
-  // Credits
-  const [credits, setCredits] = useState<{ remaining: number; totalAvailable: number } | null>(null)
-  useEffect(() => {
-    if (!user?.id) return
-    fetch(`/api/ai/usage?userId=${user.id}`)
-      .then(r => r.json())
-      .then(d => { if (d.remaining !== undefined) setCredits({ remaining: d.remaining, totalAvailable: d.totalAvailable }) })
-      .catch(() => {})
-  }, [user?.id])
-
-  const [generatingIndex, setGeneratingIndex] = useState<number | null>(null)
-  const [generateError, setGenerateError] = useState<string | null>(null)
-  const [extendingIndex, setExtendingIndex] = useState<number | null>(null)
-
   // Compositions state
   const [compositions, setCompositions] = useState<VideoComposition[]>([])
   const [isDeletingComposition, setIsDeletingComposition] = useState<string | null>(null)
@@ -2130,133 +1776,6 @@ function ConceptCanvasDetailPanel({
     const version = currentVideoVersion[conceptIndex] ?? 0
     return jobs[version] || null
   }
-
-  const handleGenerate = useCallback(async (conceptIndex: number) => {
-    if (!user?.id || !currentAccountId) return
-
-    const concept = canvas.concepts[conceptIndex]
-    if (!concept) return
-
-    const conceptDuration = getConceptDuration(conceptIndex)
-    const apiProvider = getApiProvider(conceptIndex)
-
-    setGeneratingIndex(conceptIndex)
-    setGenerateError(null)
-
-    try {
-      const fullPrompt = concept.videoPrompt || buildConceptSoraPrompt(concept, conceptDuration)
-
-      const res = await fetch('/api/creative-studio/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: currentAccountId,
-          prompt: fullPrompt,
-          videoStyle: 'concept',
-          durationSeconds: conceptDuration,
-          canvasId: canvas.id,
-          productName: canvas.product_knowledge?.name || null,
-          adIndex: conceptIndex,
-          productImageBase64: null,
-          productImageMimeType: null,
-          provider: apiProvider,
-          quality: getConceptQuality(conceptIndex),
-          targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
-          extensionPrompts: concept.extensionPrompts || undefined,
-          adCopy: concept.adCopy || null,
-          overlayConfig: {
-            style: 'bold' as const,
-            hook: {
-              line1: concept.overlay.hook,
-              startSec: 0,
-              endSec: 3,
-              animation: 'pop' as const,
-              fontSize: 56,
-              fontWeight: 800,
-              position: 'center' as const,
-            },
-            captions: (() => {
-              const caps = concept.overlay.captions
-              // Speech-paced timing: ~0.6s per word, min 1.2s, max 2.5s, small gaps
-              const captionStart = 3
-              const gap = 0.15
-              let cursor = captionStart
-              return caps.map((text, idx) => {
-                const wordCount = text.split(/\s+/).length
-                const duration = Math.min(2.5, Math.max(1.2, wordCount * 0.6))
-                const start = Math.round(cursor * 10) / 10
-                const end = Math.round((cursor + duration) * 10) / 10
-                cursor += duration + gap
-                return {
-                  text,
-                  startSec: start,
-                  endSec: end,
-                  highlight: idx < caps.length - 1,
-                  highlightWord: undefined as string | undefined,
-                  fontSize: 40,
-                  fontWeight: 700,
-                  position: 'bottom' as const,
-                }
-              })
-            })(),
-            cta: {
-              buttonText: concept.overlay.cta,
-              startSec: Math.max(conceptDuration - 3, conceptDuration * 0.7),
-              animation: 'slide' as const,
-              fontSize: 32,
-            },
-          },
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setGenerateError(data.error || 'Failed to start video generation')
-        return
-      }
-
-      setGenerateError(null)
-      const cCost = getConceptCreditCost(conceptIndex)
-      setCredits(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - cCost) } : prev)
-      notifyCreditsChanged()
-      setCurrentVideoVersion(prev => ({ ...prev, [conceptIndex]: 0 }))
-      onVideoGenerated?.()
-    } catch {
-      setGenerateError('Failed to generate video')
-    } finally {
-      setGeneratingIndex(null)
-    }
-  }, [user?.id, currentAccountId, canvas, onVideoGenerated])
-
-  // ─── Extend a completed Veo job by +7s ──────────────────────────────────
-  const handleExtend = useCallback(async (conceptIndex: number) => {
-    if (!user?.id) return
-    const job = getActiveJob(conceptIndex)
-    if (!job || job.status !== 'complete' || (job.provider !== 'veo-ext' && job.provider !== 'veo')) return
-
-    setExtendingIndex(conceptIndex)
-    try {
-      const res = await fetch('/api/creative-studio/video-status', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.id, userId: user.id }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        alert(data.error || 'Extension failed')
-        return
-      }
-      // Trigger refresh to pick up new status
-      onVideoGenerated?.()
-    } catch (err) {
-      console.error('[AITasks] Extend error:', err)
-      alert('Failed to extend video')
-    } finally {
-      setExtendingIndex(null)
-    }
-  }, [user?.id, canvasJobs, onVideoGenerated])
 
   return (
     <div className="space-y-6">
@@ -2431,22 +1950,6 @@ function ConceptCanvasDetailPanel({
                             <ChevronRight className="w-5 h-5" />
                           </button>
                         )}
-                        {/* +7 sec extend button — for Veo jobs */}
-                        {job && (job.provider === 'veo-ext' || job.provider === 'veo') && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleExtend(i) }}
-                            disabled={extendingIndex === i}
-                            className="flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl text-sm font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {extendingIndex === i ? (
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                              <Plus className="w-5 h-5" />
-                            )}
-                            <span className="whitespace-nowrap">+ 7 sec</span>
-                            <span className="text-[10px] text-amber-400/60">25 credits</span>
-                          </button>
-                        )}
                       </div>
                       <div className="flex gap-2 mt-3">
                         <button
@@ -2456,14 +1959,14 @@ function ConceptCanvasDetailPanel({
                           <Film className="w-3.5 h-3.5" />
                           Edit Video
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
-                          disabled={generatingIndex === i}
-                          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border disabled:opacity-50"
+                        <Link
+                          href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border"
                         >
-                          <Plus className={cn('w-3.5 h-3.5', generatingIndex === i && 'animate-spin')} />
-                          New Variation
-                        </button>
+                          <Video className="w-3.5 h-3.5" />
+                          Continue in Video Studio
+                        </Link>
                       </div>
                     </div>
                   )}
@@ -2532,14 +2035,14 @@ function ConceptCanvasDetailPanel({
                         <AlertCircle className="w-4 h-4" />
                         {job.error_message || 'Video generation failed'}
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
-                        disabled={generatingIndex === i}
-                        className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                      <Link
+                        href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300"
                       >
-                        <RefreshCw className={cn('w-3.5 h-3.5', generatingIndex === i && 'animate-spin')} />
-                        Retry
-                      </button>
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Retry in Video Studio
+                      </Link>
                     </div>
                   )}
 
@@ -2630,78 +2133,17 @@ function ConceptCanvasDetailPanel({
                     </div>
                   )}
 
-                  {/* Quality + Generate — shown when no job exists */}
-                  {!job && (() => {
-                    const cDuration = getConceptDuration(i)
-                    const cCost = getConceptCreditCost(i)
-                    return (
-                      <>
-                        {generateError && generatingIndex === i && (
-                          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm mb-3">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                            {generateError}
-                          </div>
-                        )}
-
-                        {/* Quality selector */}
-                        <div className="flex gap-2 mt-3 mb-3">
-                          {(['standard', 'premium'] as const).map(q => {
-                            const isActive = getConceptQuality(i) === q
-                            const qCosts = QUALITY_COSTS[q]
-                            const extensions = cDuration > VEO_BASE_DURATION ? Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
-                            const totalCost = qCosts.base + extensions * qCosts.extension
-                            return (
-                              <button
-                                key={q}
-                                onClick={(e) => { e.stopPropagation(); setConceptQuality(prev => ({ ...prev, [i]: q })) }}
-                                className={cn(
-                                  'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
-                                  isActive
-                                    ? 'bg-purple-500/10 border-purple-500/40'
-                                    : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
-                                )}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className={cn('text-xs font-medium', isActive ? 'text-purple-300' : 'text-zinc-400')}>
-                                    {q === 'standard' ? 'Standard' : 'Premium'}
-                                  </span>
-                                  <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
-                                </div>
-                                <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
-                              </button>
-                            )
-                          })}
-                        </div>
-
-                        {/* Duration info */}
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className="text-xs font-medium text-zinc-300">Veo 3.1{getConceptQuality(i) === 'standard' ? ' Fast' : ''}</span>
-                          <span className="text-xs text-zinc-500">{cDuration}s</span>
-                          {cDuration > VEO_BASE_DURATION && (
-                            <span className="text-[10px] text-purple-400/80">({Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)} extension{Math.round((cDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) > 1 ? 's' : ''})</span>
-                          )}
-                        </div>
-
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
-                          disabled={generatingIndex !== null || (credits !== null && credits.remaining < cCost)}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                        >
-                          {generatingIndex === i ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              Starting generation...
-                            </>
-                          ) : (
-                            <>
-                              <Video className="w-4 h-4" />
-                              Generate {cDuration}s Video &middot; {cCost} credits
-                            </>
-                          )}
-                        </button>
-                      </>
-                    )
-                  })()}
+                  {/* Generate in Video Studio — shown when no job exists */}
+                  {!job && (
+                    <Link
+                      href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 transition-colors text-sm mt-3"
+                    >
+                      <Video className="w-4 h-4" />
+                      Generate in Video Studio
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
@@ -2793,12 +2235,6 @@ function ConceptCanvasDetailPanel({
         </div>
       )}
 
-      {generateError && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {generateError}
-        </div>
-      )}
     </div>
   )
 }

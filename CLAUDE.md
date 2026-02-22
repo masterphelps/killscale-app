@@ -463,13 +463,33 @@ When "bold" style is selected, the prompt instructs Gemini to create a scroll-st
 
 **Files:** `app/dashboard/creative-studio/ad-studio/page.tsx`, `app/api/creative-studio/competitor-*.ts`, `app/api/creative-studio/generate-image/route.ts`
 
-### AI Tasks (Ad Studio Session Persistence)
-Allows users to revisit generated ad copy and generate images later from saved sessions.
+### AI Tasks (Portfolio & Session Review)
+Portfolio/review page for saved Ad Studio sessions and Video Studio concept canvases. No generation happens here — links to purpose-built studios for new generation.
 
 **User Flow:**
 1. Use Ad Studio to generate ad copy → session automatically saved
-2. Navigate to AI Tasks page → see all saved sessions
-3. Click session → view generated copy, generate images, adjust images, create ads
+2. Navigate to AI Tasks page → see all saved sessions and concept canvases
+3. Click session → view generated copy, browse existing images (download/save/edit/create-ad)
+4. Click "Continue in Ad Studio" → opens Ad Studio at Step 3 with session data pre-populated
+5. Click concept canvas → view concepts, watch completed videos, edit in Video Editor
+6. Click "Continue in Video Studio" → opens Video Studio with canvas restored
+
+**"Continue in Studio" Navigation:**
+- Ad sessions: `/dashboard/creative-studio/ad-studio?sessionId={id}` — restores product info, pills, generated ads, images, jumps to step 3
+- Concept canvases: `/dashboard/creative-studio/video-studio?canvasId={id}` — restores canvas with full generation controls
+
+**What AI Tasks shows (read-only):**
+- Ad copy cards with copy/save-to-library buttons
+- Existing generated images with download, edit in Image Editor, save to library, create ad buttons
+- Image carousel with version navigation
+- Video playback with Edit Video button
+- Concept card details (visual metaphor, script, overlays)
+- Compositions with Edit button
+- Job status/progress for in-progress generations
+
+**What AI Tasks does NOT do (delegated to studios):**
+- Image generation, adjustment, style selection, HD text toggle
+- Video generation, quality selection, extend, new variation, retry
 
 **Session Data Structure (`ad_studio_sessions` table):**
 ```sql
@@ -490,21 +510,19 @@ CREATE TABLE ad_studio_sessions (
 );
 ```
 
-**Image Persistence Flow:**
-1. Generate image via Gemini → get base64
-2. Upload to Meta via `/api/creative-studio/save-generated-image` → get real `mediaHash` + Supabase `storageUrl`
-3. PATCH session to append `{adIndex, versionIndex, storageUrl, mediaHash}` to `generated_images`
-4. On page reload, images load from `storageUrl` (persisted)
-
-**Image Generation Options:**
-- **Style selector:** Lifestyle, Product, Minimal, Bold
-- **HD Text toggle:** Uses Gemini 3 Pro for better text rendering (slower)
-
 **Key Files:**
 - `app/dashboard/creative-studio/ai-tasks/page.tsx` - AI Tasks page with collapsible sections
 - `app/api/creative-studio/ad-session/route.ts` - CRUD for sessions (GET, POST, PATCH, DELETE)
 - `app/api/creative-studio/save-generated-image/route.ts` - Uploads to Meta first, then Supabase Storage
 - `supabase/migrations/046_ad_studio_sessions.sql` - Session table + RLS policies
+
+**Ad Studio Session Restoration (`?sessionId=` URL param):**
+- `useSearchParams` reads `sessionId` from URL
+- Fetches session via `GET /api/creative-studio/ad-session?userId=X&sessionId=Y`
+- Populates: `productInfo`, pill pools/selection, `generatedAds`, `generatedImages`, `sessionImages`, `selectedCompany`, mode
+- Jumps to step 3 (generation/results)
+- `restoredSessionRef` prevents double-restoration
+- `resetToModeSelection` strips query params via `router.replace`
 
 **Save Generated Image Flow (`/api/creative-studio/save-generated-image`):**
 1. Upload base64 to Meta Ads API → get real `imageHash` (required for ads)
@@ -738,6 +756,26 @@ else → KILL
 ---
 
 ## Recent Fixes (January–February 2026)
+
+### AI Tasks: Remove Generation, Add Studio Navigation (Feb 22)
+**Status:** COMPLETE
+
+Removed image and video generation from AI Tasks page (~700 lines removed). AI Tasks is now a portfolio/review page that links to the purpose-built studios for any new generation.
+
+**Changes:**
+- **Ad Studio session restoration** — Added `?sessionId=X` URL param support. Fetches session, populates product info, pills, generated ads/images, mode, and jumps to Step 3.
+- **AI Tasks AdSessionDetailPanel** — Removed: `imageStyle`, `hdText`, `adjustmentPrompts`, `generatingImageIndex`, `adjustingImageIndex`, `aiUsage`/`refreshCredits`, `handleGenerateImage`, `handleAdjustImage`, style selector, HD Text toggle, credits display, regenerate button, adjust input, generate button. Added: "Continue in Ad Studio" and "Generate in Ad Studio" links.
+- **AI Tasks ConceptCanvasDetailPanel** — Removed: `VideoQuality` type, `conceptQuality`, quality/cost constants, helper functions, `credits` + fetch, `generatingIndex`, `generateError`, `extendingIndex`, `handleGenerate`, `handleExtend`, extend button, variation button, quality selector, generate button, error display, retry button. Added: "Continue in Video Studio", "Generate in Video Studio", "Retry in Video Studio" links.
+
+**Files Modified:**
+- `app/dashboard/creative-studio/ad-studio/page.tsx` — Added `useSearchParams`, `restoredSessionRef`, session restoration useEffect, query param strip on reset
+- `app/dashboard/creative-studio/ai-tasks/page.tsx` — Removed all generation state/handlers/JSX, added studio navigation links
+- `CLAUDE.md` — Updated AI Tasks section, added session restoration docs
+
+**Key Patterns:**
+- `restoredSessionRef` prevents double-restoration from React strict mode
+- `router.replace('/dashboard/creative-studio/ad-studio', { scroll: false })` strips query params on reset
+- `e.stopPropagation()` on Link clicks inside concept cards prevents accordion toggle
 
 ### Save Copy to Copy Library (Feb 6)
 **Status:** COMPLETE
@@ -1182,6 +1220,7 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| `silly-floating-cosmos.md` | AI Tasks: Remove Generation, Add Studio Navigation | Feb 22 |
 | `warm-petting-harbor.md` | Video Studio Inline Generation + Prompt Diversity | Feb 12 |
 | AI Video Generation | Triple provider (Sora/Veo/Runway), credits, overlays, compositions | Feb 10 |
 | Launch Wizard Hydration Fix | Timezone, budget conversion, review status filtering | Feb 06 |

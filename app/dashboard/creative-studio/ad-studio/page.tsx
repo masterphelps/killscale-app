@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { useSubscription } from '@/lib/subscription'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 import {
@@ -409,6 +409,8 @@ export default function AdStudioPage() {
   }
 
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const restoredSessionRef = useRef(false)
 
   // Save copy state
   const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
@@ -429,6 +431,91 @@ export default function AdStudioPage() {
   useEffect(() => {
     refreshCredits()
   }, [refreshCredits])
+
+  // Restore session from ?sessionId= URL param (from AI Tasks "Continue in Ad Studio")
+  useEffect(() => {
+    if (restoredSessionRef.current) return
+    const restoreSessionId = searchParams.get('sessionId')
+    if (!restoreSessionId || !user?.id) return
+
+    restoredSessionRef.current = true
+
+    const restoreSession = async () => {
+      try {
+        const res = await fetch(`/api/creative-studio/ad-session?userId=${user.id}&sessionId=${restoreSessionId}`)
+        const data = await res.json()
+        if (!res.ok || !data.session) return
+
+        const s = data.session
+
+        // Populate session ID so new images save to same session
+        setSessionId(s.id)
+
+        // Populate product info
+        if (s.product_url) setProductUrl(s.product_url)
+        if (s.product_info) {
+          setProductInfo(s.product_info)
+          setHasAnalyzed(true)
+
+          // Populate pill pools from product_info
+          const newPools: Record<PillCategory, string[]> = {
+            name: s.product_info.name ? [s.product_info.name] : [],
+            description: s.product_info.description ? [s.product_info.description] : [],
+            features: s.product_info.features || [],
+            benefits: s.product_info.benefits || [],
+            keyMessages: s.product_info.keyMessages || [],
+            testimonials: s.product_info.testimonialPoints || [],
+            painPoints: s.product_info.painPoints || [],
+          }
+          setPools(newPools)
+
+          // Auto-select all populated pills
+          const newSelected: Record<PillCategory, number[]> = {
+            name: newPools.name.length > 0 ? [0] : [],
+            description: newPools.description.length > 0 ? [0] : [],
+            features: newPools.features.map((_, i) => i),
+            benefits: newPools.benefits.map((_, i) => i),
+            keyMessages: newPools.keyMessages.map((_, i) => i),
+            testimonials: newPools.testimonials.map((_, i) => i),
+            painPoints: newPools.painPoints.map((_, i) => i),
+          }
+          setSelected(newSelected)
+        }
+
+        // Populate competitor info
+        if (s.competitor_company) setSelectedCompany(s.competitor_company)
+
+        // Determine mode
+        setMode(s.competitor_company ? 'clone' : 'create')
+
+        // Populate generated ads
+        if (s.generated_ads?.length > 0) setGeneratedAds(s.generated_ads)
+
+        // Populate generated images from session
+        if (s.generated_images?.length > 0) {
+          const imagesByAd: Record<number, GeneratedImage[]> = {}
+          s.generated_images.forEach((img: { adIndex: number; storageUrl: string; mediaHash?: string; mimeType?: string }) => {
+            if (!imagesByAd[img.adIndex]) imagesByAd[img.adIndex] = []
+            imagesByAd[img.adIndex].push({
+              base64: '',
+              mimeType: img.mimeType || 'image/png',
+              storageUrl: img.storageUrl,
+              mediaHash: img.mediaHash,
+            })
+          })
+          setGeneratedImages(imagesByAd)
+          setSessionImages(s.generated_images)
+        }
+
+        // Jump to step 3 (generation/results)
+        setCurrentStep(3)
+      } catch (err) {
+        console.error('[AdStudio] Failed to restore session:', err)
+      }
+    }
+
+    restoreSession()
+  }, [searchParams, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset to landing page when sidebar link is clicked while already on this page
   useEffect(() => {
@@ -1604,7 +1691,10 @@ export default function AdStudioPage() {
     setExtraContext({ targetAudience: '', category: '', uniqueSellingPoint: '' })
     setHasAnalyzed(false)
     rawAnalysisRef.current = null
+    restoredSessionRef.current = false
     handleClearCompany()
+    // Strip ?sessionId= from URL on reset
+    router.replace('/dashboard/creative-studio/ad-studio', { scroll: false })
   }
 
   // Upload mode: Handle file upload
