@@ -235,6 +235,7 @@ export default function DirectPage() {
   const [editMood, setEditMood] = useState('')
   const [editVideoPrompt, setEditVideoPrompt] = useState('')
   const [editExtensionPrompts, setEditExtensionPrompts] = useState<string[]>([])
+  const [editDuration, setEditDuration] = useState<number>(VEO_BASE_DURATION)
   const [editHook, setEditHook] = useState('')
   const [editCaptions, setEditCaptions] = useState<string[]>([])
   const [editCta, setEditCta] = useState('')
@@ -313,17 +314,20 @@ export default function DirectPage() {
           setStep(2)
           // Restore directResult from the concept if it was a Direct canvas
           if (canvas.concepts[0]?.angle === 'Direct') {
+            const c = canvas.concepts[0]
             setDirectResult({
-              videoPrompt: canvas.concepts[0].videoPrompt || '',
-              extensionPrompts: canvas.concepts[0].extensionPrompts,
-              scene: canvas.concepts[0].script?.scene || '',
-              subject: canvas.concepts[0].script?.subject || '',
-              action: canvas.concepts[0].script?.action || '',
-              mood: canvas.concepts[0].script?.mood || '',
-              estimatedDuration: canvas.concepts[0].estimatedDuration || VEO_BASE_DURATION,
-              overlay: canvas.concepts[0].overlay || { hook: '', captions: [], cta: 'Shop Now' },
-              adCopy: canvas.concepts[0].adCopy,
+              videoPrompt: c.videoPrompt || '',
+              extensionPrompts: c.extensionPrompts,
+              scene: c.script?.scene || '',
+              subject: c.script?.subject || '',
+              action: c.script?.action || '',
+              mood: c.script?.mood || '',
+              estimatedDuration: c.estimatedDuration || VEO_BASE_DURATION,
+              overlay: c.overlay || { hook: '', captions: [], cta: 'Shop Now' },
+              adCopy: c.adCopy,
             })
+            setEditDuration(c.estimatedDuration || VEO_BASE_DURATION)
+            setEditExtensionPrompts(c.extensionPrompts || [])
           }
         }
       } catch (err) {
@@ -466,6 +470,7 @@ export default function DirectPage() {
       setEditMood(data.mood || '')
       setEditVideoPrompt(data.videoPrompt || '')
       setEditExtensionPrompts(data.extensionPrompts || [])
+      setEditDuration(data.estimatedDuration || VEO_BASE_DURATION)
       setEditHook(data.overlay?.hook || '')
       setEditCaptions(data.overlay?.captions || [])
       setEditCta(data.overlay?.cta || 'Shop Now')
@@ -480,7 +485,6 @@ export default function DirectPage() {
   // ─── Convert DirectConceptResult → AdConcept for canvas/job compatibility ──
 
   const buildAdConceptFromDirect = useCallback((): AdConcept => {
-    const duration = directResult?.estimatedDuration || VEO_BASE_DURATION
     return {
       title: 'Direct Concept',
       angle: 'Direct',
@@ -499,11 +503,11 @@ export default function DirectPage() {
         cta: editCta,
       },
       videoPrompt: editVideoPrompt,
-      estimatedDuration: duration,
+      estimatedDuration: editDuration,
       extensionPrompts: editExtensionPrompts.length > 0 ? editExtensionPrompts : undefined,
       adCopy: editAdCopy || undefined,
     }
-  }, [directResult, directConceptPrompt, editScene, editSubject, editAction, editMood, editVideoPrompt, editExtensionPrompts, editHook, editCaptions, editCta, editAdCopy])
+  }, [directConceptPrompt, editScene, editSubject, editAction, editMood, editVideoPrompt, editExtensionPrompts, editDuration, editHook, editCaptions, editCta, editAdCopy])
 
   // ─── Generate Video ─────────────────────────────────────────────────────────
 
@@ -860,7 +864,7 @@ export default function DirectPage() {
   const totalSelected = Object.values(selected).reduce((sum, arr) => sum + arr.length, 0)
 
   // Duration + cost for the direct concept
-  const directDuration = directResult?.estimatedDuration || VEO_BASE_DURATION
+  const directDuration = editDuration
   const directQuality = conceptQuality[0] || 'standard'
   const directExtensions = directDuration > VEO_BASE_DURATION ? Math.round((directDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP) : 0
   const directCreditCost = QUALITY_COSTS[directQuality].base + directExtensions * QUALITY_COSTS[directQuality].extension
@@ -1230,37 +1234,59 @@ export default function DirectPage() {
                     )}
                   </div>
 
-                  {/* Extension Prompts (collapsible) */}
-                  {editExtensionPrompts.length > 0 && (
-                    <div>
-                      <button
-                        onClick={() => setShowExtensions(!showExtensions)}
-                        className="flex items-center gap-1.5 mb-1 text-zinc-500 hover:text-zinc-300 transition-colors"
-                      >
-                        <span className="text-[10px] uppercase tracking-wider font-semibold">Extension Prompts ({editExtensionPrompts.length})</span>
-                        {showExtensions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                      </button>
-                      {showExtensions && (
-                        <div className="space-y-2">
-                          {editExtensionPrompts.map((ext, ei) => (
-                            <div key={ei}>
-                              <label className="text-[10px] text-zinc-500 uppercase mb-1 block">Segment {ei + 2}</label>
-                              <textarea
-                                value={ext}
-                                onChange={(e) => {
-                                  const updated = [...editExtensionPrompts]
-                                  updated[ei] = e.target.value
+                  {/* Extension Prompts (collapsible) — add/remove/edit */}
+                  <div>
+                    <button
+                      onClick={() => setShowExtensions(!showExtensions)}
+                      className="flex items-center gap-1.5 mb-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      <span className="text-[10px] uppercase tracking-wider font-semibold">Extension Prompts ({editExtensionPrompts.length})</span>
+                      {showExtensions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                    {showExtensions && (
+                      <div className="space-y-2">
+                        {editExtensionPrompts.map((ext, ei) => (
+                          <div key={ei}>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] text-zinc-500 uppercase">Segment {ei + 2}</label>
+                              <button
+                                onClick={() => {
+                                  const updated = editExtensionPrompts.filter((_, i) => i !== ei)
                                   setEditExtensionPrompts(updated)
+                                  setEditDuration(8 + updated.length * 7)
                                 }}
-                                rows={3}
-                                className="w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-none"
-                              />
+                                className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors"
+                              >
+                                Remove
+                              </button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                            <textarea
+                              value={ext}
+                              onChange={(e) => {
+                                const updated = [...editExtensionPrompts]
+                                updated[ei] = e.target.value
+                                setEditExtensionPrompts(updated)
+                              }}
+                              rows={3}
+                              className="w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-none"
+                            />
+                          </div>
+                        ))}
+                        {editExtensionPrompts.length < 3 && (
+                          <button
+                            onClick={() => {
+                              setEditExtensionPrompts([...editExtensionPrompts, 'Continue from previous shot. '])
+                              setEditDuration(8 + (editExtensionPrompts.length + 1) * 7)
+                            }}
+                            className="flex items-center gap-1.5 text-[10px] text-amber-400/70 hover:text-amber-300 transition-colors py-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add extension (+7s)
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Overlays */}
                   <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-4">

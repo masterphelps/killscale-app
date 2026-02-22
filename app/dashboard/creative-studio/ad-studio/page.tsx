@@ -3418,33 +3418,58 @@ export default function AdStudioPage() {
                     />
                   </details>
 
-                  {/* Extension Prompts — if segmented video */}
-                  {openPromptScenePlan.extensionPrompts && openPromptScenePlan.extensionPrompts.length > 0 && (
-                    <details className="group">
-                      <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-                        <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-                        Extension Prompts ({openPromptScenePlan.extensionPrompts.length})
-                      </summary>
-                      <div className="mt-2 space-y-2">
-                        {openPromptScenePlan.extensionPrompts.map((ep, idx) => (
-                          <div key={idx}>
-                            <label className="text-xs text-zinc-500 mb-1 block">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
-                            <textarea
-                              value={ep}
-                              onChange={(e) => setOpenPromptScenePlan(prev => {
+                  {/* Extension Prompts — add/remove/edit */}
+                  <details className="group" open={!!openPromptScenePlan.extensionPrompts?.length}>
+                    <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                      <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                      Extension Prompts ({openPromptScenePlan.extensionPrompts?.length || 0})
+                    </summary>
+                    <div className="mt-2 space-y-2">
+                      {openPromptScenePlan.extensionPrompts?.map((ep, idx) => (
+                        <div key={idx}>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs text-zinc-500">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
+                            <button
+                              onClick={() => setOpenPromptScenePlan(prev => {
                                 if (!prev?.extensionPrompts) return prev
-                                const updated = [...prev.extensionPrompts!]
-                                updated[idx] = e.target.value
-                                return { ...prev, extensionPrompts: updated }
+                                const updated = prev.extensionPrompts!.filter((_, i) => i !== idx)
+                                const newDuration = 8 + updated.length * 7
+                                return { ...prev, extensionPrompts: updated.length > 0 ? updated : undefined, estimatedDuration: newDuration }
                               })}
-                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                              rows={4}
-                            />
+                              className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                            >
+                              Remove
+                            </button>
                           </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
+                          <textarea
+                            value={ep}
+                            onChange={(e) => setOpenPromptScenePlan(prev => {
+                              if (!prev?.extensionPrompts) return prev
+                              const updated = [...prev.extensionPrompts!]
+                              updated[idx] = e.target.value
+                              return { ...prev, extensionPrompts: updated }
+                            })}
+                            className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                            rows={4}
+                          />
+                        </div>
+                      ))}
+                      {(openPromptScenePlan.extensionPrompts?.length || 0) < 3 && (
+                        <button
+                          onClick={() => setOpenPromptScenePlan(prev => {
+                            if (!prev) return prev
+                            const exts = [...(prev.extensionPrompts || [])]
+                            exts.push('Continue from previous shot. ')
+                            return { ...prev, extensionPrompts: exts, estimatedDuration: 8 + exts.length * 7 }
+                          })}
+                          className="flex items-center gap-1.5 text-xs text-amber-400/70 hover:text-amber-300 transition-colors py-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add extension (+7s)
+                        </button>
+                      )}
+                    </div>
+                  </details>
 
                   {/* Dialogue — optional, AI-suggested when scene implies speech */}
                   {openPromptScenePlan.dialogue ? (
@@ -5130,33 +5155,58 @@ export default function AdStudioPage() {
                         />
                       </details>
 
-                      {/* Extension Prompts — if segmented video */}
-                      {productVideoScript.extensionPrompts && productVideoScript.extensionPrompts.length > 0 && (
-                        <details className="group">
-                          <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-                            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-                            Extension Prompts ({productVideoScript.extensionPrompts.length})
-                          </summary>
-                          <div className="mt-2 space-y-2">
-                            {productVideoScript.extensionPrompts.map((ep, idx) => (
-                              <div key={idx}>
-                                <label className="text-xs text-zinc-500 mb-1 block">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
-                                <textarea
-                                  value={ep}
-                                  onChange={(e) => setProductVideoScript(prev => {
+                      {/* Extension Prompts — add/remove/edit */}
+                      <details className="group" open={!!productVideoScript.extensionPrompts?.length}>
+                        <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                          Extension Prompts ({productVideoScript.extensionPrompts?.length || 0})
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {productVideoScript.extensionPrompts?.map((ep, idx) => (
+                            <div key={idx}>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-xs text-zinc-500">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
+                                <button
+                                  onClick={() => setProductVideoScript(prev => {
                                     if (!prev?.extensionPrompts) return prev
-                                    const updated = [...prev.extensionPrompts!]
-                                    updated[idx] = e.target.value
-                                    return { ...prev, extensionPrompts: updated }
+                                    const updated = prev.extensionPrompts!.filter((_, i) => i !== idx)
+                                    const newDuration = 8 + updated.length * 7
+                                    return { ...prev, extensionPrompts: updated.length > 0 ? updated : undefined, estimatedDuration: newDuration }
                                   })}
-                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                                  rows={4}
-                                />
+                                  className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                                >
+                                  Remove
+                                </button>
                               </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
+                              <textarea
+                                value={ep}
+                                onChange={(e) => setProductVideoScript(prev => {
+                                  if (!prev?.extensionPrompts) return prev
+                                  const updated = [...prev.extensionPrompts!]
+                                  updated[idx] = e.target.value
+                                  return { ...prev, extensionPrompts: updated }
+                                })}
+                                className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                                rows={4}
+                              />
+                            </div>
+                          ))}
+                          {(productVideoScript.extensionPrompts?.length || 0) < 3 && (
+                            <button
+                              onClick={() => setProductVideoScript(prev => {
+                                if (!prev) return prev
+                                const exts = [...(prev.extensionPrompts || [])]
+                                exts.push('Continue from previous shot. ')
+                                return { ...prev, extensionPrompts: exts, estimatedDuration: 8 + exts.length * 7 }
+                              })}
+                              className="flex items-center gap-1.5 text-xs text-amber-400/70 hover:text-amber-300 transition-colors py-1"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Add extension (+7s)
+                            </button>
+                          )}
+                        </div>
+                      </details>
 
                       {/* Overlay — Hook + CTA */}
                       {productVideoScript.overlay && (
@@ -5572,33 +5622,58 @@ export default function AdStudioPage() {
                         </div>
                       )}
 
-                      {/* Extension Prompts — if segmented video */}
-                      {ugcPrompt.extensionPrompts && ugcPrompt.extensionPrompts.length > 0 && (
-                        <details className="group">
-                          <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-                            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-                            Extension Prompts ({ugcPrompt.extensionPrompts.length})
-                          </summary>
-                          <div className="mt-2 space-y-2">
-                            {ugcPrompt.extensionPrompts.map((ep, idx) => (
-                              <div key={idx}>
-                                <label className="text-xs text-zinc-500 mb-1 block">Segment {idx + 2}</label>
-                                <textarea
-                                  value={ep}
-                                  onChange={(e) => setUgcPrompt(prev => {
+                      {/* Extension Prompts — add/remove/edit */}
+                      <details className="group" open={!!ugcPrompt.extensionPrompts?.length}>
+                        <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                          Extension Prompts ({ugcPrompt.extensionPrompts?.length || 0})
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {ugcPrompt.extensionPrompts?.map((ep, idx) => (
+                            <div key={idx}>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-xs text-zinc-500">Segment {idx + 2}</label>
+                                <button
+                                  onClick={() => setUgcPrompt(prev => {
                                     if (!prev?.extensionPrompts) return prev
-                                    const updated = [...prev.extensionPrompts!]
-                                    updated[idx] = e.target.value
-                                    return { ...prev, extensionPrompts: updated }
+                                    const updated = prev.extensionPrompts!.filter((_, i) => i !== idx)
+                                    const newDuration = 8 + updated.length * 7
+                                    return { ...prev, extensionPrompts: updated.length > 0 ? updated : undefined, estimatedDuration: newDuration }
                                   })}
-                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                                  rows={4}
-                                />
+                                  className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                                >
+                                  Remove
+                                </button>
                               </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
+                              <textarea
+                                value={ep}
+                                onChange={(e) => setUgcPrompt(prev => {
+                                  if (!prev?.extensionPrompts) return prev
+                                  const updated = [...prev.extensionPrompts!]
+                                  updated[idx] = e.target.value
+                                  return { ...prev, extensionPrompts: updated }
+                                })}
+                                className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                                rows={4}
+                              />
+                            </div>
+                          ))}
+                          {(ugcPrompt.extensionPrompts?.length || 0) < 3 && (
+                            <button
+                              onClick={() => setUgcPrompt(prev => {
+                                if (!prev) return prev
+                                const exts = [...(prev.extensionPrompts || [])]
+                                exts.push('Continue from previous shot. ')
+                                return { ...prev, extensionPrompts: exts, estimatedDuration: 8 + exts.length * 7 }
+                              })}
+                              className="flex items-center gap-1.5 text-xs text-amber-400/70 hover:text-amber-300 transition-colors py-1"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Add extension (+7s)
+                            </button>
+                          )}
+                        </div>
+                      </details>
 
                       {/* Budget line — duration + credit cost from script */}
                       {(() => {
