@@ -170,58 +170,79 @@ ${styleGuide.examples}
 TONE & AESTHETIC: ${styleGuide.tone}
 
 HOW TO GENERATE EACH CONCEPT:
-1. Find the emotional core (customer frustration before \u2192 relief after) and pick a SINGLE VISUAL WORLD in the ${style.toUpperCase()} style that captures it. Use the examples above as inspiration but create original ideas for THIS product.
-2. Plan the visual journey as segments. The video engine generates 8s base + 7s extensions. Each segment = ONE continuous camera move from a DIFFERENT angle. Same environment, different perspective \u2014 the seams create natural cuts. The overlay text does the selling; the video creates the emotion.
+1. Find the emotional core (customer frustration before \u2192 relief after) and pick a SINGLE VISUAL WORLD in the ${style.toUpperCase()} style.
+2. Plan the visual journey as segments. 8s base + 7s extensions.
 
-SEGMENT PACING (each segment = one continuous shot):
-- Each segment: ONE fluid camera move (dolly, orbit, crane, push-in, pull-back)
-- Each segment: a DIFFERENT angle/framing than the one before (wide \u2192 macro, orbit \u2192 static, above \u2192 eye-level)
+VIDEO PROMPT WRITING STYLE — THIS IS CRITICAL:
+Write videoPrompt and extensionPrompts as DIRECT, CASUAL descriptions. Like you're telling a friend what the video looks like. NOT like a film school essay.
+
+GOOD videoPrompt: "A paper llama stands blinking at the camera in a world made of paper. Clouds hang from strings. Scissors come in and cut the llama's head off. Camera zooms in on the headless llama."
+GOOD videoPrompt: "Espresso pouring into a white cup in slow motion, crema forming a perfect golden layer. Camera slowly pushes in."
+GOOD videoPrompt: "Drone shot slowly revealing a mountain lake at sunrise, mist lifting off the water."
+
+BAD videoPrompt (DO NOT DO THIS): "In a whimsical paper-craft universe, delicate cotton clouds are suspended from gossamer threads against a warm cream sky. A charming origami llama stands center frame, its oversized eyes blinking with endearing innocence as warm diffused golden-hour lighting bathes the scene in soft amber tones..."
+That kills the energy and confuses Veo. Be direct.
+
+SEGMENT PACING:
+- Each segment: ONE camera move, ONE angle
 - 8s = 1 segment. 15s = 2 segments. 22s = 3 segments.
 
 CAPTION RULES (~2.5 words/second):
 - Each caption = 2-4 words, lasts ~1.5-2s on screen
-- Scale count: 3-4 for 8s, 6-8 for 15s, 10-12 for 22s, 14-16 for 29s+
+- Scale count: 3-4 for 8s, 6-8 for 15s, 10-12 for 22s
 - Narrative arc: hook \u2192 tension \u2192 solution \u2192 CTA payoff
 
 ${productRule}
 
-DIVERSITY RULES \u2014 across all ${count} concepts:
+DIVERSITY RULES — across all ${count} concepts:
 - Each concept: DIFFERENT environment, DIFFERENT advertising angle, DIFFERENT emotion/mood.
 
 CONTENT SAFETY:
 - No violence, weapons, people in distress, nudity, real brand names/logos.
 
-DURATION & SEGMENTATION:
-Valid durations: 8, 15, 22, 29, 36 seconds. Estimate naturally and return as "estimatedSeconds".
-- If \u22648s: "videoPrompt" covers full video. No extensionPrompts.
-- If >8s: "videoPrompt" covers FIRST 8s only. Include "extensionPrompts" array (one per 7s extension). Each extension = different camera angle, same environment. Extensions = ceil((estimatedSeconds - 8) / 7).
+VEO LIMITATIONS (work around silently):
+- Veo CANNOT render text or words in the video — never put text in videoPrompt. Move text to overlay.
+- Veo CANNOT render logos.
+- No cause-and-effect in a single segment — split across segments.
+- Describe things happening, not what NOT to include.
+
+DURATION & SEGMENTATION — THIS IS CRITICAL:
+Veo generates each segment as a SEPARATE video clip. The extension API takes the previous clip and continues from its final frame. This means:
+- Whatever is in videoPrompt gets rendered COMPLETELY in the first 8 seconds
+- Whatever is in an extension prompt gets rendered COMPLETELY in that 7-second extension
+- If you put too many actions in videoPrompt, they ALL happen in 8 seconds and the extension has nothing left to show
+
+Valid durations: 8, 15, 22, 29 seconds. Estimate naturally → "estimatedSeconds".
+- If ≤8s: "videoPrompt" covers full video. No extensionPrompts.
+- If >8s: "videoPrompt" covers the first 8s (2-3 beats). Include "extensionPrompts" array (one per 7s extension). Each extension starts with "Continue from previous shot." then describes what CHANGES or HAPPENS NEXT — also 2-3 beats per extension, enough to fill the time.
+- Distribute actions EVENLY across segments. Each segment should feel full and engaging — not crammed, not sparse. Split at natural scene breaks or transitions.
 
 Return JSON:
 { "concepts": [
   {
     "title": "2-4 word concept name",
-    "angle": "Advertising angle (Problem\u2192Solution, Emotional Benefit, Feature Spotlight, Social Proof, Curiosity Hook, Transformation, etc.)",
-    "logline": "1 sentence \u2014 what tension does this visualize and how does it sell?",
-    "visualMetaphor": "Customer problem/desire \u2192 physical phenomenon mapping.",
-    "whyItWorks": "Why this stops the scroll AND sells. Not 'it looks cool' \u2014 how does it drive purchase?",
+    "angle": "Advertising angle (Problem→Solution, Emotional Benefit, Feature Spotlight, Social Proof, Curiosity Hook, Transformation, etc.)",
+    "logline": "1 sentence — what tension does this visualize and how does it sell?",
+    "visualMetaphor": "Customer problem/desire → physical phenomenon mapping.",
+    "whyItWorks": "Why this stops the scroll AND sells.",
     "estimatedSeconds": 15,
     "script": {
-      "scene": "Environment, lighting, atmosphere \u2014 specific and grounded.",
-      "subject": "Who/what is in the shot \u2014 physical description, textures, colors.",
-      "action": "Full visual arc across ALL segments. Each segment = one camera move from a distinct angle.",
-      "mood": "Color grade, energy, sound design, emotional tone"
+      "scene": "Environment and setting — direct, not flowery.",
+      "subject": "Who/what is in the shot.",
+      "action": "What happens, beat by beat. Direct language.",
+      "mood": "Color and energy feel."
     },
     "overlay": {
-      "hook": "Opening text (first 2s) \u2014 short, punchy, makes you keep watching.",
-      "captions": ["2-4 word caption per beat, scaled to duration"],
+      "hook": "Opening text (first 2s) — short, punchy.",
+      "captions": ["2-4 word caption per beat"],
       "cta": "Call-to-action button text"
     },
-    "videoPrompt": "150-350 chars. FIRST 8 SECONDS ONLY. One subject, one environment, one camera move. Use camera terms (dolly, orbit, crane, rack focus). Describe textures, light direction, color temperature. Positive descriptions only (never 'no X'). No text or logos.",
-    "extensionPrompts": ["Only if estimatedSeconds > 8. 100-250 chars each. One camera move per extension, different angle than previous segment. Same environment, visual continuity."],
+    "videoPrompt": "150-350 chars. FIRST 8 SECONDS ONLY. Direct, casual description. What the viewer sees, what the camera does. No flowery prose. End with 'Vertical 9:16 portrait format.' if not mentioned.",
+    "extensionPrompts": ["Only if estimatedSeconds > 8. 100-250 chars. Start with 'Continue from previous shot.' then describe directly."],
     "adCopy": {
-      "primaryText": "Facebook post body (2-3 sentences). Pain point \u2192 benefit.",
-      "headline": "Ad headline (5-8 words). Benefit-driven, curiosity.",
-      "description": "Link description (1 sentence). Offer or social proof."
+      "primaryText": "Facebook post body (2-3 sentences). Pain point → benefit.",
+      "headline": "Ad headline (5-8 words).",
+      "description": "Link description (1 sentence)."
     }
   }
 ]}

@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, Clapperboard, Pencil } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, Clapperboard, Pencil, Camera, Image as ImageIcon } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import type { MediaImage } from '@/app/api/meta/media/route'
 import type { VideoJob } from '@/remotion/types'
-import type { UGCSettings, UGCPromptResult, ProductVideoScript } from '@/lib/video-prompt-templates'
+import type { UGCSettings, UGCPromptResult, ProductVideoScript, ScenePlan } from '@/lib/video-prompt-templates'
 import { buildUGCVeoPrompt } from '@/lib/video-prompt-templates'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -251,8 +251,8 @@ export default function AdStudioPage() {
 
   const isPro = !!plan
 
-  // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image, 'product-video' = AI-directed product video, 'ugc-video' = UGC testimonial video
-  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'product-video' | 'ugc-video' | null>(null)
+  // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image, 'product-video' = AI-directed product video, 'ugc-video' = UGC testimonial video, 'open-prompt' = direct prompt generation
+  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'product-video' | 'ugc-video' | 'open-prompt' | null>(null)
 
   // Step tracking
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
@@ -418,6 +418,31 @@ export default function AdStudioPage() {
 
   // AI credit usage tracking
   const [aiUsage, setAiUsage] = useState<{ used: number; planLimit: number; purchased: number; totalAvailable: number; remaining: number; status: string } | null>(null)
+
+  // Open Prompt state
+  const [openPromptText, setOpenPromptText] = useState('')
+  const [openPromptMediaType, setOpenPromptMediaType] = useState<'image' | 'video'>('image')
+  const [openPromptSourceImage, setOpenPromptSourceImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
+  const [openPromptAspectRatio, setOpenPromptAspectRatio] = useState('9:16')
+  const [openPromptQuality, setOpenPromptQuality] = useState<'standard' | 'premium'>('standard')
+  const [openPromptGenerating, setOpenPromptGenerating] = useState(false)
+  const [openPromptError, setOpenPromptError] = useState<string | null>(null)
+  const [openPromptResult, setOpenPromptResult] = useState<{ type: 'image'; image: GeneratedImage } | { type: 'video'; jobId: string } | null>(null)
+  const [openPromptSessionId, setOpenPromptSessionId] = useState<string | null>(null)
+  const [openPromptCanvasId, setOpenPromptCanvasId] = useState<string | null>(null)
+  const [openPromptVideoJob, setOpenPromptVideoJob] = useState<VideoJob | null>(null)
+  const [openPromptAdjustText, setOpenPromptAdjustText] = useState('')
+  const [openPromptAdjusting, setOpenPromptAdjusting] = useState(false)
+  const [openPromptSaving, setOpenPromptSaving] = useState(false)
+  const [openPromptSaved, setOpenPromptSaved] = useState(false)
+  const openPromptFileRef = useRef<HTMLInputElement>(null)
+  const [openPromptShowImageMenu, setOpenPromptShowImageMenu] = useState(false)
+  const [openPromptShowLibrary, setOpenPromptShowLibrary] = useState(false)
+  const [openPromptDownloadingLibrary, setOpenPromptDownloadingLibrary] = useState(false)
+  // Scene plan state (Director's Review for Open Prompt video)
+  const [openPromptScenePlan, setOpenPromptScenePlan] = useState<ScenePlan | null>(null)
+  const [openPromptPlanningScene, setOpenPromptPlanningScene] = useState(false)
+  const [openPromptOverlaysEnabled, setOpenPromptOverlaysEnabled] = useState(true)
 
   // Fetch AI credit usage
   const refreshCredits = useCallback(() => {
@@ -1692,6 +1717,28 @@ export default function AdStudioPage() {
     setHasAnalyzed(false)
     rawAnalysisRef.current = null
     restoredSessionRef.current = false
+    // Reset open prompt state
+    setOpenPromptText('')
+    setOpenPromptMediaType('image')
+    setOpenPromptSourceImage(null)
+    setOpenPromptAspectRatio('9:16')
+    setOpenPromptQuality('standard')
+    setOpenPromptGenerating(false)
+    setOpenPromptError(null)
+    setOpenPromptResult(null)
+    setOpenPromptScenePlan(null)
+    setOpenPromptPlanningScene(false)
+    setOpenPromptOverlaysEnabled(true)
+    setOpenPromptSessionId(null)
+    setOpenPromptCanvasId(null)
+    setOpenPromptVideoJob(null)
+    setOpenPromptAdjustText('')
+    setOpenPromptAdjusting(false)
+    setOpenPromptSaving(false)
+    setOpenPromptSaved(false)
+    setOpenPromptShowImageMenu(false)
+    setOpenPromptShowLibrary(false)
+    setOpenPromptDownloadingLibrary(false)
     handleClearCompany()
     // Strip ?sessionId= from URL on reset
     router.replace('/dashboard/creative-studio/ad-studio', { scroll: false })
@@ -2071,6 +2118,448 @@ export default function AdStudioPage() {
     }
   }, [user?.id, i2vJobs, i2vCurrentVideoVersion])
 
+  // ── Open Prompt ──────────────────────────────────────────────────────────────
+
+  const openPromptCreditCost = useMemo(() => {
+    if (openPromptMediaType === 'image') return 5
+    // For video, cost depends on scene plan (determined by AI)
+    if (!openPromptScenePlan) return 0 // Script writing is free
+    const dur = openPromptScenePlan.estimatedDuration || 8
+    const extensions = dur > 8 ? Math.ceil((dur - 8) / 7) : 0
+    const costs = openPromptQuality === 'standard' ? { base: 20, ext: 10 } : { base: 50, ext: 25 }
+    return costs.base + (extensions * costs.ext)
+  }, [openPromptMediaType, openPromptScenePlan, openPromptQuality])
+
+  const handleOpenPromptImageUpload = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return
+    if (file.size > 10 * 1024 * 1024) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const base64 = (e.target?.result as string).split(',')[1]
+      setOpenPromptSourceImage({ base64, mimeType: file.type, preview: URL.createObjectURL(file) })
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  const handleOpenPromptGenerate = useCallback(async () => {
+    if (!openPromptText.trim() || !user?.id || !currentAccountId) return
+
+    setOpenPromptGenerating(true)
+    setOpenPromptError(null)
+    setOpenPromptResult(null)
+
+    try {
+      if (openPromptMediaType === 'image') {
+        // 1. Create session for AI Tasks persistence
+        const sessionRes = await fetch('/api/creative-studio/ad-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            productUrl: null,
+            productInfo: { name: 'Open Prompt' },
+            competitorCompany: null,
+            competitorAd: null,
+            generatedAds: [{ headline: '', primaryText: openPromptText, description: '', angle: 'Open Prompt', whyItWorks: '' }],
+            imageStyle: 'open-prompt',
+          }),
+        })
+        const sessionData = await sessionRes.json()
+        const newSessionId = sessionData.session?.id || null
+        if (newSessionId) setOpenPromptSessionId(newSessionId)
+
+        // 2. Generate image
+        const requestBody: Record<string, unknown> = {
+          userId: user.id,
+          adCopy: { headline: '', primaryText: openPromptText, description: '', angle: 'Open Prompt' },
+          product: openPromptSourceImage
+            ? { name: 'Open Prompt', imageBase64: openPromptSourceImage.base64, imageMimeType: openPromptSourceImage.mimeType }
+            : { name: 'Open Prompt' },
+          style: 'lifestyle',
+          aspectRatio: openPromptAspectRatio,
+          imagePrompt: openPromptText,
+          noTextOverlay: true,
+        }
+
+        const res = await fetch('/api/creative-studio/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          if (res.status === 429 && data.totalAvailable) {
+            setAiUsage({ used: data.used, planLimit: data.totalAvailable, purchased: 0, totalAvailable: data.totalAvailable, remaining: data.remaining || 0, status: data.status })
+          }
+          throw new Error(data.error || 'Failed to generate image')
+        }
+
+        // 3. Optimistic credit update
+        setAiUsage(prev => prev ? { ...prev, used: prev.used + 5, remaining: Math.max(0, prev.remaining - 5) } : prev)
+        notifyCreditsChanged()
+
+        // 4. Upload to Supabase Storage for persistence
+        const saveRes = await fetch('/api/creative-studio/save-generated-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64: data.image.base64,
+            mimeType: data.image.mimeType,
+            adAccountId: currentAccountId,
+            name: `Open Prompt - ${new Date().toLocaleDateString()}`,
+            userId: user.id,
+            saveToLibrary: false,
+          }),
+        })
+        const saveData = await saveRes.json()
+
+        const newImage: GeneratedImage = {
+          base64: data.image.base64,
+          mimeType: data.image.mimeType,
+          storageUrl: saveData.storageUrl,
+          mediaHash: saveData.mediaHash,
+        }
+
+        // Save to session
+        if (newSessionId && saveData.storageUrl) {
+          try {
+            await fetch('/api/creative-studio/ad-session', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user.id,
+                sessionId: newSessionId,
+                generatedImages: [{ adIndex: 0, versionIndex: 0, storageUrl: saveData.storageUrl, mediaHash: saveData.mediaHash, mimeType: data.image.mimeType }],
+              }),
+            })
+          } catch {} // Non-critical
+        }
+
+        setOpenPromptResult({ type: 'image', image: newImage })
+        setMode('open-prompt')
+      } else {
+        // Video: Stage 1 — call scene planner (no video generation yet)
+        setOpenPromptPlanningScene(true)
+        setOpenPromptScenePlan(null)
+
+        const res = await fetch('/api/creative-studio/plan-scene', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: openPromptText,
+            hasSourceImage: !!openPromptSourceImage,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to plan scene')
+
+        setOpenPromptScenePlan(data)
+        setMode('open-prompt') // Flip to step 2 view — shows Director's Review
+        setOpenPromptPlanningScene(false)
+      }
+    } catch (err) {
+      setOpenPromptError(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setOpenPromptGenerating(false)
+    }
+  }, [openPromptText, openPromptMediaType, openPromptSourceImage, openPromptAspectRatio, openPromptQuality, openPromptCreditCost, user?.id, currentAccountId])
+
+  // Open Prompt: Stage 2 — Director approved, generate video with structured prompts
+  const handleOpenPromptVideoGenerate = useCallback(async () => {
+    if (!openPromptScenePlan || !user?.id || !currentAccountId) return
+
+    setOpenPromptGenerating(true)
+    setOpenPromptError(null)
+
+    try {
+      const scriptDuration = openPromptScenePlan.estimatedDuration || 8
+      const isExtended = scriptDuration > 8
+      const provider = isExtended ? 'veo-ext' : 'veo'
+      const numExtensions = isExtended ? Math.round((scriptDuration - 8) / 7) : 0
+      const costs = openPromptQuality === 'standard' ? { base: 20, ext: 10 } : { base: 50, ext: 25 }
+      const creditCost = costs.base + numExtensions * costs.ext
+
+      // 1. Create canvas for AI Tasks persistence
+      let canvasId = openPromptCanvasId
+      if (!canvasId) {
+        const canvasRes = await fetch('/api/creative-studio/video-canvas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            productUrl: null,
+            productKnowledge: { name: 'Open Prompt' },
+            concepts: [{
+              title: 'Open Prompt',
+              angle: 'Open Prompt',
+              logline: openPromptText.slice(0, 80),
+              visualMetaphor: `AI-directed scene — ${openPromptScenePlan.scene}`,
+              whyItWorks: 'Direct prompt generation with AI scene planning',
+              videoPrompt: openPromptScenePlan.videoPrompt,
+              overlay: openPromptScenePlan.overlay
+                ? { hook: openPromptScenePlan.overlay.hook, captions: [], cta: openPromptScenePlan.overlay.cta }
+                : { hook: '', captions: [], cta: '' },
+            }],
+          }),
+        })
+        const canvasData = await canvasRes.json()
+        if (canvasRes.ok && canvasData.canvas?.id) {
+          canvasId = canvasData.canvas.id
+          setOpenPromptCanvasId(canvasId)
+        }
+      }
+
+      // 2. Build overlay config from scene plan (only if overlays enabled)
+      const baseDuration = isExtended ? 8 : scriptDuration
+      const overlayConfig = openPromptOverlaysEnabled && openPromptScenePlan.overlay ? {
+        style: 'clean' as const,
+        hook: {
+          line1: openPromptScenePlan.overlay.hook,
+          startSec: 0, endSec: 2, animation: 'fade' as const,
+          fontSize: 48, fontWeight: 700, position: 'top' as const,
+        },
+        cta: {
+          buttonText: openPromptScenePlan.overlay.cta,
+          startSec: Math.max(baseDuration - 2, baseDuration * 0.8),
+          animation: 'slide' as const, fontSize: 28,
+        },
+      } : undefined
+
+      // 3. Build prompt — inject [Dialogue] block if dialogue exists
+      let finalPrompt = openPromptScenePlan.videoPrompt
+      if (openPromptScenePlan.dialogue?.trim()) {
+        const dialogueLines = openPromptScenePlan.dialogue.trim().split('\n').map(l => `Speaker: "${l.trim()}"`).join('\n')
+        // Append dialogue block if not already in the prompt
+        if (!finalPrompt.includes('[Dialogue]')) {
+          finalPrompt += `\n\n[Dialogue]\n${dialogueLines}`
+        }
+      }
+
+      // 4. Call generate-video with structured prompts
+      const videoBody: Record<string, unknown> = {
+        userId: user.id,
+        adAccountId: currentAccountId,
+        prompt: finalPrompt,
+        dialogue: openPromptScenePlan.dialogue?.trim() || undefined,
+        videoStyle: 'open-prompt',
+        durationSeconds: scriptDuration,
+        productName: 'Open Prompt',
+        provider,
+        quality: openPromptQuality,
+        canvasId: canvasId || null,
+        adIndex: 0,
+        targetDurationSeconds: isExtended ? scriptDuration : undefined,
+        extensionPrompts: isExtended ? openPromptScenePlan.extensionPrompts : undefined,
+        overlayConfig,
+      }
+      if (openPromptSourceImage) {
+        videoBody.productImageBase64 = openPromptSourceImage.base64
+        videoBody.productImageMimeType = openPromptSourceImage.mimeType
+      }
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(videoBody),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          setAiUsage(prev => prev ? { ...prev, remaining: data.remaining || 0 } : prev)
+        }
+        throw new Error(data.error || 'Failed to generate video')
+      }
+
+      // 4. Optimistic credit update
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + creditCost, remaining: Math.max(0, prev.remaining - creditCost) } : prev)
+      notifyCreditsChanged()
+      setOpenPromptResult({ type: 'video', jobId: data.jobId || data.id })
+      setOpenPromptVideoJob({ id: data.jobId || data.id, status: 'queued' as const } as VideoJob)
+    } catch (err) {
+      setOpenPromptError(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setOpenPromptGenerating(false)
+    }
+  }, [openPromptScenePlan, openPromptQuality, openPromptOverlaysEnabled, openPromptSourceImage, openPromptText, openPromptCanvasId, user?.id, currentAccountId])
+
+  // Open Prompt: Adjust image with refinement prompt
+  const handleOpenPromptAdjust = useCallback(async () => {
+    if (!openPromptAdjustText.trim() || !openPromptResult || openPromptResult.type !== 'image' || !openPromptResult.image.base64) return
+
+    setOpenPromptAdjusting(true)
+    setOpenPromptError(null)
+
+    try {
+      const res = await fetch('/api/creative-studio/adjust-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: openPromptResult.image.base64,
+          imageMimeType: openPromptResult.image.mimeType,
+          adjustmentPrompt: openPromptAdjustText,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Adjustment failed')
+
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + 5, remaining: Math.max(0, prev.remaining - 5) } : prev)
+      notifyCreditsChanged()
+
+      // Upload adjusted image for persistence
+      const saveRes = await fetch('/api/creative-studio/save-generated-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base64: data.image.base64,
+          mimeType: data.image.mimeType,
+          adAccountId: currentAccountId,
+          name: `Open Prompt Adjusted - ${new Date().toLocaleDateString()}`,
+          userId: user?.id,
+          saveToLibrary: false,
+        }),
+      })
+      const saveData = await saveRes.json()
+
+      setOpenPromptResult({
+        type: 'image',
+        image: { base64: data.image.base64, mimeType: data.image.mimeType, storageUrl: saveData.storageUrl, mediaHash: saveData.mediaHash },
+      })
+      setOpenPromptAdjustText('')
+      setOpenPromptSaved(false)
+    } catch (err) {
+      setOpenPromptError(err instanceof Error ? err.message : 'Adjustment failed')
+    } finally {
+      setOpenPromptAdjusting(false)
+    }
+  }, [openPromptAdjustText, openPromptResult, currentAccountId, user?.id])
+
+  // Open Prompt: Save image to media library
+  const handleOpenPromptSaveToLibrary = useCallback(async () => {
+    if (!openPromptResult || openPromptResult.type !== 'image' || !openPromptResult.image.base64 || !currentAccountId || !user?.id) return
+
+    setOpenPromptSaving(true)
+    try {
+      const res = await fetch('/api/creative-studio/save-generated-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base64: openPromptResult.image.base64,
+          mimeType: openPromptResult.image.mimeType,
+          adAccountId: currentAccountId,
+          name: `Open Prompt - ${new Date().toLocaleDateString()}`,
+          userId: user.id,
+          saveToLibrary: true,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to save')
+
+      setOpenPromptResult({
+        type: 'image',
+        image: { ...openPromptResult.image, mediaHash: data.mediaHash, storageUrl: data.storageUrl },
+      })
+      setOpenPromptSaved(true)
+    } catch (err) {
+      setOpenPromptError(err instanceof Error ? err.message : 'Failed to save to library')
+    } finally {
+      setOpenPromptSaving(false)
+    }
+  }, [openPromptResult, currentAccountId, user?.id])
+
+  // Open Prompt: Download image
+  const handleOpenPromptDownload = useCallback(() => {
+    if (!openPromptResult || openPromptResult.type !== 'image' || !openPromptResult.image.base64) return
+    const link = document.createElement('a')
+    link.href = `data:${openPromptResult.image.mimeType};base64,${openPromptResult.image.base64}`
+    link.download = `open-prompt-${Date.now()}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }, [openPromptResult])
+
+  // Open Prompt: Create ad from image
+  const handleOpenPromptCreateAd = useCallback(async () => {
+    if (!openPromptResult || openPromptResult.type !== 'image' || !openPromptResult.image.base64 || !currentAccountId || !user?.id) return
+
+    setCreatingAd(prev => ({ ...prev, [-1]: true }))
+    try {
+      let storageUrl = openPromptResult.image.storageUrl
+      let imageHash = openPromptResult.image.mediaHash
+
+      if (!imageHash) {
+        const res = await fetch('/api/creative-studio/save-generated-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64: openPromptResult.image.base64,
+            mimeType: openPromptResult.image.mimeType,
+            adAccountId: currentAccountId,
+            name: `Open Prompt - ${new Date().toLocaleDateString()}`,
+            userId: user.id,
+            saveToLibrary: true,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to save')
+        storageUrl = data.storageUrl
+        imageHash = data.mediaHash
+      }
+
+      const creative: Creative = {
+        preview: storageUrl || '',
+        type: 'image',
+        uploaded: true,
+        isFromLibrary: true,
+        imageHash: imageHash || '',
+      }
+      setWizardCreatives([creative])
+      setWizardCopy({ primaryText: openPromptText, headline: '', description: '' })
+      setShowLaunchWizard(true)
+    } catch (err) {
+      setOpenPromptError(err instanceof Error ? err.message : 'Failed to create ad')
+    } finally {
+      setCreatingAd(prev => ({ ...prev, [-1]: false }))
+    }
+  }, [openPromptResult, currentAccountId, user?.id, openPromptText])
+
+  // Open Prompt: Video job polling
+  const openPromptPollRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    if (!openPromptVideoJob || !user?.id || !openPromptCanvasId) return
+    if (openPromptVideoJob.status !== 'queued' && openPromptVideoJob.status !== 'generating' && openPromptVideoJob.status !== 'rendering' && openPromptVideoJob.status !== 'extending') return
+
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/creative-studio/video-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, canvasId: openPromptCanvasId }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const job = data.jobs?.[0]
+          if (job) {
+            setOpenPromptVideoJob(job)
+            if (job.status === 'complete' || job.status === 'failed') {
+              if (openPromptPollRef.current) { clearInterval(openPromptPollRef.current); openPromptPollRef.current = null }
+            }
+          }
+        }
+      } catch {} // Non-critical
+    }
+
+    poll() // Immediate first poll
+    openPromptPollRef.current = setInterval(poll, 10000)
+    return () => { if (openPromptPollRef.current) { clearInterval(openPromptPollRef.current); openPromptPollRef.current = null } }
+  }, [openPromptVideoJob?.status, openPromptCanvasId, user?.id, currentAccountId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── UGC Generate Flow (split: Write Script → Director Review → Action!) ───
 
   // Stage 1: GPT 5.2 writes the script — stops for director review
@@ -2437,20 +2926,203 @@ export default function AdStudioPage() {
             <div className="text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <h1 className="text-2xl lg:text-3xl font-bold text-white">Ad Studio</h1>
-                <span className="px-2 py-0.5 text-xs font-semibold bg-emerald-500/20 text-emerald-400 rounded">
-                  NEW
-                </span>
               </div>
               <p className="text-zinc-500">
                 Create high-converting ads with AI assistance
               </p>
             </div>
 
-            {/* Image Section */}
+            {/* ── Open Prompt Section ── */}
+            <div className="space-y-3">
+              <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
+                {/* Textarea */}
+                <textarea
+                  value={openPromptText}
+                  onChange={(e) => setOpenPromptText(e.target.value)}
+                  placeholder="Describe what you want to create..."
+                  rows={3}
+                  className="w-full bg-transparent text-white placeholder:text-zinc-600 px-5 pt-5 pb-2 text-sm resize-none focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && openPromptText.trim()) {
+                      handleOpenPromptGenerate()
+                    }
+                  }}
+                />
+
+                {/* Bottom toolbar */}
+                <div className="flex items-center gap-2 px-4 pb-4 pt-1 flex-wrap">
+                  {/* Image / Video toggle */}
+                  <div className="flex items-center bg-zinc-800/80 rounded-full p-0.5">
+                    <button
+                      onClick={() => setOpenPromptMediaType('image')}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                        openPromptMediaType === 'image'
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      )}
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      Image
+                    </button>
+                    <button
+                      onClick={() => setOpenPromptMediaType('video')}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                        openPromptMediaType === 'video'
+                          ? 'bg-orange-500/20 text-orange-400'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      )}
+                    >
+                      <Film className="w-3.5 h-3.5" />
+                      Video
+                    </button>
+                  </div>
+
+                  {/* Source image */}
+                  <input
+                    ref={openPromptFileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleOpenPromptImageUpload(file)
+                      e.target.value = ''
+                    }}
+                  />
+                  {openPromptSourceImage ? (
+                    <button
+                      onClick={() => setOpenPromptSourceImage(null)}
+                      className="relative group"
+                      title="Remove source image"
+                    >
+                      <img
+                        src={openPromptSourceImage.preview}
+                        alt="Source"
+                        className="w-8 h-8 rounded-lg object-cover border border-zinc-600"
+                      />
+                      <div className="absolute inset-0 bg-black/60 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <X className="w-3.5 h-3.5 text-white" />
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="relative">
+                      <button
+                        data-image-menu-anchor
+                        onClick={() => setOpenPromptShowImageMenu(!openPromptShowImageMenu)}
+                        className={cn(
+                          'flex items-center justify-center w-8 h-8 rounded-full text-zinc-500 hover:text-zinc-300 bg-zinc-800/80 transition-colors',
+                          openPromptDownloadingLibrary && 'opacity-50 pointer-events-none'
+                        )}
+                        title="Add reference image"
+                      >
+                        {openPromptDownloadingLibrary ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Camera className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      {openPromptShowImageMenu && (() => {
+                        const btnEl = document.querySelector('[data-image-menu-anchor]')
+                        const rect = btnEl?.getBoundingClientRect()
+                        return (
+                          <>
+                            <div className="fixed inset-0 z-[9999]" onClick={() => setOpenPromptShowImageMenu(false)} />
+                            <div
+                              className="fixed z-[10000] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden min-w-[160px]"
+                              style={rect ? { top: rect.bottom + 4, left: rect.left } : { top: 0, left: 0 }}
+                            >
+                              <button
+                                onClick={() => { setOpenPromptShowImageMenu(false); openPromptFileRef.current?.click() }}
+                                className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                Upload Image
+                              </button>
+                              <button
+                                onClick={() => { setOpenPromptShowImageMenu(false); setOpenPromptShowLibrary(true) }}
+                                className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
+                              >
+                                <Layers className="w-3.5 h-3.5" />
+                                Media Library
+                              </button>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Aspect ratio */}
+                  <select
+                    value={openPromptAspectRatio}
+                    onChange={(e) => setOpenPromptAspectRatio(e.target.value)}
+                    className="bg-zinc-800/80 text-zinc-400 text-xs rounded-full px-3 py-1.5 border-0 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer"
+                  >
+                    <option value="9:16">9:16</option>
+                    <option value="16:9">16:9</option>
+                    <option value="1:1">1:1</option>
+                    <option value="4:5">4:5</option>
+                  </select>
+
+                  {/* Spacer */}
+                  <div className="flex-1" />
+
+                  {/* Generate / Write Script button */}
+                  <button
+                    onClick={handleOpenPromptGenerate}
+                    disabled={!openPromptText.trim() || openPromptGenerating || (openPromptMediaType === 'image' && aiUsage ? aiUsage.remaining < openPromptCreditCost : false)}
+                    className={cn(
+                      'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
+                      openPromptText.trim() && !openPromptGenerating
+                        ? openPromptMediaType === 'video'
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-black hover:from-amber-400 hover:to-orange-400 shadow-lg shadow-amber-500/20'
+                          : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 shadow-lg shadow-blue-500/20'
+                        : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+                    )}
+                  >
+                    {openPromptGenerating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : openPromptMediaType === 'video' ? (
+                      <Pencil className="w-4 h-4" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
+                    {openPromptGenerating
+                      ? (openPromptMediaType === 'video' ? 'Planning...' : 'Generating...')
+                      : openPromptMediaType === 'video'
+                        ? 'Write Script'
+                        : `Generate (${openPromptCreditCost} cr)`
+                    }
+                  </button>
+                </div>
+
+                {/* Error */}
+                {openPromptError && (
+                  <div className="px-5 pb-4">
+                    <div className="flex items-center gap-2 text-red-400 text-xs">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {openPromptError}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Guided Images Section ── */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <ImagePlus className="w-5 h-5 text-zinc-400" />
-                <h2 className="text-lg font-semibold text-white">Image</h2>
+              <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
+                {/* Gradient glow */}
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-blue-500" />
+                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-purple-500/10 to-transparent" />
+                <div className="flex items-center gap-3 relative">
+                  <ImagePlus className="w-8 h-8 text-purple-400" />
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Guided Image Ads</h2>
+                    <p className="text-sm text-zinc-400">AI-powered workflows that turn your product into scroll-stopping ad creatives.</p>
+                  </div>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Create Mode */}
@@ -2523,11 +3195,19 @@ export default function AdStudioPage() {
               </div>
             </div>
 
-            {/* Video Section */}
+            {/* ── Guided Videos Section ── */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Film className="w-5 h-5 text-zinc-400" />
-                <h2 className="text-lg font-semibold text-white">Video</h2>
+              <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
+                {/* Gradient glow */}
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-500 to-amber-500" />
+                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-rose-500/10 to-transparent" />
+                <div className="flex items-center gap-3 relative">
+                  <Film className="w-8 h-8 text-rose-400" />
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Guided Video Ads</h2>
+                    <p className="text-sm text-zinc-400">Concept-driven video ads with AI direction, overlays, and multi-clip editing.</p>
+                  </div>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Video Studio */}
@@ -2601,6 +3281,523 @@ export default function AdStudioPage() {
             </div>
           </div>
         </div>
+
+        {/* Media Library Modal for Open Prompt source image (landing page) */}
+        {openPromptShowLibrary && user?.id && currentAccountId && (
+          <MediaLibraryModal
+            isOpen={openPromptShowLibrary}
+            onClose={() => setOpenPromptShowLibrary(false)}
+            userId={user.id}
+            adAccountId={currentAccountId}
+            selectedItems={[]}
+            onSelectionChange={async (items) => {
+              setOpenPromptShowLibrary(false)
+              if (items.length === 0) return
+              const item = items[0]
+              if (!('hash' in item)) return
+              const mediaItem = item as MediaImage & { mediaType: 'image' }
+              setOpenPromptDownloadingLibrary(true)
+              try {
+                const res = await fetch('/api/creative-studio/download-image', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: mediaItem.url }),
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  setOpenPromptSourceImage({
+                    base64: data.base64,
+                    mimeType: data.mimeType || 'image/jpeg',
+                    preview: mediaItem.url,
+                  })
+                }
+              } catch {} finally {
+                setOpenPromptDownloadingLibrary(false)
+              }
+            }}
+            maxSelection={1}
+            allowedTypes={['image']}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // Open Prompt mode - show result
+  if (mode === 'open-prompt') {
+    return (
+      <div className="min-h-screen pb-24">
+        <div className="px-4 lg:px-8 py-6">
+          <div className="max-w-[1000px] mx-auto space-y-6">
+            {/* Header */}
+            <div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={resetToModeSelection}
+                  className="text-zinc-500 hover:text-white transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-2xl font-bold text-white">Open Prompt</h1>
+                <span className={cn(
+                  'px-2 py-0.5 text-xs font-semibold rounded',
+                  (openPromptResult?.type === 'video' || openPromptScenePlan)
+                    ? 'bg-orange-500/20 text-orange-400'
+                    : 'bg-blue-500/20 text-blue-400'
+                )}>
+                  {(openPromptResult?.type === 'video' || openPromptScenePlan) ? 'VIDEO' : 'IMAGE'}
+                </span>
+              </div>
+              <p className="text-zinc-500 mt-1 ml-7 text-sm italic truncate">&ldquo;{openPromptText}&rdquo;</p>
+              {openPromptCreditCost > 0 && (
+                <div className="text-xs text-zinc-600 mt-1 ml-7">{openPromptCreditCost} credits</div>
+              )}
+            </div>
+
+            {/* Error */}
+            {openPromptError && (
+              <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {openPromptError}
+              </div>
+            )}
+
+            {/* Video: Planning spinner */}
+            {openPromptPlanningScene && (
+              <div className="flex flex-col items-center py-16">
+                <Loader2 className="w-10 h-10 text-amber-400 animate-spin mb-4" />
+                <p className="text-white font-medium">Planning your scene...</p>
+                <p className="text-zinc-500 text-sm mt-1">AI is analyzing duration and segmenting prompts</p>
+              </div>
+            )}
+
+            {/* Video: Director's Review — shown after scene planner returns */}
+            {openPromptScenePlan && !openPromptResult && !openPromptPlanningScene && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+                  <Clapperboard className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-semibold text-amber-300">Director&apos;s Review</span>
+                  <span className="ml-auto text-xs text-amber-400/60">Edit before generating</span>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  {/* Scene — editable */}
+                  <div>
+                    <label className="text-xs font-medium text-zinc-400 mb-1 block">Scene</label>
+                    <input
+                      type="text"
+                      value={openPromptScenePlan.scene}
+                      onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, scene: e.target.value } : prev)}
+                      className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  {/* Mood — editable */}
+                  <div>
+                    <label className="text-xs font-medium text-zinc-400 mb-1 block">Mood</label>
+                    <input
+                      type="text"
+                      value={openPromptScenePlan.mood}
+                      onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, mood: e.target.value } : prev)}
+                      className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  {/* Full Veo Prompt — collapsible */}
+                  <details className="group" open>
+                    <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                      <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                      Veo Prompt (first 8s)
+                    </summary>
+                    <textarea
+                      value={openPromptScenePlan.videoPrompt}
+                      onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, videoPrompt: e.target.value } : prev)}
+                      className="w-full mt-2 bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                      rows={8}
+                    />
+                  </details>
+
+                  {/* Extension Prompts — if segmented video */}
+                  {openPromptScenePlan.extensionPrompts && openPromptScenePlan.extensionPrompts.length > 0 && (
+                    <details className="group">
+                      <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                        <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                        Extension Prompts ({openPromptScenePlan.extensionPrompts.length})
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {openPromptScenePlan.extensionPrompts.map((ep, idx) => (
+                          <div key={idx}>
+                            <label className="text-xs text-zinc-500 mb-1 block">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
+                            <textarea
+                              value={ep}
+                              onChange={(e) => setOpenPromptScenePlan(prev => {
+                                if (!prev?.extensionPrompts) return prev
+                                const updated = [...prev.extensionPrompts!]
+                                updated[idx] = e.target.value
+                                return { ...prev, extensionPrompts: updated }
+                              })}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                              rows={4}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Dialogue — optional, AI-suggested when scene implies speech */}
+                  {openPromptScenePlan.dialogue ? (
+                    <div>
+                      <label className="text-xs font-medium text-zinc-400 mb-1 block">Dialogue <span className="text-zinc-600 font-normal">(spoken in video)</span></label>
+                      <textarea
+                        value={openPromptScenePlan.dialogue}
+                        onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: e.target.value } : prev)}
+                        className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 resize-y"
+                        rows={2}
+                        placeholder="e.g. This changed everything for my skin"
+                      />
+                      <button
+                        onClick={() => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: undefined } : prev)}
+                        className="text-xs text-zinc-600 hover:text-zinc-400 mt-1 transition-colors"
+                      >
+                        Remove dialogue
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: '' } : prev)}
+                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-amber-400 transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add dialogue
+                    </button>
+                  )}
+
+                  {/* Overlays toggle */}
+                  <div className="flex items-center justify-between pt-1 border-t border-amber-500/10">
+                    <div>
+                      <p className="text-xs font-medium text-amber-300/80">Text Overlays</p>
+                      <p className="text-xs text-zinc-600">Hook text + CTA button baked into video</p>
+                    </div>
+                    <button
+                      onClick={() => setOpenPromptOverlaysEnabled(!openPromptOverlaysEnabled)}
+                      className={cn('w-10 h-5 rounded-full transition-colors relative',
+                        openPromptOverlaysEnabled ? 'bg-amber-500' : 'bg-zinc-700'
+                      )}
+                    >
+                      <span className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                        openPromptOverlaysEnabled ? 'left-5' : 'left-0.5'
+                      )} />
+                    </button>
+                  </div>
+
+                  {/* Hook + CTA inputs (only when overlays enabled) */}
+                  {openPromptOverlaysEnabled && openPromptScenePlan.overlay && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-medium text-zinc-400 mb-1 block">Hook Text <span className="text-zinc-600 font-normal">(first 2s)</span></label>
+                        <input
+                          type="text"
+                          value={openPromptScenePlan.overlay.hook}
+                          onChange={(e) => setOpenPromptScenePlan(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, hook: e.target.value } } : prev)}
+                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                          placeholder="e.g. See the Difference"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-zinc-400 mb-1 block">CTA Button</label>
+                        <input
+                          type="text"
+                          value={openPromptScenePlan.overlay.cta}
+                          onChange={(e) => setOpenPromptScenePlan(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, cta: e.target.value } } : prev)}
+                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                          placeholder="e.g. Shop Now"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quality + Budget + Action */}
+                  {(() => {
+                    const dur = openPromptScenePlan.estimatedDuration || 8
+                    const exts = dur > 8 ? Math.round((dur - 8) / 7) : 0
+                    const costs = openPromptQuality === 'standard' ? { base: 20, ext: 10 } : { base: 50, ext: 25 }
+                    const cost = costs.base + exts * costs.ext
+                    const canAfford = aiUsage ? aiUsage.remaining >= cost : true
+                    return (
+                      <>
+                      {/* Quality selector */}
+                      <div className="pt-1 border-t border-amber-500/10">
+                        <label className="text-xs font-medium text-zinc-400 mb-2 block">Quality</label>
+                        <div className="flex gap-2">
+                          {(['standard', 'premium'] as const).map((q) => (
+                            <button key={q} onClick={() => setOpenPromptQuality(q)}
+                              className={cn('px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                                openPromptQuality === q
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200'
+                              )}>
+                              {q === 'standard' ? 'Standard (720p)' : 'Premium (1080p)'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Budget line */}
+                      <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-semibold text-white tabular-nums">{dur}s video</p>
+                          <p className="text-xs text-zinc-500">
+                            {exts === 0 ? 'Single clip' : `8s base + ${exts} extension${exts > 1 ? 's' : ''}`}
+                            {' · '}{openPromptQuality === 'premium' ? '1080p' : '720p'}
+                          </p>
+                        </div>
+                        <div className="text-right space-y-0.5">
+                          <p className={cn('text-sm font-bold tabular-nums', canAfford ? 'text-amber-400' : 'text-red-400')}>
+                            {cost} credits
+                          </p>
+                          {aiUsage && (
+                            <p className="text-xs text-zinc-500">{aiUsage.remaining} remaining</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={handleOpenPromptVideoGenerate}
+                          disabled={openPromptGenerating || !canAfford}
+                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                        >
+                          {openPromptGenerating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Generating {dur}s video...
+                            </>
+                          ) : (
+                            <>
+                              <Clapperboard className="w-4 h-4" />
+                              Action! ({cost} credits)
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setOpenPromptScenePlan(null); handleOpenPromptGenerate() }}
+                          disabled={openPromptPlanningScene || openPromptGenerating}
+                          className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                          title="Rewrite script"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Image Result */}
+            {openPromptResult?.type === 'image' && (
+              <div className="space-y-4">
+                <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
+                  {/* Image display */}
+                  <div className="flex justify-center bg-zinc-900/50 p-4">
+                    <img
+                      src={openPromptResult.image.storageUrl || `data:${openPromptResult.image.mimeType};base64,${openPromptResult.image.base64}`}
+                      alt="Generated image"
+                      className="max-h-[600px] rounded-lg object-contain"
+                    />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 p-4 flex-wrap">
+                    <button
+                      onClick={handleOpenPromptDownload}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
+                    <button
+                      onClick={handleOpenPromptSaveToLibrary}
+                      disabled={openPromptSaving || openPromptSaved}
+                      className={cn(
+                        'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm transition-colors',
+                        openPromptSaved
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                      )}
+                    >
+                      {openPromptSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : openPromptSaved ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        <FolderPlus className="w-4 h-4" />
+                      )}
+                      {openPromptSaved ? 'Saved' : 'Save to Library'}
+                    </button>
+                    <Link
+                      href={`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(openPromptResult.image.storageUrl || '')}`}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      Edit
+                    </Link>
+                    <button
+                      onClick={handleOpenPromptCreateAd}
+                      disabled={creatingAd[-1]}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent/20 text-accent text-sm hover:bg-accent/30 transition-colors"
+                    >
+                      {creatingAd[-1] ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Megaphone className="w-4 h-4" />
+                      )}
+                      Create Ad
+                    </button>
+                  </div>
+                </div>
+
+                {/* Adjust input */}
+                <div className="bg-bg-card border border-border rounded-xl p-4">
+                  <label className="text-xs text-zinc-500 mb-2 block">Adjust this image</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={openPromptAdjustText}
+                      onChange={(e) => setOpenPromptAdjustText(e.target.value)}
+                      placeholder="e.g. make the background darker, add more contrast..."
+                      className="flex-1 bg-bg-dark border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && openPromptAdjustText.trim()) handleOpenPromptAdjust()
+                      }}
+                    />
+                    <button
+                      onClick={handleOpenPromptAdjust}
+                      disabled={!openPromptAdjustText.trim() || openPromptAdjusting}
+                      className={cn(
+                        'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                        openPromptAdjustText.trim() && !openPromptAdjusting
+                          ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                          : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+                      )}
+                    >
+                      {openPromptAdjusting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      Adjust
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Video Result */}
+            {openPromptResult?.type === 'video' && (
+              <div className="space-y-4">
+                <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
+                  {/* Generating state */}
+                  {openPromptVideoJob && (openPromptVideoJob.status === 'queued' || openPromptVideoJob.status === 'generating' || openPromptVideoJob.status === 'rendering' || openPromptVideoJob.status === 'extending') && (
+                    <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
+                      <Loader2 className="w-10 h-10 text-orange-400 animate-spin mb-4" />
+                      <p className="text-white font-medium mb-1">
+                        {openPromptVideoJob.status === 'queued' ? 'Queued...' :
+                         openPromptVideoJob.status === 'extending' ? 'Extending video...' :
+                         'Generating video...'}
+                      </p>
+                      <p className="text-zinc-500 text-sm">This typically takes 1-3 minutes</p>
+                      {openPromptVideoJob.progress_pct !== undefined && openPromptVideoJob.progress_pct > 0 && (
+                        <div className="w-48 mt-4">
+                          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-500"
+                              style={{ width: `${Math.round(openPromptVideoJob.progress_pct)}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-zinc-600 mt-1">{Math.round(openPromptVideoJob.progress_pct)}%</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Failed state */}
+                  {openPromptVideoJob?.status === 'failed' && (
+                    <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
+                      <AlertCircle className="w-10 h-10 text-red-400 mb-4" />
+                      <p className="text-white font-medium mb-1">Video generation failed</p>
+                      <p className="text-zinc-500 text-sm">{openPromptVideoJob.error_message || 'An unexpected error occurred'}</p>
+                      <button
+                        onClick={() => {
+                          setOpenPromptVideoJob(null)
+                          setOpenPromptResult(null)
+                          setMode(null)
+                        }}
+                        className="mt-4 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Completed video */}
+                  {openPromptVideoJob?.status === 'complete' && (openPromptVideoJob.final_video_url || openPromptVideoJob.raw_video_url) && (
+                    <div>
+                      <div className="flex justify-center bg-zinc-900/50 p-4">
+                        <video
+                          src={openPromptVideoJob.final_video_url || openPromptVideoJob.raw_video_url}
+                          controls
+                          className="max-h-[600px] rounded-lg"
+                          autoPlay
+                          muted
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 p-4 flex-wrap">
+                        <a
+                          href={openPromptVideoJob.final_video_url || openPromptVideoJob.raw_video_url}
+                          download={`open-prompt-video-${Date.now()}.mp4`}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download
+                        </a>
+                        <Link
+                          href={`/dashboard/creative-studio/video-editor?jobId=${openPromptVideoJob.id}`}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          Edit Video
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Launch Wizard Modal */}
+        {showLaunchWizard && currentAccountId && (
+          <LaunchWizard
+            adAccountId={currentAccountId}
+            onComplete={() => {
+              setShowLaunchWizard(false)
+              setWizardCreatives([])
+              setWizardCopy(null)
+            }}
+            onCancel={() => {
+              setShowLaunchWizard(false)
+              setWizardCreatives([])
+              setWizardCopy(null)
+            }}
+            preloadedCreatives={wizardCreatives}
+            initialCopy={wizardCopy || undefined}
+          />
+        )}
       </div>
     )
   }
@@ -4725,6 +5922,48 @@ export default function AdStudioPage() {
                   setI2vError('Failed to load image from library')
                 } finally {
                   setI2vDownloadingLibrary(false)
+                }
+              }}
+              maxSelection={1}
+              allowedTypes={['image']}
+            />
+          )}
+
+          {/* Media Library Modal for Open Prompt source image */}
+          {openPromptShowLibrary && user?.id && currentAccountId && (
+            <MediaLibraryModal
+              isOpen={openPromptShowLibrary}
+              onClose={() => setOpenPromptShowLibrary(false)}
+              userId={user.id}
+              adAccountId={currentAccountId}
+              selectedItems={[]}
+              onSelectionChange={async (items) => {
+                setOpenPromptShowLibrary(false)
+                if (items.length === 0) return
+
+                const item = items[0]
+                if (!('hash' in item)) return
+
+                const mediaItem = item as MediaImage & { mediaType: 'image' }
+
+                setOpenPromptDownloadingLibrary(true)
+                try {
+                  const res = await fetch('/api/creative-studio/download-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: mediaItem.url }),
+                  })
+
+                  if (res.ok) {
+                    const data = await res.json()
+                    setOpenPromptSourceImage({
+                      base64: data.base64,
+                      mimeType: data.mimeType || 'image/jpeg',
+                      preview: mediaItem.url,
+                    })
+                  }
+                } catch {} finally {
+                  setOpenPromptDownloadingLibrary(false)
                 }
               }}
               maxSelection={1}

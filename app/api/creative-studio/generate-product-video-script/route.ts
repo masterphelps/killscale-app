@@ -57,7 +57,15 @@ export async function POST(request: NextRequest) {
       ? Math.round((targetDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)
       : 0
 
-    const prompt = `You are a product video ad director. The user has described what they want their video to look like. Your job is to translate their vision into precise, production-ready Veo AI video generation prompts.
+    const prompt = `You are a video segmentation assistant for Google Veo. The user described how they want their product video to look. Your ONLY job is:
+1. Split their description into time segments (first 8 seconds + 7-second extensions)
+2. Generate overlay text and scene/mood summaries
+
+CRITICAL RULE — PRESERVE THE USER'S WORDS:
+Do NOT rewrite, embellish, or "improve" the user's description. Veo works best with direct, casual prompts.
+Your job is ONLY to split the description into time segments. Keep the user's exact words, tone, and style.
+If it fits in 8 seconds, pass it through UNCHANGED as the videoPrompt.
+If it needs extensions, split at natural breakpoints.
 
 PRODUCT:
 ${productContext}
@@ -67,47 +75,35 @@ USER'S VISION:
 
 TARGET DURATION: ${targetDuration} seconds (${numExtensions === 0 ? 'single 8s clip' : `8s base + ${numExtensions} x 7s extension${numExtensions > 1 ? 's' : ''}`})
 
-${hasProductImage ? 'PRODUCT IMAGE: A reference product image will be provided as the starting frame. The first ~1 second shows the product as a still image before motion begins.' : 'NO PRODUCT IMAGE: The video will be generated from text only.'}
+${hasProductImage ? 'PRODUCT IMAGE: A reference product image will be provided as the starting frame. The first ~1 second shows the image as a still before motion begins.' : 'NO PRODUCT IMAGE: The video will be generated from text only.'}
 
-VEO AI RULES (you MUST follow these):
-1. ONE subject per prompt — never ask for two things happening at once
-2. ONE camera movement per prompt (orbit, dolly, crane, push-in, pull-back, etc.)
-3. Atmospheric over narrative — Veo excels at mood, lighting, texture, and slow reveals
-4. No cause-and-effect sequences (e.g. "pours water then drinks" will fail)
-5. No text rendering — Veo cannot render text. Never include text in the video prompt. Text overlays are added in post-production.
-6. No logos — Veo cannot render logos. The product image handles branding.
-7. Describe in present continuous tense: "The camera slowly orbits..." not "The camera will orbit..."
-8. Be extremely specific about lighting, atmosphere, and color temperature
-9. Each prompt should be 300-800 characters
+SEGMENTATION RULES:
+- "videoPrompt" = user's description for the FIRST 8 seconds${hasProductImage ? ' (first ~1s is product image still)' : ''}
+${numExtensions > 0 ? `- Split remaining description into exactly ${numExtensions} extension prompt(s) (7s each)
+- Each extension starts with "Continue from previous shot." then the user's words for that segment
+- Split at natural scene breaks` : '- No extension prompts needed for this duration.'}
+- Do NOT add cinematic flourishes, lighting descriptions, or camera directions the user didn't ask for
+- Do NOT remove anything the user wrote
+- Only addition allowed: "Vertical 9:16 portrait format." at the end of videoPrompt if not mentioned
+${hasProductImage ? '- The product from the reference image must remain unchanged throughout' : ''}
 
-VIDEO SEGMENTATION:
-- The "videoPrompt" covers the FIRST 8 seconds. The first ~1 second is the product image (still), so you have ~7 seconds of actual motion.
-${numExtensions > 0 ? `- Include exactly ${numExtensions} extension prompt(s), each covering 7 seconds of continuation.
-- Each extension prompt MUST start with "Continue from previous shot." and maintain visual continuity.
-- Build a visual arc across segments — each extension should evolve the scene (new angle, new lighting, new detail reveal).` : '- No extension prompts needed for this duration.'}
+VEO LIMITATIONS (silently work around these):
+- Veo cannot render text/words in video — move any requested text to overlay.hook
+- Veo cannot render logos
+- If user describes cause-and-effect in one segment, split across segments
 
-OUTPUT FORMAT (respond with ONLY this JSON, no other text):
+OUTPUT FORMAT (respond with ONLY this JSON):
 {
-  "videoPrompt": "The main Veo prompt for the first 8 seconds. Uses block headers: [Scene], [Subject], [Action], [Product Preservation], [Mood & Atmosphere], [Technical]. Cinematic, detailed, specific.",
-  ${numExtensions > 0 ? `"extensionPrompts": ["One prompt per 7-second extension. Each starts with 'Continue from previous shot.' and maintains visual continuity."],` : ''}
-  "scene": "One-line summary of the environment/setting for the Director's Review UI",
-  "mood": "One-line summary of the color/tone/feeling for the Director's Review UI",
+  "videoPrompt": "The user's description for the first 8 seconds — their words, their style.",
+  ${numExtensions > 0 ? `"extensionPrompts": ["Continue from previous shot. [user's words for next 7s]"],` : ''}
+  "scene": "One-line setting summary",
+  "mood": "One-line tone summary",
   "estimatedDuration": ${targetDuration},
   "overlay": {
-    "hook": "Short punchy hook text (MAX 6 words) for the first 2 seconds — e.g. 'See the Difference'",
-    "cta": "Call-to-action button text — e.g. 'Shop Now'"
+    "hook": "Short hook text (MAX 6 words)",
+    "cta": "CTA button text — e.g. 'Shop Now'"
   }
-}
-
-PROMPT BLOCK GUIDELINES:
-- [Scene]: Environment, lighting setup, atmosphere, background elements. Be specific about light direction, color temperature, and volumetric effects.
-- [Subject]: The product — describe its physical form referencing the image if provided. No people unless the user specifically asked for them.
-- [Action]: ONE camera movement + ONE product motion. Beat-by-beat within the segment. Describe timing relative to the segment.
-${hasProductImage ? '- [Product Preservation]: "The product from the reference image must remain completely unchanged — same shape, colors, text, and proportions. Never alter, morph, or distort the product."' : ''}
-- [Mood & Atmosphere]: Color grade, energy, sound design feel, emotional tone.
-- [Technical]: "Vertical 9:16 portrait (1024x1792). Professional ad quality. Cinematic lighting." Include pacing note.
-
-IMPORTANT: Translate the user's casual description into cinematic, specific Veo language. If they say "floating in space", describe the exact lighting, particle effects, camera movement, and atmosphere that would create that look. If they say "rotating", specify the rotation speed, direction, and what the light does as it rotates.`
+}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-5.2',

@@ -12,6 +12,8 @@ import {
   buildImagePrompt,
   buildCustomPrompt,
   buildTextOnlyPrompt,
+  buildOpenPrompt,
+  buildOpenPromptWithImage,
   type ImagePromptRequest,
   type CuratedAdText,
 } from '@/lib/prompts/image-generation'
@@ -234,6 +236,66 @@ export async function POST(request: NextRequest) {
 
     console.log('[Imagen] Has product image:', Boolean(hasProductImage), 'imageBase64 length:', body.product.imageBase64?.length || 0, 'mimeType:', body.product.imageMimeType || 'none')
     console.log('[Imagen] Has reference ad:', Boolean(hasReferenceAd), 'referenceAd length:', body.referenceAd?.imageBase64?.length || 0)
+
+    // Open Prompt mode: skip text curation, use raw user prompt with no text overlay
+    if (body.noTextOverlay && body.imagePrompt) {
+      console.log('[Imagen] Open Prompt mode — no text overlay')
+
+      const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = []
+
+      if (hasProductImage) {
+        parts.push({
+          inlineData: {
+            mimeType: body.product.imageMimeType!,
+            data: body.product.imageBase64!,
+          }
+        })
+        parts.push({ text: buildOpenPromptWithImage(body) })
+      } else {
+        parts.push({ text: buildOpenPrompt(body) })
+      }
+
+      console.log('[Imagen] Open Prompt | Parts count:', parts.length, '| Has source image:', Boolean(hasProductImage))
+
+      try {
+        const response = await withRetry(() => client.models.generateContent({
+          model: MODEL_NAME,
+          contents: [{ role: 'user', parts }],
+          config: {
+            responseModalities: ['IMAGE', 'TEXT'],
+            imageConfig: { aspectRatio },
+          }
+        }))
+
+        const responseParts = response.candidates?.[0]?.content?.parts || []
+        for (const part of responseParts) {
+          if (part.inlineData?.data) {
+            console.log('[Imagen] Open Prompt image generated successfully')
+            const mimeType = detectMimeType(part.inlineData.data)
+
+            // Log credit usage
+            if (body.userId) {
+              await supabaseAdmin.from('ai_generation_usage').insert({
+                user_id: body.userId,
+                generation_type: 'image',
+                generation_label: 'Image: open-prompt',
+                credit_cost: 5,
+              })
+            }
+
+            return NextResponse.json({
+              image: { base64: part.inlineData.data, mimeType },
+              model: MODEL_NAME,
+            })
+          }
+        }
+        console.error('[Imagen] Open Prompt returned no image')
+        return NextResponse.json({ error: 'No image generated' }, { status: 500 })
+      } catch (err: unknown) {
+        console.error('[Imagen] Open Prompt generation failed:', err)
+        return NextResponse.json({ error: 'Image generation failed' }, { status: 500 })
+      }
+    }
 
     // Use Claude to intelligently pick the best text for the ad image
     console.log('[Imagen] Curating ad text with Claude...')

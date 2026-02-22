@@ -72,6 +72,12 @@ export type ProductVideoScript = {
   overlay?: { hook: string; cta: string }
 }
 
+// ─── Scene Plan Type (Open Prompt Director's Review) ────────────────────────
+
+export type ScenePlan = ProductVideoScript & {
+  dialogue?: string  // Optional spoken dialogue — AI suggests when scene implies speech
+}
+
 // ─── UGC Video Types ────────────────────────────────────────────────────────
 
 export type UGCSettings = {
@@ -124,30 +130,28 @@ export function buildUGCVeoPrompt(
   ugcResult: UGCPromptResult,
   durationSeconds: number,
 ): string {
-  // The GPT 5.2 prompt is already structured — just add the product preservation
-  // and technical blocks that Veo needs
-  const blocks: string[] = []
+  // Strip any block headers from GPT's output — Veo works best with natural prose
+  let prompt = ugcResult.prompt
+    .replace(/\[(?:Scene|Subject|Action|Product Preservation|Product|Mood & Atmosphere|Mood|Technical|Dialogue)\]\s*/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 
-  // The main prompt from GPT 5.2 already contains [Scene], [Subject], [Action], etc.
-  blocks.push(ugcResult.prompt)
-
-  // Ensure product preservation block exists
-  if (!ugcResult.prompt.includes('[Product Preservation]')) {
-    blocks.push(`[Product Preservation]\nThe product from the reference image must remain completely unchanged — same shape, colors, text, and proportions. Never alter, morph, or distort the product.`)
+  // Append product preservation if not mentioned
+  if (!prompt.toLowerCase().includes('reference image')) {
+    prompt += ' The product from the reference image must remain completely unchanged — same shape, colors, text, and proportions.'
   }
 
-  // Ensure technical block exists
-  if (!ugcResult.prompt.includes('[Technical]')) {
+  // Append technical details if not mentioned
+  if (!prompt.toLowerCase().includes('9:16') && !prompt.toLowerCase().includes('portrait')) {
     const pacingNote = durationSeconds <= 8
-      ? 'Pacing: Tight and immediate. Natural speech cadence with direct-to-camera energy.'
+      ? 'Tight and immediate pacing with natural speech cadence and direct-to-camera energy.'
       : durationSeconds <= 15
-        ? 'Pacing: Conversational flow. Opening hook, product demonstration, closing endorsement.'
-        : 'Pacing: Full testimonial arc. Hook, problem/context, product showcase, genuine recommendation, confident close.'
-
-    blocks.push(`[Technical]\nVertical 9:16 portrait. Natural UGC aesthetic — slightly imperfect, relatable, not overly polished. Selfie-style camera with subtle movement. ${durationSeconds}s.\n${pacingNote}`)
+        ? 'Conversational pacing — opening hook, product demonstration, closing endorsement.'
+        : 'Full testimonial arc — hook, problem, product showcase, genuine recommendation, confident close.'
+    prompt += ` Vertical 9:16 portrait format. Natural UGC aesthetic — slightly imperfect, relatable, not overly polished. Selfie-style camera with subtle movement. ${durationSeconds}s. ${pacingNote}`
   }
 
-  return blocks.join('\n\n')
+  return prompt
 }
 
 // Prompt templates for each video style
@@ -224,19 +228,14 @@ export function generatePromptSections(
   return templates[style] || templates.lifestyle
 }
 
-// Combine sections into a single Sora-ready prompt
-// Uses newline-separated block headers for clear structure
-// Sora 2 notes:
-//   - Dialogue in a dedicated [Dialogue] block at the end
-//   - SDK with OpenAI.toFile() handles long prompts + input_reference fine
-//   - When hasImage: adds reference image instructions to product focus
+// Combine sections into a natural, flowing prompt for Veo/Sora
+// Weaves scene, subject, action, mood into continuous cinematic prose
+// Dialogue extracted from action and appended naturally at the end
 export function buildSoraPrompt(sections: PromptSections, hasImage = false, durationSeconds: 8 | 12 = 8): string {
   // ── Extract dialogue from action section ──────────────────────────────────
   const dialogueLines: string[] = []
   let visualAction = sections.action || ''
 
-  // Match quoted speech (5+ chars) in double quotes or curly double quotes
-  // NOT straight single quotes — too ambiguous with contractions
   const quotePattern = /[""\u201C\u201D]([^""\u201C\u201D]{5,})[""\u201C\u201D]|[\u2018]([^\u2018\u2019]{5,})[\u2019]/g
   let match: RegExpExecArray | null
   while ((match = quotePattern.exec(visualAction)) !== null) {
@@ -244,63 +243,59 @@ export function buildSoraPrompt(sections: PromptSections, hasImage = false, dura
   }
 
   if (dialogueLines.length > 0) {
-    // Remove quoted text from visual action
     visualAction = visualAction.replace(quotePattern, '')
-    // Clean orphaned speech verbs only at the boundaries where quotes were removed
-    // Use word boundary + optional colon/space pattern to avoid mangling non-speech uses
     visualAction = visualAction.replace(/\b(?:says?|explains?|explaining|asks?|asking|mentions?|mentioning|tells?|telling|shares?|sharing|speaks?|speaking)\b\s*:?\s*(?=[,.\s]|$)/gi, '')
-    visualAction = visualAction.replace(/[:.]\s*[:.]/g, '.') // collapse ":." patterns
-    visualAction = visualAction.replace(/\band\s*\./g, '.') // "and." → "."
-    visualAction = visualAction.replace(/,\s*,/g, ',') // ",," → ","
-    visualAction = visualAction.replace(/\.\s*,/g, '.') // ".," → "."
+    visualAction = visualAction.replace(/[:.]\s*[:.]/g, '.')
+    visualAction = visualAction.replace(/\band\s*\./g, '.')
+    visualAction = visualAction.replace(/,\s*,/g, ',')
+    visualAction = visualAction.replace(/\.\s*,/g, '.')
     visualAction = visualAction.replace(/\s{2,}/g, ' ').trim()
     visualAction = visualAction.replace(/^[,.:;\s]+|[,.:;\s]+$/g, '').trim()
   }
 
-  // ── Build prompt blocks ────────────────────────────────────────────────────
-  const blocks: string[] = []
+  // ── Build natural prose prompt ─────────────────────────────────────────────
+  const parts: string[] = []
 
   if (sections.scene) {
-    blocks.push(`[Scene]\n${sections.scene}`)
+    parts.push(sections.scene)
   }
 
   if (sections.subject) {
-    blocks.push(`[Subject]\n${sections.subject}`)
+    parts.push(sections.subject)
   }
 
   if (visualAction) {
-    blocks.push(`[Action]\n${visualAction}`)
+    parts.push(visualAction)
   }
 
-  // Product block — reinforce reference image when hasImage
+  // Product reference — weave into the description
   if (sections.product) {
     if (hasImage) {
-      blocks.push(`[Product]\nMatch the product's colors, shape, branding, and proportions precisely from the reference image. ${sections.product}`)
+      parts.push(`The product matches the reference image precisely — same colors, shape, branding, and proportions. ${sections.product}`)
     } else {
-      blocks.push(`[Product]\n${sections.product}`)
+      parts.push(sections.product)
     }
   } else if (hasImage) {
-    blocks.push(`[Product]\nThe exact product from the reference image is featured prominently throughout. Match its colors, shape, branding, and proportions precisely.`)
+    parts.push('The exact product from the reference image is featured prominently, matching its colors, shape, branding, and proportions precisely.')
   }
 
   if (sections.mood) {
-    blocks.push(`[Mood & Atmosphere]\n${sections.mood}`)
+    parts.push(sections.mood)
   }
 
-  // Technical block with duration-aware pacing
+  // Technical details woven in naturally
   const pacingNote = durationSeconds === 12
-    ? 'Pacing: Opening beat (2-3s) to establish, development (5-7s) for the core action, closing beat (2-3s) to land the message. Room to breathe between beats.'
-    : 'Pacing: Tight and immediate. 2-3 fast beats with no wasted frames. Hook in the first second, payoff by the last.'
+    ? 'Opening beat to establish the scene, development for the core action, closing beat to land the message.'
+    : 'Tight and immediate pacing — hook in the first second, payoff by the last.'
+  parts.push(`Vertical 9:16 portrait format (1024x1792). Professional ad quality with cinematic lighting. ${pacingNote}`)
 
-  blocks.push(`[Technical]\nVertical 9:16 portrait (1024x1792). Professional ad quality. Cinematic lighting.\n${pacingNote}`)
-
-  // Dialogue block at the end (Sora 2 required format)
+  // Dialogue appended naturally
   if (dialogueLines.length > 0) {
-    const formattedLines = dialogueLines.map(line => `Speaker: "${line}"`).join('\n')
-    blocks.push(`[Dialogue]\n${formattedLines}`)
+    const formattedLines = dialogueLines.map(line => `Speaker: "${line}"`).join(' ')
+    parts.push(formattedLines)
   }
 
-  return blocks.join('\n\n')
+  return parts.join(' ')
 }
 
 // ─── Concept-First Sora Prompt Builder ──────────────────────────────────────
@@ -334,30 +329,30 @@ export function buildConceptSoraPrompt(
     visualAction = visualAction.replace(/^[,.:;\s]+|[,.:;\s]+$/g, '').trim()
   }
 
-  const blocks: string[] = []
+  const parts: string[] = []
 
   if (script.scene) {
-    blocks.push(`[Scene]\n${script.scene}`)
+    parts.push(script.scene)
   }
 
   if (script.subject) {
-    blocks.push(`[Subject]\n${script.subject}`)
+    parts.push(script.subject)
   }
 
   if (visualAction) {
-    blocks.push(`[Action]\n${visualAction}`)
+    parts.push(visualAction)
   }
 
   if (script.mood) {
-    blocks.push(`[Mood & Atmosphere]\n${script.mood}`)
+    parts.push(script.mood)
   }
 
-  blocks.push(`[Technical]\nVertical 9:16 portrait. Cinematic lighting. No text or logos.`)
+  parts.push('Vertical 9:16 portrait format. Cinematic lighting. No text or logos.')
 
   if (dialogueLines.length > 0) {
-    const formattedLines = dialogueLines.map(line => `Speaker: "${line}"`).join('\n')
-    blocks.push(`[Dialogue]\n${formattedLines}`)
+    const formattedLines = dialogueLines.map(line => `Speaker: "${line}"`).join(' ')
+    parts.push(formattedLines)
   }
 
-  return blocks.join('\n\n')
+  return parts.join(' ')
 }

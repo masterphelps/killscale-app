@@ -33,6 +33,7 @@ export interface ImagePromptRequest {
   aspectRatio?: '1:1' | '4:5' | '9:16' | '16:9'
   imagePrompt?: string
   isRefresh?: boolean
+  noTextOverlay?: boolean
 }
 
 export interface CuratedAdText {
@@ -495,4 +496,33 @@ Requirements:
 - Photorealistic, high resolution${TEXT_REQUIREMENTS}
 
 Generate an advertisement image with text overlay.`
+}
+
+// ── Open Prompt (no text overlay, raw user prompt) ──────────────────────
+
+export function buildOpenPrompt(req: ImagePromptRequest): string {
+  const { imagePrompt } = req
+
+  return `${imagePrompt}
+
+Requirements:
+- Do NOT include any text, words, letters, labels, or watermarks in the image
+- Professional quality, high resolution
+- Photorealistic unless the prompt specifies otherwise`
+}
+
+export function buildOpenPromptWithImage(req: ImagePromptRequest): string {
+  const { imagePrompt } = req
+
+  return `Use the provided image as reference for the product/subject.
+
+USER'S CREATIVE DIRECTION:
+"${imagePrompt}"
+
+Requirements:
+- Feature the product/subject from the reference image
+- Do NOT include any text, words, letters, labels, or watermarks in the image
+- Follow the user's creative direction above
+- Professional quality, high resolution
+- Photorealistic unless the prompt specifies otherwise`
 }
