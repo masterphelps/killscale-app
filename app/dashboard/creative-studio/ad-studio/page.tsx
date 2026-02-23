@@ -2942,7 +2942,7 @@ export default function AdStudioPage() {
             </div>
 
             {/* ── Open Prompt Section ── */}
-            <div className="space-y-3">
+            <div id="open-prompt-section" className="space-y-3">
               <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
                 {/* Textarea */}
                 <textarea
@@ -3231,8 +3231,9 @@ export default function AdStudioPage() {
                 {/* Text to Video */}
                 <button
                   onClick={() => {
-                    setMode('open-prompt')
                     setOpenPromptMediaType('video')
+                    // Scroll to Open Prompt section on the landing page (don't set mode — it's inline)
+                    document.getElementById('open-prompt-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                   }}
                   className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-purple-500/40 hover:bg-purple-500/5 transition-all text-left"
                 >
