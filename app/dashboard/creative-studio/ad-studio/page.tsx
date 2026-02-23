@@ -15,6 +15,7 @@ import { useSubscription } from '@/lib/subscription'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
+import ImageToVideo from '@/components/creative-studio/image-to-video'
 import {
   CompetitorSearchInput,
   CompetitorAdsGrid,
@@ -443,6 +444,10 @@ export default function AdStudioPage() {
   const [openPromptScenePlan, setOpenPromptScenePlan] = useState<ScenePlan | null>(null)
   const [openPromptPlanningScene, setOpenPromptPlanningScene] = useState(false)
   const [openPromptOverlaysEnabled, setOpenPromptOverlaysEnabled] = useState(true)
+
+  // Image-to-Video component media library integration
+  const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
+  const [i2vImageFromLibrary, setI2vImageFromLibrary] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
 
   // Fetch AI credit usage
   const refreshCredits = useCallback(() => {
@@ -1739,6 +1744,9 @@ export default function AdStudioPage() {
     setOpenPromptShowImageMenu(false)
     setOpenPromptShowLibrary(false)
     setOpenPromptDownloadingLibrary(false)
+    // Reset Image-to-Video component state
+    setI2vMediaLibraryOpen(false)
+    setI2vImageFromLibrary(null)
     handleClearCompany()
     // Strip ?sessionId= from URL on reset
     router.replace('/dashboard/creative-studio/ad-studio', { scroll: false })
@@ -3933,21 +3941,18 @@ export default function AdStudioPage() {
     )
   }
 
-  // Image to Video placeholder
+  // Image to Video — self-contained component
   if (mode === 'image-to-video') {
     return (
-      <div className="min-h-screen pb-24">
-        <div className="px-4 lg:px-8 py-6">
-          <div className="flex flex-col items-center py-16 text-center">
-            <ImagePlus className="w-12 h-12 text-emerald-400 mb-4" />
-            <p className="text-white font-medium">Image to Video</p>
-            <p className="text-zinc-500 text-sm mt-1">Coming soon — upload an image to animate with AI</p>
-            <button onClick={resetToModeSelection} className="mt-6 text-sm text-emerald-400 hover:text-emerald-300">
-              &larr; Back
-            </button>
-          </div>
-        </div>
-      </div>
+      <ImageToVideo
+        userId={user?.id || ''}
+        adAccountId={currentAccountId || ''}
+        credits={aiUsage ? { remaining: aiUsage.remaining, totalAvailable: aiUsage.totalAvailable } : null}
+        onCreditsChanged={() => { refreshCredits(); notifyCreditsChanged() }}
+        onBack={resetToModeSelection}
+        onOpenMediaLibrary={() => setI2vMediaLibraryOpen(true)}
+        onImageFromLibrary={i2vImageFromLibrary}
+      />
     )
   }
 
