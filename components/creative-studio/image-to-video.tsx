@@ -746,90 +746,65 @@ export default function ImageToVideo({
           {/* ══════════════════════════════════════════════════════════════ */}
           {!scenePlan && !planningScene && !videoJob && (
             <div className="bg-bg-card border border-border rounded-xl p-6 space-y-6">
-              {/* Image Upload Area */}
-              {!image ? (
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={cn(
-                    'flex flex-col items-center justify-center py-12 border-2 border-dashed rounded-xl cursor-pointer transition-colors',
-                    isDragging
-                      ? 'border-emerald-500 bg-emerald-500/5'
-                      : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/20'
-                  )}
-                >
-                  <Upload className={cn('w-10 h-10 mb-3', isDragging ? 'text-emerald-400' : 'text-zinc-500')} />
-                  <p className="text-sm font-medium text-white mb-1">
-                    Drop an image here or click to browse
-                  </p>
-                  <p className="text-xs text-zinc-500 mb-4">
-                    PNG, JPG, or WebP
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onOpenMediaLibrary()
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5" />
-                      Media Library
-                    </button>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="relative aspect-square max-h-[300px] mx-auto rounded-xl overflow-hidden border border-zinc-700/50">
+              {/* Image Selection — same pattern as UGC in ad-studio */}
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <ImagePlus className="w-5 h-5 text-emerald-400" />
+                Select Image
+              </h2>
+              <p className="text-sm text-zinc-400">
+                Choose an image to animate into a video ad.
+              </p>
+
+              {/* Selected image preview */}
+              {image ? (
+                <div className="flex items-start gap-4 p-4 bg-bg-dark rounded-xl border border-emerald-500/30">
+                  <div className="relative w-32 h-32 rounded-lg overflow-hidden bg-zinc-900 flex-shrink-0 border-2 border-emerald-500/40">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={image.preview}
                       alt="Selected image"
-                      className="w-full h-full object-contain bg-zinc-900"
+                      className="w-full h-full object-cover"
                     />
                   </div>
-                  <div className="flex gap-2 justify-center">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
-                    >
-                      <ImagePlus className="w-3.5 h-3.5" />
-                      Replace
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onOpenMediaLibrary()
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5" />
-                      Library
-                    </button>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-emerald-400">
+                      <Play className="w-3 h-3" />
+                      Image selected
+                    </div>
                     <button
                       onClick={() => setImage(null)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-red-400 hover:bg-zinc-700 transition-colors"
+                      className="text-sm text-zinc-500 hover:text-white transition-colors"
                     >
-                      <X className="w-3.5 h-3.5" />
                       Remove
                     </button>
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
+                </div>
+              ) : (
+                /* Media Library + Upload buttons */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Media Library */}
+                  <button
+                    onClick={onOpenMediaLibrary}
+                    className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-colors"
+                  >
+                    <FolderOpen className="w-8 h-8 text-emerald-400 mb-2" />
+                    <p className="text-white font-medium text-sm">Media Library</p>
+                    <p className="text-zinc-500 text-xs mt-1">Browse your ad account images</p>
+                  </button>
+
+                  {/* Upload */}
+                  <label className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-colors cursor-pointer">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    <Upload className="w-8 h-8 text-emerald-400 mb-2" />
+                    <p className="text-white font-medium text-sm">Upload Image</p>
+                    <p className="text-zinc-500 text-xs mt-1">PNG, JPG, WEBP up to 10MB</p>
+                  </label>
                 </div>
               )}
 

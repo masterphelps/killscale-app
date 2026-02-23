@@ -306,6 +306,14 @@ export default function VideoStudioPage() {
           }
           if (canvas.product_url) setProductUrl(canvas.product_url)
           setStep(2)
+          // Auto-expand concept if conceptIndex param is provided (from AI Tasks)
+          const conceptIndexParam = searchParams.get('conceptIndex')
+          if (conceptIndexParam != null) {
+            const idx = parseInt(conceptIndexParam, 10)
+            if (!isNaN(idx) && idx >= 0 && idx < canvas.concepts.length) {
+              setExpandedConcept(idx)
+            }
+          }
         }
       } catch (err) {
         console.error('[VideoStudio] Failed to restore canvas:', err)
@@ -572,7 +580,7 @@ export default function VideoStudioPage() {
           overlayConfig: {
             style: 'bold' as const,
             hook: {
-              line1: concept.overlay.hook,
+              line1: concept.overlay?.hook || '',
               startSec: 0,
               endSec: 3,
               animation: 'pop' as const,
@@ -581,7 +589,7 @@ export default function VideoStudioPage() {
               position: 'center' as const,
             },
             captions: (() => {
-              const caps = concept.overlay.captions
+              const caps = concept.overlay?.captions || []
               // Speech-paced timing: ~0.6s per word, min 1.2s, max 2.5s, small gaps
               const captionStart = 3
               const gap = 0.15
@@ -605,7 +613,7 @@ export default function VideoStudioPage() {
               })
             })(),
             cta: {
-              buttonText: concept.overlay.cta,
+              buttonText: concept.overlay?.cta || '',
               startSec: Math.max(conceptDuration - 3, conceptDuration * 0.7),
               animation: 'slide' as const,
               fontSize: 32,
@@ -942,7 +950,7 @@ export default function VideoStudioPage() {
                     value={productUrl}
                     onChange={(e) => setProductUrl(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeUrl()}
-                    placeholder="https://yourstore.com/product"
+                    placeholder="yourstore.com/product"
                     className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-purple-500"
                   />
                   <button
@@ -1424,13 +1432,13 @@ export default function VideoStudioPage() {
                                   className="w-full bg-bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-purple-500"
                                 />
                               </div>
-                              {ec.overlay.captions.map((cap, ci) => (
+                              {(ec.overlay?.captions || []).map((cap, ci) => (
                                 <div key={ci}>
                                   <label className="text-[10px] text-zinc-500 uppercase mb-1 block">Caption {ci + 1}</label>
                                   <input
                                     value={cap}
                                     onChange={(e) => {
-                                      const newCaptions = [...ec.overlay.captions]
+                                      const newCaptions = [...(ec.overlay?.captions || [])]
                                       newCaptions[ci] = e.target.value
                                       setEditingConcept({ ...ec, overlay: { ...ec.overlay, captions: newCaptions } })
                                     }}
@@ -1760,10 +1768,10 @@ export default function VideoStudioPage() {
                                 <Type className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
                                 <div>
                                   <span className="text-[10px] text-zinc-500 uppercase">Hook</span>
-                                  <p className="text-sm font-semibold text-white">{concept.overlay.hook}</p>
+                                  <p className="text-sm font-semibold text-white">{concept.overlay?.hook}</p>
                                 </div>
                               </div>
-                              {concept.overlay.captions.map((caption, ci) => (
+                              {(concept.overlay?.captions || []).map((caption, ci) => (
                                 <div key={ci} className="flex items-start gap-2">
                                   <MessageSquare className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-zinc-600" />
                                   <div>
@@ -1776,7 +1784,7 @@ export default function VideoStudioPage() {
                                 <MousePointer className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
                                 <div>
                                   <span className="text-[10px] text-zinc-500 uppercase">CTA</span>
-                                  <p className="text-sm font-semibold text-white">{concept.overlay.cta}</p>
+                                  <p className="text-sm font-semibold text-white">{concept.overlay?.cta}</p>
                                 </div>
                               </div>
                             </div>

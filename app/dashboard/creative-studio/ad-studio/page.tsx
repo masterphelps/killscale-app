@@ -450,6 +450,10 @@ export default function AdStudioPage() {
   const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
   const [i2vImageFromLibrary, setI2vImageFromLibrary] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
 
+  // URL-to-Video component media library integration
+  const [u2vMediaLibraryOpen, setU2vMediaLibraryOpen] = useState(false)
+  const [u2vImageFromLibrary, setU2vImageFromLibrary] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
+
   // Fetch AI credit usage
   const refreshCredits = useCallback(() => {
     if (!user?.id) return
@@ -1748,6 +1752,9 @@ export default function AdStudioPage() {
     // Reset Image-to-Video component state
     setI2vMediaLibraryOpen(false)
     setI2vImageFromLibrary(null)
+    // Reset URL-to-Video component state
+    setU2vMediaLibraryOpen(false)
+    setU2vImageFromLibrary(null)
     handleClearCompany()
     // Strip ?sessionId= from URL on reset
     router.replace('/dashboard/creative-studio/ad-studio', { scroll: false })
@@ -3206,25 +3213,33 @@ export default function AdStudioPage() {
 
             {/* ── Video Ads ─────────────────────────────── */}
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Video className="w-5 h-5 text-green-400" />
-                  <h2 className="text-lg font-semibold text-white">Video Ads</h2>
+              <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
+                {/* Gradient glow */}
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-green-500 to-emerald-500" />
+                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-green-500/10 to-transparent" />
+                <div className="flex items-center gap-3 relative">
+                  <Video className="w-8 h-8 text-green-400" />
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Video Ads</h2>
+                    <p className="text-sm text-zinc-400">AI-powered video generation from product URLs, text prompts, images, or UGC scripts.</p>
+                  </div>
                 </div>
-                <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-green-500/20 text-green-400 border border-green-500/30 rounded-full">New</span>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* URL to Video */}
                 <button
                   onClick={() => setMode('url-to-video')}
-                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all text-left"
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-blue-500/50 hover:bg-bg-card/80 transition-all"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Link2 className="w-5 h-5 text-blue-400" />
+                  <div className="w-14 h-14 rounded-xl bg-blue-500/20 flex items-center justify-center mb-4 group-hover:bg-blue-500/30 transition-colors">
+                    <Link2 className="w-7 h-7 text-blue-400" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">URL to Video</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">Product URL &rarr; AI concepts or your own vision</p>
+                  <h3 className="text-xl font-semibold text-white mb-2">URL to Video</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Product URL to AI concepts or your own vision.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-blue-400 text-sm font-medium">
+                    Get started <ChevronRight className="w-4 h-4" />
                   </div>
                 </button>
 
@@ -3232,45 +3247,53 @@ export default function AdStudioPage() {
                 <button
                   onClick={() => {
                     setOpenPromptMediaType('video')
-                    // Scroll to Open Prompt section on the landing page (don't set mode — it's inline)
                     document.getElementById('open-prompt-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                   }}
-                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-purple-500/40 hover:bg-purple-500/5 transition-all text-left"
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-purple-500/50 hover:bg-bg-card/80 transition-all"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <Type className="w-5 h-5 text-purple-400" />
+                  <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors">
+                    <Type className="w-7 h-7 text-purple-400" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">Text to Video</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">Describe any scene &rarr; AI directs &amp; generates</p>
+                  <h3 className="text-xl font-semibold text-white mb-2">Text to Video</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Describe any scene and AI directs and generates.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-purple-400 text-sm font-medium">
+                    Write a prompt <ChevronRight className="w-4 h-4" />
                   </div>
                 </button>
 
                 {/* Image to Video */}
                 <button
                   onClick={() => setMode('image-to-video')}
-                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left"
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-emerald-500/50 hover:bg-bg-card/80 transition-all"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                    <ImagePlus className="w-5 h-5 text-emerald-400" />
+                  <div className="w-14 h-14 rounded-xl bg-emerald-500/20 flex items-center justify-center mb-4 group-hover:bg-emerald-500/30 transition-colors">
+                    <ImagePlus className="w-7 h-7 text-emerald-400" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">Image to Video</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">Upload or pick image &rarr; animate with AI</p>
+                  <h3 className="text-xl font-semibold text-white mb-2">Image to Video</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    Upload or pick an image and animate it with AI.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-emerald-400 text-sm font-medium">
+                    Choose image <ChevronRight className="w-4 h-4" />
                   </div>
                 </button>
 
                 {/* UGC Video */}
                 <button
                   onClick={() => setMode('ugc-video')}
-                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all text-left"
+                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <UserCircle className="w-5 h-5 text-amber-400" />
+                  <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
+                    <UserCircle className="w-7 h-7 text-amber-400" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">UGC Video</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">AI presenter delivers your product testimonial</p>
+                  <h3 className="text-xl font-semibold text-white mb-2">UGC Video</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">
+                    AI presenter delivers your product testimonial.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
+                    Create UGC <ChevronRight className="w-4 h-4" />
                   </div>
                 </button>
               </div>
@@ -3928,13 +3951,52 @@ export default function AdStudioPage() {
   // URL to Video — self-contained component
   if (mode === 'url-to-video') {
     return (
-      <URLToVideo
-        userId={user?.id || ''}
-        adAccountId={currentAccountId || ''}
-        credits={aiUsage ? { remaining: aiUsage.remaining, totalAvailable: aiUsage.totalAvailable } : null}
-        onCreditsChanged={() => { refreshCredits(); notifyCreditsChanged() }}
-        onBack={resetToModeSelection}
-      />
+      <>
+        <URLToVideo
+          userId={user?.id || ''}
+          adAccountId={currentAccountId || ''}
+          credits={aiUsage ? { remaining: aiUsage.remaining, totalAvailable: aiUsage.totalAvailable } : null}
+          onCreditsChanged={() => { refreshCredits(); notifyCreditsChanged() }}
+          onBack={resetToModeSelection}
+          onOpenMediaLibrary={() => setU2vMediaLibraryOpen(true)}
+          onImageFromLibrary={u2vImageFromLibrary}
+        />
+        {u2vMediaLibraryOpen && user?.id && currentAccountId && (
+          <MediaLibraryModal
+            isOpen={u2vMediaLibraryOpen}
+            onClose={() => setU2vMediaLibraryOpen(false)}
+            userId={user.id}
+            adAccountId={currentAccountId}
+            selectedItems={[]}
+            onSelectionChange={async (items) => {
+              setU2vMediaLibraryOpen(false)
+              if (items.length === 0) return
+              const item = items[0]
+              if (!('hash' in item)) return
+              const mediaItem = item as MediaImage & { mediaType: 'image' }
+              try {
+                const res = await fetch('/api/creative-studio/download-image', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ imageUrl: mediaItem.url }),
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  setU2vImageFromLibrary({
+                    base64: data.base64,
+                    mimeType: data.mimeType || 'image/jpeg',
+                    preview: mediaItem.url,
+                  })
+                }
+              } catch {
+                // silently fail — user can try again
+              }
+            }}
+            maxSelection={1}
+            allowedTypes={['image']}
+          />
+        )}
+      </>
     )
   }
 
@@ -4289,7 +4351,7 @@ export default function AdStudioPage() {
                         value={productUrl}
                         onChange={(e) => setProductUrl(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeProduct()}
-                        placeholder="https://yourstore.com/products/awesome-product"
+                        placeholder="yourstore.com/products/awesome-product"
                         className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-accent"
                       />
                       <button

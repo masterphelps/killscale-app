@@ -576,7 +576,7 @@ export default function DirectPage() {
           overlayConfig: {
             style: 'bold' as const,
             hook: {
-              line1: concept.overlay.hook,
+              line1: concept.overlay?.hook || '',
               startSec: 0,
               endSec: 3,
               animation: 'pop' as const,
@@ -585,7 +585,7 @@ export default function DirectPage() {
               position: 'center' as const,
             },
             captions: (() => {
-              const caps = concept.overlay.captions
+              const caps = concept.overlay?.captions || []
               const captionStart = 3
               const gap = 0.15
               let cursor = captionStart
@@ -608,7 +608,7 @@ export default function DirectPage() {
               })
             })(),
             cta: {
-              buttonText: concept.overlay.cta,
+              buttonText: concept.overlay?.cta || '',
               startSec: Math.max(conceptDuration - 3, conceptDuration * 0.7),
               animation: 'slide' as const,
               fontSize: 32,
@@ -797,7 +797,7 @@ export default function DirectPage() {
           overlayConfig: {
             style: 'bold' as const,
             hook: {
-              line1: concept.overlay.hook,
+              line1: concept.overlay?.hook || '',
               startSec: 0,
               endSec: 3,
               animation: 'pop' as const,
@@ -806,7 +806,7 @@ export default function DirectPage() {
               position: 'center' as const,
             },
             captions: (() => {
-              const caps = concept.overlay.captions
+              const caps = concept.overlay?.captions || []
               const captionStart = 3
               const gap = 0.15
               let cursor = captionStart
@@ -829,7 +829,7 @@ export default function DirectPage() {
               })
             })(),
             cta: {
-              buttonText: concept.overlay.cta,
+              buttonText: concept.overlay?.cta || '',
               startSec: Math.max(conceptDuration - 3, conceptDuration * 0.7),
               animation: 'slide' as const,
               fontSize: 32,
@@ -960,7 +960,7 @@ export default function DirectPage() {
                     value={productUrl}
                     onChange={(e) => setProductUrl(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeUrl()}
-                    placeholder="https://yourstore.com/product"
+                    placeholder="yourstore.com/product"
                     className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
                   />
                   <button
@@ -1764,10 +1764,10 @@ export default function DirectPage() {
                             <Type className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
                             <div>
                               <span className="text-[10px] text-zinc-500 uppercase">Hook</span>
-                              <p className="text-sm font-semibold text-white">{concept.overlay.hook}</p>
+                              <p className="text-sm font-semibold text-white">{concept.overlay?.hook}</p>
                             </div>
                           </div>
-                          {concept.overlay.captions.map((caption, ci) => (
+                          {(concept.overlay?.captions || []).map((caption, ci) => (
                             <div key={ci} className="flex items-start gap-2">
                               <MessageSquare className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-zinc-600" />
                               <div>
@@ -1780,7 +1780,7 @@ export default function DirectPage() {
                             <MousePointer className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
                             <div>
                               <span className="text-[10px] text-zinc-500 uppercase">CTA</span>
-                              <p className="text-sm font-semibold text-white">{concept.overlay.cta}</p>
+                              <p className="text-sm font-semibold text-white">{concept.overlay?.cta}</p>
                             </div>
                           </div>
                         </div>

@@ -40,6 +40,7 @@ import {
   Layers,
   Trash2,
   Pencil,
+  Terminal,
 } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { cn } from '@/lib/utils'
@@ -1960,7 +1961,7 @@ function ConceptCanvasDetailPanel({
                           Edit Video
                         </button>
                         <Link
-                          href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}`}
+                          href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`}
                           onClick={(e) => e.stopPropagation()}
                           className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border"
                         >
@@ -2036,7 +2037,7 @@ function ConceptCanvasDetailPanel({
                         {job.error_message || 'Video generation failed'}
                       </div>
                       <Link
-                        href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}`}
+                        href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`}
                         onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300"
                       >
@@ -2097,6 +2098,44 @@ function ConceptCanvasDetailPanel({
                     </div>
                   ) : null}
 
+                  {/* Full Video Prompt — always shown so user can debug */}
+                  {(() => {
+                    // Prefer job-level prompts (what was actually sent), fall back to concept-level
+                    const mainPrompt = job?.prompt || concept.videoPrompt
+                    const extPrompts = (job?.extension_prompts as string[] | null)?.length
+                      ? (job.extension_prompts as string[])
+                      : concept.extensionPrompts?.length
+                        ? concept.extensionPrompts
+                        : null
+                    const providerLabel = job?.provider === 'veo' || job?.provider === 'veo-ext' ? 'Veo' : job?.provider === 'runway' ? 'Runway' : 'Sora'
+                    if (!mainPrompt) return null
+                    return (
+                      <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-3 mb-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Terminal className="w-3.5 h-3.5 text-zinc-500" />
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+                            Full Prompt {job ? `(${providerLabel})` : ''}
+                          </span>
+                          {job?.status === 'failed' && (
+                            <span className="text-[10px] text-red-400 font-semibold ml-auto">Check for errors below</span>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-600 uppercase mb-1">
+                            {extPrompts ? 'First 8s' : 'Prompt'}
+                          </div>
+                          <p className="text-xs text-zinc-400 whitespace-pre-wrap font-mono leading-relaxed">{mainPrompt}</p>
+                        </div>
+                        {extPrompts && extPrompts.map((ext: string, ei: number) => (
+                          <div key={ei}>
+                            <div className="text-[10px] text-zinc-600 uppercase mb-1">Extension {ei + 1} (+7s)</div>
+                            <p className="text-xs text-zinc-400 whitespace-pre-wrap font-mono leading-relaxed">{ext}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
+
                   {/* Overlay preview */}
                   {concept.overlay && (
                     <div className="rounded-lg bg-zinc-900/50 border border-zinc-800 p-3">
@@ -2136,7 +2175,7 @@ function ConceptCanvasDetailPanel({
                   {/* Generate in Video Studio — shown when no job exists */}
                   {!job && (
                     <Link
-                      href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}`}
+                      href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`}
                       onClick={(e) => e.stopPropagation()}
                       className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 transition-colors text-sm mt-3"
                     >

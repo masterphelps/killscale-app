@@ -214,13 +214,26 @@ function extractCleanContent(html: string): { metaTags: string; textContent: str
   }
 }
 
+function normalizeUrl(input: string): string {
+  let u = input.trim()
+  // Strip any leading/trailing quotes
+  u = u.replace(/^['"]|['"]$/g, '')
+  // If no protocol, add https://
+  if (!/^https?:\/\//i.test(u)) {
+    u = 'https://' + u
+  }
+  return u
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json()
+    const { url: rawUrl } = await request.json()
 
-    if (!url) {
+    if (!rawUrl) {
       return NextResponse.json({ error: 'Missing URL' }, { status: 400 })
     }
+
+    const url = normalizeUrl(rawUrl)
 
     // Fetch the product page
     const pageRes = await fetch(url, {

@@ -917,8 +917,9 @@ export async function POST(request: NextRequest) {
     const extensionCols = ', provider, target_duration_seconds, extension_step, extension_total, extension_video_uri, extension_prompts'
     const selectCols = canvasId
       ? `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, overlay_config, prompt, ad_copy, created_at, updated_at${extensionCols}`
-      : `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, ad_copy, created_at, updated_at${extensionCols}`
+      : `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, prompt, ad_copy, created_at, updated_at${extensionCols}`
 
+    // @ts-ignore — TS2590: select column string produces union too complex for TS
     let query = supabase
       .from('video_generation_jobs')
       .select(selectCols)

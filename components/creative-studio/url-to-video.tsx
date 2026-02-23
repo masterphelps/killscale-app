@@ -26,6 +26,8 @@ import {
   MousePointer,
   Clapperboard,
   Download,
+  Upload,
+  Layers,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
@@ -197,6 +199,8 @@ interface URLToVideoProps {
   credits: { remaining: number; totalAvailable: number } | null
   onCreditsChanged: () => void
   onBack: () => void
+  onOpenMediaLibrary: () => void
+  onImageFromLibrary?: { base64: string; mimeType: string; preview: string } | null
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -207,9 +211,11 @@ export default function URLToVideo({
   credits,
   onCreditsChanged,
   onBack,
+  onOpenMediaLibrary,
+  onImageFromLibrary,
 }: URLToVideoProps) {
   // Product input
-  const [inputMode, setInputMode] = useState<'url' | 'manual'>('url')
+  // inputMode removed — URL-only input now
   const [productUrl, setProductUrl] = useState('')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
@@ -267,6 +273,7 @@ export default function URLToVideo({
   const [extendingIndex, setExtendingIndex] = useState<number | null>(null)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Add concept
   const [addConceptMode, setAddConceptMode] = useState<'idle' | 'choosing' | 'prompting' | 'generating'>('idle')
@@ -347,6 +354,52 @@ export default function URLToVideo({
       return { ...prev, [category]: newPool }
     })
   }, [])
+
+  // ─── Upload own product image ──────────────────────────────────────────────
+
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1]
+      const newImage: ProductImage = {
+        base64,
+        mimeType: file.type,
+        description: file.name,
+        type: 'uploaded',
+      }
+      setProductImages(prev => {
+        const updated = [...prev, newImage]
+        setSelectedProductImageIdx(updated.length - 1)
+        return updated
+      })
+      setIncludeProductImage(true)
+    }
+    reader.readAsDataURL(file)
+    // Reset input so same file can be re-selected
+    e.target.value = ''
+  }, [])
+
+  // ─── Accept image from parent (media library) ────────────────────────────
+
+  useEffect(() => {
+    if (onImageFromLibrary) {
+      const newImage: ProductImage = {
+        base64: onImageFromLibrary.base64,
+        mimeType: onImageFromLibrary.mimeType,
+        description: 'Library image',
+        type: 'library',
+      }
+      setProductImages(prev => {
+        const updated = [...prev, newImage]
+        setSelectedProductImageIdx(updated.length - 1)
+        return updated
+      })
+      setIncludeProductImage(true)
+    }
+  }, [onImageFromLibrary])
 
   // ─── Product Analysis ───────────────────────────────────────────────────────
 
@@ -580,7 +633,7 @@ export default function URLToVideo({
           overlayConfig: {
             style: 'bold' as const,
             hook: {
-              line1: concept.overlay.hook,
+              line1: concept.overlay?.hook || '',
               startSec: 0,
               endSec: 3,
               animation: 'pop' as const,
@@ -589,7 +642,7 @@ export default function URLToVideo({
               position: 'center' as const,
             },
             captions: (() => {
-              const caps = concept.overlay.captions
+              const caps = concept.overlay?.captions || []
               const captionStart = 3
               const gap = 0.15
               let cursor = captionStart
@@ -612,7 +665,7 @@ export default function URLToVideo({
               })
             })(),
             cta: {
-              buttonText: concept.overlay.cta,
+              buttonText: concept.overlay?.cta || '',
               startSec: Math.max(conceptDuration - 3, conceptDuration * 0.7),
               animation: 'slide' as const,
               fontSize: 32,
@@ -1034,37 +1087,13 @@ export default function URLToVideo({
             <h2 className="text-lg font-semibold text-white mb-1">What product is this ad for?</h2>
             <p className="text-sm text-zinc-500 mb-4">We&apos;ll find your value props and turn them into video ad concepts.</p>
 
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setInputMode('url')}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  inputMode === 'url' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-zinc-800 text-zinc-400 border border-border'
-                )}
-              >
-                <Globe className="w-4 h-4" />
-                Product URL
-              </button>
-              <button
-                onClick={() => setInputMode('manual')}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  inputMode === 'manual' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-zinc-800 text-zinc-400 border border-border'
-                )}
-              >
-                <Type className="w-4 h-4" />
-                Enter Manually
-              </button>
-            </div>
-
-            {inputMode === 'url' && (
-              <div className="mb-4">
+            <div className="mb-4">
                 <div className="flex gap-3">
                   <input
                     value={productUrl}
                     onChange={(e) => setProductUrl(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeUrl()}
-                    placeholder="https://yourstore.com/product"
+                    placeholder="yourstore.com/product"
                     className="flex-1 bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500"
                   />
                   <button
@@ -1083,63 +1112,118 @@ export default function URLToVideo({
                   </div>
                 )}
               </div>
-            )}
 
-            {hasAnalyzed && inputMode === 'url' && (
+            {hasAnalyzed && (
               <div className="flex items-center gap-2 text-sm text-emerald-400">
                 <Check className="w-4 h-4" />
                 Found {totalPillsFound} items -- select the ones you want in your creative brief
               </div>
             )}
 
-            {/* Product image picker */}
-            {productImages.length > 1 && (
-              <div className="mt-4">
-                <label className="text-xs font-medium text-zinc-400 mb-2 block">Product image for video generation -- click to change</label>
-                <div className="flex flex-wrap gap-2">
-                  {productImages.map((img, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedProductImageIdx(i)}
-                      className={cn(
-                        'relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-all',
-                        selectedProductImageIdx === i
-                          ? 'border-blue-500 ring-2 ring-blue-500/30'
-                          : 'border-border hover:border-zinc-500'
-                      )}
-                    >
-                      <img
-                        src={`data:${img.mimeType};base64,${img.base64}`}
-                        alt={img.description || `Image ${i + 1}`}
-                        className="w-full h-full object-contain bg-zinc-900"
-                      />
-                      {selectedProductImageIdx === i && (
-                        <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Product image selection — same pattern as UGC in ad-studio */}
+            {hasAnalyzed && (
+            <div className="mt-4 space-y-4">
+              <label className="text-sm font-medium text-zinc-300 block">Product image for video</label>
 
-            {/* Include product image toggle */}
-            {productImages.length > 0 && (
-              <label className="flex items-center gap-2 mt-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeProductImage}
-                  onChange={(e) => setIncludeProductImage(e.target.checked)}
-                  className="rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
-                />
-                <span className="text-xs text-zinc-400">Include product image in video</span>
-              </label>
+              {/* Selected image preview */}
+              {productImages.length > 0 && includeProductImage && (
+                <div className="flex items-start gap-4 p-4 bg-bg-dark rounded-xl border border-blue-500/30">
+                  <div className="relative w-24 h-24 rounded-lg overflow-hidden bg-zinc-900 flex-shrink-0 border-2 border-blue-500/40">
+                    <img
+                      src={`data:${productImages[selectedProductImageIdx]?.mimeType};base64,${productImages[selectedProductImageIdx]?.base64}`}
+                      alt={productImages[selectedProductImageIdx]?.description || 'Product'}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-emerald-400">
+                      <Check className="w-3 h-3" />
+                      Image selected
+                    </div>
+                    <button
+                      onClick={() => setIncludeProductImage(false)}
+                      className="text-sm text-zinc-500 hover:text-white transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Image source options — show when no image selected */}
+              {(!includeProductImage || productImages.length === 0) && (
+                <div className="space-y-4">
+                  {/* URL Photos — from product analysis */}
+                  {productImages.length > 0 && (
+                    <div>
+                      <label className="text-sm font-medium text-zinc-300 mb-2 block">From product URL</label>
+                      <div className="flex flex-wrap gap-3">
+                        {productImages.map((img, i) => (
+                          <button
+                            key={i}
+                            onClick={() => {
+                              setSelectedProductImageIdx(i)
+                              setIncludeProductImage(true)
+                            }}
+                            className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-zinc-700 hover:border-blue-500/60 transition-all group"
+                          >
+                            <img
+                              src={`data:${img.mimeType};base64,${img.base64}`}
+                              alt={img.description || `Image ${i + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/20 transition-colors flex items-center justify-center">
+                              <Check className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Divider if URL photos exist */}
+                  {productImages.length > 0 && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-xs text-zinc-500">or choose from</span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+                  )}
+
+                  {/* Media Library + Upload buttons */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Media Library */}
+                    <button
+                      onClick={onOpenMediaLibrary}
+                      className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors"
+                    >
+                      <Layers className="w-8 h-8 text-blue-400 mb-2" />
+                      <p className="text-white font-medium text-sm">Media Library</p>
+                      <p className="text-zinc-500 text-xs mt-1">Browse your ad account images</p>
+                    </button>
+
+                    {/* Upload */}
+                    <label className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors cursor-pointer">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                      <Upload className="w-8 h-8 text-blue-400 mb-2" />
+                      <p className="text-white font-medium text-sm">Upload Image</p>
+                      <p className="text-zinc-500 text-xs mt-1">PNG, JPG, WEBP up to 10MB</p>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
             )}
           </div>
 
           {/* Section B: Pill Selectors */}
-          {(hasAnalyzed || inputMode === 'manual') && (
+          {hasAnalyzed && (
             <div className="bg-bg-card border border-border rounded-xl p-6">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-semibold text-white">Creative Brief</h2>
@@ -1170,7 +1254,7 @@ export default function URLToVideo({
           )}
 
           {/* Section C: Sub-mode toggle + content */}
-          {(hasAnalyzed || inputMode === 'manual') && canProceed && (
+          {hasAnalyzed && canProceed && (
             <div className="bg-bg-card border border-border rounded-xl p-6">
               <h2 className="text-lg font-semibold text-white mb-3">Generation Mode</h2>
               <div className="flex gap-2 mb-6">
@@ -1685,10 +1769,10 @@ export default function URLToVideo({
                                         <Type className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
                                         <div>
                                           <span className="text-[10px] text-zinc-500 uppercase">Hook</span>
-                                          <p className="text-sm font-semibold text-white">{concept.overlay.hook}</p>
+                                          <p className="text-sm font-semibold text-white">{concept.overlay?.hook}</p>
                                         </div>
                                       </div>
-                                      {concept.overlay.captions.map((caption, ci) => (
+                                      {(concept.overlay?.captions || []).map((caption, ci) => (
                                         <div key={ci} className="flex items-start gap-2">
                                           <MessageSquare className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-zinc-600" />
                                           <div>
@@ -1701,7 +1785,7 @@ export default function URLToVideo({
                                         <MousePointer className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', colors.icon)} />
                                         <div>
                                           <span className="text-[10px] text-zinc-500 uppercase">CTA</span>
-                                          <p className="text-sm font-semibold text-white">{concept.overlay.cta}</p>
+                                          <p className="text-sm font-semibold text-white">{concept.overlay?.cta}</p>
                                         </div>
                                       </div>
                                     </div>
@@ -1868,95 +1952,8 @@ export default function URLToVideo({
               {/* ═══ Direct sub-mode ═══ */}
               {subMode === 'direct' && (
                 <>
-                  {/* ── Phase 3: Video Result ── */}
-                  {directVideoJob && (
-                    <div className="bg-zinc-900/50 border border-border rounded-xl p-6 space-y-4">
-                      {(directVideoJob.status === 'queued' || directVideoJob.status === 'generating' || directVideoJob.status === 'extending' || directVideoJob.status === 'rendering') && (
-                        <div className="flex flex-col items-center py-12 text-center">
-                          <div className="relative mb-6">
-                            <div className="w-16 h-16 rounded-full border-2 border-amber-500/30 flex items-center justify-center">
-                              <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
-                            </div>
-                            {directVideoJob.progress_pct > 0 && (
-                              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-0.5 rounded-full tabular-nums">
-                                {Math.round(directVideoJob.progress_pct)}%
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-white font-medium">Generating your video...</p>
-                          <p className="text-zinc-500 text-sm mt-1">
-                            {directVideoJob.status === 'extending' ? 'Extending video...' : 'This usually takes 2-5 minutes'}
-                          </p>
-                        </div>
-                      )}
-
-                      {directVideoJob.status === 'complete' && directVideoJob.final_video_url && (
-                        <div className="space-y-4">
-                          <div className="aspect-[9/16] max-h-[60vh] mx-auto rounded-xl overflow-hidden bg-black">
-                            <video
-                              src={directVideoJob.final_video_url}
-                              controls
-                              playsInline
-                              className="w-full h-full object-contain"
-                            />
-                          </div>
-
-                          <div className="flex gap-2">
-                            <a
-                              href={directVideoJob.final_video_url}
-                              download={`direct-video-${directVideoJob.id}.mp4`}
-                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 transition-colors text-sm"
-                            >
-                              <Download className="w-4 h-4" />
-                              Download
-                            </a>
-                            <button
-                              onClick={() => { window.location.href = `/dashboard/creative-studio/video-editor?jobId=${directVideoJob.id}` }}
-                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-zinc-800 text-zinc-200 font-medium hover:bg-zinc-700 transition-colors text-sm"
-                            >
-                              <Film className="w-4 h-4" />
-                              Edit Video
-                            </button>
-                          </div>
-
-                          <button
-                            onClick={resetDirect}
-                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-zinc-700/50 text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors text-sm"
-                          >
-                            <Plus className="w-4 h-4" />
-                            New Video
-                          </button>
-                        </div>
-                      )}
-
-                      {directVideoJob.status === 'failed' && (
-                        <div className="flex flex-col items-center py-12 text-center">
-                          <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
-                          <p className="text-white font-medium mb-1">Generation Failed</p>
-                          <p className="text-zinc-500 text-sm mb-6">
-                            {directVideoJob.error_message || 'Something went wrong. Please try again.'}
-                          </p>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => { setDirectVideoJob(null); setGenerateError(null) }}
-                              className="px-4 py-2 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 transition-colors text-sm"
-                            >
-                              Try Again
-                            </button>
-                            <button
-                              onClick={resetDirect}
-                              className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 transition-colors text-sm"
-                            >
-                              Start Over
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Phase 2: Director's Review ── */}
-                  {directScript && !directVideoJob && (
+                  {/* ── Phase 2: Director's Review (always visible when script exists) ── */}
+                  {directScript && (
                     <div className="space-y-4">
                       {/* Amber Director's Review panel */}
                       <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
@@ -2010,38 +2007,6 @@ export default function URLToVideo({
                               onChange={(e) => setEditMood(e.target.value)}
                               className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
                             />
-                          </div>
-
-                          {/* Quality Selector */}
-                          <div>
-                            <label className="text-xs font-medium text-zinc-400 mb-2 block">Quality</label>
-                            <div className="flex gap-2">
-                              {(['standard', 'premium'] as const).map(q => {
-                                const isActive = directQuality === q
-                                const qCosts = QUALITY_COSTS[q]
-                                const totalCost = qCosts.base + directExtensionCount * qCosts.extension
-                                return (
-                                  <button
-                                    key={q}
-                                    onClick={() => setDirectQuality(q)}
-                                    className={cn(
-                                      'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
-                                      isActive
-                                        ? 'bg-amber-500/10 border-amber-500/40'
-                                        : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
-                                    )}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className={cn('text-xs font-medium', isActive ? 'text-amber-300' : 'text-zinc-400')}>
-                                        {q === 'standard' ? 'Standard' : 'Premium'}
-                                      </span>
-                                      <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
-                                    </div>
-                                    <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
-                                  </button>
-                                )
-                              })}
-                            </div>
                           </div>
 
                           {/* Veo Prompt (collapsible) */}
@@ -2156,6 +2121,38 @@ export default function URLToVideo({
                             </div>
                           )}
 
+                          {/* Quality Selector */}
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-2 block">Quality</label>
+                            <div className="flex gap-2">
+                              {(['standard', 'premium'] as const).map(q => {
+                                const isActive = directQuality === q
+                                const qCosts = QUALITY_COSTS[q]
+                                const totalCost = qCosts.base + directExtensionCount * qCosts.extension
+                                return (
+                                  <button
+                                    key={q}
+                                    onClick={() => setDirectQuality(q)}
+                                    className={cn(
+                                      'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
+                                      isActive
+                                        ? 'bg-amber-500/10 border-amber-500/40'
+                                        : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
+                                    )}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className={cn('text-xs font-medium', isActive ? 'text-amber-300' : 'text-zinc-400')}>
+                                        {q === 'standard' ? 'Standard' : 'Premium'}
+                                      </span>
+                                      <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+
                           {/* Budget line */}
                           <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
                             <div className="space-y-0.5">
@@ -2186,26 +2183,37 @@ export default function URLToVideo({
 
                           {/* Action buttons */}
                           <div className="flex gap-2 pt-1">
-                            <button
-                              onClick={handleDirectGenerate}
-                              disabled={directGenerating || !directCanAfford}
-                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                            >
-                              {directGenerating ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                  Generating {directEstimatedDuration}s video...
-                                </>
-                              ) : (
-                                <>
-                                  <Clapperboard className="w-4 h-4" />
-                                  Action! ({directCreditCost} credits)
-                                </>
-                              )}
-                            </button>
+                            {(() => {
+                              const isJobActive = directVideoJob && directVideoJob.status !== 'complete' && directVideoJob.status !== 'failed'
+                              const hasCompletedVideo = directVideoJob?.status === 'complete'
+                              return (
+                                <button
+                                  onClick={() => { setDirectVideoJob(null); handleDirectGenerate() }}
+                                  disabled={directGenerating || !directCanAfford || !!isJobActive}
+                                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                                >
+                                  {directGenerating || isJobActive ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                      Generating {directEstimatedDuration}s video...
+                                    </>
+                                  ) : hasCompletedVideo ? (
+                                    <>
+                                      <RefreshCw className="w-4 h-4" />
+                                      Re-generate ({directCreditCost} credits)
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clapperboard className="w-4 h-4" />
+                                      Action! ({directCreditCost} credits)
+                                    </>
+                                  )}
+                                </button>
+                              )
+                            })()}
                             <button
                               onClick={() => { setDirectScript(null); handleWriteDirectConcept() }}
-                              disabled={directWriting || directGenerating}
+                              disabled={directWriting || directGenerating || !!(directVideoJob && directVideoJob.status !== 'complete' && directVideoJob.status !== 'failed')}
                               className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                               title="Rewrite script"
                             >
@@ -2216,14 +2224,103 @@ export default function URLToVideo({
                       </div>
 
                       {/* Rewrite link */}
-                      <div className="text-center">
-                        <button
-                          onClick={() => setDirectScript(null)}
-                          className="text-sm text-zinc-500 hover:text-amber-400 transition-colors"
-                        >
-                          &#8592; Rewrite Concept
-                        </button>
-                      </div>
+                      {!directVideoJob && (
+                        <div className="text-center">
+                          <button
+                            onClick={() => setDirectScript(null)}
+                            className="text-sm text-zinc-500 hover:text-amber-400 transition-colors"
+                          >
+                            &#8592; Rewrite Concept
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Phase 3: Video Result (below Director's Review) ── */}
+                  {directVideoJob && (
+                    <div className="bg-zinc-900/50 border border-border rounded-xl p-6 space-y-4">
+                      {(directVideoJob.status === 'queued' || directVideoJob.status === 'generating' || directVideoJob.status === 'extending' || directVideoJob.status === 'rendering') && (
+                        <div className="flex flex-col items-center py-12 text-center">
+                          <div className="relative mb-6">
+                            <div className="w-16 h-16 rounded-full border-2 border-amber-500/30 flex items-center justify-center">
+                              <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+                            </div>
+                            {directVideoJob.progress_pct > 0 && (
+                              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-0.5 rounded-full tabular-nums">
+                                {Math.round(directVideoJob.progress_pct)}%
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-white font-medium">Generating your video...</p>
+                          <p className="text-zinc-500 text-sm mt-1">
+                            {directVideoJob.status === 'extending' ? 'Extending video...' : 'This usually takes 2-5 minutes'}
+                          </p>
+                        </div>
+                      )}
+
+                      {directVideoJob.status === 'complete' && directVideoJob.final_video_url && (
+                        <div className="space-y-4">
+                          <div className="aspect-[9/16] max-h-[60vh] mx-auto rounded-xl overflow-hidden bg-black">
+                            <video
+                              src={directVideoJob.final_video_url}
+                              controls
+                              playsInline
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <a
+                              href={directVideoJob.final_video_url}
+                              download={`direct-video-${directVideoJob.id}.mp4`}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 transition-colors text-sm"
+                            >
+                              <Download className="w-4 h-4" />
+                              Download
+                            </a>
+                            <button
+                              onClick={() => { window.location.href = `/dashboard/creative-studio/video-editor?jobId=${directVideoJob.id}` }}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-zinc-800 text-zinc-200 font-medium hover:bg-zinc-700 transition-colors text-sm"
+                            >
+                              <Film className="w-4 h-4" />
+                              Edit Video
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={resetDirect}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-zinc-700/50 text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors text-sm"
+                          >
+                            <Plus className="w-4 h-4" />
+                            New Video
+                          </button>
+                        </div>
+                      )}
+
+                      {directVideoJob.status === 'failed' && (
+                        <div className="flex flex-col items-center py-12 text-center">
+                          <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+                          <p className="text-white font-medium mb-1">Generation Failed</p>
+                          <p className="text-zinc-500 text-sm mb-6">
+                            {directVideoJob.error_message || 'Something went wrong. Please try again.'}
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setDirectVideoJob(null); setGenerateError(null) }}
+                              className="px-4 py-2 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 transition-colors text-sm"
+                            >
+                              Try Again
+                            </button>
+                            <button
+                              onClick={resetDirect}
+                              className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 transition-colors text-sm"
+                            >
+                              Start Over
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 

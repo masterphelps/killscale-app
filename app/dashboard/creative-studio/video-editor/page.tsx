@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -10,6 +10,7 @@ import type { Overlay, ClipOverlay } from '@/lib/rve/types'
 import { ReactVideoEditor, type SiblingClip } from '@/lib/rve/components/react-video-editor'
 import { stubRenderer } from '@/lib/rve/stub-renderer'
 import { overlayConfigToRVEOverlays, rveOverlaysToOverlayConfig } from '@/lib/rve-bridge'
+import { createKillScaleImageAdaptor, createKillScaleVideoAdaptor } from '@/lib/rve/adaptors/killscale-media-adaptor'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import {
   ArrowLeft,
@@ -107,6 +108,15 @@ export default function VideoEditorPage() {
 
   // Track canvas info for composition creation
   const canvasIdRef = useRef<string | null>(null)
+
+  // Media library adaptors — images + videos from user's ad account
+  const mediaAdaptors = useMemo(() => {
+    if (!user?.id || !currentAccountId) return undefined
+    return {
+      images: [createKillScaleImageAdaptor(user.id, currentAccountId)],
+      video: [createKillScaleVideoAdaptor(user.id, currentAccountId)],
+    }
+  }, [user?.id, currentAccountId])
 
   // Load composition data
   useEffect(() => {
@@ -845,7 +855,8 @@ export default function VideoEditorPage() {
           videoHeight={1920}
           sidebarWidth="24rem"
           sidebarIconWidth="3.75rem"
-          disabledPanels={[OverlayType.TEMPLATE, OverlayType.LOCAL_DIR, OverlayType.STICKER]}
+          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER]}
+          adaptors={mediaAdaptors}
           isLoadingProject={isLoading}
           onAIGenerate={handleAIGenerate}
           isAIGenerating={isGenerating}
