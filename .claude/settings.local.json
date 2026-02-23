@@ -49,7 +49,30 @@
       "WebFetch(domain:ai.google.dev)",
       "WebFetch(domain:apify.com)",
       "WebFetch(domain:swipekit.app)",
-      "WebFetch(domain:scrapecreators.com)"
+      "WebFetch(domain:scrapecreators.com)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "mcp__plugin_supabase_supabase__list_tables",
+      "WebFetch(domain:killscale.com)",
+      "WebFetch(domain:developers.googleblog.com)",
+      "WebFetch(domain:ltx.studio)",
+      "WebFetch(domain:skywork.ai)",
+      "WebFetch(domain:www.powtoon.com)",
+      "WebFetch(domain:www.datacamp.com)",
+      "WebFetch(domain:www.visla.us)",
+      "WebFetch(domain:www.lumeflow.ai)",
+      "WebFetch(domain:www.cliprise.app)",
+      "WebFetch(domain:creatify.ai)",
+      "WebFetch(domain:www.arcads.ai)",
+      "WebFetch(domain:www.digitalizelife.com)",
+      "WebFetch(domain:help.creatify.ai)",
+      "WebFetch(domain:fritz.ai)",
+      "WebFetch(domain:cscestudiodigital.com)",
+      "WebFetch(domain:airyzing.com)",
+      "WebFetch(domain:ruthmuvea.com)",
+      "WebFetch(domain:docs.creatify.ai)",
+      "WebFetch(domain:docs.cloud.google.com)"
     ]
   }
 }

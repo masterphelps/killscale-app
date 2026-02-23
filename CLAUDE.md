@@ -6,7 +6,7 @@ KillScale is a SaaS app for Meta and Google Ads advertisers. Users connect via M
 
 **Live URLs:** Landing at killscale.com, App at app.killscale.com
 
-**Stats (as of Feb 2026):** 48K+ LOC, 88+ API endpoints, 42+ React components, 39+ database migrations
+**Stats (as of Feb 2026):** 55K+ LOC, 95+ API endpoints, 50+ React components, 66+ database migrations
 
 ---
 
