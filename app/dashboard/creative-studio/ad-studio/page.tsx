@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, Clapperboard, Pencil, Camera, Image as ImageIcon } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Link2, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, UserCircle, Clapperboard, Pencil, Camera, Type, Image as ImageIcon } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import type { MediaImage } from '@/app/api/meta/media/route'
@@ -252,7 +252,7 @@ export default function AdStudioPage() {
   const isPro = !!plan
 
   // Mode selection: null = landing page, 'create' = original ads, 'clone' = copy competitor style, 'inspiration' = browse gallery, 'upload' = upload own image, 'product-video' = AI-directed product video, 'ugc-video' = UGC testimonial video, 'open-prompt' = direct prompt generation
-  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'product-video' | 'ugc-video' | 'open-prompt' | null>(null)
+  const [mode, setMode] = useState<'create' | 'clone' | 'inspiration' | 'upload' | 'product-video' | 'ugc-video' | 'open-prompt' | 'text-to-video' | 'image-to-video' | 'url-to-video' | null>(null)
 
   // Step tracking
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
@@ -3195,7 +3195,78 @@ export default function AdStudioPage() {
               </div>
             </div>
 
-            {/* ── Guided Videos Section ── */}
+            {/* ── Video Ads ─────────────────────────────── */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Video className="w-5 h-5 text-green-400" />
+                  <h2 className="text-lg font-semibold text-white">Video Ads</h2>
+                </div>
+                <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-green-500/20 text-green-400 border border-green-500/30 rounded-full">New</span>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* URL to Video */}
+                <button
+                  onClick={() => setMode('url-to-video')}
+                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <Link2 className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">URL to Video</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Product URL &rarr; AI concepts or your own vision</p>
+                  </div>
+                </button>
+
+                {/* Text to Video */}
+                <button
+                  onClick={() => {
+                    setMode('open-prompt')
+                    setOpenPromptMediaType('video')
+                  }}
+                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-purple-500/40 hover:bg-purple-500/5 transition-all text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                    <Type className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Text to Video</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Describe any scene &rarr; AI directs &amp; generates</p>
+                  </div>
+                </button>
+
+                {/* Image to Video */}
+                <button
+                  onClick={() => setMode('image-to-video')}
+                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                    <ImagePlus className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Image to Video</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Upload or pick image &rarr; animate with AI</p>
+                  </div>
+                </button>
+
+                {/* UGC Video */}
+                <button
+                  onClick={() => setMode('ugc-video')}
+                  className="group relative flex flex-col items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                    <UserCircle className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">UGC Video</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">AI presenter delivers your product testimonial</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* ── Guided Videos Section (Legacy) ── */}
             <div className="space-y-4">
               <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
                 {/* Gradient glow */}
@@ -3204,8 +3275,9 @@ export default function AdStudioPage() {
                 <div className="flex items-center gap-3 relative">
                   <Film className="w-8 h-8 text-rose-400" />
                   <div>
-                    <h2 className="text-xl font-bold text-white">Guided Video Ads</h2>
+                    <h2 className="text-xl font-bold text-zinc-500">Guided Video Ads (Legacy)</h2>
                     <p className="text-sm text-zinc-400">Concept-driven video ads with AI direction, overlays, and multi-clip editing.</p>
+                    <p className="text-xs text-zinc-600">These modes are being replaced by Video Ads above</p>
                   </div>
                 </div>
               </div>
@@ -3837,6 +3909,42 @@ export default function AdStudioPage() {
               onSelectExample={handleSelectInspiration}
               onBack={() => setMode(null)}
             />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // URL to Video placeholder
+  if (mode === 'url-to-video') {
+    return (
+      <div className="min-h-screen pb-24">
+        <div className="px-4 lg:px-8 py-6">
+          <div className="flex flex-col items-center py-16 text-center">
+            <Link2 className="w-12 h-12 text-blue-400 mb-4" />
+            <p className="text-white font-medium">URL to Video</p>
+            <p className="text-zinc-500 text-sm mt-1">Coming soon — enter a product URL to generate video concepts</p>
+            <button onClick={resetToModeSelection} className="mt-6 text-sm text-blue-400 hover:text-blue-300">
+              &larr; Back
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Image to Video placeholder
+  if (mode === 'image-to-video') {
+    return (
+      <div className="min-h-screen pb-24">
+        <div className="px-4 lg:px-8 py-6">
+          <div className="flex flex-col items-center py-16 text-center">
+            <ImagePlus className="w-12 h-12 text-emerald-400 mb-4" />
+            <p className="text-white font-medium">Image to Video</p>
+            <p className="text-zinc-500 text-sm mt-1">Coming soon — upload an image to animate with AI</p>
+            <button onClick={resetToModeSelection} className="mt-6 text-sm text-emerald-400 hover:text-emerald-300">
+              &larr; Back
+            </button>
           </div>
         </div>
       </div>
