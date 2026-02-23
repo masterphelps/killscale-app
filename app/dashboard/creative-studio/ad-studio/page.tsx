@@ -16,6 +16,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 import ImageToVideo from '@/components/creative-studio/image-to-video'
+import URLToVideo from '@/components/creative-studio/url-to-video'
 import {
   CompetitorSearchInput,
   CompetitorAdsGrid,
@@ -3923,21 +3924,16 @@ export default function AdStudioPage() {
     )
   }
 
-  // URL to Video placeholder
+  // URL to Video — self-contained component
   if (mode === 'url-to-video') {
     return (
-      <div className="min-h-screen pb-24">
-        <div className="px-4 lg:px-8 py-6">
-          <div className="flex flex-col items-center py-16 text-center">
-            <Link2 className="w-12 h-12 text-blue-400 mb-4" />
-            <p className="text-white font-medium">URL to Video</p>
-            <p className="text-zinc-500 text-sm mt-1">Coming soon — enter a product URL to generate video concepts</p>
-            <button onClick={resetToModeSelection} className="mt-6 text-sm text-blue-400 hover:text-blue-300">
-              &larr; Back
-            </button>
-          </div>
-        </div>
-      </div>
+      <URLToVideo
+        userId={user?.id || ''}
+        adAccountId={currentAccountId || ''}
+        credits={aiUsage ? { remaining: aiUsage.remaining, totalAvailable: aiUsage.totalAvailable } : null}
+        onCreditsChanged={() => { refreshCredits(); notifyCreditsChanged() }}
+        onBack={resetToModeSelection}
+      />
     )
   }
 
