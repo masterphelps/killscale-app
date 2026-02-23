@@ -27,8 +27,9 @@ npm run lint    # Run Next.js linter
 - **Hosting:** Vercel (auto-deploy on git push)
 - **Charts:** Recharts
 - **CSV Parsing:** Papaparse
-- **AI:** Claude Sonnet 4 (AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), OpenAI (Sora 2 Pro video gen, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen, Gemini 2.5 Flash image gen), Runway Gen-4.5 (video gen)
+- **AI:** Claude Sonnet 4 (AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), OpenAI (GPT 5.2 scene planning, Sora 2 Pro video gen, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen + extensions, Gemini 3 Pro image editing, Gemini 2.5 Flash image gen + text detection), Runway Gen-4.5 (video gen)
 - **Video Editor:** Remotion 4.0 (@remotion/player for preview, server render needs Chromium)
+- **Prompts:** Centralized in `lib/prompts/` — versioned, auditable prompt engineering library
 
 ## Key Conventions
 
@@ -154,7 +155,36 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `remotion/types.ts` - OverlayConfig, HookOverlay, CaptionOverlay, VideoComposition types
 - `remotion/AdOverlay.tsx` - Main Remotion composition
 - `components/creative-studio/video-job-card.tsx` - Video job status card
+- `components/creative-studio/video-style-picker.tsx` - Grid selector for video styles (icon cards)
 - Database: `video_generation_jobs`, `video_overlays`, `video_concept_canvases`, `video_compositions`
+
+**AI Image Editor:**
+- `app/dashboard/creative-studio/image-editor/page.tsx` - Full-screen AI image editing with Gemini 3 Pro
+- `app/api/creative-studio/detect-text/route.ts` - Gemini Vision text extraction (returns JSON of {text, role})
+- `app/api/creative-studio/adjust-image/route.ts` - Gemini 3 Pro image editing (text replacement + free-form prompts)
+- `app/api/creative-studio/image-editor-session/route.ts` - Session CRUD (GET/POST/PATCH/DELETE)
+- Database: `image_editor_sessions` (migration 060)
+
+**Open Prompt / Direct Studio:**
+- `app/dashboard/creative-studio/direct/page.tsx` - Direct prompt → video generation (Write Script → Director's Review → Action)
+- `app/api/creative-studio/plan-scene/route.ts` - GPT 5.2 scene segmentation for Veo time chunks
+- `app/api/creative-studio/generate-direct-concept/route.ts` - Direct concept generation from user prompt
+- `app/api/creative-studio/generate-ugc-prompt/route.ts` - UGC prompt generation
+
+**Prompts Library:**
+- `lib/prompts/index.ts` - Barrel export with CODEOWNERS protection
+- `lib/prompts/image-generation.ts` - Gemini image prompts (buildCustomPrompt, buildTextOnlyPrompt)
+- `lib/prompts/adjust-image.ts` - Gemini 3 Pro adjustment instructions
+- `lib/prompts/ad-copy.ts` - Ad copy generation prompts
+- `lib/prompts/video-concepts.ts` - Guided Video Ads concept prompts with style guidance
+- `lib/prompts/video-scripts.ts` - Script generation prompts
+- `lib/prompts/video-generation.ts` - Main video gen prompts
+- `lib/prompts/video-ugc.ts` - UGC-specific prompts with smart product visibility
+- `lib/prompts/video-direct.ts` - Direct concept prompts
+- `lib/prompts/video-overlays.ts` - Overlay generation prompts
+- `lib/prompts/video-analysis.ts` - Video analysis prompts (Gemini 2.0 Flash)
+- `lib/prompts/product-analysis.ts` - Product URL analysis prompts
+- `lib/prompts/INTEGRITY.sha256` - Hash file for IP protection
 
 **Onboarding & Trial:**
 - `app/onboarding/page.tsx` - 3-step onboarding wizard (Profile, Connect Meta, Select Accounts)
@@ -566,7 +596,8 @@ Generate scroll-stopping short-form video ads using Sora 2 Pro, Veo 3.1, or Runw
 **Provider Comparison:**
 | | Sora 2 Pro | Veo 3.1 | Runway Gen-4.5 |
 |---|---|---|---|
-| Duration | 4/8/12s | 4/6/8s (12→8 auto-clamp) | 2-10s |
+| Duration | 4/8/12s | 8/15/22/29s (via extensions) | 2-10s |
+| Extensions | No | Yes (max 3 × 7s each) | No |
 | Image Input | Must match output dims (1024x1792) | Any size | HTTPS URL required (upload to Supabase first) |
 | Progress | Percentage available | No progress (0 until done) | 0-1 ratio |
 
@@ -626,11 +657,104 @@ AI-powered creative analysis of video ads using Gemini's native multimodal video
 - `app/api/creative-studio/video-analyses/route.ts` — list endpoint for AI Tasks page
 - Database: `video_analysis` table (migration 045), indexes (migration 054)
 
+### AI Image Editor (Gemini 3 Pro)
+Full prompt-based image editing with intelligent text detection and replacement.
+
+**Route:** `/dashboard/creative-studio/image-editor`
+
+**Capabilities:**
+- **Smart Text Detection:** Gemini Vision auto-detects headline/subtext/CTA/other text blocks, re-detects after each edit
+- **Text Editing:** Click pencil icon on detected text → inline edit → single API call: "Change text 'X' to 'Y'. Keep everything else identical."
+- **Free-Form Prompts:** "Make background purple to blue", "Remove the logo", "Change aspect ratio to portrait"
+- **Version History:** Original = v0 (always preserved), each edit creates new version in Supabase Storage, click thumbnail to jump to past versions, editing from past version branches history
+
+**Entry Points:**
+- Ad Studio / AI Tasks: "Edit" button on generated images
+- Media Library: "Edit with AI" button on image cards
+- Direct upload: Drag-drop on editor page
+- Sidebar nav item under Creative Studio
+
+**Save Actions:**
+- Save to Library (Meta upload + storage + media_library table)
+- Download (client-side PNG)
+- Launch as Ad (opens Launch Wizard with image preloaded)
+
+**Credit Cost:** Free (edits don't cost credits; original image generation = 5cr)
+
+**Database:** `image_editor_sessions` (migration 060) — stores source_type, source_id, original_image_url, versions JSONB, detected_text JSONB
+
+**Design:** Full-screen immersive layout. Floating text panel (left, collapsible → bottom sheet on mobile). Version strip (bottom, horizontally scrollable). Prompt bar (fixed bottom, full-width input).
+
+**Files:** `app/dashboard/creative-studio/image-editor/page.tsx`, `app/api/creative-studio/detect-text/route.ts`, `app/api/creative-studio/adjust-image/route.ts`, `app/api/creative-studio/image-editor-session/route.ts`
+
+### Open Prompt System (Ad Studio)
+Two new modes for direct AI generation without forced templates.
+
+**Image Mode:**
+- Raw user text prompt → Gemini image gen
+- Optional source image via icon-only dropdown (Upload / Media Library)
+- No forced headline/primary text generation or ad copy curation
+- Result stored as `source_type: 'open_prompt'` in sessions
+
+**Video Mode (3-Stage Flow):**
+1. **Write Script:** User enters free-form scene description
+2. **Director's Review:** GPT 5.2 segments prompt into Veo time chunks. Editable per-segment prompts, overlay controls, extension management (+7s buttons, max 3 extensions = 29s total)
+3. **Action!:** Generate video via Veo 3.1
+
+**Scene Planning (`/api/creative-studio/plan-scene`):**
+- GPT 5.2 segments user prompt into Veo time chunks without rewriting
+- Preserves user's exact words/tone/pacing (no embellishment)
+- Snaps to valid Veo durations: 8, 15, 22, 29 seconds
+- Returns: `{videoPrompt, extensionPrompts[], estimatedDuration, numExtensions, overlay, adCopy}`
+- "Continue from previous shot" prepended to each extension automatically
+
+**Prompt Architecture (all non-UGC video gen):**
+- Removed block headers `[Scene]`, `[Subject]`, `[Action]`, `[Technical]` that confused Veo
+- All prompts now use natural flowing prose
+- Balanced segmentation: evenly distributed beats per segment
+
+**Files:** `app/dashboard/creative-studio/direct/page.tsx`, `app/api/creative-studio/plan-scene/route.ts`, `app/api/creative-studio/generate-direct-concept/route.ts`
+
+### Veo 3.1 Multi-Extension Support
+Videos longer than 8 seconds use Veo's extension API to chain segments.
+
+**Duration System:**
+- Valid durations: 8, 15, 22, 29 seconds (snapped via `snapToVeoDuration()`)
+- Base: 8 seconds. Each extension: +7 seconds. Max 3 extensions.
+- GPT segments prompt into main (8s) + extension prompts (7s each)
+- Client submits main prompt first → get video → extend with each `extension_prompts[i]`
+
+**Database Columns (migration 059):**
+- `provider` - explicit: sora, veo, runway (backfilled from sora_job_id prefix)
+- `target_duration_seconds` - 8, 15, 22, or 29
+- `extension_step` - which extension number (starting at 0)
+- `extension_total` - total extensions for this job
+- `extension_video_uri` - output URI for each extension segment
+- `extension_prompts` JSONB (migration 062) - per-segment prompts array
+
+### Video Styles (Veo 3.1 Optimized)
+10 video styles with per-style guidance for Veo 3.1.
+
+**Current styles:** `talking_head`, `lifestyle`, `product_showcase`, `interview`, `unboxing`, `before_after`, `testimonial`, `product`, `macro`, `documentary`
+
+**Removed:** `playful`, `satisfying`, `b_roll`
+**Added:** `product`, `macro`, `documentary`
+
+**UGC Product Visibility (Smart Rules):**
+- Wearables stay on through all segments
+- Holdables get set down after intro
+- User direction notes override defaults
+
+**Component:** `VideoStylePicker` - Grid layout (2 cols mobile, 4 cols desktop), icon + label + description cards
+
 ### AI-Powered Features
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
 - **Ad Studio Copy Generation:** Claude generates ad copy inspired by competitor ads
 - **Ad Studio Image Generation:** Gemini 2.5 Flash Image creates ad images using product reference
+- **AI Image Editor:** Gemini 3 Pro prompt-based image editing with text detection
+- **Open Prompt:** Direct user prompt → image or video without templates
+- **Scene Planning:** GPT 5.2 segments prompts into Veo time chunks
 - **Video Analysis:** Gemini 2.0 Flash multimodal video analysis with funnel stage scoring
 - **Video Concept Generation:** Claude generates 4 visual metaphor concepts with angle diversity
 - **Video Overlay Generation:** Whisper transcription + Claude generates time-synced captions
@@ -684,7 +808,7 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 
 ## Database
 
-39+ migrations. Key tables:
+66+ migrations. Key tables:
 
 **Core:**
 - `profiles` - User profiles (linked to auth.users)
@@ -712,7 +836,7 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 - `saved_copy` - AI-generated ad copy saved from Ad Studio/AI Tasks
 
 **AI Generation:**
-- `video_generation_jobs` - Sora/Veo/Runway job tracking (`sora_job_id` stores provider-prefixed IDs)
+- `video_generation_jobs` - Sora/Veo/Runway job tracking (`sora_job_id` stores provider-prefixed IDs). Includes `provider`, `target_duration_seconds`, `extension_step`, `extension_total`, `extension_video_uri`, `extension_prompts` JSONB, `ad_copy` JSONB
 - `video_overlays` - Non-destructive overlay versions (dual parent: job or composition)
 - `video_concept_canvases` - Persisted concept sets linking to all generated jobs
 - `video_compositions` - Multi-clip timelines with `source_job_ids` array
@@ -720,9 +844,12 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 - `ai_credit_purchases` - User credit top-ups
 - `ai_credit_overrides` - Admin custom credit limits
 - `ad_studio_sessions` - Saved ad generation sessions for AI Tasks
+- `image_editor_sessions` - AI image editor sessions with version history (migration 060)
+- `media_sync_log` - Tracks media sync cooldowns per user+account (migration 066)
 
 **Views:**
 - `creative_star_counts` - Aggregates stars by creative (deduplication)
+- `ad_sessions_strip_base64_view` - Ad sessions without base64 data (migration 055)
 
 ---
 
@@ -756,6 +883,40 @@ else → KILL
 ---
 
 ## Recent Fixes (January–February 2026)
+
+### Image Generation Ignoring Creative Direction (Feb 23)
+**Status:** COMPLETE
+
+**Problem:** When "Source Image" is toggled off in Ad Studio, the "adjust image" / "Describe how you want the ad to look" field (`imagePrompt`) was completely ignored during image generation.
+
+**Root Cause:** In `lib/prompts/image-generation.ts`, when source image is excluded, `hasProductImage` and `hasReferenceAd` are both false, causing the code to skip the branch that uses `buildCustomPrompt` (which respects `imagePrompt`) and fall through to `buildTextOnlyPrompt` which had no `imagePrompt` support.
+
+**Fix:** Added `imagePrompt` check at the top of `buildTextOnlyPrompt` — if user provided creative direction, uses it as primary guidance with product context and exact ad text requirements.
+
+**File:** `lib/prompts/image-generation.ts`
+
+### Ad Studio Open Prompt + Video Styles Overhaul (Feb 22)
+**Status:** COMPLETE
+
+Added Open Prompt system (image mode: raw prompt → Gemini, video mode: Write Script → Director's Review → Action). Overhauled video styles for Veo 3.1 (removed playful/satisfying/b_roll, added product/macro/documentary). Extracted all prompts to `lib/prompts/` library.
+
+**Key Files Created:**
+- `app/api/creative-studio/plan-scene/route.ts` - GPT 5.2 scene segmentation
+- `app/dashboard/creative-studio/direct/page.tsx` - Direct Studio page
+- `lib/prompts/*.ts` - Centralized prompt library (12+ files)
+- `docs/plans/2026-02-22-ad-studio-open-prompt-design.md` - Design spec
+
+### AI Image Editor (Feb 21)
+**Status:** COMPLETE
+
+Full AI image editor with Gemini 3 Pro editing, smart text detection via Gemini Vision, version history, and multiple entry points (Ad Studio, AI Tasks, Media Library, direct upload).
+
+**Files Created:**
+- `app/dashboard/creative-studio/image-editor/page.tsx` - Editor page
+- `app/api/creative-studio/detect-text/route.ts` - Text detection
+- `app/api/creative-studio/image-editor-session/route.ts` - Session CRUD
+- `supabase/migrations/060_image_editor_sessions.sql` - Session table + RLS
+- `docs/plans/2026-02-21-ai-image-editor-design.md` - Design spec
 
 ### AI Tasks: Remove Generation, Add Studio Navigation (Feb 22)
 **Status:** COMPLETE
@@ -995,31 +1156,22 @@ if (shopifyAttribution && Object.keys(shopifyAttribution).length > 0) {
 
 ---
 
-## Current Work (January 2026)
+## Current Work (February 2026)
+
+### Workspace-First Architecture (Partially Complete)
+Migration 065 auto-links all existing connected accounts to user's default workspace and ensures every user has `selected_workspace_id` set. Data queries are now workspace-scoped.
+
+### Media Sync Cooldown (Complete)
+Migration 066 added `media_sync_log` table tracking when media sync last ran per user+account. Supports 24-hour cooldown between full syncs. Stores counts: `image_count`, `video_count`, `new_images`, `new_videos`.
 
 ### Shopify + Pixel JOIN Model Attribution
-Implementing order_id based deduplication to prevent double counting when Meta and pixel attribute same sale to different ads.
-
-**Status:** In progress - API updated, pixel purchase endpoint created, migration ready
-
-**Key files:**
-- `app/api/pixel/purchase/route.ts` - Pixel purchase events with order_id (NEW)
-- `app/api/shopify/attribution/route.ts` - JOIN query implementation (UPDATED)
-- `lib/attribution.tsx` - Added pixelMatchRate to context (UPDATED)
-- `supabase/migrations/033_pixel_order_id.sql` - order_id column (NEW)
+order_id based deduplication. API updated, pixel purchase endpoint created, migration ready.
 
 **Attribution Waterfall (E-commerce):**
 1. Shopify UTM (`last_utm_content`) - Primary
 2. KillScale Pixel (`utm_content`) - Secondary
 3. Meta API - Fallback
 4. Unattributed - No ad credit
-
-**Plan files:** `.claude/plans/gleaming-questing-crane.md`, `.claude/plans/concurrent-tinkering-dusk.md`
-
-### Workspace-Centric Architecture
-Redesigning so same ad account can show different results in different workspaces based on attribution source.
-
-**Plan file:** `.claude/plans/toasty-nibbling-kitten.md`
 
 ---
 
@@ -1133,6 +1285,19 @@ The API uses `cleanAccountId = adAccountId.replace(/^act_/, '')` for media_libra
 - **Why fragile:** Sora requires `input_reference` dimensions to EXACTLY match `size` param. Mismatch = generation fails silently.
 - **If you must modify:** Never skip resize step. Always use `OpenAI.toFile()` for image upload (not raw FormData).
 
+### 12. Veo Extension Chain (`generate-video/route.ts` + `video-status/route.ts`)
+- Extensions must be submitted sequentially (each extends the previous segment's output)
+- Valid durations: 8, 15, 22, 29 only — `snapToVeoDuration()` enforces this
+- Each extension prompt gets "Continue from previous shot. " prepended
+- **Why fragile:** Submitting extensions in parallel or out of order produces corrupted video. Changing duration snapping breaks the segmentation math.
+- **If you must modify:** Never parallelize extension submissions. Never change the 8/15/22/29 snap values. Keep "Continue from previous shot" prefix.
+
+### 13. Prompts Library (`lib/prompts/`)
+- All AI prompts centralized here with `INTEGRITY.sha256` hash file
+- Prompt changes affect ALL generation flows (image gen, video concepts, scripts, overlays, analysis)
+- **Why fragile:** A prompt change can subtly degrade output quality across multiple features. The integrity hash tracks unauthorized modifications.
+- **If you must modify:** Test the specific generation flow end-to-end. Check that Veo prompts stay under Runway's 1000-char limit if also used there. Never add block headers (`[Scene]`, `[Subject]`) back to video prompts — they confuse Veo.
+
 ### Signs You Broke Something
 - "Error code 17" or "Rate limit exceeded" from Meta
 - Sync takes 5+ minutes
@@ -1184,11 +1349,11 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 
 # Ad Studio (Competitor Research + Image Generation)
 SCRAPECREATORS_API_KEY=...          # ScrapeCreators Facebook Ad Library API
-GOOGLE_GEMINI_API_KEY=...           # Gemini 2.5 Flash Image + Veo 3.1 video gen
+GOOGLE_GEMINI_API_KEY=...           # Gemini 3 Pro (image editing) + Gemini 2.5 Flash (image gen + text detection) + Veo 3.1 (video gen + extensions)
 
 # Video Generation
 VIDEO_MODEL=sora-2-pro              # Provider: sora-2-pro | veo-3.1-generate-preview | runway-gen4.5
-OPENAI_API_KEY=...                  # Sora video gen + Whisper transcription + TTS voiceover
+OPENAI_API_KEY=...                  # GPT 5.2 (scene planning) + Sora video gen + Whisper transcription + TTS voiceover
 RUNWAY_API_KEY=...                  # Runway Gen-4.5 video generation
 ```
 
@@ -1220,6 +1385,9 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| Image Gen Prompt Fix | buildTextOnlyPrompt ignoring imagePrompt | Feb 23 |
+| Ad Studio Open Prompt | Direct prompt → image/video, scene planning, style overhaul | Feb 22 |
+| AI Image Editor | Gemini 3 Pro editing, text detection, version history | Feb 21 |
 | `silly-floating-cosmos.md` | AI Tasks: Remove Generation, Add Studio Navigation | Feb 22 |
 | `warm-petting-harbor.md` | Video Studio Inline Generation + Prompt Diversity | Feb 12 |
 | AI Video Generation | Triple provider (Sora/Veo/Runway), credits, overlays, compositions | Feb 10 |
