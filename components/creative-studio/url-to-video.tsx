@@ -24,10 +24,12 @@ import {
   Video,
   MessageSquare,
   MousePointer,
+  Clapperboard,
+  Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
-import type { ProductKnowledge, ProductImage, AdConcept } from '@/lib/video-prompt-templates'
+import type { ProductKnowledge, ProductImage, AdConcept, DirectConceptResult } from '@/lib/video-prompt-templates'
 import type { VideoJob } from '@/remotion/types'
 import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 
@@ -269,6 +271,30 @@ export default function URLToVideo({
   // Add concept
   const [addConceptMode, setAddConceptMode] = useState<'idle' | 'choosing' | 'prompting' | 'generating'>('idle')
   const [promptDirection, setPromptDirection] = useState('')
+
+  // ─── Direct mode state ──────────────────────────────────────────────────────
+  const [directPrompt, setDirectPrompt] = useState('')
+  const [directScript, setDirectScript] = useState<DirectConceptResult | null>(null)
+  const [directWriting, setDirectWriting] = useState(false)
+  const [directError, setDirectError] = useState<string | null>(null)
+
+  // Director's Review editable fields
+  const [editScene, setEditScene] = useState('')
+  const [editSubject, setEditSubject] = useState('')
+  const [editAction, setEditAction] = useState('')
+  const [editMood, setEditMood] = useState('')
+  const [editVideoPrompt, setEditVideoPrompt] = useState('')
+  const [editExtensionPrompts, setEditExtensionPrompts] = useState<string[]>([])
+  const [editHook, setEditHook] = useState('')
+  const [editCta, setEditCta] = useState('')
+  const [directOverlaysEnabled, setDirectOverlaysEnabled] = useState(true)
+  const [directQuality, setDirectQuality] = useState<'standard' | 'premium'>('standard')
+  const [showVeoPrompt, setShowVeoPrompt] = useState(true)
+  const [showExtensions, setShowExtensions] = useState(false)
+
+  // Direct video generation
+  const [directGenerating, setDirectGenerating] = useState(false)
+  const [directVideoJob, setDirectVideoJob] = useState<VideoJob | null>(null)
 
   // ─── Quality + cost helpers ────────────────────────────────────────────────
 
@@ -747,6 +773,223 @@ export default function URLToVideo({
       setPromptDirection('')
     }
   }, [productKnowledge, concepts, saveConceptsToCanvas, promptDirection, includeProductImage, assembleProductKnowledge])
+
+  // ─── Direct: Write Concept ──────────────────────────────────────────────────
+
+  const handleWriteDirectConcept = useCallback(async () => {
+    if (!directPrompt.trim()) return
+    const product = productKnowledge || assembleProductKnowledge()
+    if (!product.name) return
+
+    setDirectWriting(true)
+    setDirectError(null)
+    setDirectScript(null)
+
+    try {
+      const res = await fetch('/api/creative-studio/generate-direct-concept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product,
+          conceptPrompt: directPrompt,
+          style: videoStyle,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setDirectError(data.error || 'Failed to write concept')
+        return
+      }
+      const result = data as DirectConceptResult
+      setDirectScript(result)
+      // Populate editable fields
+      setEditScene(result.scene || '')
+      setEditSubject(result.subject || '')
+      setEditAction(result.action || '')
+      setEditMood(result.mood || '')
+      setEditVideoPrompt(result.videoPrompt || '')
+      setEditExtensionPrompts(result.extensionPrompts || [])
+      setEditHook(result.overlay?.hook || '')
+      setEditCta(result.overlay?.cta || 'Shop Now')
+      setShowExtensions(!!(result.extensionPrompts?.length))
+    } catch {
+      setDirectError('Failed to write concept. Please try again.')
+    } finally {
+      setDirectWriting(false)
+    }
+  }, [directPrompt, productKnowledge, videoStyle, assembleProductKnowledge])
+
+  // ─── Direct: Generate Video ────────────────────────────────────────────────
+
+  const directExtensionCount = editExtensionPrompts.length
+  const directCosts = QUALITY_COSTS[directQuality]
+  const directCreditCost = directCosts.base + directExtensionCount * directCosts.extension
+  const directEstimatedDuration = 8 + directExtensionCount * VEO_EXTENSION_STEP
+  const directCanAfford = credits ? credits.remaining >= directCreditCost : true
+
+  const handleDirectGenerate = useCallback(async () => {
+    if (!userId || !adAccountId) return
+
+    setDirectGenerating(true)
+    setGenerateError(null)
+
+    try {
+      const isExtended = directExtensionCount > 0
+      const apiProvider = isExtended ? 'veo-ext' : 'veo'
+      const duration = 8 + directExtensionCount * VEO_EXTENSION_STEP
+      const product = productKnowledge || assembleProductKnowledge()
+
+      // Create canvas if first generation
+      let currentCanvasId = canvasId
+      if (!currentCanvasId) {
+        const canvasRes = await fetch('/api/creative-studio/video-canvas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            adAccountId,
+            productUrl: productUrl || null,
+            productKnowledge: { ...product, _studioMode: 'direct' },
+            concepts: [{
+              title: 'Direct Concept',
+              angle: 'Direct',
+              logline: directPrompt.slice(0, 80),
+              visualMetaphor: editAction,
+              whyItWorks: `User-directed concept: ${editScene}`,
+              videoPrompt: editVideoPrompt,
+              overlay: {
+                hook: editHook,
+                captions: [],
+                cta: editCta,
+              },
+            }],
+          }),
+        })
+        const canvasData = await canvasRes.json()
+        if (canvasRes.ok && canvasData.canvas?.id) {
+          currentCanvasId = canvasData.canvas.id
+          setCanvasId(currentCanvasId)
+        }
+      }
+
+      // Build overlay config if enabled
+      const overlayConfig = directOverlaysEnabled ? {
+        hook: editHook ? {
+          line1: editHook,
+          startSec: 0,
+          endSec: 2,
+          animation: 'pop' as const,
+        } : undefined,
+        cta: editCta ? {
+          buttonText: editCta,
+          startSec: Math.max(duration - 3, 0),
+          animation: 'pop' as const,
+        } : undefined,
+        style: 'clean' as const,
+      } : undefined
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          adAccountId,
+          prompt: editVideoPrompt,
+          videoStyle: 'concept',
+          durationSeconds: duration,
+          productName: product.name || null,
+          provider: apiProvider,
+          quality: directQuality,
+          canvasId: currentCanvasId || null,
+          adIndex: 0,
+          targetDurationSeconds: isExtended ? duration : undefined,
+          extensionPrompts: isExtended ? editExtensionPrompts : undefined,
+          overlayConfig,
+          productImageBase64: includeProductImage ? (productImages[selectedProductImageIdx]?.base64 || null) : null,
+          productImageMimeType: includeProductImage ? (productImages[selectedProductImageIdx]?.mimeType || null) : null,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate video')
+      }
+
+      // Set initial job state from response
+      setDirectVideoJob({
+        id: data.jobId,
+        user_id: userId,
+        ad_account_id: adAccountId,
+        prompt: editVideoPrompt,
+        video_style: 'concept',
+        duration_seconds: duration,
+        status: 'queued',
+        progress_pct: 0,
+        credit_cost: directCreditCost,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+
+      onCreditsChanged()
+      notifyCreditsChanged()
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Failed to generate video')
+    } finally {
+      setDirectGenerating(false)
+    }
+  }, [userId, adAccountId, productKnowledge, assembleProductKnowledge, canvasId, productUrl, directPrompt, editScene, editAction, editVideoPrompt, editExtensionPrompts, editHook, editCta, directOverlaysEnabled, directQuality, directExtensionCount, directCreditCost, includeProductImage, productImages, selectedProductImageIdx, onCreditsChanged])
+
+  // ─── Direct: Video polling ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!directVideoJob || directVideoJob.status === 'complete' || directVideoJob.status === 'failed') return
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/creative-studio/video-status?jobId=${directVideoJob.id}&userId=${userId}`)
+        const data = await res.json()
+        if (data.status) {
+          setDirectVideoJob(prev => prev ? {
+            ...prev,
+            status: data.status,
+            progress_pct: data.progress_pct ?? prev.progress_pct,
+            final_video_url: data.final_video_url ?? prev.final_video_url,
+            raw_video_url: data.raw_video_url ?? prev.raw_video_url,
+            thumbnail_url: data.thumbnail_url ?? prev.thumbnail_url,
+            error_message: data.error_message ?? prev.error_message,
+            overlay_config: data.overlay_config ?? prev.overlay_config,
+          } : prev)
+        }
+      } catch {
+        // Silently retry on next interval
+      }
+    }
+
+    poll() // Immediate first poll
+    const interval = setInterval(poll, 15000)
+    return () => clearInterval(interval)
+  }, [directVideoJob?.id, directVideoJob?.status, userId])
+
+  // ─── Direct: Reset ─────────────────────────────────────────────────────────
+
+  const resetDirect = useCallback(() => {
+    setDirectPrompt('')
+    setDirectScript(null)
+    setDirectWriting(false)
+    setDirectError(null)
+    setEditScene('')
+    setEditSubject('')
+    setEditAction('')
+    setEditMood('')
+    setEditVideoPrompt('')
+    setEditExtensionPrompts([])
+    setEditHook('')
+    setEditCta('')
+    setDirectOverlaysEnabled(true)
+    setDirectQuality('standard')
+    setDirectGenerating(false)
+    setDirectVideoJob(null)
+  }, [])
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
@@ -1622,23 +1865,442 @@ export default function URLToVideo({
                 </>
               )}
 
-              {/* ═══ Direct sub-mode (placeholder) ═══ */}
+              {/* ═══ Direct sub-mode ═══ */}
               {subMode === 'direct' && (
-                <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-6 text-center">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-500/10 mb-3">
-                    <Pencil className="w-6 h-6 text-blue-400" />
-                  </div>
-                  <p className="text-sm font-medium text-white mb-1">Write your own video concept</p>
-                  <p className="text-xs text-zinc-500">Describe the video you want and AI will plan the scene, then generate the video</p>
-                  <button
-                    disabled
-                    className="mt-4 flex items-center gap-2 mx-auto px-6 py-3 rounded-lg bg-blue-500 text-white font-medium opacity-50 cursor-not-allowed"
-                  >
-                    <Film className="w-4 h-4" />
-                    Plan Scene
-                  </button>
-                  <p className="text-xs text-zinc-600 mt-2">Coming in Task 7</p>
-                </div>
+                <>
+                  {/* ── Phase 3: Video Result ── */}
+                  {directVideoJob && (
+                    <div className="bg-zinc-900/50 border border-border rounded-xl p-6 space-y-4">
+                      {(directVideoJob.status === 'queued' || directVideoJob.status === 'generating' || directVideoJob.status === 'extending' || directVideoJob.status === 'rendering') && (
+                        <div className="flex flex-col items-center py-12 text-center">
+                          <div className="relative mb-6">
+                            <div className="w-16 h-16 rounded-full border-2 border-amber-500/30 flex items-center justify-center">
+                              <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+                            </div>
+                            {directVideoJob.progress_pct > 0 && (
+                              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-0.5 rounded-full tabular-nums">
+                                {Math.round(directVideoJob.progress_pct)}%
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-white font-medium">Generating your video...</p>
+                          <p className="text-zinc-500 text-sm mt-1">
+                            {directVideoJob.status === 'extending' ? 'Extending video...' : 'This usually takes 2-5 minutes'}
+                          </p>
+                        </div>
+                      )}
+
+                      {directVideoJob.status === 'complete' && directVideoJob.final_video_url && (
+                        <div className="space-y-4">
+                          <div className="aspect-[9/16] max-h-[60vh] mx-auto rounded-xl overflow-hidden bg-black">
+                            <video
+                              src={directVideoJob.final_video_url}
+                              controls
+                              playsInline
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <a
+                              href={directVideoJob.final_video_url}
+                              download={`direct-video-${directVideoJob.id}.mp4`}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 transition-colors text-sm"
+                            >
+                              <Download className="w-4 h-4" />
+                              Download
+                            </a>
+                            <button
+                              onClick={() => { window.location.href = `/dashboard/creative-studio/video-editor?jobId=${directVideoJob.id}` }}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-zinc-800 text-zinc-200 font-medium hover:bg-zinc-700 transition-colors text-sm"
+                            >
+                              <Film className="w-4 h-4" />
+                              Edit Video
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={resetDirect}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-zinc-700/50 text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors text-sm"
+                          >
+                            <Plus className="w-4 h-4" />
+                            New Video
+                          </button>
+                        </div>
+                      )}
+
+                      {directVideoJob.status === 'failed' && (
+                        <div className="flex flex-col items-center py-12 text-center">
+                          <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+                          <p className="text-white font-medium mb-1">Generation Failed</p>
+                          <p className="text-zinc-500 text-sm mb-6">
+                            {directVideoJob.error_message || 'Something went wrong. Please try again.'}
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setDirectVideoJob(null); setGenerateError(null) }}
+                              className="px-4 py-2 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 transition-colors text-sm"
+                            >
+                              Try Again
+                            </button>
+                            <button
+                              onClick={resetDirect}
+                              className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 transition-colors text-sm"
+                            >
+                              Start Over
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Phase 2: Director's Review ── */}
+                  {directScript && !directVideoJob && (
+                    <div className="space-y-4">
+                      {/* Amber Director's Review panel */}
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                        {/* Header */}
+                        <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+                          <Clapperboard className="w-4 h-4 text-amber-400" />
+                          <span className="text-sm font-semibold text-amber-300">Director&apos;s Review</span>
+                          <span className="ml-auto text-xs text-amber-400/60">Edit before generating</span>
+                        </div>
+
+                        <div className="p-4 space-y-4">
+                          {/* Scene + Subject */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-zinc-400 mb-1 block">Scene</label>
+                              <input
+                                type="text"
+                                value={editScene}
+                                onChange={(e) => setEditScene(e.target.value)}
+                                className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-zinc-400 mb-1 block">Subject</label>
+                              <input
+                                type="text"
+                                value={editSubject}
+                                onChange={(e) => setEditSubject(e.target.value)}
+                                className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Action */}
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-1 block">Action</label>
+                            <textarea
+                              value={editAction}
+                              onChange={(e) => setEditAction(e.target.value)}
+                              rows={3}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 resize-none"
+                            />
+                          </div>
+
+                          {/* Mood */}
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-1 block">Mood</label>
+                            <input
+                              type="text"
+                              value={editMood}
+                              onChange={(e) => setEditMood(e.target.value)}
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                            />
+                          </div>
+
+                          {/* Quality Selector */}
+                          <div>
+                            <label className="text-xs font-medium text-zinc-400 mb-2 block">Quality</label>
+                            <div className="flex gap-2">
+                              {(['standard', 'premium'] as const).map(q => {
+                                const isActive = directQuality === q
+                                const qCosts = QUALITY_COSTS[q]
+                                const totalCost = qCosts.base + directExtensionCount * qCosts.extension
+                                return (
+                                  <button
+                                    key={q}
+                                    onClick={() => setDirectQuality(q)}
+                                    className={cn(
+                                      'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
+                                      isActive
+                                        ? 'bg-amber-500/10 border-amber-500/40'
+                                        : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
+                                    )}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className={cn('text-xs font-medium', isActive ? 'text-amber-300' : 'text-zinc-400')}>
+                                        {q === 'standard' ? 'Standard' : 'Premium'}
+                                      </span>
+                                      <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Veo Prompt (collapsible) */}
+                          <details className="group" open={showVeoPrompt}>
+                            <summary
+                              className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                              onClick={(e) => { e.preventDefault(); setShowVeoPrompt(!showVeoPrompt) }}
+                            >
+                              <ChevronRight className={cn('w-3 h-3 transition-transform', showVeoPrompt && 'rotate-90')} />
+                              Veo Prompt (first 8s)
+                            </summary>
+                            {showVeoPrompt && (
+                              <textarea
+                                value={editVideoPrompt}
+                                onChange={(e) => setEditVideoPrompt(e.target.value)}
+                                className="w-full mt-2 bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                                rows={8}
+                              />
+                            )}
+                          </details>
+
+                          {/* Extension Prompts (collapsible) */}
+                          <details className="group" open={showExtensions}>
+                            <summary
+                              className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                              onClick={(e) => { e.preventDefault(); setShowExtensions(!showExtensions) }}
+                            >
+                              <ChevronRight className={cn('w-3 h-3 transition-transform', showExtensions && 'rotate-90')} />
+                              Extension Prompts ({directExtensionCount})
+                            </summary>
+                            {showExtensions && (
+                              <div className="mt-2 space-y-2">
+                                {editExtensionPrompts.map((ep, idx) => (
+                                  <div key={idx}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <label className="text-xs text-zinc-500">Segment {idx + 2} ({8 + (idx + 1) * VEO_EXTENSION_STEP - 6}s - {8 + (idx + 1) * VEO_EXTENSION_STEP}s)</label>
+                                      <button
+                                        onClick={() => setEditExtensionPrompts(editExtensionPrompts.filter((_, i) => i !== idx))}
+                                        className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                    <textarea
+                                      value={ep}
+                                      onChange={(e) => {
+                                        const updated = [...editExtensionPrompts]
+                                        updated[idx] = e.target.value
+                                        setEditExtensionPrompts(updated)
+                                      }}
+                                      className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
+                                      rows={4}
+                                    />
+                                  </div>
+                                ))}
+                                {directExtensionCount < 3 && (
+                                  <button
+                                    onClick={() => {
+                                      setEditExtensionPrompts([...editExtensionPrompts, 'Continue from previous shot. '])
+                                      setShowExtensions(true)
+                                    }}
+                                    className="flex items-center gap-1.5 text-xs text-amber-400/70 hover:text-amber-300 transition-colors py-1"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    Add extension (+7s)
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </details>
+
+                          {/* Overlays toggle */}
+                          <div className="flex items-center justify-between py-2 border-t border-amber-500/10">
+                            <span className="text-xs font-medium text-amber-300/80">Text Overlays</span>
+                            <button
+                              onClick={() => setDirectOverlaysEnabled(!directOverlaysEnabled)}
+                              className={cn(
+                                'relative w-9 h-5 rounded-full transition-colors',
+                                directOverlaysEnabled ? 'bg-amber-500' : 'bg-zinc-700'
+                              )}
+                            >
+                              <div className={cn(
+                                'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                                directOverlaysEnabled ? 'left-[18px]' : 'left-0.5'
+                              )} />
+                            </button>
+                          </div>
+
+                          {/* Hook + CTA (shown when overlays enabled) */}
+                          {directOverlaysEnabled && (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="text-xs font-medium text-zinc-400 mb-1 block">Hook Text <span className="text-zinc-600 font-normal">(first 2s)</span></label>
+                                <input
+                                  type="text"
+                                  value={editHook}
+                                  onChange={(e) => setEditHook(e.target.value)}
+                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                                  placeholder="e.g. See the Difference"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs font-medium text-zinc-400 mb-1 block">CTA Button</label>
+                                <input
+                                  type="text"
+                                  value={editCta}
+                                  onChange={(e) => setEditCta(e.target.value)}
+                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                                  placeholder="e.g. Shop Now"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Budget line */}
+                          <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-white tabular-nums">{directEstimatedDuration}s video</p>
+                              <p className="text-xs text-zinc-500">
+                                Veo 3.1 {directQuality === 'premium' ? 'Standard' : 'Fast'}{' '}
+                                {directExtensionCount === 0 ? 'Single clip' : `8s base + ${directExtensionCount} extension${directExtensionCount > 1 ? 's' : ''}`}
+                                {' · '}{directQuality === 'premium' ? '1080p' : '720p'}
+                              </p>
+                            </div>
+                            <div className="text-right space-y-0.5">
+                              <p className={cn('text-sm font-bold tabular-nums', directCanAfford ? 'text-amber-400' : 'text-red-400')}>
+                                {directCreditCost} credits
+                              </p>
+                              {credits && (
+                                <p className="text-xs text-zinc-500">{credits.remaining} remaining</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Error */}
+                          {generateError && (
+                            <div className="flex items-center gap-2 text-red-400 text-sm">
+                              <AlertCircle className="w-4 h-4" />
+                              {generateError}
+                            </div>
+                          )}
+
+                          {/* Action buttons */}
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={handleDirectGenerate}
+                              disabled={directGenerating || !directCanAfford}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                            >
+                              {directGenerating ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Generating {directEstimatedDuration}s video...
+                                </>
+                              ) : (
+                                <>
+                                  <Clapperboard className="w-4 h-4" />
+                                  Action! ({directCreditCost} credits)
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => { setDirectScript(null); handleWriteDirectConcept() }}
+                              disabled={directWriting || directGenerating}
+                              className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                              title="Rewrite script"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rewrite link */}
+                      <div className="text-center">
+                        <button
+                          onClick={() => setDirectScript(null)}
+                          className="text-sm text-zinc-500 hover:text-amber-400 transition-colors"
+                        >
+                          &#8592; Rewrite Concept
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Phase 1: Concept Prompt ── */}
+                  {!directScript && !directVideoJob && (
+                    <div className="space-y-4">
+                      {/* Writing state */}
+                      {directWriting && (
+                        <div className="bg-zinc-900/50 border border-border rounded-xl p-10 text-center">
+                          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500/10 mb-4">
+                            <Clapperboard className="w-8 h-8 text-amber-400 animate-pulse" />
+                          </div>
+                          <p className="text-base font-medium text-white mb-1">Writing your concept...</p>
+                          <p className="text-sm text-zinc-500">AI is building the shot list</p>
+                        </div>
+                      )}
+
+                      {/* Prompt input */}
+                      {!directWriting && (
+                        <>
+                          <div>
+                            <label className="text-sm font-medium text-zinc-300 mb-2 block">
+                              Describe your video concept
+                            </label>
+                            <textarea
+                              value={directPrompt}
+                              onChange={(e) => setDirectPrompt(e.target.value)}
+                              placeholder="e.g. Close-up of someone opening the package, dramatic product reveal, camera orbiting with particles..."
+                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/50 resize-none"
+                              rows={4}
+                            />
+                          </div>
+
+                          {/* Video style */}
+                          <div>
+                            <label className="text-sm font-medium text-zinc-300 mb-2 block">
+                              Video Style
+                              <span className="text-xs text-zinc-600 ml-2">pick one</span>
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {VIDEO_STYLES.map(s => (
+                                <button
+                                  key={s.value}
+                                  onClick={() => setVideoStyle(s.value)}
+                                  className={cn(
+                                    'px-3 py-1.5 rounded-full text-xs font-medium transition-all border cursor-pointer',
+                                    s.value === videoStyle
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                      : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30 hover:text-zinc-300 hover:border-zinc-600'
+                                  )}
+                                >
+                                  {s.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {directError && (
+                            <div className="flex items-center gap-2 text-red-400 text-sm">
+                              <AlertCircle className="w-4 h-4" />
+                              {directError}
+                            </div>
+                          )}
+
+                          <button
+                            onClick={handleWriteDirectConcept}
+                            disabled={!directPrompt.trim() || directWriting}
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-medium hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                          >
+                            <Clapperboard className="w-4 h-4" />
+                            Write Concept · 0 credits
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
