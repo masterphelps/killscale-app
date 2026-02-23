@@ -3944,15 +3944,52 @@ export default function AdStudioPage() {
   // Image to Video — self-contained component
   if (mode === 'image-to-video') {
     return (
-      <ImageToVideo
-        userId={user?.id || ''}
-        adAccountId={currentAccountId || ''}
-        credits={aiUsage ? { remaining: aiUsage.remaining, totalAvailable: aiUsage.totalAvailable } : null}
-        onCreditsChanged={() => { refreshCredits(); notifyCreditsChanged() }}
-        onBack={resetToModeSelection}
-        onOpenMediaLibrary={() => setI2vMediaLibraryOpen(true)}
-        onImageFromLibrary={i2vImageFromLibrary}
-      />
+      <>
+        <ImageToVideo
+          userId={user?.id || ''}
+          adAccountId={currentAccountId || ''}
+          credits={aiUsage ? { remaining: aiUsage.remaining, totalAvailable: aiUsage.totalAvailable } : null}
+          onCreditsChanged={() => { refreshCredits(); notifyCreditsChanged() }}
+          onBack={resetToModeSelection}
+          onOpenMediaLibrary={() => setI2vMediaLibraryOpen(true)}
+          onImageFromLibrary={i2vImageFromLibrary}
+        />
+        {i2vMediaLibraryOpen && user?.id && currentAccountId && (
+          <MediaLibraryModal
+            isOpen={i2vMediaLibraryOpen}
+            onClose={() => setI2vMediaLibraryOpen(false)}
+            userId={user.id}
+            adAccountId={currentAccountId}
+            selectedItems={[]}
+            onSelectionChange={async (items) => {
+              setI2vMediaLibraryOpen(false)
+              if (items.length === 0) return
+              const item = items[0]
+              if (!('hash' in item)) return
+              const mediaItem = item as MediaImage & { mediaType: 'image' }
+              try {
+                const res = await fetch('/api/creative-studio/download-image', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: mediaItem.url }),
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  setI2vImageFromLibrary({
+                    base64: data.base64,
+                    mimeType: data.mimeType || 'image/jpeg',
+                    preview: mediaItem.url,
+                  })
+                }
+              } catch {
+                // Silently fail — user can retry
+              }
+            }}
+            maxSelection={1}
+            allowedTypes={['image']}
+          />
+        )}
+      </>
     )
   }
 
