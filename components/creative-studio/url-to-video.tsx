@@ -79,8 +79,8 @@ type VideoQuality = 'standard' | 'premium'
 const VEO_BASE_DURATION = 8
 const VEO_EXTENSION_STEP = 7
 const QUALITY_COSTS = {
-  standard: { base: 20, extension: 10 },
-  premium: { base: 50, extension: 25 },
+  standard: { base: 20, extension: 30 },
+  premium: { base: 50, extension: 75 },
 }
 
 // ─── Pill Selector Component ──────────────────────────────────────────────────
