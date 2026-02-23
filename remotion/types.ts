@@ -100,8 +100,10 @@ export interface VideoComposition {
   id: string
   canvasId: string
   sourceJobIds: string[]
+  sourceLibraryIds?: string[]
   overlayConfig: OverlayConfig
   title: string
+  name?: string | null
   thumbnailUrl?: string
   durationSeconds: number
   createdAt: string

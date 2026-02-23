@@ -552,6 +552,56 @@ export default function AdStudioPage() {
     restoreSession()
   }, [searchParams, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Restore Open Prompt video session from ?canvasId= URL param (from AI Tasks "Continue in Ad Studio")
+  useEffect(() => {
+    if (restoredSessionRef.current) return
+    const canvasIdParam = searchParams.get('canvasId')
+    if (!canvasIdParam || !user?.id) return
+
+    restoredSessionRef.current = true
+
+    const restoreCanvas = async () => {
+      try {
+        const res = await fetch(`/api/creative-studio/video-canvas?userId=${user.id}&canvasId=${canvasIdParam}`)
+        const data = await res.json()
+        if (!res.ok || !data.canvas) return
+
+        const canvas = data.canvas
+        const concept = canvas.concepts?.[0]
+        if (!concept) return
+
+        // Set canvas ID for future saves
+        setOpenPromptCanvasId(canvas.id)
+
+        // Restore original prompt text
+        if (concept.originalPrompt) {
+          setOpenPromptText(concept.originalPrompt)
+        } else if (concept.logline) {
+          setOpenPromptText(concept.logline)
+        }
+
+        // Reconstruct ScenePlan from stored data
+        const restoredPlan: ScenePlan = concept.scenePlan || {
+          videoPrompt: concept.videoPrompt || '',
+          extensionPrompts: concept.extensionPrompts || [],
+          scene: concept.visualMetaphor?.replace('AI-directed scene — ', '') || '',
+          mood: '',
+          estimatedDuration: concept.estimatedDuration || 8,
+          overlay: concept.overlay ? { hook: concept.overlay.hook || '', cta: concept.overlay.cta || '' } : undefined,
+          dialogue: '',
+        }
+
+        setOpenPromptScenePlan(restoredPlan)
+        setOpenPromptMediaType('video')
+        setMode('open-prompt')
+      } catch (err) {
+        console.error('[AdStudio] Failed to restore canvas:', err)
+      }
+    }
+
+    restoreCanvas()
+  }, [searchParams, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset to landing page when sidebar link is clicked while already on this page
   useEffect(() => {
     const handleSidebarReset = (e: Event) => {
@@ -2316,9 +2366,14 @@ export default function AdStudioPage() {
               visualMetaphor: `AI-directed scene — ${openPromptScenePlan.scene}`,
               whyItWorks: 'Direct prompt generation with AI scene planning',
               videoPrompt: openPromptScenePlan.videoPrompt,
+              extensionPrompts: openPromptScenePlan.extensionPrompts || [],
+              estimatedDuration: openPromptScenePlan.estimatedDuration || 8,
               overlay: openPromptScenePlan.overlay
                 ? { hook: openPromptScenePlan.overlay.hook, captions: [], cta: openPromptScenePlan.overlay.cta }
                 : { hook: '', captions: [], cta: '' },
+              // Store full scene plan for session restoration from AI Tasks
+              scenePlan: openPromptScenePlan,
+              originalPrompt: openPromptText,
             }],
           }),
         })
@@ -3245,10 +3300,7 @@ export default function AdStudioPage() {
 
                 {/* Text to Video */}
                 <button
-                  onClick={() => {
-                    setOpenPromptMediaType('video')
-                    document.getElementById('open-prompt-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }}
+                  onClick={() => router.push('/dashboard/creative-studio/direct')}
                   className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-purple-500/50 hover:bg-bg-card/80 transition-all"
                 >
                   <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors">
