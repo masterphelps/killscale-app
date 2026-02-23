@@ -96,11 +96,11 @@ If your estimated duration is more than 8 seconds:
 - Each extension describes ONLY what happens in that 7-second segment (~6s usable for speech, ~15 words max per extension).
 - The number of extension prompts should match: ceil((estimatedSeconds - 8) / 7).
 
-PRODUCT VISIBILITY RULE (CRITICAL — prevents AI video mutation):
-- The product may ONLY appear on screen during the FIRST segment (the base 8s clip).
-- From the 1ST EXTENSION ONWARD, the product must NOT be in the shot at all. The presenter should have set it down, put it aside, or naturally moved on. These segments show ONLY the presenter talking to camera — no product in hands, on table in foreground, or visible in frame.
-- Script the dialogue so product demos/holding happen in the first 8 seconds only, and all extension segments are the presenter speaking about results, reactions, or recommendations without needing the physical product.
-- Extension prompts for segment 2+ must explicitly state: "The product is no longer visible in frame. The presenter speaks directly to camera."
+PRODUCT VISIBILITY RULE:
+- The product from the reference image must NEVER be altered, distorted, or morphed by the AI. Same shape, colors, text, proportions at all times.
+- If the product is a WEARABLE (glasses, clothing, jewelry, watch, headphones, hat, etc.) or something the presenter KEEPS ON THEIR BODY, the presenter should CONTINUE wearing/using it through ALL segments — do NOT remove it.
+- If the product is a HOLDABLE item (bottle, package, device, tube, etc.), the presenter should naturally set it down or move past it after the first segment. Extension segments focus on the presenter talking to camera about results and recommendations.
+- Follow the user's additional direction notes above all else — if they say "keep holding the product" or "leave the glasses on," respect that through every segment.
 
 OUTPUT FORMAT (JSON):
 {

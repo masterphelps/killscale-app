@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     const { product, conceptPrompt, style } = body as {
       product: ProductKnowledge
       conceptPrompt: string
-      style?: 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+      style?: 'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary'
     }
 
     if (!product?.name) {

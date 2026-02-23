@@ -159,15 +159,15 @@ function PillGroup({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type VideoStyle = 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+type VideoStyle = 'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary'
 type VideoQuality = 'standard' | 'premium'
 
 const VIDEO_STYLES: { value: VideoStyle; label: string }[] = [
   { value: 'cinematic', label: 'Cinematic' },
-  { value: 'playful', label: 'Playful' },
+  { value: 'product', label: 'Product' },
+  { value: 'macro', label: 'Macro' },
   { value: 'conceptual', label: 'Conceptual' },
-  { value: 'satisfying', label: 'Satisfying' },
-  { value: 'broll', label: 'B-Roll' },
+  { value: 'documentary', label: 'Documentary' },
 ]
 
 const VEO_BASE_DURATION = 8

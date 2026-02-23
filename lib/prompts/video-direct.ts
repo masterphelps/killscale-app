@@ -17,7 +17,7 @@ export { snapToVeoDuration, VEO_BASE_DURATION, VEO_EXTENSION_STEP }
 export interface BuildDirectConceptParams {
   product: ProductKnowledge
   conceptPrompt: string
-  style?: 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+  style?: 'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary'
 }
 
 export function buildDirectConceptPrompt(params: BuildDirectConceptParams): string {

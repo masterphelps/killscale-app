@@ -5,63 +5,63 @@ import type { ProductKnowledge } from '@/lib/video-prompt-templates'
 // ---------------------------------------------------------------------------
 
 export const CONCEPT_STYLE_GUIDES: Record<
-  'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll',
+  'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary',
   { description: string; examples: string; tone: string }
 > = {
   cinematic: {
     description:
-      'Breathtaking nature cinematography and atmospheric landscapes. The kind of footage that stops a scroll because it is genuinely beautiful. Think drone reveals, golden hour, macro nature, slow-motion natural elements.',
+      'Breathtaking nature cinematography and atmospheric landscapes. The kind of footage that stops a scroll because it is genuinely beautiful. Drone reveals, golden hour, slow-motion natural elements, volumetric fog, epic establishing shots.',
     examples: `Examples of GOOD cinematic visual worlds:
    - Aerial drone slowly revealing a vast mountain lake at sunrise, mist lifting off the water (clarity/revelation)
-   - Macro of frost crystals on a leaf, backlit by golden hour light (precision/transformation)
    - Ocean wave cresting in slow motion, sunlight refracting through the translucent curl (momentum/power)
-   - Slow push through a fog-draped valley at dawn, shafts of light breaking through the canopy (breakthrough/possibility)
-   - A single tree standing in an open field, wind rippling through tall grass at golden hour (resilience/calm)`,
-    tone: 'Majestic, awe-inspiring, premium. Color grading should feel cinematic \u2014 rich, warm, or dramatically cool. The video should feel like a nature documentary opening shot.',
+   - Slow push through a fog-draped valley at dawn, volumetric light rays breaking through the canopy (breakthrough/possibility)
+   - A single tree standing in an open field at golden hour, wind rippling through tall grass (resilience/calm)
+   - Coastal cliff at dawn, waves crashing below, camera slowly pulling back to reveal the vast landscape (scale/ambition)`,
+    tone: 'Majestic, awe-inspiring, premium. Rich cinematic color grading \u2014 warm golden tones or dramatically cool blues. The video should feel like a nature documentary opening shot.',
   },
-  playful: {
+  product: {
     description:
-      'Colorful, eye-catching scenarios that stop the scroll because they pop. Think bright objects on clean surfaces, food and drink in motion, confetti and balloons, saturated color contrasts. The viewer watches because it is visually fun and shareable.',
-    examples: `Examples of GOOD playful visual worlds:
-   - A bright orange being squeezed in slow motion, juice droplets splashing on a clean white surface (freshness/energy)
-   - Colorful balloons drifting against a deep blue sky, sunlight catching the translucent surfaces (lightness/joy)
-   - A row of gumballs rolling down a curved track one by one, each a different vibrant color (variety/choice)
-   - Confetti bursting upward in slow motion against a black background, catching golden light (celebration/reward)
-   - A stack of macarons on a marble surface, camera slowly orbiting, pastel colors glowing (premium/delight)`,
-    tone: 'Lighthearted, vibrant, smile-inducing. Saturated color palette, bright clean lighting. The video should make someone pause and want to share it. Bold colors and simple compositions \u2014 one subject, one surface, maximum visual pop.',
+      'Premium product hero shots with dramatic studio lighting. Single product on a surface, slow orbits, push-ins to detail, controlled light reveals. The product IS the star \u2014 no people, no distractions.',
+    examples: `Examples of GOOD product visual worlds:
+   - Luxury watch on a dark surface, single dramatic spotlight from upper-right, camera slowly orbiting 180 degrees (premium/craft)
+   - Skincare bottle emerging from darkness as a light beam sweeps across it, revealing the label and texture (discovery/reveal)
+   - Perfume bottle on a reflective black surface, golden highlights catching the glass edges, slow dolly-in (desire/luxury)
+   - Product sitting in complete darkness, light slowly reveals it from left to right, macro push-in to surface texture (precision/quality)
+   - Coffee bag on a wooden surface, steam rising from a cup beside it, camera slowly pushing in (ritual/warmth)`,
+    tone: 'Dark, premium, high-contrast. Studio lighting with deliberate shadows. The product should look like it belongs in a luxury advertisement. One subject, one surface, maximum visual impact.',
+  },
+  macro: {
+    description:
+      'Extreme close-up detail shots with shallow depth of field. Textures, surfaces, materials, pours, and tactile moments. ASMR energy \u2014 the viewer watches because they can almost FEEL the texture. Think material studies and satisfying micro-moments.',
+    examples: `Examples of GOOD macro visual worlds:
+   - Espresso pouring into a white cup in slow motion, crema forming a golden layer on the surface (ritual/precision)
+   - Water beading and rolling off a hydrophobic surface in slow motion, each droplet catching light (effortless/protection)
+   - Honey spiraling off a dipper in golden backlight, thick and slow, landing in a pool below (flow/smoothness)
+   - Rain droplets hitting the surface of a still pond, concentric ripples expanding outward in perfect circles (impact/reach)
+   - Macro of frost crystals forming on a leaf, backlit by warm golden light, shallow depth of field (precision/transformation)`,
+    tone: 'Mesmerizing, tactile, intimate. Extreme close-up framing, shallow depth of field, crisp detail. Slow deliberate movement. Warm or neutral lighting that makes materials look premium. The viewer should almost feel the texture.',
   },
   conceptual: {
     description:
-      'Visual metaphors with a satisfying "aha" moment. The viewer sees something symbolic happen, reads the overlay text, and gets it instantly. Think natural transformations, light and shadow, ink and water \u2014 processes that map to a customer benefit.',
+      'Visual metaphors using natural physics \u2014 fluid dynamics, light, fire, fog. The viewer sees something symbolic happen, reads the overlay text, and gets the connection instantly. Ink in water, light through prism, flame in darkness.',
     examples: `Examples of GOOD conceptual visual worlds:
-   - Ink slowly blooming in clear water, tendrils of color spreading outward (growth/expansion)
+   - Ink slowly blooming in clear water in a glass vessel, tendrils branching outward following real fluid physics (growth/expansion)
    - White light passing through a glass prism, splitting into a rainbow spectrum on a dark surface (clarity/understanding)
    - A match being struck in complete darkness, the flame illuminating a single object (discovery/insight)
-   - Fog lifting off a still lake at sunrise, the water surface becoming mirror-clear (clarity/revealing truth)
-   - A compass needle slowly settling to point north on a wooden map table (direction/finding your way)`,
-    tone: 'Clean, intentional, satisfying. The visual should feel deliberate \u2014 every element serves the metaphor. Neutral or minimal backgrounds so the symbolic action is the focus. The "aha" moment when paired with overlay text is what makes this style work.',
+   - Fog lifting off a still lake at sunrise, the water surface becoming mirror-clear underneath (clarity/revealing truth)
+   - A single drop of dye hitting still water, the impact creating a perfect crown splash in slow motion (impact/moment of change)`,
+    tone: 'Clean, intentional, deliberate. Every element serves the metaphor. Neutral or minimal backgrounds so the symbolic action is the focus. The "aha" moment when paired with overlay text is what makes this style work.',
   },
-  satisfying: {
+  documentary: {
     description:
-      'Oddly satisfying, ASMR-energy footage that people physically cannot scroll past. Think smooth textures, pouring, dripping, spreading, symmetry. The viewer watches because it FEELS good.',
-    examples: `Examples of GOOD satisfying visual worlds:
-   - Thick paint being poured and slowly spreading into a perfect circle on a flat surface (coverage/completeness)
-   - Espresso pouring into a white cup in slow motion, crema forming a perfect golden layer (ritual/precision)
-   - Water beading and rolling off a hydrophobic surface in slow motion (effortless/protection)
-   - A perfectly symmetrical pour of honey spiraling off a dipper in golden light (flow/smoothness)
-   - Rain droplets hitting the surface of a still pond, concentric ripples expanding outward (impact/reach)`,
-    tone: 'Mesmerizing, tactile, ASMR. Close-up framing, macro lenses, crisp audio-visual detail. Slow, deliberate movement. The viewer should almost feel the texture. Warm or neutral lighting that makes materials look premium.',
-  },
-  broll: {
-    description:
-      "Authentic, documentary-style footage from the product's world. Real environments, real textures, real moments that feel like behind-the-scenes content. Think workshop hands, morning routines, city energy, craft close-ups. Feels real, not produced.",
-    examples: `Examples of GOOD b-roll visual worlds:
-   - Morning light streaming through a workshop window, sawdust floating in the air, tools neatly arranged (craft/expertise)
-   - A busy coffee shop counter from above \u2014 hands reaching, cups sliding, steam rising (energy/momentum)
-   - Close-up of weathered hands turning the pages of a well-used notebook (experience/knowledge)
-   - Rain hitting a city street at night, neon reflections stretching across wet pavement (urban/dynamic)
-   - A farmer's market at golden hour \u2014 textures of fruit, hands exchanging produce, dappled light (authentic/natural)`,
-    tone: 'Raw, authentic, warm. Natural lighting, handheld feel (but stable \u2014 AI generates stable footage). Earth tones, grain, the "Instagram documentary" aesthetic. The video should feel like a real moment captured, not staged.',
+      'Authentic, atmospheric footage from real environments. Workshop details, morning light through windows, city energy at night, craft close-ups. Feels captured, not produced. The product\'s world, not the product itself.',
+    examples: `Examples of GOOD documentary visual worlds:
+   - Morning light streaming through a workshop window, sawdust floating in the air, tools neatly arranged on a bench (craft/expertise)
+   - Rain hitting a city street at night, neon reflections stretching across wet pavement, car headlights passing (urban/dynamic)
+   - Steam rising from a coffee cup on a sunlit kitchen counter, warm morning light from a window (ritual/warmth)
+   - Close-up of weathered hands turning the pages of a well-used notebook, natural window light (experience/knowledge)
+   - A vineyard at dawn, morning mist between the rows, first light catching the leaves (origin/authenticity)`,
+    tone: 'Raw, authentic, warm. Natural lighting, stable but organic camera feel. Earth tones, natural grain. The "Instagram documentary" aesthetic \u2014 the video should feel like a real moment captured, not staged.',
   },
 }
 
@@ -114,7 +114,7 @@ export function buildConceptGenerationPrompt(params: {
   count?: number
   existingConcepts?: Array<{ angle?: string; script?: { scene?: string } }>
   directionPrompt?: string
-  style?: 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+  style?: 'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary'
   includeProductImage?: boolean
 }): string {
   const {

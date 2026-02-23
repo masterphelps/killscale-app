@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       count?: number
       existingConcepts?: Array<{ angle?: string; script?: { scene?: string } }>
       directionPrompt?: string
-      style?: 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+      style?: 'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary'
       includeProductImage?: boolean
     }
 

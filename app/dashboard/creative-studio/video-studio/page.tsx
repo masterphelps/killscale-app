@@ -213,13 +213,13 @@ export default function VideoStudioPage() {
   const [includeProductImage, setIncludeProductImage] = useState(true)
 
   // Step 2: Video style
-  type VideoStyle = 'cinematic' | 'playful' | 'conceptual' | 'satisfying' | 'broll'
+  type VideoStyle = 'cinematic' | 'product' | 'macro' | 'conceptual' | 'documentary'
   const VIDEO_STYLES: { value: VideoStyle; label: string }[] = [
     { value: 'cinematic', label: 'Cinematic' },
-    { value: 'playful', label: 'Playful' },
+    { value: 'product', label: 'Product' },
+    { value: 'macro', label: 'Macro' },
     { value: 'conceptual', label: 'Conceptual' },
-    { value: 'satisfying', label: 'Satisfying' },
-    { value: 'broll', label: 'B-Roll' },
+    { value: 'documentary', label: 'Documentary' },
   ]
   const [videoStyle, setVideoStyle] = useState<VideoStyle>('cinematic')
   const [styleDropdownOpen, setStyleDropdownOpen] = useState(false)
