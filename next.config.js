@@ -5,7 +5,7 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
-    serverComponentsExternalPackages: ['@remotion/bundler', '@remotion/renderer', 'esbuild'],
+    serverComponentsExternalPackages: ['@remotion/bundler', '@remotion/renderer', '@remotion/vercel', '@vercel/sandbox', '@vercel/blob', 'esbuild'],
   },
   webpack: (config) => {
     // Remotion compositor binaries are not needed in the browser

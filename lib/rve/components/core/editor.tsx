@@ -1,5 +1,4 @@
 import React from "react";
-import { EditorHeader, EditorHeaderProps } from "./editor-header";
 
 import { useEditorContext } from "../../contexts/editor-context";
 
@@ -7,12 +6,7 @@ import { VideoPlayer } from "./video-player";
 import { TimelineSection } from "./timeline-section";
 import { MobileNavBar } from "../shared/mobile-nav-bar";
 
-export interface EditorProps extends EditorHeaderProps {
-  /** Whether to hide the theme toggle dropdown */
-  hideThemeToggle?: boolean | undefined;
-  /** Default theme to use when theme toggle is hidden */
-  defaultTheme?: string | undefined;
-}
+export interface EditorProps {}
 
 /**
  * Main Editor Component
@@ -42,14 +36,7 @@ export interface EditorProps extends EditorHeaderProps {
  * <Editor availableThemes={[{id: 'purple', name: 'Purple'}]} />
  * ```
  */
-export const Editor: React.FC<EditorProps> = ({
-  availableThemes,
-  selectedTheme,
-  onThemeChange,
-  showDefaultThemes,
-  hideThemeToggle,
-  defaultTheme,
-}) => {
+export const Editor: React.FC<EditorProps> = () => {
   /** State to track if the current viewport is mobile-sized */
   const [isMobile, setIsMobile] = React.useState(false);
 
@@ -165,14 +152,6 @@ export const Editor: React.FC<EditorProps> = ({
     <div
       className="flex flex-col overflow-hidden h-full"
     >
-      <EditorHeader 
-        availableThemes={availableThemes}
-        selectedTheme={selectedTheme}
-        onThemeChange={onThemeChange}
-        showDefaultThemes={showDefaultThemes}
-        hideThemeToggle={hideThemeToggle}
-        defaultTheme={defaultTheme}
-      />
       <div className="grow flex flex-col lg:flex-row overflow-hidden">
         <VideoPlayer playerRef={playerRef} />
       </div>

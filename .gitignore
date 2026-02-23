@@ -6,3 +6,6 @@ node_modules
 
 # Git worktrees
 .worktrees/
+
+# Remotion bundle output
+.remotion/

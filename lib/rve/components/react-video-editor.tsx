@@ -6,7 +6,6 @@ import { Editor } from "./core/editor";
 import { VideoPlayer } from "./core/video-player";
 import { AutosaveStatus } from "./autosave/autosave-status";
 import { OverlayType, type Overlay } from "../types";
-import { CustomTheme } from "../hooks/use-extended-theme-switcher";
 import { ReactVideoEditorProvider, ReactVideoEditorProviderProps } from "./providers/react-video-editor-provider";
 import { PlayerRef } from "@remotion/player";
 import { useEditorContext } from "../contexts/editor-context";
@@ -34,18 +33,6 @@ export interface ReactVideoEditorProps extends Omit<ReactVideoEditorProviderProp
   disabledPanels?: OverlayType[];
   /** Whether to show icon titles in the sidebar (ignored if customSidebar is provided) */
   showIconTitles?: boolean;
-  /** Array of available custom themes for the theme dropdown */
-  availableThemes?: CustomTheme[] | undefined;
-  /** Current selected theme */
-  selectedTheme?: string | undefined;
-  /** Callback when theme is changed */
-  onThemeChange?: ((themeId: string) => void) | undefined;
-  /** Whether to show the default light/dark themes */
-  showDefaultThemes?: boolean | undefined;
-  /** Whether to hide the theme toggle dropdown */
-  hideThemeToggle?: boolean | undefined;
-  /** Default theme to use when theme toggle is hidden */
-  defaultTheme?: string | undefined;
   /** Whether to render in player-only mode (no editor UI) */
   isPlayerOnly?: boolean;
   /** Whether the project from URL is still loading */
@@ -73,12 +60,6 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
   sidebarFooterText,
   disabledPanels,
   showIconTitles = true,
-  availableThemes = [],
-  selectedTheme,
-  onThemeChange,
-  showDefaultThemes = true,
-  hideThemeToggle = false,
-  defaultTheme = 'dark',
   onSaving,
   onSaved,
   isPlayerOnly = false,
@@ -155,14 +136,7 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
         <>
           {showSidebar && (customSidebar || <DefaultSidebar logo={sidebarLogo} footerText={sidebarFooterText || "RVE"} disabledPanels={disabledPanels || []} showIconTitles={showIconTitles} onAIGenerate={onAIGenerate} isAIGenerating={isAIGenerating} hasAITranscript={hasAITranscript} siblingClips={siblingClips} onAppendSibling={onAppendSibling} appendedSiblings={appendedSiblings} />)}
           <SidebarInset className={className}>
-            <Editor 
-              availableThemes={availableThemes}
-              selectedTheme={selectedTheme}
-              onThemeChange={onThemeChange}
-              showDefaultThemes={showDefaultThemes}
-              hideThemeToggle={hideThemeToggle}
-              defaultTheme={defaultTheme}
-            />
+            <Editor />
           </SidebarInset>
 
           {showAutosaveStatus && (

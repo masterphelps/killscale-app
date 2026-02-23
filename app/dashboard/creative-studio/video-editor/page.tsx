@@ -22,6 +22,10 @@ import {
   ChevronDown,
   Mic,
   Megaphone,
+  Library,
+  Play,
+  X,
+  Film,
 } from 'lucide-react'
 
 const VOICES = [
@@ -42,6 +46,7 @@ export default function VideoEditorPage() {
   const router = useRouter()
   const jobId = searchParams.get('jobId')
   const compositionIdParam = searchParams.get('compositionId')
+  const videoUrlParam = searchParams.get('videoUrl') // direct video URL (e.g. from Creative Studio theater)
   const fromParam = searchParams.get('from') // source page for back navigation
 
   // Composition state
@@ -62,6 +67,24 @@ export default function VideoEditorPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingToLibrary, setIsSavingToLibrary] = useState(false)
   const [savedToLibrary, setSavedToLibrary] = useState(false)
+
+  // Export (render with overlays baked in)
+  const [isExporting, setIsExporting] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportPhase, setExportPhase] = useState('')
+  const [exportProgress, setExportProgress] = useState(0)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null)
+
+  // Project naming
+  const [projectName, setProjectName] = useState<string | null>(null)
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [nameInput, setNameInput] = useState('')
+
+  // Browse Library modal
+  const [showBrowseLibrary, setShowBrowseLibrary] = useState(false)
+  const [libraryVideos, setLibraryVideos] = useState<Array<{ id: string; mediaHash: string; name: string | null; storageUrl: string | null; thumbnailUrl: string | null; width: number | null; height: number | null }>>([])
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false)
 
   // Version history
   const [versions, setVersions] = useState<Array<{
@@ -138,6 +161,7 @@ export default function VideoEditorPage() {
         setCompositionId(comp.id)
         setIsComposition(true)
         setBackCanvasId(comp.canvasId)
+        if (comp.name) setProjectName(comp.name)
         canvasIdRef.current = comp.canvasId
 
         // Load source jobs to get video URLs
@@ -286,6 +310,41 @@ export default function VideoEditorPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, user?.id])
 
+  // Load from direct video URL (no job — e.g. Creative Studio theater mode)
+  useEffect(() => {
+    if (!videoUrlParam || jobId || compositionIdParam) return
+
+    const loadDirectVideo = async () => {
+      setIsLoading(true)
+      try {
+        setVideoUrl(videoUrlParam)
+        // Probe video duration via a hidden <video> element
+        const video = document.createElement('video')
+        video.preload = 'metadata'
+        video.src = videoUrlParam
+        await new Promise<void>((resolve) => {
+          video.onloadedmetadata = () => {
+            if (video.duration && isFinite(video.duration)) {
+              setDurationSec(Math.round(video.duration))
+            }
+            resolve()
+          }
+          video.onerror = () => resolve()
+          // Timeout after 5s
+          setTimeout(resolve, 5000)
+        })
+        setInitialOverlays([])
+      } catch (err) {
+        console.error('Failed to load direct video:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadDirectVideo()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoUrlParam])
+
   // Load overlay versions (job mode)
   const loadVersions = useCallback(async () => {
     if (!jobId || !user?.id) return
@@ -396,6 +455,131 @@ export default function VideoEditorPage() {
     window.addEventListener('ks-overlays-raw', handler)
     return () => window.removeEventListener('ks-overlays-raw', handler)
   }, [])
+
+  // Load library videos for Browse Library modal
+  const loadLibraryVideos = useCallback(async () => {
+    if (!user?.id || !currentAccountId) return
+    setIsLoadingLibrary(true)
+    try {
+      const params = new URLSearchParams({ userId: user.id, adAccountId: currentAccountId, mediaType: 'video' })
+      const res = await fetch(`/api/creative-studio/media?${params}`)
+      const data = await res.json()
+      if (data.assets) {
+        setLibraryVideos(data.assets.filter((a: any) => a.storageUrl).map((a: any) => ({
+          id: a.id,
+          mediaHash: a.mediaHash,
+          name: a.name,
+          storageUrl: a.storageUrl,
+          thumbnailUrl: a.thumbnailUrl,
+          width: a.width,
+          height: a.height,
+        })))
+      }
+    } catch (err) {
+      console.error('Failed to load library videos:', err)
+    } finally {
+      setIsLoadingLibrary(false)
+    }
+  }, [user?.id, currentAccountId])
+
+  // Append a library video to the timeline
+  const handleAppendLibraryVideo = useCallback(async (video: { id: string; storageUrl: string; name: string | null }) => {
+    const current = currentOverlaysRef.current
+    if (!current.length || !video.storageUrl) return
+
+    // Find last end frame of existing video overlays
+    let lastEndFrame = 0
+    let videoRow = 5
+    for (const o of current) {
+      if (o.type === OverlayType.VIDEO) {
+        videoRow = o.row
+        const end = o.from + o.durationInFrames
+        if (end > lastEndFrame) lastEndFrame = end
+      }
+    }
+
+    // Default to 8 seconds for library videos (we don't know exact duration)
+    const clipDurationFrames = 8 * FPS
+    const newClip: ClipOverlay = {
+      id: Date.now(),
+      type: OverlayType.VIDEO,
+      content: video.storageUrl,
+      src: video.storageUrl,
+      from: lastEndFrame,
+      durationInFrames: clipDurationFrames,
+      left: 0,
+      top: 0,
+      width: 1080,
+      height: 1920,
+      row: videoRow,
+      isDragging: false,
+      rotation: 0,
+      styles: { objectFit: 'cover', volume: 1 },
+    }
+
+    const allOverlays = [...current, newClip]
+    const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
+    window.dispatchEvent(event)
+
+    const updatedConfig = rveOverlaysToOverlayConfig(allOverlays, overlayConfigRef.current)
+    overlayConfigRef.current = updatedConfig
+
+    // Create or update composition with source_library_ids
+    if (!user?.id || !currentAccountId) return
+
+    if (!compositionId && !isComposition) {
+      // First library video appended → create composition
+      try {
+        const sourceJobIds = jobId ? [jobId] : []
+        const sourceLibraryIds = [video.id]
+        const totalDuration = durationSec + 8
+
+        const res = await fetch('/api/creative-studio/video-composition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            sourceJobIds,
+            sourceLibraryIds,
+            overlayConfig: overlayConfigRef.current || { style: 'clean' },
+            title: video.name || 'Library Composition',
+            durationSeconds: totalDuration,
+          }),
+        })
+        const data = await res.json()
+        if (data.compositionId) {
+          setCompositionId(data.compositionId)
+          setIsComposition(true)
+          setVersions([])
+          setActiveVersion(null)
+          const newUrl = new URL(window.location.href)
+          newUrl.searchParams.delete('jobId')
+          newUrl.searchParams.set('compositionId', data.compositionId)
+          window.history.replaceState({}, '', newUrl.toString())
+        }
+      } catch (err) {
+        console.error('Failed to create composition from library:', err)
+      }
+    } else if (compositionId) {
+      // Update existing composition with new library source
+      try {
+        await fetch('/api/creative-studio/video-composition', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            compositionId,
+            userId: user.id,
+            sourceLibraryIds: [video.id],
+          }),
+        })
+      } catch (err) {
+        console.error('Failed to update composition with library video:', err)
+      }
+    }
+
+    setShowBrowseLibrary(false)
+  }, [jobId, user?.id, currentAccountId, compositionId, isComposition, durationSec])
 
   // Append a sibling concept video to the timeline
   const handleAppendSibling = useCallback(async (sibling: SiblingClip) => {
@@ -697,6 +881,16 @@ export default function VideoEditorPage() {
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
+
+        {/* Project Name (click to rename) */}
+        <button
+          onClick={() => { setNameInput(projectName || ''); setShowNamePrompt(true) }}
+          className="text-sm text-zinc-300 hover:text-white transition-colors truncate max-w-[200px] lg:max-w-[300px]"
+          title={projectName || 'Click to name this project'}
+        >
+          {projectName || <span className="text-zinc-600 italic">Untitled Project</span>}
+        </button>
+
         <div className="flex items-center gap-2">
           {/* Version dropdown */}
           <div className="relative">
@@ -744,10 +938,16 @@ export default function VideoEditorPage() {
               if ((!jobId && !compositionId) || !user?.id || !currentAccountId) return
               setIsSavingToLibrary(true)
               try {
+                const body: Record<string, string> = { userId: user.id, adAccountId: currentAccountId }
+                if (isComposition && compositionId) {
+                  body.compositionId = compositionId
+                } else if (jobId) {
+                  body.videoJobId = jobId
+                }
                 const res = await fetch('/api/creative-studio/save-video-to-library', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ videoJobId: jobId || compositionId, userId: user.id, adAccountId: currentAccountId }),
+                  body: JSON.stringify(body),
                 })
                 const data = await res.json()
                 if (data.success) setSavedToLibrary(true)
@@ -769,6 +969,93 @@ export default function VideoEditorPage() {
             {savedToLibrary ? 'Saved' : 'Library'}
           </button>
 
+          {/* Export (render with overlays) */}
+          <button
+            onClick={async () => {
+              if (!user?.id || !currentAccountId) return
+              setShowExportModal(true)
+              setIsExporting(true)
+              setExportPhase('Preparing...')
+              setExportProgress(0)
+              setExportError(null)
+              setRenderedVideoUrl(null)
+
+              try {
+                // Save current overlay config first
+                const config = overlayConfigRef.current || { style: 'clean' as const }
+
+                const body: Record<string, any> = {
+                  overlayConfig: config,
+                  userId: user.id,
+                  adAccountId: currentAccountId,
+                  durationInSeconds: durationSec,
+                }
+                if (isComposition && compositionId) {
+                  body.compositionId = compositionId
+                } else if (jobId) {
+                  body.videoJobId = jobId
+                } else if (videoUrl) {
+                  body.videoUrl = videoUrl
+                }
+
+                const res = await fetch('/api/creative-studio/render-video', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body),
+                })
+
+                // Handle non-SSE error responses (e.g. local dev guard, missing config)
+                const ct = res.headers.get('content-type') || ''
+                if (ct.includes('application/json')) {
+                  const data = await res.json()
+                  setExportError(data.error || 'Export failed')
+                  setIsExporting(false)
+                  return
+                }
+
+                const reader = res.body?.getReader()
+                if (!reader) throw new Error('No response stream')
+
+                const decoder = new TextDecoder()
+                let buffer = ''
+
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) break
+
+                  buffer += decoder.decode(value, { stream: true })
+                  const lines = buffer.split('\n\n')
+                  buffer = lines.pop() || ''
+
+                  for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue
+                    try {
+                      const data = JSON.parse(line.slice(6))
+                      if (data.type === 'phase') {
+                        setExportPhase(data.phase)
+                        setExportProgress(data.progress)
+                      } else if (data.type === 'done') {
+                        setRenderedVideoUrl(data.url)
+                        setIsExporting(false)
+                      } else if (data.type === 'error') {
+                        setExportError(data.message)
+                        setIsExporting(false)
+                      }
+                    } catch { /* skip malformed SSE */ }
+                  }
+                }
+              } catch (err) {
+                setExportError((err as Error).message)
+                setIsExporting(false)
+              }
+            }}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 border border-blue-500/20 disabled:opacity-50 transition-colors"
+          >
+            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
+            Export
+          </button>
+
           {/* Launch as Ad */}
           {!isComposition && (adCopy || backCanvasId) && (
             <button
@@ -780,6 +1067,15 @@ export default function VideoEditorPage() {
               Create Ad
             </button>
           )}
+
+          {/* Browse Library */}
+          <button
+            onClick={() => { setShowBrowseLibrary(true); loadLibraryVideos() }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+          >
+            <Library className="w-3.5 h-3.5" />
+            Browse Library
+          </button>
 
           {/* Voiceover */}
           <div className="relative">
@@ -848,8 +1144,6 @@ export default function VideoEditorPage() {
           defaultBackgroundColor="#000000"
           fps={FPS}
           renderer={stubRenderer}
-          hideThemeToggle
-          defaultTheme="dark"
           showAutosaveStatus={false}
           videoWidth={1080}
           videoHeight={1920}
@@ -876,6 +1170,227 @@ export default function VideoEditorPage() {
           fps={FPS}
           onInjected={() => setAiGeneratedConfig(null)}
         />
+      )}
+
+      {/* Project Name Prompt Modal */}
+      {showNamePrompt && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowNamePrompt(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-white mb-3">Name this project</h3>
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={async e => {
+                if (e.key === 'Enter' && nameInput.trim()) {
+                  const name = nameInput.trim()
+                  if (compositionId && user?.id) {
+                    await fetch('/api/creative-studio/video-composition', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ compositionId, userId: user.id, name }),
+                    })
+                  }
+                  setProjectName(name)
+                  setShowNamePrompt(false)
+                }
+              }}
+              placeholder="e.g. Summer Sale Hero"
+              className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-600 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowNamePrompt(false)}
+                className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const name = nameInput.trim()
+                  if (!name) return
+                  if (compositionId && user?.id) {
+                    await fetch('/api/creative-studio/video-composition', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ compositionId, userId: user.id, name }),
+                    })
+                  }
+                  setProjectName(name)
+                  setShowNamePrompt(false)
+                }}
+                disabled={!nameInput.trim()}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Browse Library Modal */}
+      {showBrowseLibrary && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowBrowseLibrary(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <h3 className="text-sm font-semibold text-white">Browse Library Videos</h3>
+              <button onClick={() => setShowBrowseLibrary(false)} className="p-1 rounded-lg text-zinc-400 hover:text-white transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {isLoadingLibrary ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
+                </div>
+              ) : libraryVideos.length === 0 ? (
+                <div className="text-center py-16 text-zinc-500 text-sm">
+                  No videos in your library yet. Save videos from AI Tasks or Creative Studio first.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {libraryVideos.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => handleAppendLibraryVideo({ id: v.id, storageUrl: v.storageUrl!, name: v.name })}
+                      className="group relative aspect-[9/16] rounded-lg overflow-hidden bg-zinc-800 hover:ring-2 hover:ring-purple-500 transition-all"
+                    >
+                      {v.thumbnailUrl ? (
+                        <img src={v.thumbnailUrl} alt={v.name || 'Video'} className="w-full h-full object-cover" />
+                      ) : v.storageUrl ? (
+                        <video src={`${v.storageUrl}#t=0.1`} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                          <Play className="w-8 h-8" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-xs text-white truncate">{v.name || 'Untitled'}</p>
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-8 h-8 rounded-full bg-purple-500/80 flex items-center justify-center">
+                          <span className="text-white text-xs font-bold">+</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Progress Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { if (!isExporting) setShowExportModal(false) }}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-white">Export Video</h3>
+              {!isExporting && (
+                <button onClick={() => setShowExportModal(false)} className="p-1 rounded-lg text-zinc-400 hover:text-white transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {exportError ? (
+              <div className="text-center py-4">
+                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-3">
+                  <X className="w-6 h-6 text-red-400" />
+                </div>
+                <p className="text-sm text-red-400 mb-1">Export failed</p>
+                <p className="text-xs text-zinc-500 mb-4">{exportError}</p>
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            ) : renderedVideoUrl ? (
+              <div className="text-center py-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle className="w-6 h-6 text-emerald-400" />
+                </div>
+                <p className="text-sm text-emerald-300 mb-4">Export complete!</p>
+                <div className="flex gap-2 justify-center">
+                  <a
+                    href={renderedVideoUrl}
+                    download="exported-video.mp4"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download
+                  </a>
+                  <button
+                    onClick={async () => {
+                      if (!user?.id || !currentAccountId) return
+                      setIsSavingToLibrary(true)
+                      try {
+                        const saveBody: Record<string, string> = {
+                          userId: user.id,
+                          adAccountId: currentAccountId,
+                          renderedVideoUrl,
+                        }
+                        if (isComposition && compositionId) {
+                          saveBody.compositionId = compositionId
+                        } else if (jobId) {
+                          saveBody.videoJobId = jobId
+                        }
+                        const res = await fetch('/api/creative-studio/save-video-to-library', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(saveBody),
+                        })
+                        const data = await res.json()
+                        if (data.success) {
+                          setSavedToLibrary(true)
+                          setShowExportModal(false)
+                        } else {
+                          alert(`Failed to save: ${data.error}`)
+                        }
+                      } catch (err) {
+                        console.error('Save to library failed:', err)
+                      } finally {
+                        setIsSavingToLibrary(false)
+                      }
+                    }}
+                    disabled={isSavingToLibrary || savedToLibrary}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/20 disabled:opacity-50 transition-colors"
+                  >
+                    {isSavingToLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedToLibrary ? <CheckCircle className="w-3.5 h-3.5" /> : <Library className="w-3.5 h-3.5" />}
+                    {savedToLibrary ? 'Saved' : 'Save to Library'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                {/* Progress ring */}
+                <div className="relative w-20 h-20 mx-auto mb-4">
+                  <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="4" fill="none" className="text-zinc-800" />
+                    <circle
+                      cx="40" cy="40" r="36"
+                      stroke="currentColor" strokeWidth="4" fill="none"
+                      className="text-blue-400 transition-all duration-300"
+                      strokeDasharray={`${2 * Math.PI * 36}`}
+                      strokeDashoffset={`${2 * Math.PI * 36 * (1 - exportProgress)}`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-sm font-medium text-white">{Math.round(exportProgress * 100)}%</span>
+                  </div>
+                </div>
+                <p className="text-sm text-zinc-300 mb-1">{exportPhase}</p>
+                <p className="text-[10px] text-zinc-600">This may take a minute...</p>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Launch Wizard for creating Meta ads from video */}

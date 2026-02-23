@@ -6,6 +6,7 @@ import { useSidebar } from "../components/ui/sidebar";
 type EditorSidebarContextType = {
   activePanel: OverlayType; // Stores the currently active panel name
   setActivePanel: (panel: OverlayType) => void; // Function to update the active panel
+  isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 };
 
@@ -37,6 +38,7 @@ export const SidebarProvider: React.FC<React.PropsWithChildren> = ({
   const value = {
     activePanel,
     setActivePanel,
+    isOpen: uiSidebar.open,
     setIsOpen,
   };
 

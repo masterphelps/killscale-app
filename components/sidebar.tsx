@@ -8,21 +8,19 @@ import {
   TrendingUp,
   Bell,
   ChevronDown,
-  ChevronRight,
   Check,
   Lightbulb,
   Layers,
   Building2,
   PanelLeftClose,
   PanelLeft,
-  Palette,
   LayoutDashboard,
   Zap,
   FileText,
   LayoutGrid,
   Sparkles,
   Wand2,
-  Plus,
+  Library,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -43,21 +41,21 @@ interface Workspace {
   account_count?: number
 }
 
-const navItemsTop = [
-  { href: '/dashboard', label: 'Performance', icon: BarChart3 },
-]
-
-const navItemsBottom = [
+// Section definitions — flat, no nesting
+const performanceItems: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/trends', label: 'Trends', icon: TrendingUp },
   { href: '/dashboard/insights', label: 'Insights', icon: Lightbulb },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell },
 ]
 
-
-const creativeStudioItems: { href: string; label: string; icon: LucideIcon; isNew?: boolean }[] = [
+const creativeSuiteItems: { href: string; label: string; icon: LucideIcon; isNew?: boolean }[] = [
   { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2 },
-  { href: '/dashboard/creative-studio/ai-tasks', label: 'AI Tasks', icon: Sparkles },
+  { href: '/dashboard/creative-studio/ai-tasks', label: 'Tasks', icon: Sparkles },
+]
+
+const libraryItems: { href: string; label: string; icon: LucideIcon; isNew?: boolean }[] = [
   { href: '/dashboard/creative-studio/active', label: 'Ads', icon: Zap },
   { href: '/dashboard/creative-studio/media', label: 'Media', icon: LayoutGrid },
   { href: '/dashboard/creative-studio/best-copy', label: 'Copy', icon: FileText },
@@ -82,25 +80,10 @@ export function Sidebar() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsInitialPanel, setSettingsInitialPanel] = useState<SettingsPanel>('profile')
   const [showProfilePopover, setShowProfilePopover] = useState(false)
-  const [creativeStudioExpanded, setCreativeStudioExpanded] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.location.pathname.startsWith('/dashboard/creative-studio')
-    }
-    return false
-  })
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
 
   const rawUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
   const userName = maskText(rawUserName, 'Demo User')
-
-  // Auto-expand creative studio when navigating to a creative studio page
-  useEffect(() => {
-    if (pathname?.startsWith('/dashboard/creative-studio')) {
-      setCreativeStudioExpanded(true)
-    }
-  }, [pathname])
-
-  const isCreativeStudioActive = pathname?.startsWith('/dashboard/creative-studio')
 
   // Load alert count
   useEffect(() => {
@@ -325,114 +308,19 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* Navigation */}
+      {/* Navigation — Three Flat Sections */}
       <nav className="space-y-1 mb-6">
+
+        {/* ─── Performance ─── */}
         {!isCollapsed && (
           <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
-            Menu
+            Performance
           </div>
         )}
-
-        {/* Performance Dashboard */}
-        {navItemsTop.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
-                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
-                isActive
-                  ? 'bg-accent text-white'
-                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
-              )}
-              title={isCollapsed ? item.label : undefined}
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
-              {!isCollapsed && <span className="flex-1">{item.label}</span>}
-            </Link>
-          )
-        })}
-
-        {/* Creative Suite - Always expandable */}
-        {isCollapsed ? (
-          <Link
-            href="/dashboard/creative-studio"
-            className={cn(
-              'flex items-center gap-3 rounded-lg text-sm transition-colors relative justify-center p-3',
-              isCreativeStudioActive
-                ? 'bg-accent text-white'
-                : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
-            )}
-            title="Creative Suite"
-          >
-            <Palette className="w-5 h-5 flex-shrink-0" />
-          </Link>
-        ) : (
-          <div>
-            <button
-              onClick={() => setCreativeStudioExpanded(!creativeStudioExpanded)}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                isCreativeStudioActive
-                  ? 'bg-accent/20 text-white'
-                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
-              )}
-            >
-              <Palette className="w-5 h-5" />
-              <span className="flex-1 text-left">Creative Suite</span>
-              <ChevronRight className={cn(
-                "w-4 h-4 transition-transform",
-                creativeStudioExpanded && "rotate-90"
-              )} />
-            </button>
-
-            {creativeStudioExpanded && (
-              <div className="ml-4 mt-1 space-y-1 border-l border-zinc-700 pl-3">
-                {creativeStudioItems.map((item) => {
-                  const Icon = item.icon
-                  const isActive = pathname === item.href
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => {
-                        if (isActive) {
-                          window.dispatchEvent(new CustomEvent('sidebar-nav-reset', { detail: { href: item.href } }))
-                        }
-                      }}
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors',
-                        isActive
-                          ? 'bg-accent text-white'
-                          : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
-                      )}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{item.label}</span>
-                      {item.isNew && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded">
-                          NEW
-                        </span>
-                      )}
-                    </Link>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Trends, Insights, Alerts - Always enabled */}
-        {navItemsBottom.map((item) => {
+        {performanceItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
           const isAlerts = item.href === '/dashboard/alerts'
-
           return (
             <Link
               key={item.href}
@@ -451,9 +339,7 @@ export function Sidebar() {
               {!isCollapsed && isAlerts && alertCount > 0 && (
                 <span className={cn(
                   "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
-                  isActive
-                    ? "bg-white/20 text-white"
-                    : "bg-red-500 text-white"
+                  isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"
                 )}>
                   {alertCount > 99 ? '99+' : alertCount}
                 </span>
@@ -461,6 +347,84 @@ export function Sidebar() {
               {isCollapsed && isAlerts && alertCount > 0 && (
                 <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center bg-red-500 text-white">
                   {alertCount > 99 ? '!' : alertCount}
+                </span>
+              )}
+            </Link>
+          )
+        })}
+
+        {/* ─── Creative Suite ─── */}
+        {!isCollapsed && (
+          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mt-5 mb-2">
+            Creative Suite
+          </div>
+        )}
+        {creativeSuiteItems.map((item) => {
+          const Icon = item.icon
+          const isActive = pathname === item.href ||
+            (item.href === '/dashboard/creative-studio' && pathname === '/dashboard/creative-studio')
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => {
+                if (isActive) {
+                  window.dispatchEvent(new CustomEvent('sidebar-nav-reset', { detail: { href: item.href } }))
+                }
+              }}
+              className={cn(
+                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
+                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+                isActive
+                  ? 'bg-accent text-white'
+                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+              )}
+              title={isCollapsed ? item.label : undefined}
+            >
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              {!isCollapsed && item.isNew && (
+                <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded">
+                  NEW
+                </span>
+              )}
+            </Link>
+          )
+        })}
+
+        {/* ─── Library ─── */}
+        {!isCollapsed && (
+          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mt-5 mb-2">
+            Library
+          </div>
+        )}
+        {libraryItems.map((item) => {
+          const Icon = item.icon
+          const isActive = pathname === item.href ||
+            (item.href === '/dashboard/creative-studio/active' && pathname?.startsWith('/dashboard/creative-studio/active'))
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => {
+                if (isActive) {
+                  window.dispatchEvent(new CustomEvent('sidebar-nav-reset', { detail: { href: item.href } }))
+                }
+              }}
+              className={cn(
+                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
+                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+                isActive
+                  ? 'bg-accent text-white'
+                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+              )}
+              title={isCollapsed ? item.label : undefined}
+            >
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              {!isCollapsed && item.isNew && (
+                <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded">
+                  NEW
                 </span>
               )}
             </Link>

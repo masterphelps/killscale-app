@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { LayoutGrid, List, RefreshCw, Download, Film, Image, Upload, Loader2, Trash2, AlertTriangle } from 'lucide-react'
+import { LayoutGrid, List, RefreshCw, Download, Film, Image, Upload, Loader2, Trash2, AlertTriangle, FolderKanban, Pencil, FolderPlus, FolderOpen, ChevronLeft, Plus, Check, X, MoreHorizontal, FolderMinus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -21,6 +21,7 @@ import type {
   AnalysisStatus,
 } from '@/components/creative-studio/types'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
+import Link from 'next/link'
 import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import { useCreativeStudio } from '../creative-studio-context'
 import { useSubscription } from '@/lib/subscription'
@@ -29,7 +30,8 @@ type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
 
 type ViewMode = 'gallery' | 'table'
 type SortOption = 'hookScore' | 'holdScore' | 'clickScore' | 'convertScore' | 'spend' | 'roas' | 'revenue' | 'fatigue' | 'adCount' | 'fileSize' | 'syncedAt' | 'name' | 'thumbstopRate' | 'holdRate' | 'ctr' | 'cpc' | 'impressions'
-type MediaTab = 'video' | 'image'
+type MediaTab = 'video' | 'image' | 'collection' | 'project'
+type SourceFilter = 'all' | 'ai_generated' | 'ai_edited' | 'ai_video' | 'project' | 'meta' | 'open_prompt'
 
 export default function AllMediaPage() {
   const { user } = useAuth()
@@ -63,6 +65,7 @@ export default function AllMediaPage() {
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('gallery')
   const [mediaTab, setMediaTab] = useState<MediaTab>('video')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('hookScore')
   const [sortDesc, setSortDesc] = useState(true)
   const [showSortDropdown, setShowSortDropdown] = useState(false)
@@ -105,6 +108,22 @@ export default function AllMediaPage() {
   const [menuError, setMenuError] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  // Add to Collection state
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false)
+  const [collectionPickerAssetId, setCollectionPickerAssetId] = useState<string | null>(null)
+  const [collections, setCollections] = useState<Array<{ id: string; name: string; item_count: number; cover_image_url?: string | null }>>([])
+  const [isLoadingCollections, setIsLoadingCollections] = useState(false)
+  const [addingToCollection, setAddingToCollection] = useState<string | null>(null)
+
+  // Collections tab state
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
+  const [selectedCollectionName, setSelectedCollectionName] = useState('')
+  const [collectionItemIds, setCollectionItemIds] = useState<Set<string>>(new Set())
+  const [isLoadingCollectionItems, setIsLoadingCollectionItems] = useState(false)
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false)
+  const [newCollectionName, setNewCollectionName] = useState('')
+  const [deletingCollectionId, setDeletingCollectionId] = useState<string | null>(null)
+
   // Close sort dropdown on outside click
   useEffect(() => {
     if (!showSortDropdown) return
@@ -131,6 +150,141 @@ export default function AllMediaPage() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [menuItemId])
+
+  // Load collections for Add to Collection picker and Collections tab
+  const loadCollections = useCallback(async () => {
+    if (!user?.id || !currentAccountId) return
+    setIsLoadingCollections(true)
+    try {
+      const params = new URLSearchParams({ userId: user.id, adAccountId: currentAccountId })
+      const res = await fetch(`/api/library/collections?${params}`)
+      const data = await res.json()
+      if (data.collections) setCollections(data.collections)
+    } catch (err) {
+      console.error('Failed to load collections:', err)
+    } finally {
+      setIsLoadingCollections(false)
+    }
+  }, [user?.id, currentAccountId])
+
+  // Load collection items when a collection is selected
+  const loadCollectionItems = useCallback(async (collectionId: string) => {
+    if (!user?.id) return
+    setIsLoadingCollectionItems(true)
+    try {
+      const params = new URLSearchParams({ userId: user.id, collectionId })
+      const res = await fetch(`/api/library/collections?${params}`)
+      const data = await res.json()
+      if (data.collection?.items) {
+        const ids = new Set<string>(data.collection.items.map((item: any) => String(item.media_library_id)))
+        setCollectionItemIds(ids)
+      }
+    } catch (err) {
+      console.error('Failed to load collection items:', err)
+    } finally {
+      setIsLoadingCollectionItems(false)
+    }
+  }, [user?.id])
+
+  // Auto-load collections when switching to collections tab
+  useEffect(() => {
+    if (mediaTab === 'collection') {
+      loadCollections()
+    } else {
+      setSelectedCollectionId(null)
+      setSelectedCollectionName('')
+      setCollectionItemIds(new Set())
+    }
+  }, [mediaTab, loadCollections])
+
+  // Create a new collection
+  const handleCreateCollection = useCallback(async () => {
+    if (!user?.id || !currentAccountId || !newCollectionName.trim()) return
+    try {
+      const res = await fetch('/api/library/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, adAccountId: currentAccountId, name: newCollectionName.trim() }),
+      })
+      const data = await res.json()
+      if (data.collection) {
+        setCollections(prev => [{ id: data.collection.id, name: data.collection.name, item_count: 0, cover_image_url: null }, ...prev])
+        setNewCollectionName('')
+        setIsCreatingCollection(false)
+      }
+    } catch (err) {
+      console.error('Failed to create collection:', err)
+    }
+  }, [user?.id, currentAccountId, newCollectionName])
+
+  // Delete a collection
+  const handleDeleteCollection = useCallback(async (collectionId: string) => {
+    if (!user?.id) return
+    setDeletingCollectionId(collectionId)
+    try {
+      const params = new URLSearchParams({ userId: user.id, collectionId })
+      const res = await fetch(`/api/library/collections?${params}`, { method: 'DELETE' })
+      if (res.ok) {
+        setCollections(prev => prev.filter(c => c.id !== collectionId))
+        if (selectedCollectionId === collectionId) {
+          setSelectedCollectionId(null)
+          setSelectedCollectionName('')
+          setCollectionItemIds(new Set())
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete collection:', err)
+    } finally {
+      setDeletingCollectionId(null)
+    }
+  }, [user?.id, selectedCollectionId])
+
+  // Remove item from currently viewed collection
+  const handleRemoveFromCollection = useCallback(async (mediaLibraryId: string) => {
+    if (!user?.id || !selectedCollectionId) return
+    try {
+      const params = new URLSearchParams({
+        userId: user.id,
+        collectionId: selectedCollectionId,
+        mediaLibraryId,
+      })
+      const res = await fetch(`/api/library/collections/items?${params}`, { method: 'DELETE' })
+      if (res.ok) {
+        setCollectionItemIds(prev => {
+          const next = new Set(prev)
+          next.delete(mediaLibraryId)
+          return next
+        })
+        // Update item count in collections list
+        setCollections(prev => prev.map(c =>
+          c.id === selectedCollectionId ? { ...c, item_count: Math.max(0, c.item_count - 1) } : c
+        ))
+      }
+    } catch (err) {
+      console.error('Failed to remove from collection:', err)
+    }
+  }, [user?.id, selectedCollectionId])
+
+  const handleAddToCollection = useCallback(async (collectionId: string, mediaLibraryId: string) => {
+    if (!user?.id) return
+    setAddingToCollection(collectionId)
+    try {
+      const res = await fetch('/api/library/collections/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, collectionId, mediaLibraryIds: [mediaLibraryId] }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setShowCollectionPicker(false)
+        setCollectionPickerAssetId(null)
+      }
+    } catch (err) {
+      console.error('Failed to add to collection:', err)
+    } finally {
+      setAddingToCollection(null)
+    }
+  }, [user?.id])
 
   // Load detail data for selected asset
   const loadDetailData = useCallback(async (asset: StudioAsset) => {
@@ -491,8 +645,22 @@ export default function AllMediaPage() {
     }))
   }, [assets, funnelThresholds, scaleThreshold, sortBy, sortDesc, starredIds])
 
-  const videos = useMemo(() => filteredAssets.filter(a => a.mediaType === 'video'), [filteredAssets])
-  const images = useMemo(() => filteredAssets.filter(a => a.mediaType === 'image'), [filteredAssets])
+  // Apply source filter
+  const sourceFilteredAssets = useMemo(() => {
+    if (sourceFilter === 'all') return filteredAssets
+    return filteredAssets.filter(a => {
+      const src = (a as any).sourceType || 'meta'
+      return src === sourceFilter
+    })
+  }, [filteredAssets, sourceFilter])
+
+  const videos = useMemo(() => sourceFilteredAssets.filter(a => a.mediaType === 'video' && (a as any).sourceType !== 'project'), [sourceFilteredAssets])
+  const images = useMemo(() => sourceFilteredAssets.filter(a => a.mediaType === 'image'), [sourceFilteredAssets])
+  const projects = useMemo(() => sourceFilteredAssets.filter(a => (a as any).sourceType === 'project'), [sourceFilteredAssets])
+  const collectionAssets = useMemo(() => {
+    if (!selectedCollectionId) return []
+    return sourceFilteredAssets.filter(a => collectionItemIds.has(String(a.id)))
+  }, [selectedCollectionId, sourceFilteredAssets, collectionItemIds])
 
   if (!user || !currentAccountId) {
     return (
@@ -703,44 +871,332 @@ export default function AllMediaPage() {
           </div>
         </div>
 
-        {/* Media Type Tabs */}
-        <div className="flex items-center gap-1 border-b border-border">
-          <button
-            onClick={() => setMediaTab('video')}
-            className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-              mediaTab === 'video'
-                ? 'border-purple-400 text-white'
-                : 'border-transparent text-zinc-500 hover:text-zinc-300'
-            )}
-          >
-            <Film className={cn('w-4 h-4', mediaTab === 'video' ? 'text-purple-400' : '')} />
-            Videos ({videos.length})
-          </button>
-          <button
-            onClick={() => setMediaTab('image')}
-            className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-              mediaTab === 'image'
-                ? 'border-blue-400 text-white'
-                : 'border-transparent text-zinc-500 hover:text-zinc-300'
-            )}
-          >
-            <Image className={cn('w-4 h-4', mediaTab === 'image' ? 'text-blue-400' : '')} />
-            Images ({images.length})
-          </button>
+        {/* Media Type Tabs + Source Filter */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-1 border-b border-border">
+            <button
+              onClick={() => setMediaTab('video')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                mediaTab === 'video'
+                  ? 'border-purple-400 text-white'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              )}
+            >
+              <Film className={cn('w-4 h-4', mediaTab === 'video' ? 'text-purple-400' : '')} />
+              Videos ({videos.length})
+            </button>
+            <button
+              onClick={() => setMediaTab('image')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                mediaTab === 'image'
+                  ? 'border-blue-400 text-white'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              )}
+            >
+              <Image className={cn('w-4 h-4', mediaTab === 'image' ? 'text-blue-400' : '')} />
+              Images ({images.length})
+            </button>
+            <button
+              onClick={() => setMediaTab('collection')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                mediaTab === 'collection'
+                  ? 'border-amber-400 text-white'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              )}
+            >
+              <FolderOpen className={cn('w-4 h-4', mediaTab === 'collection' ? 'text-amber-400' : '')} />
+              Collections ({collections.length})
+            </button>
+            <button
+              onClick={() => setMediaTab('project')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                mediaTab === 'project'
+                  ? 'border-emerald-400 text-white'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              )}
+            >
+              <FolderKanban className={cn('w-4 h-4', mediaTab === 'project' ? 'text-emerald-400' : '')} />
+              Projects ({projects.length})
+            </button>
+          </div>
+
+          {/* Source Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {([
+              { value: 'all' as SourceFilter, label: 'All' },
+              { value: 'ai_generated' as SourceFilter, label: 'AI Generated' },
+              { value: 'ai_video' as SourceFilter, label: 'AI Video' },
+              { value: 'ai_edited' as SourceFilter, label: 'Edited' },
+              { value: 'project' as SourceFilter, label: 'Project' },
+              { value: 'meta' as SourceFilter, label: 'Meta Synced' },
+              { value: 'open_prompt' as SourceFilter, label: 'Open Prompt' },
+            ]).map((filter) => (
+              <button
+                key={filter.value}
+                onClick={() => setSourceFilter(filter.value)}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+                  sourceFilter === filter.value
+                    ? 'bg-accent/20 border-accent text-accent'
+                    : 'bg-transparent border-border text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
+                )}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Results Count */}
         <div className="text-sm text-zinc-500">
-          {mediaTab === 'video' ? videos.length : images.length} {mediaTab === 'video' ? 'videos' : 'images'}
+          {mediaTab === 'video' ? videos.length : mediaTab === 'image' ? images.length : mediaTab === 'collection' ? (selectedCollectionId ? collectionAssets.length : collections.length) : projects.length} {mediaTab === 'video' ? 'videos' : mediaTab === 'image' ? 'images' : mediaTab === 'collection' ? (selectedCollectionId ? 'items' : 'collections') : 'projects'}
           {Object.entries(funnelThresholds).some(([, v]) => v !== null) &&
             ` filtered by ${Object.entries(funnelThresholds).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}+`).join(' + ')}`}
+          {sourceFilter !== 'all' && ` · source: ${sourceFilter.replace('_', ' ')}`}
         </div>
 
         {/* Content */}
         <div>
-          {viewMode === 'gallery' ? (
+          {/* Collections tab */}
+          {mediaTab === 'collection' ? (
+            selectedCollectionId ? (
+              /* Collection items view */
+              <div>
+                {/* Back bar */}
+                <div className="flex items-center gap-3 mb-4">
+                  <button
+                    onClick={() => { setSelectedCollectionId(null); setSelectedCollectionName(''); setCollectionItemIds(new Set()) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-bg-hover transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Collections
+                  </button>
+                  <span className="text-zinc-600">/</span>
+                  <span className="text-sm font-medium text-white">{selectedCollectionName}</span>
+                  <span className="text-xs text-zinc-500">({collectionAssets.length} items)</span>
+                </div>
+
+                {isLoadingCollectionItems ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
+                    ))}
+                  </div>
+                ) : collectionAssets.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-16 h-16 rounded-full bg-bg-card flex items-center justify-center mb-4">
+                      <FolderOpen className="w-8 h-8 text-zinc-600" />
+                    </div>
+                    <h3 className="text-lg font-medium text-white mb-2">Collection is empty</h3>
+                    <p className="text-sm text-zinc-500 mb-4">
+                      Add items from the Videos or Images tab using the menu
+                    </p>
+                  </div>
+                ) : viewMode === 'gallery' ? (
+                  <GalleryGrid
+                    items={collectionAssets}
+                    isLoading={false}
+                    onSelect={handleSelect}
+                    onStar={toggleStar}
+                    onMenu={handleMenuClick}
+                    videoSources={videoSources}
+                    onRequestVideoSource={fetchVideoSource}
+                  />
+                ) : (
+                  <MediaTable
+                    items={collectionAssets}
+                    isLoading={false}
+                    sortField={sortBy}
+                    sortDirection={sortDesc ? 'desc' : 'asc'}
+                    onSort={handleTableSort}
+                    onSelect={(id) => handleSelect(id)}
+                    onStar={(id) => toggleStar(id)}
+                    starredIds={starredIds}
+                  />
+                )}
+              </div>
+            ) : (
+              /* Collection list view */
+              isLoadingCollections ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+                  {/* Create New Collection Card */}
+                  {isCreatingCollection ? (
+                    <div className="bg-bg-card border border-amber-500/30 rounded-2xl overflow-hidden flex flex-col">
+                      <div className="aspect-video bg-zinc-800/30 flex items-center justify-center">
+                        <FolderPlus className="w-10 h-10 text-amber-400" />
+                      </div>
+                      <div className="p-4 flex-1 flex flex-col gap-2">
+                        <input
+                          autoFocus
+                          value={newCollectionName}
+                          onChange={(e) => setNewCollectionName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleCreateCollection()
+                            if (e.key === 'Escape') { setIsCreatingCollection(false); setNewCollectionName('') }
+                          }}
+                          placeholder="Collection name..."
+                          className="w-full bg-transparent border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/50"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleCreateCollection}
+                            disabled={!newCollectionName.trim()}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+                          >
+                            <Check className="w-3 h-3" />
+                            Create
+                          </button>
+                          <button
+                            onClick={() => { setIsCreatingCollection(false); setNewCollectionName('') }}
+                            className="flex items-center justify-center p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsCreatingCollection(true)}
+                      className="bg-bg-card border border-dashed border-zinc-700 rounded-2xl overflow-hidden hover:border-amber-500/40 transition-all cursor-pointer group flex flex-col items-center justify-center min-h-[200px]"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center mb-3 group-hover:bg-amber-500/20 transition-colors">
+                        <Plus className="w-6 h-6 text-amber-400" />
+                      </div>
+                      <span className="text-sm font-medium text-zinc-400 group-hover:text-white transition-colors">New Collection</span>
+                    </button>
+                  )}
+
+                  {/* Existing Collections */}
+                  {collections.map((collection) => (
+                    <div
+                      key={collection.id}
+                      className="group bg-bg-card border border-border rounded-2xl overflow-hidden hover:border-zinc-600 transition-all cursor-pointer relative"
+                      onClick={() => {
+                        setSelectedCollectionId(collection.id)
+                        setSelectedCollectionName(collection.name)
+                        loadCollectionItems(collection.id)
+                      }}
+                    >
+                      <div className="aspect-video bg-zinc-800/50 relative">
+                        {collection.cover_image_url ? (
+                          <img
+                            src={collection.cover_image_url}
+                            alt={collection.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FolderOpen className="w-10 h-10 text-zinc-700" />
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-amber-500/80 rounded text-xs text-white font-medium">
+                          {collection.item_count} {collection.item_count === 1 ? 'item' : 'items'}
+                        </div>
+                      </div>
+                      <div className="p-4 flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-white truncate">{collection.name}</h3>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (confirm(`Delete "${collection.name}"?`)) {
+                              handleDeleteCollection(collection.id)
+                            }
+                          }}
+                          disabled={deletingCollectionId === collection.id}
+                          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          {deletingCollectionId === collection.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {collections.length === 0 && !isCreatingCollection && (
+                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
+                      <p className="text-sm text-zinc-500">No collections yet. Create one to organize your media.</p>
+                    </div>
+                  )}
+                </div>
+              )
+            )
+          ) : mediaTab === 'project' ? (
+            isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
+                ))}
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 rounded-full bg-bg-card flex items-center justify-center mb-4">
+                  <FolderKanban className="w-8 h-8 text-zinc-600" />
+                </div>
+                <h3 className="text-lg font-medium text-white mb-2">No projects yet</h3>
+                <p className="text-sm text-zinc-500 mb-4">
+                  Save a video composition from the Video Editor to see it here
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {projects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="group bg-bg-card border border-border rounded-2xl overflow-hidden hover:border-zinc-600 transition-all cursor-pointer"
+                    onClick={() => handleSelect(project.id)}
+                  >
+                    <div className="aspect-video bg-zinc-800/50 relative">
+                      {project.thumbnailUrl || project.imageUrl || project.storageUrl ? (
+                        <img
+                          src={project.thumbnailUrl || project.imageUrl || project.storageUrl || ''}
+                          alt={project.name || 'Project'}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <FolderKanban className="w-10 h-10 text-zinc-700" />
+                        </div>
+                      )}
+                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-emerald-500/80 rounded text-xs text-white font-medium">
+                        Project
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-white truncate">{project.name || 'Untitled Project'}</h3>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-zinc-500">
+                        {project.spend > 0 && <span>${project.spend.toFixed(0)} spent</span>}
+                        {project.roas > 0 && <span>{project.roas.toFixed(1)}x ROAS</span>}
+                      </div>
+                      <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Link
+                          href={`/dashboard/creative-studio/video-editor?compositionId=${(project as any).sourceCompositionId || ''}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Edit
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : viewMode === 'gallery' ? (
             isLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
                 {Array.from({ length: 8 }).map((_, i) => (
@@ -930,6 +1386,38 @@ export default function AllMediaPage() {
             top: menuPosition.y + 4
           }}
         >
+          {/* Add to Collection */}
+          <button
+            onClick={() => {
+              setCollectionPickerAssetId(menuItemId)
+              setShowCollectionPicker(true)
+              loadCollections()
+              setMenuItemId(null)
+              setMenuPosition(null)
+            }}
+            className="w-full px-4 py-3 flex items-center gap-3 text-sm text-left text-zinc-300 hover:bg-zinc-800 transition-colors"
+          >
+            <FolderPlus className="w-4 h-4" />
+            Add to Collection
+          </button>
+
+          {/* Remove from Collection (only when viewing a collection) */}
+          {mediaTab === 'collection' && selectedCollectionId && (
+            <button
+              onClick={() => {
+                handleRemoveFromCollection(menuItemId)
+                setMenuItemId(null)
+                setMenuPosition(null)
+              }}
+              className="w-full px-4 py-3 flex items-center gap-3 text-sm text-left text-amber-400 hover:bg-amber-500/10 transition-colors"
+            >
+              <FolderMinus className="w-4 h-4" />
+              Remove from Collection
+            </button>
+          )}
+
+          <div className="border-t border-zinc-700" />
+
           {menuCheckingUsage ? (
             <div className="px-4 py-3 flex items-center gap-2 text-sm text-zinc-400">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -982,6 +1470,46 @@ export default function AllMediaPage() {
               {menuError}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Collection Picker Modal */}
+      {showCollectionPicker && collectionPickerAssetId && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setShowCollectionPicker(false); setCollectionPickerAssetId(null) }}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <h3 className="text-sm font-semibold text-white">Add to Collection</h3>
+              <button onClick={() => { setShowCollectionPicker(false); setCollectionPickerAssetId(null) }} className="p-1 text-zinc-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 max-h-64 overflow-y-auto">
+              {isLoadingCollections ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
+                </div>
+              ) : collections.length === 0 ? (
+                <p className="text-sm text-zinc-500 text-center py-8">No collections yet. Create one from the Collections tab.</p>
+              ) : (
+                <div className="space-y-1">
+                  {collections.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => handleAddToCollection(c.id, collectionPickerAssetId)}
+                      disabled={addingToCollection === c.id}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-left text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                    >
+                      <span className="truncate">{c.name}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">{c.item_count} items</span>
+                        {addingToCollection === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" /> : <FolderPlus className="w-3.5 h-3.5 text-zinc-600" />}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

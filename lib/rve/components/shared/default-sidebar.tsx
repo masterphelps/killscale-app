@@ -98,7 +98,7 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
   onAppendSibling,
   appendedSiblings,
 }) => {
-  const { activePanel, setActivePanel, setIsOpen } = useEditorSidebar();
+  const { activePanel, setActivePanel, isOpen, setIsOpen } = useEditorSidebar();
   const { setSelectedOverlayId, selectedOverlayId, overlays } = useEditorContext();
 
   // Get the selected overlay to check its type
@@ -339,8 +339,12 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                   <TooltipTrigger asChild>
                     <SidebarMenuButton
                       onClick={() => {
-                        setActivePanel(item.panel);
-                        setIsOpen(true);
+                        if (activePanel === item.panel && isOpen) {
+                          setIsOpen(false);
+                        } else {
+                          setActivePanel(item.panel);
+                          setIsOpen(true);
+                        }
                       }}
                       size="lg"
                       className="flex flex-col items-center gap-2 px-1.5 py-2.5"
@@ -368,8 +372,12 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                   <TooltipTrigger asChild>
                     <SidebarMenuButton
                       onClick={() => {
-                        setActivePanel(OverlayType.SETTINGS);
-                        setIsOpen(true);
+                        if (activePanel === OverlayType.SETTINGS && isOpen) {
+                          setIsOpen(false);
+                        } else {
+                          setActivePanel(OverlayType.SETTINGS);
+                          setIsOpen(true);
+                        }
                       }}
                       size="lg"
                       className="flex flex-col items-center gap-2 px-1.5 py-2.5"
