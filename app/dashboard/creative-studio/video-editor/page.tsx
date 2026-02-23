@@ -67,6 +67,8 @@ export default function VideoEditorPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingToLibrary, setIsSavingToLibrary] = useState(false)
   const [savedToLibrary, setSavedToLibrary] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
+  const [pendingSaveAfterName, setPendingSaveAfterName] = useState(false)
 
   // Export (render with overlays baked in)
   const [isExporting, setIsExporting] = useState(false)
@@ -424,6 +426,8 @@ export default function VideoEditorPage() {
       if (customEvent.detail?.overlays) {
         const overlays = customEvent.detail.overlays
         currentOverlaysRef.current = overlays
+        // Mark as dirty when overlays change (after initial load)
+        if (!isLoading) setIsDirty(true)
 
         // Build set of video URLs currently on the timeline
         const timelineUrls = new Set<string>()
@@ -454,7 +458,18 @@ export default function VideoEditorPage() {
     }
     window.addEventListener('ks-overlays-raw', handler)
     return () => window.removeEventListener('ks-overlays-raw', handler)
-  }, [])
+  }, [isLoading])
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   // Load library videos for Browse Library modal
   const loadLibraryVideos = useCallback(async () => {
@@ -864,6 +879,9 @@ export default function VideoEditorPage() {
       <div className="flex items-center justify-between px-4 lg:px-6 py-2 border-b border-zinc-800/50 flex-shrink-0 bg-bg-dark z-10">
         <button
           onClick={() => {
+            if (isDirty && !window.confirm('You have unsaved changes. Leave without saving?')) {
+              return
+            }
             if (fromParam === 'ai-tasks') {
               router.push('/dashboard/creative-studio/ai-tasks')
             } else if (videoStyle === 'ugc') {
@@ -885,10 +903,11 @@ export default function VideoEditorPage() {
         {/* Project Name (click to rename) */}
         <button
           onClick={() => { setNameInput(projectName || ''); setShowNamePrompt(true) }}
-          className="text-sm text-zinc-300 hover:text-white transition-colors truncate max-w-[200px] lg:max-w-[300px]"
+          className="text-sm text-zinc-300 hover:text-white transition-colors truncate max-w-[200px] lg:max-w-[300px] flex items-center gap-1.5"
           title={projectName || 'Click to name this project'}
         >
           {projectName || <span className="text-zinc-600 italic">Untitled Project</span>}
+          {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="Unsaved changes" />}
         </button>
 
         <div className="flex items-center gap-2">
@@ -1126,11 +1145,24 @@ export default function VideoEditorPage() {
             compositionId={compositionId}
             isComposition={isComposition}
             userId={user?.id}
+            adAccountId={currentAccountId}
+            videoUrl={videoUrl}
+            durationSec={durationSec}
+            canvasIdRef={canvasIdRef}
             isSaving={isSaving}
             setIsSaving={setIsSaving}
             overlayConfigRef={overlayConfigRef}
             setActiveVersion={setActiveVersion}
             loadVersions={isComposition ? loadCompositionVersions : loadVersions}
+            projectName={projectName}
+            onNameRequired={() => {
+              setPendingSaveAfterName(true)
+              setNameInput(projectName || '')
+              setShowNamePrompt(true)
+            }}
+            onSaved={() => setIsDirty(false)}
+            setCompositionId={setCompositionId}
+            setIsComposition={setIsComposition}
           />
         </div>
       </div>
@@ -1174,9 +1206,12 @@ export default function VideoEditorPage() {
 
       {/* Project Name Prompt Modal */}
       {showNamePrompt && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowNamePrompt(false)}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setShowNamePrompt(false); setPendingSaveAfterName(false) }}>
           <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-white mb-3">Name this project</h3>
+            <h3 className="text-sm font-semibold text-white mb-1">Name this project</h3>
+            {pendingSaveAfterName && (
+              <p className="text-xs text-zinc-500 mb-3">A name is required before saving.</p>
+            )}
             <input
               autoFocus
               value={nameInput}
@@ -1193,6 +1228,14 @@ export default function VideoEditorPage() {
                   }
                   setProjectName(name)
                   setShowNamePrompt(false)
+                  // If this was triggered by Save, click the save button programmatically
+                  if (pendingSaveAfterName) {
+                    setPendingSaveAfterName(false)
+                    // Delay so projectName state updates before SaveButton reads it
+                    setTimeout(() => {
+                      document.querySelector<HTMLButtonElement>('[data-save-button]')?.click()
+                    }, 50)
+                  }
                 }
               }}
               placeholder="e.g. Summer Sale Hero"
@@ -1200,7 +1243,7 @@ export default function VideoEditorPage() {
             />
             <div className="flex gap-2 justify-end">
               <button
-                onClick={() => setShowNamePrompt(false)}
+                onClick={() => { setShowNamePrompt(false); setPendingSaveAfterName(false) }}
                 className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-white transition-colors"
               >
                 Cancel
@@ -1218,11 +1261,17 @@ export default function VideoEditorPage() {
                   }
                   setProjectName(name)
                   setShowNamePrompt(false)
+                  if (pendingSaveAfterName) {
+                    setPendingSaveAfterName(false)
+                    setTimeout(() => {
+                      document.querySelector<HTMLButtonElement>('[data-save-button]')?.click()
+                    }, 50)
+                  }
                 }}
                 disabled={!nameInput.trim()}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
               >
-                Save
+                {pendingSaveAfterName ? 'Name & Save' : 'Save'}
               </button>
             </div>
           </div>
@@ -1477,27 +1526,50 @@ function AIOverlayInjector({
 /**
  * Save button that reads overlays from EditorContext.
  * Needs to be outside the RVE tree, so it reads from ref instead.
+ *
+ * Flow:
+ * 1. If no project name → triggers name prompt (parent handles)
+ * 2. If no composition exists yet → creates one, then saves overlay version
+ * 3. If composition exists → saves overlay version
  */
 function SaveButton({
   jobId,
   compositionId,
   isComposition,
   userId,
+  adAccountId,
+  videoUrl,
+  durationSec,
+  canvasIdRef,
   isSaving,
   setIsSaving,
   overlayConfigRef,
   setActiveVersion,
   loadVersions,
+  projectName,
+  onNameRequired,
+  onSaved,
+  setCompositionId,
+  setIsComposition,
 }: {
   jobId: string | null
   compositionId: string | null
   isComposition: boolean
   userId: string | undefined
+  adAccountId: string | null
+  videoUrl: string | null
+  durationSec: number
+  canvasIdRef: React.MutableRefObject<string | null>
   isSaving: boolean
   setIsSaving: (v: boolean) => void
   overlayConfigRef: React.MutableRefObject<OverlayConfig | undefined>
   setActiveVersion: (v: number) => void
   loadVersions: () => void
+  projectName: string | null
+  onNameRequired: () => void
+  onSaved: () => void
+  setCompositionId: (id: string) => void
+  setIsComposition: (v: boolean) => void
 }) {
   // We also listen for overlay changes via the custom event to keep the ref in sync
   useEffect(() => {
@@ -1512,15 +1584,55 @@ function SaveButton({
   }, [overlayConfigRef])
 
   const handleSave = async () => {
-    if ((!jobId && !compositionId) || !userId || isSaving) return
+    if (!userId || isSaving) return
+
+    // Require a project name before saving
+    if (!projectName) {
+      onNameRequired()
+      return
+    }
+
     setIsSaving(true)
     try {
       const config = overlayConfigRef.current || { style: 'clean' as const }
+      let effectiveCompositionId = compositionId
 
-      // Build request body based on mode
+      // If no composition exists yet, create one (this makes the editor state a "project")
+      if (!isComposition && !compositionId) {
+        const createRes = await fetch('/api/creative-studio/video-composition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            canvasId: canvasIdRef.current || undefined,
+            adAccountId: adAccountId || 'direct',
+            sourceJobIds: jobId ? [jobId] : [],
+            overlayConfig: config,
+            name: projectName,
+            durationSeconds: durationSec,
+          }),
+        })
+        const createData = await createRes.json()
+        if (createData.compositionId) {
+          effectiveCompositionId = createData.compositionId
+          setCompositionId(createData.compositionId)
+          setIsComposition(true)
+          // Update URL without reload
+          const newUrl = new URL(window.location.href)
+          newUrl.searchParams.delete('jobId')
+          newUrl.searchParams.delete('videoUrl')
+          newUrl.searchParams.set('compositionId', createData.compositionId)
+          window.history.replaceState({}, '', newUrl.toString())
+        } else {
+          alert(`Save failed: ${createData.error || 'Could not create project'}`)
+          return
+        }
+      }
+
+      // Save overlay version
       const body: Record<string, any> = { overlayConfig: config, userId }
-      if (isComposition && compositionId) {
-        body.compositionId = compositionId
+      if (effectiveCompositionId) {
+        body.compositionId = effectiveCompositionId
       } else if (jobId) {
         body.videoJobId = jobId
       }
@@ -1534,6 +1646,7 @@ function SaveButton({
       if (data.status === 'saved') {
         setActiveVersion(data.version)
         loadVersions()
+        onSaved()
       } else if (data.error) {
         alert(`Save failed: ${data.error}`)
       }
@@ -1546,6 +1659,7 @@ function SaveButton({
 
   return (
     <button
+      data-save-button
       onClick={handleSave}
       disabled={isSaving}
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
