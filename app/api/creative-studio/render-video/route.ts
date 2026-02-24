@@ -243,6 +243,7 @@ export async function POST(req: Request) {
             bundleRemotionProject('.remotion')
           }
           await send({ type: 'phase', phase: 'Uploading bundle to sandbox...', progress: 0.15 })
+          await sandbox.mkDir('remotion-bundle')
           await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
         }
 
