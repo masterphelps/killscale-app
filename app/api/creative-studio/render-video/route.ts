@@ -258,12 +258,21 @@ export async function POST(req: Request) {
           }
           // Pre-create ALL subdirectories inside the sandbox
           // (workaround: sandbox.mkDir isn't recursive, addBundleToSandbox fails on nested dirs)
+          await send({ type: 'phase', phase: 'Preparing bundle...', progress: 0.1 })
           const bundlePath = path.join(process.cwd(), '.remotion')
           const dirs = await getBundleDirs(bundlePath)
+          console.log(`[RenderVideo] Pre-creating ${dirs.length} dirs in sandbox...`)
           // Create dirs in sorted order so parents come before children
           for (const d of dirs.sort()) {
-            await sandbox.mkDir(`remotion-bundle/${d}`)
+            try {
+              await sandbox.mkDir(`remotion-bundle/${d}`)
+            } catch (mkdirErr) {
+              console.error(`[RenderVideo] mkDir failed for remotion-bundle/${d}:`, JSON.stringify(mkdirErr))
+              // Try runCommand as fallback
+              await sandbox.runCommand('mkdir', ['-p', `/vercel/sandbox/remotion-bundle/${d}`])
+            }
           }
+          await send({ type: 'phase', phase: 'Uploading bundle to sandbox...', progress: 0.2 })
           await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
         }
 
@@ -345,27 +354,31 @@ export async function POST(req: Request) {
 
         await send({ type: 'done', url: renderedVideoUrl, size })
       } catch (err) {
-        console.error('[RenderVideo] Render failed:', err)
+        const errMsg = err instanceof Error ? err.message : String(err)
+        const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
+        console.error('[RenderVideo] Render failed:', errDetail)
         if (overlayId) {
           await supabaseAdmin
             .from('video_overlays')
             .update({ render_status: 'failed' })
             .eq('id', overlayId)
         }
-        await send({ type: 'error', message: (err as Error).message })
+        await send({ type: 'error', message: errMsg })
       } finally {
         await sandbox?.stop().catch(() => {})
         await writer.close()
       }
     } catch (err) {
-      console.error('[RenderVideo] Setup failed:', err)
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
+      console.error('[RenderVideo] Setup failed:', errDetail)
       if (overlayId) {
         await supabaseAdmin
           .from('video_overlays')
           .update({ render_status: 'failed' })
           .eq('id', overlayId)
       }
-      await send({ type: 'error', message: (err as Error).message })
+      await send({ type: 'error', message: errMsg })
       await writer.close().catch(() => {})
     }
   }
