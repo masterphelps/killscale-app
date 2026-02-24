@@ -204,22 +204,38 @@ export async function POST(req: Request) {
       // ── Create sandbox ──
       await send({ type: 'phase', phase: 'Creating render environment...', progress: 0 })
 
-      const sandbox = process.env.VERCEL
-        ? await restoreSnapshot()
-        : await createSandbox({
+      let sandbox: Awaited<ReturnType<typeof createSandbox>>
+      let needsBundle = false
+
+      if (process.env.VERCEL) {
+        try {
+          sandbox = await restoreSnapshot()
+        } catch {
+          // No snapshot available — fallback to fresh sandbox (slower cold start)
+          console.log('[RenderVideo] No snapshot found, creating fresh sandbox...')
+          sandbox = await createSandbox({
             onProgress: async ({ progress, message }) => {
-              await send({
-                type: 'phase',
-                phase: message,
-                progress,
-                subtitle: 'This is only needed during development.',
-              })
+              await send({ type: 'phase', phase: message, progress })
             },
           })
+          needsBundle = true
+        }
+      } else {
+        sandbox = await createSandbox({
+          onProgress: async ({ progress, message }) => {
+            await send({
+              type: 'phase',
+              phase: message,
+              progress,
+              subtitle: 'This is only needed during development.',
+            })
+          },
+        })
+        needsBundle = true
+      }
 
       try {
-        // In dev, we need to bundle and add to sandbox
-        if (!process.env.VERCEL) {
+        if (needsBundle) {
           bundleRemotionProject('.remotion')
           await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
         }
