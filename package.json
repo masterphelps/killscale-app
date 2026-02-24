@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "create-snapshot": "npx tsx create-snapshot.ts"
+    "create-snapshot": "npx tsx create-snapshot.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.73.0",
