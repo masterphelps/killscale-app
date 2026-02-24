@@ -281,50 +281,90 @@ export async function POST(req: Request) {
 
         // ── Render video ──
         const remotionCompId = selectCompositionId(videoWidth, videoHeight)
+        await send({ type: 'phase', phase: 'Rendering video...', progress: 0.25 })
 
-        const { sandboxFilePath, contentType } = await renderMediaOnVercel({
-          sandbox,
-          compositionId: remotionCompId,
-          inputProps: {
-            videoUrl,
-            durationInSeconds,
-            overlayConfig,
-          },
-          onProgress: async (update) => {
-            switch (update.stage) {
-              case 'opening-browser':
-                await send({ type: 'phase', phase: 'Opening browser...', progress: update.overallProgress })
-                break
-              case 'selecting-composition':
-                await send({ type: 'phase', phase: 'Selecting composition...', progress: update.overallProgress })
-                break
-              case 'render-progress':
-                await send({ type: 'phase', phase: 'Rendering video...', progress: update.overallProgress })
-                break
-              default:
-                break
-            }
-          },
-        })
+        let sandboxFilePath: string
+        let renderContentType: string
+        try {
+          const result = await renderMediaOnVercel({
+            sandbox,
+            compositionId: remotionCompId,
+            inputProps: {
+              videoUrl,
+              durationInSeconds,
+              overlayConfig,
+            },
+            onProgress: async (update) => {
+              switch (update.stage) {
+                case 'opening-browser':
+                  await send({ type: 'phase', phase: 'Opening browser...', progress: update.overallProgress })
+                  break
+                case 'selecting-composition':
+                  await send({ type: 'phase', phase: 'Selecting composition...', progress: update.overallProgress })
+                  break
+                case 'render-progress':
+                  await send({ type: 'phase', phase: 'Rendering video...', progress: update.overallProgress })
+                  break
+                default:
+                  break
+              }
+            },
+          })
+          sandboxFilePath = result.sandboxFilePath
+          renderContentType = result.contentType
+        } catch (renderErr) {
+          const msg = renderErr instanceof Error ? renderErr.message : String(renderErr)
+          await send({ type: 'error', message: `[Render] ${msg}` })
+          return
+        }
 
         // ── Upload to Vercel Blob ──
-        await send({ type: 'phase', phase: 'Uploading video...', progress: 1 })
+        await send({ type: 'phase', phase: 'Uploading to blob...', progress: 0.9 })
 
-        const { url: blobUrl, size } = await uploadToVercelBlob({
-          sandbox,
-          sandboxFilePath,
-          contentType,
-          blobToken,
-          access: 'public',
-        })
+        let blobUrl: string
+        let size: number
+        try {
+          const blobResult = await uploadToVercelBlob({
+            sandbox,
+            sandboxFilePath,
+            contentType: renderContentType,
+            blobToken,
+            access: 'public',
+          })
+          blobUrl = blobResult.url
+          size = blobResult.size
+        } catch (blobErr) {
+          const msg = blobErr instanceof Error ? blobErr.message : String(blobErr)
+          await send({ type: 'error', message: `[BlobUpload] ${msg}` })
+          return
+        }
 
         // ── Download from Blob → Upload to Supabase Storage ──
-        await send({ type: 'phase', phase: 'Saving to storage...', progress: 1 })
+        await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.95 })
 
         const cleanAccountId = adAccountId.replace(/^act_/, '')
         const storagePath = `${userId}/${cleanAccountId}/videos/rendered/${overlayId}.mp4`
 
-        const blobResponse = await fetch(blobUrl)
+        let blobResponse: Response
+        try {
+          blobResponse = await fetch(blobUrl)
+        } catch (fetchErr) {
+          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+          await send({ type: 'error', message: `[BlobDownload] fetch failed: ${msg} url=${blobUrl}` })
+          return
+        }
+
+        if (!blobResponse.ok) {
+          // Blob download failed — still save with blob URL directly
+          console.error(`[RenderVideo] Blob download failed: ${blobResponse.status} from ${blobUrl}`)
+          await supabaseAdmin
+            .from('video_overlays')
+            .update({ render_status: 'complete', rendered_video_url: blobUrl })
+            .eq('id', overlayId)
+          await send({ type: 'done', url: blobUrl, size })
+          return
+        }
+
         const videoBuffer = Buffer.from(await blobResponse.arrayBuffer())
 
         const { error: uploadError } = await supabaseAdmin.storage
