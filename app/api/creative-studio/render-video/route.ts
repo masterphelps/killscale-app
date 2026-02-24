@@ -236,7 +236,12 @@ export async function POST(req: Request) {
 
       try {
         if (needsBundle) {
-          bundleRemotionProject('.remotion')
+          // In dev, bundle at runtime. On Vercel, use pre-built bundle from build step.
+          if (!process.env.VERCEL) {
+            bundleRemotionProject('.remotion')
+          }
+          // Pre-create sandbox directories (workaround: addBundleToSandbox doesn't mkdir -p)
+          await sandbox.runCommand('mkdir', ['-p', '/vercel/sandbox/remotion-bundle/public'])
           await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
         }
 

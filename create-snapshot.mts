@@ -1,23 +1,11 @@
 import { put } from '@vercel/blob'
 import { addBundleToSandbox, createSandbox } from '@remotion/vercel'
-import { execSync } from 'child_process'
-
-function bundleRemotionProject(bundleDir: string): void {
-  try {
-    execSync(`node_modules/.bin/remotion bundle --out-dir ./${bundleDir}`, {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-    })
-  } catch (e) {
-    const stderr = (e as { stderr?: Buffer }).stderr?.toString() ?? ''
-    throw new Error(`Remotion bundle failed: ${stderr}`)
-  }
-}
 
 const getSnapshotBlobKey = () =>
   `snapshot-cache/${process.env.VERCEL_DEPLOYMENT_ID ?? 'local'}.json`
 
 async function main() {
+  console.log('[create-snapshot] Creating sandbox...')
   const sandbox = await createSandbox({
     onProgress: ({ progress, message }) => {
       const pct = Math.round(progress * 100)
@@ -25,8 +13,10 @@ async function main() {
     },
   })
 
-  console.log('[create-snapshot] Bundling Remotion project...')
-  bundleRemotionProject('.remotion')
+  // Pre-create the remotion-bundle directory tree inside the sandbox
+  // (workaround: addBundleToSandbox doesn't mkdir -p)
+  console.log('[create-snapshot] Pre-creating sandbox directories...')
+  await sandbox.runCommand('mkdir', ['-p', '/vercel/sandbox/remotion-bundle/public'])
 
   console.log('[create-snapshot] Adding bundle to sandbox...')
   await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
