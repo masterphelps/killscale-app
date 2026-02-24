@@ -6,6 +6,9 @@ const nextConfig = {
       bodySizeLimit: '10mb',
     },
     serverComponentsExternalPackages: ['@remotion/bundler', '@remotion/renderer', '@remotion/vercel', '@vercel/sandbox', '@vercel/blob', 'esbuild'],
+    outputFileTracingIncludes: {
+      '/api/creative-studio/render-video': ['./.remotion/**/*'],
+    },
   },
   webpack: (config) => {
     // Remotion compositor binaries are not needed in the browser

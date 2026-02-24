@@ -9,11 +9,27 @@ import { createClient } from '@supabase/supabase-js'
 import { restoreSnapshot } from './restore-snapshot'
 import { bundleRemotionProject, formatSSE, type RenderProgress } from './helpers'
 import type { OverlayConfig } from '@/remotion/types'
+import { readdir } from 'fs/promises'
+import path from 'path'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+/** Recursively scan a directory for all subdirectory paths */
+async function getBundleDirs(dir: string, base = ''): Promise<string[]> {
+  const result: string[] = []
+  const entries = await readdir(dir, { withFileTypes: true })
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const rel = base ? `${base}/${e.name}` : e.name
+      result.push(rel)
+      result.push(...await getBundleDirs(path.join(dir, e.name), rel))
+    }
+  }
+  return result
+}
 
 /**
  * Determine the correct Remotion composition ID based on video dimensions.
@@ -240,8 +256,14 @@ export async function POST(req: Request) {
           if (!process.env.VERCEL) {
             bundleRemotionProject('.remotion')
           }
-          // Pre-create sandbox directories (workaround: addBundleToSandbox doesn't mkdir -p)
-          await sandbox.runCommand('mkdir', ['-p', '/vercel/sandbox/remotion-bundle/public'])
+          // Pre-create ALL subdirectories inside the sandbox
+          // (workaround: sandbox.mkDir isn't recursive, addBundleToSandbox fails on nested dirs)
+          const bundlePath = path.join(process.cwd(), '.remotion')
+          const dirs = await getBundleDirs(bundlePath)
+          // Create dirs in sorted order so parents come before children
+          for (const d of dirs.sort()) {
+            await sandbox.mkDir(`remotion-bundle/${d}`)
+          }
           await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
         }
 
