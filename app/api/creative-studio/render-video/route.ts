@@ -225,10 +225,13 @@ export async function POST(req: Request) {
 
       if (process.env.VERCEL) {
         try {
+          await send({ type: 'phase', phase: 'Restoring snapshot...', progress: 0.05 })
           sandbox = await restoreSnapshot()
-        } catch {
-          // No snapshot available — fallback to fresh sandbox (slower cold start)
-          console.log('[RenderVideo] No snapshot found, creating fresh sandbox...')
+          await send({ type: 'phase', phase: 'Snapshot restored', progress: 0.15 })
+        } catch (snapshotErr) {
+          const snapshotMsg = snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr)
+          await send({ type: 'phase', phase: `No snapshot (${snapshotMsg.slice(0, 80)}), creating fresh sandbox...`, progress: 0.05 })
+          console.log('[RenderVideo] Snapshot restore failed:', snapshotMsg)
           sandbox = await createSandbox({
             onProgress: async ({ progress, message }) => {
               await send({ type: 'phase', phase: message, progress })
