@@ -9,27 +9,10 @@ import { createClient } from '@supabase/supabase-js'
 import { restoreSnapshot } from './restore-snapshot'
 import { bundleRemotionProject, formatSSE, type RenderProgress } from './helpers'
 import type { OverlayConfig } from '@/remotion/types'
-import { readdir } from 'fs/promises'
-import path from 'path'
-
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-/** Recursively scan a directory for all subdirectory paths */
-async function getBundleDirs(dir: string, base = ''): Promise<string[]> {
-  const result: string[] = []
-  const entries = await readdir(dir, { withFileTypes: true })
-  for (const e of entries) {
-    if (e.isDirectory()) {
-      const rel = base ? `${base}/${e.name}` : e.name
-      result.push(rel)
-      result.push(...await getBundleDirs(path.join(dir, e.name), rel))
-    }
-  }
-  return result
-}
 
 /**
  * Determine the correct Remotion composition ID based on video dimensions.
@@ -259,23 +242,7 @@ export async function POST(req: Request) {
           if (!process.env.VERCEL) {
             bundleRemotionProject('.remotion')
           }
-          // Pre-create ALL subdirectories inside the sandbox
-          // (workaround: sandbox.mkDir isn't recursive, addBundleToSandbox fails on nested dirs)
-          await send({ type: 'phase', phase: 'Preparing bundle...', progress: 0.1 })
-          const bundlePath = path.join(process.cwd(), '.remotion')
-          const dirs = await getBundleDirs(bundlePath)
-          console.log(`[RenderVideo] Pre-creating ${dirs.length} dirs in sandbox...`)
-          // Create dirs in sorted order so parents come before children
-          for (const d of dirs.sort()) {
-            try {
-              await sandbox.mkDir(`remotion-bundle/${d}`)
-            } catch (mkdirErr) {
-              console.error(`[RenderVideo] mkDir failed for remotion-bundle/${d}:`, JSON.stringify(mkdirErr))
-              // Try runCommand as fallback
-              await sandbox.runCommand('mkdir', ['-p', `/vercel/sandbox/remotion-bundle/${d}`])
-            }
-          }
-          await send({ type: 'phase', phase: 'Uploading bundle to sandbox...', progress: 0.2 })
+          await send({ type: 'phase', phase: 'Uploading bundle to sandbox...', progress: 0.15 })
           await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
         }
 
