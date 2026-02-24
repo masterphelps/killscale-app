@@ -81,9 +81,8 @@ export const VideoOverlayPanel: React.FC<VideoOverlayPanelProps> = ({ onAIGenera
     }
   }, [selectedOverlayId, overlays]);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
+  const handleSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
 
     setIsLoading(true);
     try {
@@ -104,6 +103,13 @@ export const VideoOverlayPanel: React.FC<VideoOverlayPanelProps> = ({ onAIGenera
       setIsLoading(false);
     }
   };
+
+  // Auto-load videos on mount when adaptors are available
+  useEffect(() => {
+    if (videoAdaptors.length > 0 && videos.length === 0 && !isLoading) {
+      handleSearch();
+    }
+  }, [videoAdaptors.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddClip = async (
     video: StandardVideo & { _source: string; _sourceDisplayName: string }

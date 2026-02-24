@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     // 1. Query media_library — the inventory source of truth
     let mediaQuery = supabase
       .from('media_library')
-      .select('id, media_hash, media_type, name, url, video_thumbnail_url, width, height, storage_url, storage_path, download_status, file_size_bytes, synced_at')
+      .select('id, media_hash, media_type, name, url, video_thumbnail_url, width, height, storage_url, storage_path, download_status, file_size_bytes, synced_at, source_type, source_job_id, source_session_id, source_composition_id')
       .eq('user_id', userId)
       .eq('ad_account_id', strippedAccountId)
       .order('synced_at', { ascending: false })
@@ -489,6 +489,11 @@ export async function GET(request: NextRequest) {
         fileSize: item.file_size_bytes,
         downloadStatus: item.download_status,
         syncedAt: item.synced_at,
+        // Source tracking
+        sourceType: item.source_type || 'meta',
+        sourceJobId: item.source_job_id || null,
+        sourceSessionId: item.source_session_id || null,
+        sourceCompositionId: item.source_composition_id || null,
         // Performance
         hasPerformanceData,
         spend,

@@ -79,10 +79,9 @@ export const ImageOverlayPanel: React.FC = () => {
    * Handles the image search form submission
    * Searches across all configured image adaptors
    */
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-    
+  const handleSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
     setIsLoading(true);
     try {
       const results = await searchImages({ query: searchQuery, page: 1, perPage: 50 });
@@ -96,6 +95,13 @@ export const ImageOverlayPanel: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  // Auto-load images on mount when adaptors are available
+  useEffect(() => {
+    if (imageAdaptors.length > 0 && images.length === 0 && !isLoading) {
+      handleSearch();
+    }
+  }, [imageAdaptors.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Handles adding or replacing an image

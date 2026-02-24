@@ -61,6 +61,12 @@ export interface StudioAsset {
   adsetCount: number
   campaignCount: number
 
+  // Source tracking (Library architecture)
+  sourceType?: string | null         // meta, ai_generated, ai_video, ai_edited, project, open_prompt
+  sourceJobId?: string | null
+  sourceSessionId?: string | null
+  sourceCompositionId?: string | null
+
   // UI state
   isStarred: boolean
 

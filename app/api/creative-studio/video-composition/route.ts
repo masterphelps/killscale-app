@@ -9,11 +9,18 @@ const supabaseAdmin = createClient(
 // POST — Create a new composition
 export async function POST(request: Request) {
   try {
-    const { userId, canvasId, adAccountId, sourceJobIds, overlayConfig, title, thumbnailUrl, durationSeconds } = await request.json()
+    const { userId, canvasId, adAccountId, sourceJobIds, sourceLibraryIds, overlayConfig, title, name, thumbnailUrl, durationSeconds } = await request.json()
 
-    if (!userId || !canvasId || !adAccountId || !sourceJobIds?.length || !overlayConfig) {
+    if (!userId || !adAccountId || !overlayConfig) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, canvasId, adAccountId, sourceJobIds, overlayConfig' },
+        { error: 'Missing required fields: userId, adAccountId, overlayConfig' },
+        { status: 400 }
+      )
+    }
+
+    if (!sourceJobIds?.length && !sourceLibraryIds?.length) {
+      return NextResponse.json(
+        { error: 'Must provide sourceJobIds or sourceLibraryIds' },
         { status: 400 }
       )
     }
@@ -22,11 +29,13 @@ export async function POST(request: Request) {
       .from('video_compositions')
       .insert({
         user_id: userId,
-        canvas_id: canvasId,
+        canvas_id: canvasId || null,
         ad_account_id: adAccountId,
-        source_job_ids: sourceJobIds,
+        source_job_ids: sourceJobIds || [],
+        source_library_ids: sourceLibraryIds || null,
         overlay_config: overlayConfig,
         title: title || null,
+        name: name || null,
         thumbnail_url: thumbnailUrl || null,
         duration_seconds: durationSeconds || null,
       })
@@ -75,8 +84,10 @@ export async function GET(request: NextRequest) {
           id: data.id,
           canvasId: data.canvas_id,
           sourceJobIds: data.source_job_ids,
+          sourceLibraryIds: data.source_library_ids,
           overlayConfig: data.overlay_config,
           title: data.title,
+          name: data.name,
           thumbnailUrl: data.thumbnail_url,
           durationSeconds: data.duration_seconds,
           createdAt: data.created_at,
@@ -106,8 +117,10 @@ export async function GET(request: NextRequest) {
       id: c.id,
       canvasId: c.canvas_id,
       sourceJobIds: c.source_job_ids,
+      sourceLibraryIds: c.source_library_ids,
       overlayConfig: c.overlay_config,
       title: c.title,
+      name: c.name,
       thumbnailUrl: c.thumbnail_url,
       durationSeconds: c.duration_seconds,
       createdAt: c.created_at,
@@ -123,7 +136,7 @@ export async function GET(request: NextRequest) {
 // PATCH — Update a composition's overlay config or source jobs
 export async function PATCH(request: Request) {
   try {
-    const { compositionId, userId, overlayConfig, sourceJobIds, title, durationSeconds } = await request.json()
+    const { compositionId, userId, overlayConfig, sourceJobIds, sourceLibraryIds, title, name, durationSeconds } = await request.json()
 
     if (!compositionId || !userId) {
       return NextResponse.json({ error: 'Missing compositionId and userId' }, { status: 400 })
@@ -144,7 +157,9 @@ export async function PATCH(request: Request) {
     const updates: Record<string, any> = { updated_at: new Date().toISOString() }
     if (overlayConfig) updates.overlay_config = overlayConfig
     if (sourceJobIds) updates.source_job_ids = sourceJobIds
+    if (sourceLibraryIds !== undefined) updates.source_library_ids = sourceLibraryIds
     if (title !== undefined) updates.title = title
+    if (name !== undefined) updates.name = name
     if (durationSeconds !== undefined) updates.duration_seconds = durationSeconds
 
     const { error } = await supabaseAdmin

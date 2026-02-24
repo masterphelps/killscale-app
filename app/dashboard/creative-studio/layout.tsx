@@ -49,7 +49,7 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
   // Also hide on AI Tasks page (not date-dependent)
   // Also hide on Active page (has its own date picker in the header)
   // Also hide on Ad Studio page (not date-dependent)
-  const hideDatePicker = pathname?.includes('/best-copy') || pathname?.includes('/media') || pathname?.includes('/ai-tasks') || pathname?.includes('/active') || pathname?.includes('/ad-studio') || pathname?.includes('/video-studio') || pathname?.includes('/direct')
+  const hideDatePicker = pathname?.includes('/best-copy') || pathname?.includes('/media') || pathname?.includes('/ai-tasks') || pathname?.includes('/active') || pathname?.includes('/ad-studio') || pathname?.includes('/video-studio') || pathname?.includes('/direct') || pathname?.includes('/collections')
   // Hide entire CS header for video editor (maximize vertical space)
   const hideHeader = pathname?.includes('/video-editor')
 

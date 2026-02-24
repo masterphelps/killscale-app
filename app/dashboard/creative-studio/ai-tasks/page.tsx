@@ -1403,7 +1403,11 @@ function VideoJobDetailPanel({
   isRetrying?: boolean
 }) {
   const router = useRouter()
+  const { user } = useAuth()
+  const { currentAccountId } = useAccount()
   const [promptExpanded, setPromptExpanded] = useState(false)
+  const [isSavingToLibrary, setIsSavingToLibrary] = useState(false)
+  const [savedToLibrary, setSavedToLibrary] = useState(false)
   const videoUrl = job.final_video_url || job.raw_video_url
   const overlay = job.overlay_config as OverlayConfig | undefined
 
@@ -1540,6 +1544,35 @@ function VideoJobDetailPanel({
         >
           <Film className="w-4 h-4" />
           Edit Video
+        </button>
+        <button
+          onClick={async () => {
+            if (!user?.id || !currentAccountId) return
+            setIsSavingToLibrary(true)
+            try {
+              const res = await fetch('/api/creative-studio/save-video-to-library', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoJobId: job.id, userId: user.id, adAccountId: currentAccountId }),
+              })
+              const data = await res.json()
+              if (data.success) setSavedToLibrary(true)
+              else console.error('Save to library failed:', data.error)
+            } catch (err) {
+              console.error('Save to library failed:', err)
+            } finally {
+              setIsSavingToLibrary(false)
+            }
+          }}
+          disabled={isSavingToLibrary || savedToLibrary}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-colors border ${
+            savedToLibrary
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20'
+              : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border-emerald-500/20 disabled:opacity-50'
+          }`}
+        >
+          {isSavingToLibrary ? <Loader2 className="w-4 h-4 animate-spin" /> : savedToLibrary ? <CheckCircle2 className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+          {savedToLibrary ? 'Saved' : 'Save to Library'}
         </button>
         {onRetry && (
           <button
@@ -1724,6 +1757,7 @@ function ConceptCanvasDetailPanel({
 
 
   const [expandedConcept, setExpandedConcept] = useState<number | null>(initialExpandedConcept ?? null)
+  const isOpenPrompt = canvas.product_knowledge?.name === 'Open Prompt'
 
   // Compositions state
   const [compositions, setCompositions] = useState<VideoComposition[]>([])
@@ -1961,12 +1995,15 @@ function ConceptCanvasDetailPanel({
                           Edit Video
                         </button>
                         <Link
-                          href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`}
+                          href={isOpenPrompt
+                            ? `/dashboard/creative-studio/ad-studio?canvasId=${canvas.id}`
+                            : `/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`
+                          }
                           onClick={(e) => e.stopPropagation()}
                           className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors border border-border"
                         >
                           <Video className="w-3.5 h-3.5" />
-                          Continue in Video Studio
+                          {isOpenPrompt ? 'Continue in Ad Studio' : 'Continue in Video Studio'}
                         </Link>
                       </div>
                     </div>
@@ -2037,12 +2074,15 @@ function ConceptCanvasDetailPanel({
                         {job.error_message || 'Video generation failed'}
                       </div>
                       <Link
-                        href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`}
+                        href={isOpenPrompt
+                          ? `/dashboard/creative-studio/ad-studio?canvasId=${canvas.id}`
+                          : `/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`
+                        }
                         onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        Retry in Video Studio
+                        {isOpenPrompt ? 'Retry in Ad Studio' : 'Retry in Video Studio'}
                       </Link>
                     </div>
                   )}
@@ -2172,15 +2212,18 @@ function ConceptCanvasDetailPanel({
                     </div>
                   )}
 
-                  {/* Generate in Video Studio — shown when no job exists */}
+                  {/* Generate in Studio — shown when no job exists */}
                   {!job && (
                     <Link
-                      href={`/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`}
+                      href={isOpenPrompt
+                        ? `/dashboard/creative-studio/ad-studio?canvasId=${canvas.id}`
+                        : `/dashboard/creative-studio/video-studio?canvasId=${canvas.id}&conceptIndex=${i}`
+                      }
                       onClick={(e) => e.stopPropagation()}
                       className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 transition-colors text-sm mt-3"
                     >
                       <Video className="w-4 h-4" />
-                      Generate in Video Studio
+                      {isOpenPrompt ? 'Generate in Ad Studio' : 'Generate in Video Studio'}
                     </Link>
                   )}
                 </div>

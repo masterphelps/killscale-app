@@ -652,6 +652,19 @@ export function TheaterModal({
                       </button>
                     )}
 
+                    {isVideo && videoSource && (
+                      <button
+                        onClick={() => {
+                          onClose()
+                          router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border border-purple-500/50 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20"
+                      >
+                        <Film className="w-5 h-5" />
+                        Edit Video
+                      </button>
+                    )}
+
                     {onBuildNewAds && (
                       <button
                         onClick={onBuildNewAds}
