@@ -166,6 +166,9 @@ export function TheaterModal({
   const storageUrl = item.storageUrl || null
   const displayUrl = storageUrl || item.imageUrl || item.thumbnailUrl
 
+  // Raw AI assets are working material — hide "Build New Ads" until rendered/exported
+  const isRawAiAsset = item.sourceType === 'ai_video' && item.mediaHash?.startsWith('ai_video_raw_')
+
   const statusConfig = hasPerf ? fatigueStatusConfig[item.fatigueStatus] : null
   const fatigueProgress = hasPerf ? getFatigueProgress(item.fatigueStatus) : 0
   const progressColor = hasPerf ? getProgressColor(item.fatigueStatus) : ''
@@ -656,7 +659,11 @@ export function TheaterModal({
                       <button
                         onClick={() => {
                           onClose()
-                          router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
+                          if (item.sourceCompositionId) {
+                            router.push(`/dashboard/creative-studio/video-editor?compositionId=${item.sourceCompositionId}&from=creative-studio`)
+                          } else {
+                            router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
+                          }
                         }}
                         className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border border-purple-500/50 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20"
                       >
@@ -665,7 +672,7 @@ export function TheaterModal({
                       </button>
                     )}
 
-                    {onBuildNewAds && (
+                    {onBuildNewAds && !isRawAiAsset && (
                       <button
                         onClick={onBuildNewAds}
                         className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all bg-accent hover:bg-accent-hover text-white"
