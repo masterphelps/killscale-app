@@ -1,18 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { LayoutGrid, List, RefreshCw, Download, Film, Image, Upload, Loader2, Trash2, AlertTriangle, FolderKanban, Pencil, FolderPlus, FolderOpen, ChevronLeft, Plus, Check, X, MoreHorizontal, FolderMinus } from 'lucide-react'
+import { RefreshCw, Download, Upload, Loader2, Trash2, AlertTriangle, FolderKanban, Pencil, FolderPlus, FolderOpen, ChevronLeft, Plus, Check, X, FolderMinus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import {
   GalleryGrid,
-  FunnelFilterBar,
   StarredMediaBar,
   TheaterModal,
-  MediaTable,
 } from '@/components/creative-studio'
-import { DatePicker, DatePickerButton, DATE_PRESETS } from '@/components/date-picker'
 import type {
   StudioAsset,
   StudioAssetDetail,
@@ -26,11 +23,9 @@ import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import { useCreativeStudio } from '../creative-studio-context'
 import { useSubscription } from '@/lib/subscription'
 
-type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
-
-type ViewMode = 'gallery' | 'table'
-type SortOption = 'hookScore' | 'holdScore' | 'clickScore' | 'convertScore' | 'spend' | 'roas' | 'revenue' | 'fatigue' | 'adCount' | 'fileSize' | 'syncedAt' | 'name' | 'thumbstopRate' | 'holdRate' | 'ctr' | 'cpc' | 'impressions'
-type MediaTab = 'video' | 'image' | 'collection' | 'project'
+type SortOption = 'name' | 'syncedAt' | 'fileSize' | 'mediaType'
+type MediaTab = 'media' | 'collection' | 'project'
+type TypeFilter = 'all' | 'video' | 'image'
 
 export default function AllMediaPage() {
   const { user } = useAuth()
@@ -51,30 +46,15 @@ export default function AllMediaPage() {
     clearStarred,
     handleSync,
     removeAsset,
-    sourceFilter,
-    setSourceFilter,
-    datePreset,
-    setDatePreset,
-    customStartDate,
-    customEndDate,
-    setCustomStartDate,
-    setCustomEndDate,
-    showDatePicker,
-    setShowDatePicker,
   } = useCreativeStudio()
 
   // View state
-  const [viewMode, setViewMode] = useState<ViewMode>('gallery')
-  const [mediaTab, setMediaTab] = useState<MediaTab>('video')
-  const [sortBy, setSortBy] = useState<SortOption>('hookScore')
+  const [mediaTab, setMediaTab] = useState<MediaTab>('media')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [sortBy, setSortBy] = useState<SortOption>('syncedAt')
   const [sortDesc, setSortDesc] = useState(true)
   const [showSortDropdown, setShowSortDropdown] = useState(false)
   const sortDropdownRef = useRef<HTMLDivElement>(null)
-
-  // Funnel filter state
-  const [funnelThresholds, setFunnelThresholds] = useState<Record<FunnelStage, number | null>>({
-    hook: null, hold: null, click: null, convert: null, scale: null,
-  })
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<StudioAsset | null>(null)
@@ -319,16 +299,6 @@ export default function AllMediaPage() {
     }
   }, [assets, loadDetailData])
 
-  // Handle table sort
-  const handleTableSort = useCallback((field: string) => {
-    if (field === sortBy) {
-      setSortDesc(prev => !prev)
-    } else {
-      setSortBy(field as SortOption)
-      setSortDesc(true)
-    }
-  }, [sortBy])
-
   const handleMenuClick = useCallback(async (id: string, e: React.MouseEvent) => {
     const rect = (e.target as HTMLElement).getBoundingClientRect()
     setMenuItemId(id)
@@ -549,92 +519,23 @@ export default function AllMediaPage() {
     }
   }, [user, currentAccountId, handleSync])
 
-  // Funnel filter handlers
-  const toggleFunnelFilter = useCallback((stage: FunnelStage) => {
-    setFunnelThresholds(prev => ({
-      ...prev,
-      [stage]: prev[stage] !== null ? null : 75,
-    }))
-  }, [])
-
-  const setFunnelThreshold = useCallback((stage: FunnelStage, value: number) => {
-    setFunnelThresholds(prev => ({
-      ...prev,
-      [stage]: value,
-    }))
-  }, [])
-
-  const clearFunnelFilters = useCallback(() => {
-    setFunnelThresholds({ hook: null, hold: null, click: null, convert: null, scale: null })
-  }, [])
-
-  // Compute scale threshold
-  const scaleThreshold = useMemo(() => {
-    const spends = assets
-      .filter(a => a.hasPerformanceData && a.spend > 0)
-      .map(a => a.spend)
-      .sort((a, b) => a - b)
-    if (spends.length === 0) return 0
-    const mid = Math.floor(spends.length / 2)
-    const median = spends.length % 2 === 0
-      ? (spends[mid - 1] + spends[mid]) / 2
-      : spends[mid]
-    return median * 2
-  }, [assets])
-
-  // Funnel stats
-  const funnelStats = useMemo(() => {
-    const withData = assets.filter(a => a.hasPerformanceData)
-    const total = withData.length
-    const t = (stage: FunnelStage) => funnelThresholds[stage] ?? 75
-    return {
-      hook: { good: withData.filter(a => (a.hookScore ?? 0) >= t('hook')).length, total },
-      hold: { good: withData.filter(a => (a.holdScore ?? 0) >= t('hold')).length, total },
-      click: { good: withData.filter(a => (a.clickScore ?? 0) >= t('click')).length, total },
-      convert: { good: withData.filter(a => (a.convertScore ?? 0) >= t('convert')).length, total },
-      scale: { good: withData.filter(a => a.spend >= scaleThreshold).length, total },
-    }
-  }, [assets, scaleThreshold, funnelThresholds])
-
   // Filter and sort
   const filteredAssets = useMemo(() => {
     let items = [...assets]
 
-    const activeStages = (Object.entries(funnelThresholds) as [FunnelStage, number | null][])
-      .filter(([, v]) => v !== null)
-    if (activeStages.length > 0) {
-      items = items.filter(item => {
-        for (const [stage, threshold] of activeStages) {
-          if (stage === 'hook' && (item.hookScore ?? 0) < threshold!) return false
-          if (stage === 'hold' && (item.holdScore ?? 0) < threshold!) return false
-          if (stage === 'click' && (item.clickScore ?? 0) < threshold!) return false
-          if (stage === 'convert' && (item.convertScore ?? 0) < threshold!) return false
-          if (stage === 'scale' && item.spend < scaleThreshold) return false
-        }
-        return true
-      })
-    }
+    // Type filter (for Media tab)
+    if (typeFilter === 'video') items = items.filter(a => a.mediaType === 'video' && (a as any).sourceType !== 'project')
+    else if (typeFilter === 'image') items = items.filter(a => a.mediaType === 'image')
+    else items = items.filter(a => (a as any).sourceType !== 'project') // 'all' excludes projects (they have their own tab)
 
+    // Sort
     items.sort((a, b) => {
       let comparison = 0
       switch (sortBy) {
-        case 'hookScore': comparison = (a.hookScore ?? -1) - (b.hookScore ?? -1); break
-        case 'holdScore': comparison = (a.holdScore ?? -1) - (b.holdScore ?? -1); break
-        case 'clickScore': comparison = (a.clickScore ?? -1) - (b.clickScore ?? -1); break
-        case 'convertScore': comparison = (a.convertScore ?? -1) - (b.convertScore ?? -1); break
-        case 'spend': comparison = a.spend - b.spend; break
-        case 'roas': comparison = a.roas - b.roas; break
-        case 'revenue': comparison = a.revenue - b.revenue; break
-        case 'fatigue': comparison = a.fatigueScore - b.fatigueScore; break
-        case 'adCount': comparison = a.adCount - b.adCount; break
-        case 'fileSize': comparison = (a.fileSize || 0) - (b.fileSize || 0); break
-        case 'syncedAt': comparison = (a.syncedAt || '').localeCompare(b.syncedAt || ''); break
         case 'name': comparison = (a.name || '').localeCompare(b.name || ''); break
-        case 'thumbstopRate': comparison = (a.thumbstopRate ?? -1) - (b.thumbstopRate ?? -1); break
-        case 'holdRate': comparison = (a.holdRate ?? -1) - (b.holdRate ?? -1); break
-        case 'ctr': comparison = a.ctr - b.ctr; break
-        case 'cpc': comparison = a.cpc - b.cpc; break
-        case 'impressions': comparison = a.impressions - b.impressions; break
+        case 'syncedAt': comparison = (a.syncedAt || '').localeCompare(b.syncedAt || ''); break
+        case 'fileSize': comparison = (a.fileSize || 0) - (b.fileSize || 0); break
+        case 'mediaType': comparison = a.mediaType.localeCompare(b.mediaType); break
       }
       return sortDesc ? -comparison : comparison
     })
@@ -643,23 +544,20 @@ export default function AllMediaPage() {
       ...item,
       isStarred: starredIds.has(item.mediaHash),
     }))
-  }, [assets, funnelThresholds, scaleThreshold, sortBy, sortDesc, starredIds])
+  }, [assets, typeFilter, sortBy, sortDesc, starredIds])
 
-  // Apply source filter (All / Meta / AI Generated)
-  const sourceFilteredAssets = useMemo(() => {
-    if (sourceFilter === 'all') return filteredAssets
-    if (sourceFilter === 'meta') return filteredAssets.filter(a => !a.sourceType || a.sourceType === 'meta')
-    // 'ai' — includes ai_video, ai_image, ai_generated, ai_edited, open_prompt, project
-    return filteredAssets.filter(a => a.sourceType && a.sourceType !== 'meta')
-  }, [filteredAssets, sourceFilter])
+  const projects = useMemo(() =>
+    assets.filter(a => (a as any).sourceType === 'project')
+      .map(item => ({ ...item, isStarred: starredIds.has(item.mediaHash) })),
+    [assets, starredIds]
+  )
 
-  const videos = useMemo(() => sourceFilteredAssets.filter(a => a.mediaType === 'video' && (a as any).sourceType !== 'project'), [sourceFilteredAssets])
-  const images = useMemo(() => sourceFilteredAssets.filter(a => a.mediaType === 'image'), [sourceFilteredAssets])
-  const projects = useMemo(() => sourceFilteredAssets.filter(a => (a as any).sourceType === 'project'), [sourceFilteredAssets])
   const collectionAssets = useMemo(() => {
     if (!selectedCollectionId) return []
-    return sourceFilteredAssets.filter(a => collectionItemIds.has(String(a.id)))
-  }, [selectedCollectionId, sourceFilteredAssets, collectionItemIds])
+    return assets
+      .filter(a => collectionItemIds.has(String(a.id)))
+      .map(item => ({ ...item, isStarred: starredIds.has(item.mediaHash) }))
+  }, [selectedCollectionId, assets, collectionItemIds, starredIds])
 
   if (!user || !currentAccountId) {
     return (
@@ -673,13 +571,13 @@ export default function AllMediaPage() {
     <div className="min-h-screen pb-24">
       <div className="px-4 lg:px-8 py-6 space-y-6">
         {/* Constrained content area - matches gallery width */}
-        <div className="max-w-[1200px] mx-auto space-y-6">
+        <div className="space-y-6">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
               <h1 className="text-2xl lg:text-3xl font-bold text-white">Media</h1>
               <p className="text-zinc-500 mt-1">
-                Browse and analyze all creative assets by media
+                Browse and organize your creative assets
               </p>
             </div>
 
@@ -731,224 +629,118 @@ export default function AllMediaPage() {
           </div>
         </div>
 
-        {/* Funnel Filters + Sort Controls */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
-          <div className="w-full lg:flex-1 lg:min-w-0">
-            <FunnelFilterBar
-              thresholds={funnelThresholds}
-              onToggle={toggleFunnelFilter}
-              onSetThreshold={setFunnelThreshold}
-              onClear={clearFunnelFilters}
-              stats={funnelStats}
-            />
-          </div>
+        {/* Tabs */}
+        <div className="flex items-center gap-1 border-b border-border">
+          <button
+            onClick={() => setMediaTab('media')}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+              mediaTab === 'media'
+                ? 'border-white text-white'
+                : 'border-transparent text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            Media ({filteredAssets.length})
+          </button>
+          <button
+            onClick={() => setMediaTab('collection')}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+              mediaTab === 'collection'
+                ? 'border-white text-white'
+                : 'border-transparent text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <FolderOpen className={cn('w-4 h-4', mediaTab === 'collection' ? 'text-amber-400' : '')} />
+            Collections ({collections.length})
+          </button>
+          <button
+            onClick={() => setMediaTab('project')}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+              mediaTab === 'project'
+                ? 'border-white text-white'
+                : 'border-transparent text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <FolderKanban className={cn('w-4 h-4', mediaTab === 'project' ? 'text-emerald-400' : '')} />
+            Projects ({projects.length})
+          </button>
+        </div>
 
-          <div className="flex items-center justify-between lg:justify-end gap-3 flex-shrink-0">
-            {/* Date Picker */}
-            <div className="relative">
-              <DatePickerButton
-                label={
-                  datePreset === 'custom' && customStartDate && customEndDate
-                    ? `${customStartDate} – ${customEndDate}`
-                    : DATE_PRESETS.find(p => p.value === datePreset)?.label || 'Last 90 Days'
-                }
-                onClick={() => setShowDatePicker(!showDatePicker)}
-                isOpen={showDatePicker}
-              />
-              <DatePicker
-                isOpen={showDatePicker}
-                onClose={() => setShowDatePicker(false)}
-                datePreset={datePreset}
-                onPresetChange={(preset) => {
-                  setDatePreset(preset)
-                  if (preset !== 'custom') setShowDatePicker(false)
-                }}
-                customStartDate={customStartDate}
-                customEndDate={customEndDate}
-                onCustomDateChange={(start, end) => {
-                  setCustomStartDate(start)
-                  setCustomEndDate(end)
-                }}
-                onApply={() => {
-                  setDatePreset('custom')
-                  setShowDatePicker(false)
-                }}
-              />
+        {/* Media tab controls */}
+        {mediaTab === 'media' && (
+          <div className="flex items-center justify-between">
+            {/* Type filter pills */}
+            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
+              {(['all', 'video', 'image'] as TypeFilter[]).map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setTypeFilter(filter)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                    typeFilter === filter
+                      ? 'bg-white/10 text-white'
+                      : 'text-zinc-400 hover:text-white'
+                  )}
+                >
+                  {filter === 'all' ? 'All' : filter === 'video' ? 'Videos' : 'Images'}
+                </button>
+              ))}
             </div>
 
-            {/* Sort Dropdown */}
+            {/* Sort dropdown */}
             <div className="relative" ref={sortDropdownRef}>
               <button
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="flex items-center gap-2 px-4 py-2 text-sm rounded-xl border transition-all duration-200 bg-bg-card border-border text-zinc-300 hover:border-border/50"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg text-zinc-400 hover:text-white transition-colors"
               >
-                <span className="text-zinc-500">Sort:</span>
-                <span>{
-                  sortBy === 'hookScore' ? 'Hook' :
-                  sortBy === 'holdScore' ? 'Hold' :
-                  sortBy === 'clickScore' ? 'Click' :
-                  sortBy === 'convertScore' ? 'Convert' :
-                  sortBy === 'spend' ? 'Scale' :
-                  sortBy === 'roas' ? 'ROAS' :
-                  sortBy === 'revenue' ? 'Revenue' :
-                  sortBy === 'fatigue' ? 'Fatigue' :
-                  sortBy === 'adCount' ? 'Usage' :
-                  sortBy === 'fileSize' ? 'File Size' :
-                  sortBy === 'syncedAt' ? 'Date Synced' : sortBy
+                <span>Sort: {
+                  sortBy === 'name' ? 'Name' :
+                  sortBy === 'syncedAt' ? 'Date added' :
+                  sortBy === 'fileSize' ? 'File size' :
+                  'Type'
                 }</span>
-                <span className="text-zinc-500">{sortDesc ? '↓' : '↑'}</span>
+                <span>{sortDesc ? '\u2193' : '\u2191'}</span>
               </button>
 
               {showSortDropdown && (
-                <div className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
                   {([
-                    { value: 'hookScore', label: 'Hook' },
-                    { value: 'holdScore', label: 'Hold' },
-                    { value: 'clickScore', label: 'Click' },
-                    { value: 'convertScore', label: 'Convert' },
-                    { value: 'spend', label: 'Scale' },
-                    { value: 'roas', label: 'ROAS' },
-                    { value: 'revenue', label: 'Revenue' },
-                    { value: 'fatigue', label: 'Fatigue' },
-                    { value: 'adCount', label: 'Usage' },
-                    { value: 'fileSize', label: 'File Size' },
-                    { value: 'syncedAt', label: 'Date Synced' },
-                  ] as const).map((option) => (
+                    { value: 'syncedAt' as const, label: 'Date added' },
+                    { value: 'name' as const, label: 'Name' },
+                    { value: 'fileSize' as const, label: 'File size' },
+                    { value: 'mediaType' as const, label: 'Type' },
+                  ]).map((option) => (
                     <button
                       key={option.value}
                       onClick={() => {
                         if (sortBy === option.value) {
                           setSortDesc(!sortDesc)
                         } else {
-                          setSortBy(option.value as SortOption)
+                          setSortBy(option.value)
                           setSortDesc(true)
                         }
                         setShowSortDropdown(false)
                       }}
-                      className={`w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors ${
+                      className={cn(
+                        'w-full px-4 py-2.5 text-sm text-left flex items-center justify-between transition-colors',
                         sortBy === option.value
-                          ? 'bg-indigo-500/20 text-indigo-400'
+                          ? 'bg-white/10 text-white'
                           : 'text-zinc-300 hover:bg-white/5'
-                      }`}
+                      )}
                     >
                       <span>{option.label}</span>
                       {sortBy === option.value && (
-                        <span className="text-xs">{sortDesc ? '↓ High to Low' : '↑ Low to High'}</span>
+                        <span className="text-xs text-zinc-500">{sortDesc ? '\u2193' : '\u2191'}</span>
                       )}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-
-            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg">
-              <button
-                onClick={() => setViewMode('gallery')}
-                className={cn(
-                  'p-2 rounded-md transition-colors',
-                  viewMode === 'gallery'
-                    ? 'bg-accent text-white'
-                    : 'text-zinc-400 hover:text-white'
-                )}
-                title="Gallery view"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={cn(
-                  'p-2 rounded-md transition-colors',
-                  viewMode === 'table'
-                    ? 'bg-accent text-white'
-                    : 'text-zinc-400 hover:text-white'
-                )}
-                title="Table view"
-              >
-                <List className="w-4 h-4" />
-              </button>
-            </div>
           </div>
-        </div>
-
-        {/* Media Type Tabs + Source Filter */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-1 border-b border-border">
-            <button
-              onClick={() => setMediaTab('video')}
-              className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                mediaTab === 'video'
-                  ? 'border-purple-400 text-white'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
-              )}
-            >
-              <Film className={cn('w-4 h-4', mediaTab === 'video' ? 'text-purple-400' : '')} />
-              Videos ({videos.length})
-            </button>
-            <button
-              onClick={() => setMediaTab('image')}
-              className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                mediaTab === 'image'
-                  ? 'border-blue-400 text-white'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
-              )}
-            >
-              <Image className={cn('w-4 h-4', mediaTab === 'image' ? 'text-blue-400' : '')} />
-              Images ({images.length})
-            </button>
-            <button
-              onClick={() => setMediaTab('collection')}
-              className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                mediaTab === 'collection'
-                  ? 'border-amber-400 text-white'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
-              )}
-            >
-              <FolderOpen className={cn('w-4 h-4', mediaTab === 'collection' ? 'text-amber-400' : '')} />
-              Collections ({collections.length})
-            </button>
-            <button
-              onClick={() => setMediaTab('project')}
-              className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                mediaTab === 'project'
-                  ? 'border-emerald-400 text-white'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
-              )}
-            >
-              <FolderKanban className={cn('w-4 h-4', mediaTab === 'project' ? 'text-emerald-400' : '')} />
-              Projects ({projects.length})
-            </button>
-          </div>
-
-          {/* Source Filter Pills */}
-          <div className="flex items-center gap-2">
-            {(['all', 'meta', 'ai'] as const).map(filter => (
-              <button
-                key={filter}
-                onClick={() => setSourceFilter(filter)}
-                className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                  sourceFilter === filter
-                    ? 'bg-accent/20 text-accent border border-accent/30'
-                    : 'bg-bg-card text-zinc-400 border border-border hover:text-white'
-                )}
-              >
-                {filter === 'all' ? 'All Sources' : filter === 'meta' ? 'Meta' : 'AI Generated'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Results Count */}
-        <div className="text-sm text-zinc-500">
-          {mediaTab === 'video' ? videos.length : mediaTab === 'image' ? images.length : mediaTab === 'collection' ? (selectedCollectionId ? collectionAssets.length : collections.length) : projects.length} {mediaTab === 'video' ? 'videos' : mediaTab === 'image' ? 'images' : mediaTab === 'collection' ? (selectedCollectionId ? 'items' : 'collections') : 'projects'}
-          {Object.entries(funnelThresholds).some(([, v]) => v !== null) &&
-            ` filtered by ${Object.entries(funnelThresholds).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}+`).join(' + ')}`}
-          {sourceFilter !== 'all' && ` · source: ${sourceFilter === 'meta' ? 'Meta' : 'AI Generated'}`}
-        </div>
+        )}
 
         {/* Content */}
         <div>
@@ -987,7 +779,7 @@ export default function AllMediaPage() {
                       Add items from the Videos or Images tab using the menu
                     </p>
                   </div>
-                ) : viewMode === 'gallery' ? (
+                ) : (
                   <GalleryGrid
                     items={collectionAssets}
                     isLoading={false}
@@ -996,17 +788,7 @@ export default function AllMediaPage() {
                     onMenu={handleMenuClick}
                     videoSources={videoSources}
                     onRequestVideoSource={fetchVideoSource}
-                  />
-                ) : (
-                  <MediaTable
-                    items={collectionAssets}
-                    isLoading={false}
-                    sortField={sortBy}
-                    sortDirection={sortDesc ? 'desc' : 'asc'}
-                    onSort={handleTableSort}
-                    onSelect={(id) => handleSelect(id)}
-                    onStar={(id) => toggleStar(id)}
-                    starredIds={starredIds}
+                    minimal
                   />
                 )}
               </div>
@@ -1187,54 +969,17 @@ export default function AllMediaPage() {
                 ))}
               </div>
             )
-          ) : viewMode === 'gallery' ? (
-            isLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
-                ))}
-              </div>
-            ) : (mediaTab === 'video' ? videos : images).length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-bg-card flex items-center justify-center mb-4">
-                  {mediaTab === 'video' ? (
-                    <Film className="w-8 h-8 text-zinc-600" />
-                  ) : (
-                    <Image className="w-8 h-8 text-zinc-600" />
-                  )}
-                </div>
-                <h3 className="text-lg font-medium text-white mb-2">No {mediaTab === 'video' ? 'videos' : 'images'}</h3>
-                <p className="text-sm text-zinc-500 mb-4">
-                  Sync your ad account to load media from Meta
-                </p>
-                <button
-                  onClick={handleSync}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-accent hover:bg-accent-hover text-white transition-colors"
-                >
-                  Sync Media
-                </button>
-              </div>
-            ) : (
-              <GalleryGrid
-                items={mediaTab === 'video' ? videos : images}
-                isLoading={false}
-                onSelect={handleSelect}
-                onStar={toggleStar}
-                onMenu={handleMenuClick}
-                videoSources={videoSources}
-                onRequestVideoSource={fetchVideoSource}
-              />
-            )
           ) : (
-            <MediaTable
-              items={mediaTab === 'video' ? videos : images}
+            /* Media tab - clean gallery */
+            <GalleryGrid
+              items={filteredAssets}
               isLoading={isLoading}
-              sortField={sortBy}
-              sortDirection={sortDesc ? 'desc' : 'asc'}
-              onSort={handleTableSort}
-              onSelect={(id) => handleSelect(id)}
-              onStar={(id) => toggleStar(id)}
-              starredIds={starredIds}
+              onSelect={handleSelect}
+              onStar={toggleStar}
+              onMenu={handleMenuClick}
+              videoSources={videoSources}
+              onRequestVideoSource={fetchVideoSource}
+              minimal
             />
           )}
         </div>
