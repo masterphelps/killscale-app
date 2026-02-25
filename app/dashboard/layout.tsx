@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth'
 import { useSubscription } from '@/lib/subscription'
 import { supabase } from '@/lib/supabase-browser'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { Sidebar } from '@/components/sidebar'
 import { PrivacyProvider } from '@/lib/privacy-mode'
@@ -61,6 +61,12 @@ function DashboardContent({ children, sidebarOpen, setSidebarOpen }: {
   setSidebarOpen: (open: boolean) => void
 }) {
   const { isCollapsed } = useSidebar()
+  const pathname = usePathname()
+  const isFullScreen = pathname?.includes('/video-editor')
+
+  if (isFullScreen) {
+    return <main className="min-h-screen bg-bg-dark">{children}</main>
+  }
 
   return (
     <div className="min-h-screen bg-bg-dark text-white">

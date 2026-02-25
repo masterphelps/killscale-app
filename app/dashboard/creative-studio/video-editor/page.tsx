@@ -900,7 +900,7 @@ export default function VideoEditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] dark rve-editor">
+    <div className="flex flex-col h-screen dark rve-editor">
       {/* KillScale Header Bar */}
       <div className="flex items-center justify-between px-4 lg:px-6 py-2 border-b border-zinc-800/50 flex-shrink-0 bg-bg-dark z-10">
         <button
