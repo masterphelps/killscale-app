@@ -18,6 +18,7 @@ interface MediaGalleryCardProps {
   subtitle?: string
   rankBadge?: number
   textContent?: string
+  minimal?: boolean
 }
 
 // Score-based glow styling — uses hook score for videos, click score for images
@@ -86,6 +87,7 @@ export function MediaGalleryCard({
   subtitle,
   rankBadge,
   textContent,
+  minimal,
 }: MediaGalleryCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [videoPlaying, setVideoPlaying] = useState(false)
@@ -184,15 +186,27 @@ export function MediaGalleryCard({
       onHoverEnd={() => setIsHovered(false)}
       onClick={onSelect}
       className={cn(
-        'relative rounded-2xl overflow-hidden cursor-pointer',
-        'bg-bg-card border transition-all duration-300',
-        hasPerf && scoreStyles ? scoreStyles.border : 'border-border',
-        hasPerf && isHovered && scoreStyles ? scoreStyles.glow : !hasPerf && isHovered && 'shadow-[0_0_40px_rgba(255,255,255,0.05)]',
-        'group'
+        minimal
+          ? 'rounded-xl overflow-hidden cursor-pointer group'
+          : cn(
+              'relative rounded-2xl overflow-hidden cursor-pointer',
+              'bg-bg-card border transition-all duration-300',
+              hasPerf && scoreStyles ? scoreStyles.border : 'border-border',
+              hasPerf && isHovered && scoreStyles ? scoreStyles.glow : !hasPerf && isHovered && 'shadow-[0_0_40px_rgba(255,255,255,0.05)]',
+              'group'
+            )
       )}
     >
-      {/* Media Container - 4:3 aspect ratio (hidden for copy-only cards) */}
-      {!textContent && <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
+      {/* Media Container - 4:3 aspect ratio (hidden for copy-only cards), natural ratio when minimal */}
+      {!textContent && <div
+        className={cn(
+          'relative overflow-hidden bg-zinc-900',
+          minimal && item.width && item.height ? 'w-full' : 'aspect-[4/3]'
+        )}
+        style={minimal && item.width && item.height ? { paddingBottom: `${(item.height / item.width) * 100}%` } : undefined}
+      >
+        {/* Inner wrapper — absolute when using paddingBottom trick for natural ratio */}
+        <div className={minimal && item.width && item.height ? 'absolute inset-0' : 'contents'}>
         {(storageUrl || thumbnailUrl) && !imageError ? (
           <>
             {isVideo && storageUrl ? (
@@ -307,319 +321,360 @@ export function MediaGalleryCard({
           )}
         </AnimatePresence>
 
-        {/* Top-left: Rank Badge OR Fatigue Ring Badge (with perf data) OR Media Type Icon (no data) */}
-        <div className="absolute top-3 left-3 z-10">
-          {rankBadge ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
-              className={cn(
-                'w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg',
-                'bg-gradient-to-br shadow-lg border',
-                rankBadge === 1 ? 'from-amber-400 to-yellow-500 text-black border-amber-300' :
-                rankBadge === 2 ? 'from-zinc-300 to-zinc-400 text-black border-zinc-200' :
-                rankBadge === 3 ? 'from-orange-400 to-orange-600 text-white border-orange-300' :
-                'from-zinc-600 to-zinc-700 text-white border-zinc-500'
-              )}
-            >
-              {rankBadge}
-            </motion.div>
-          ) : hasPerf && fatigueStyles ? (
-            <div
-              className="relative"
-              onMouseEnter={() => setShowFatigueTooltip(true)}
-              onMouseLeave={() => setShowFatigueTooltip(false)}
-            >
+        {/* Top-left badge */}
+        {minimal ? (
+          /* Minimal mode: simple media type icon */
+          <div className="absolute top-2 left-2 p-1.5 rounded-lg bg-black/40 backdrop-blur-sm">
+            {isVideo ? (
+              <Film className="w-3.5 h-3.5 text-white/80" />
+            ) : (
+              <Image className="w-3.5 h-3.5 text-white/80" />
+            )}
+          </div>
+        ) : (
+          /* Full mode: Rank Badge OR Fatigue Ring Badge (with perf data) OR Media Type Icon (no data) */
+          <div className="absolute top-3 left-3 z-10">
+            {rankBadge ? (
               <motion.div
-                animate={fatigueStyles.pulse ? { scale: [1, 1.05, 1] } : {}}
-                transition={fatigueStyles.pulse ? { duration: 2, repeat: Infinity } : {}}
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, delay: index * 0.05 }}
                 className={cn(
-                  'relative w-11 h-11 rounded-full flex items-center justify-center',
+                  'w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg',
+                  'bg-gradient-to-br shadow-lg border',
+                  rankBadge === 1 ? 'from-amber-400 to-yellow-500 text-black border-amber-300' :
+                  rankBadge === 2 ? 'from-zinc-300 to-zinc-400 text-black border-zinc-200' :
+                  rankBadge === 3 ? 'from-orange-400 to-orange-600 text-white border-orange-300' :
+                  'from-zinc-600 to-zinc-700 text-white border-zinc-500'
+                )}
+              >
+                {rankBadge}
+              </motion.div>
+            ) : hasPerf && fatigueStyles ? (
+              <div
+                className="relative"
+                onMouseEnter={() => setShowFatigueTooltip(true)}
+                onMouseLeave={() => setShowFatigueTooltip(false)}
+              >
+                <motion.div
+                  animate={fatigueStyles.pulse ? { scale: [1, 1.05, 1] } : {}}
+                  transition={fatigueStyles.pulse ? { duration: 2, repeat: Infinity } : {}}
+                  className={cn(
+                    'relative w-11 h-11 rounded-full flex items-center justify-center',
+                    'bg-black/70 backdrop-blur-md border border-white/10',
+                    'shadow-lg'
+                  )}
+                >
+                  <svg
+                    className="absolute inset-0 w-full h-full -rotate-90"
+                    viewBox="0 0 44 44"
+                  >
+                    <circle cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" className="stroke-zinc-700" />
+                    <motion.circle
+                      cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" strokeLinecap="round"
+                      className={fatigueStyles.stroke}
+                      initial={{ strokeDasharray: `0 ${circumference}` }}
+                      animate={{ strokeDasharray: `${fatigueProgress} ${circumference}` }}
+                      transition={{ duration: 1, delay: index * 0.05 + 0.3, ease: 'easeOut' }}
+                    />
+                  </svg>
+                  <span className={cn('text-[11px] font-bold tabular-nums', fatigueStyles.color)}>
+                    {item.fatigueScore.toFixed(0)}
+                  </span>
+                </motion.div>
+
+                {/* Fatigue tooltip */}
+                <AnimatePresence>
+                  {showFatigueTooltip && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-full left-0 mt-2 z-30 w-48 rounded-xl bg-zinc-900 border border-zinc-700 shadow-xl p-3 pointer-events-none"
+                    >
+                      <p className="text-[11px] font-semibold text-white mb-1.5">Creative Fatigue</p>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={cn('text-sm font-bold', fatigueStyles.color)}>{item.fatigueScore.toFixed(0)}</span>
+                        <span className={cn('text-xs font-medium', fatigueStyles.color)}>{fatigueStyles.label}</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-zinc-700 mb-2">
+                        <div
+                          className={cn('h-full rounded-full', {
+                            'bg-red-500': item.fatigueScore >= 80,
+                            'bg-orange-500': item.fatigueScore >= 60 && item.fatigueScore < 80,
+                            'bg-amber-500': item.fatigueScore >= 40 && item.fatigueScore < 60,
+                            'bg-lime-500': item.fatigueScore >= 20 && item.fatigueScore < 40,
+                            'bg-emerald-500': item.fatigueScore < 20,
+                          })}
+                          style={{ width: `${item.fatigueScore}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 leading-relaxed">
+                        Lower is better. Rises as your audience sees the ad repeatedly and engagement declines.
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, delay: index * 0.05 + 0.2 }}
+                className={cn(
+                  'w-9 h-9 rounded-full flex items-center justify-center',
                   'bg-black/70 backdrop-blur-md border border-white/10',
                   'shadow-lg'
                 )}
               >
-                <svg
-                  className="absolute inset-0 w-full h-full -rotate-90"
-                  viewBox="0 0 44 44"
-                >
-                  <circle cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" className="stroke-zinc-700" />
-                  <motion.circle
-                    cx="22" cy="22" r="15" fill="none" strokeWidth="2.5" strokeLinecap="round"
-                    className={fatigueStyles.stroke}
-                    initial={{ strokeDasharray: `0 ${circumference}` }}
-                    animate={{ strokeDasharray: `${fatigueProgress} ${circumference}` }}
-                    transition={{ duration: 1, delay: index * 0.05 + 0.3, ease: 'easeOut' }}
-                  />
-                </svg>
-                <span className={cn('text-[11px] font-bold tabular-nums', fatigueStyles.color)}>
-                  {item.fatigueScore.toFixed(0)}
-                </span>
-              </motion.div>
-
-              {/* Fatigue tooltip */}
-              <AnimatePresence>
-                {showFatigueTooltip && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute top-full left-0 mt-2 z-30 w-48 rounded-xl bg-zinc-900 border border-zinc-700 shadow-xl p-3 pointer-events-none"
-                  >
-                    <p className="text-[11px] font-semibold text-white mb-1.5">Creative Fatigue</p>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={cn('text-sm font-bold', fatigueStyles.color)}>{item.fatigueScore.toFixed(0)}</span>
-                      <span className={cn('text-xs font-medium', fatigueStyles.color)}>{fatigueStyles.label}</span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-zinc-700 mb-2">
-                      <div
-                        className={cn('h-full rounded-full', {
-                          'bg-red-500': item.fatigueScore >= 80,
-                          'bg-orange-500': item.fatigueScore >= 60 && item.fatigueScore < 80,
-                          'bg-amber-500': item.fatigueScore >= 40 && item.fatigueScore < 60,
-                          'bg-lime-500': item.fatigueScore >= 20 && item.fatigueScore < 40,
-                          'bg-emerald-500': item.fatigueScore < 20,
-                        })}
-                        style={{ width: `${item.fatigueScore}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-zinc-400 leading-relaxed">
-                      Lower is better. Rises as your audience sees the ad repeatedly and engagement declines.
-                    </p>
-                  </motion.div>
+                {isVideo ? (
+                  <Film className="w-4 h-4 text-purple-400" />
+                ) : (
+                  <Image className="w-4 h-4 text-blue-400" />
                 )}
-              </AnimatePresence>
-            </div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
+              </motion.div>
+            )}
+          </div>
+        )}
+
+        {/* Top-right: Media Type Badge — hidden when minimal */}
+        {!minimal && (
+          <div className="absolute top-3 right-3 z-10">
+            <motion.span
+              initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3, delay: index * 0.05 + 0.2 }}
               className={cn(
-                'w-9 h-9 rounded-full flex items-center justify-center',
-                'bg-black/70 backdrop-blur-md border border-white/10',
+                'px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider',
+                'bg-black/70 backdrop-blur-md border border-white/10 text-white',
                 'shadow-lg'
               )}
             >
-              {isVideo ? (
-                <Film className="w-4 h-4 text-purple-400" />
-              ) : (
-                <Image className="w-4 h-4 text-blue-400" />
-              )}
-            </motion.div>
-          )}
-        </div>
+              {item.mediaType}
+            </motion.span>
+          </div>
+        )}
 
-        {/* Top-right: Media Type Badge */}
-        <div className="absolute top-3 right-3 z-10">
-          <motion.span
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.05 + 0.2 }}
-            className={cn(
-              'px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider',
-              'bg-black/70 backdrop-blur-md border border-white/10 text-white',
-              'shadow-lg'
-            )}
-          >
-            {item.mediaType}
-          </motion.span>
-        </div>
-
+        </div>{/* end inner wrapper */}
       </div>}
 
       {/* Card Footer */}
-      <div className="p-4 space-y-3">
-        {hasPerf ? (
-          <>
-            {/* Text content (for Best Copy page) - show more lines when no media */}
-            {textContent && (
-              <div className="min-h-[120px]">
-                <div className="flex items-start gap-3 mb-3">
-                  {rankBadge && (
-                    <div className={cn(
-                      'flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm',
-                      'bg-gradient-to-br shadow-lg border',
-                      rankBadge === 1 ? 'from-amber-400 to-yellow-500 text-black border-amber-300' :
-                      rankBadge === 2 ? 'from-zinc-300 to-zinc-400 text-black border-zinc-200' :
-                      rankBadge === 3 ? 'from-orange-400 to-orange-600 text-white border-orange-300' :
-                      'from-zinc-600 to-zinc-700 text-white border-zinc-500'
-                    )}>
-                      {rankBadge}
-                    </div>
-                  )}
-                  {item.name && (
-                    <h3 className="text-base font-semibold text-white leading-tight">{item.name}</h3>
-                  )}
-                </div>
-                <p className="text-sm text-zinc-400 line-clamp-6 leading-relaxed">{textContent}</p>
-              </div>
-            )}
-
-            {/* Name and subtitle */}
-            {(item.name || subtitle) && !textContent && (
-              <div className="space-y-0.5">
-                {item.name && (
-                  <p className="text-sm font-medium text-white truncate">{item.name}</p>
-                )}
-                {subtitle && (
-                  <p className="text-xs text-zinc-500 truncate">{subtitle}</p>
-                )}
-              </div>
-            )}
-
-            {/* Revenue — large and prominent in green */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold font-mono tabular-nums text-emerald-400">
-                  {formatCurrency(item.revenue)}
-                </span>
-                <span className="text-xs text-zinc-500 font-medium">Revenue</span>
-              </div>
-
-              <span className="text-xs text-zinc-500 font-mono">
-                {formatCurrency(item.spend)} spent
-              </span>
-            </div>
-
-            {/* Metrics row: Custom metrics OR default (Thumbstop/Hold or CTR/CPC) */}
-            <div className={cn('grid gap-2', customMetrics && customMetrics.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
-              {customMetrics ? (
-                customMetrics.map((metric, i) => (
-                  <div key={i}>
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wide">{metric.label}</div>
-                    <div className="text-xs font-mono text-zinc-300">{metric.value}</div>
-                  </div>
-                ))
-              ) : item.thumbstopRate !== null && item.thumbstopRate !== undefined ? (
-                <>
-                  <div>
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Thumbstop</div>
-                    <div className="text-xs font-mono text-zinc-300">{item.thumbstopRate.toFixed(1)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Hold</div>
-                    <div className="text-xs font-mono text-zinc-300">{item.holdRate !== null ? `${item.holdRate.toFixed(1)}%` : '\u2014'}</div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wide">CTR</div>
-                    <div className="text-xs font-mono text-zinc-300">{item.ctr.toFixed(2)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wide">CPC</div>
-                    <div className="text-xs font-mono text-zinc-300">${item.cpc.toFixed(2)}</div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Composite score pills — always show all 4, grey when null */}
-            <div className="flex flex-wrap gap-1.5">
-              <ScorePill label="Hook" value={item.hookScore} />
-              <ScorePill label="Hold" value={item.holdScore} />
-              <ScorePill label="Click" value={item.clickScore} />
-              <ScorePill label="Conv" value={item.convertScore} />
-            </div>
-          </>
-        ) : (
-          <>
-            {/* No performance data — show metadata */}
-            {item.name && (
-              <p className="text-sm font-medium text-white truncate">{item.name}</p>
-            )}
-            <p className="text-sm text-zinc-500">Not used in any ads</p>
-            <div className="flex items-center gap-2 text-xs">
-              {item.width && item.height && (
-                <span className="text-zinc-500">{item.width} x {item.height}</span>
-              )}
-              {item.fileSize && (
-                <span className="text-zinc-500">{formatFileSize(item.fileSize)}</span>
-              )}
-            </div>
-            {item.syncedAt && (
-              <p className="text-xs text-zinc-600">
-                Synced {new Date(item.syncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </p>
-            )}
-          </>
-        )}
-
-        {/* Bottom Row: Stats + AI Analysis indicator + Actions */}
-        <div className="flex items-center justify-between pt-3 border-t border-border">
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            {hasPerf ? (
-              <>
-                <span>{item.adCount} ads</span>
-                <span className="text-zinc-700">|</span>
-                <span>{item.adsetCount} sets</span>
-              </>
-            ) : (
-              <>
-                <span>{item.adCount} ads</span>
-                <span className="text-zinc-700">|</span>
-                <span>{item.campaignCount} campaigns</span>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1">
-            {/* AI Analysis indicator (videos only) - grey when not analyzed, purple when complete */}
-            {isVideo && (
-              <div
-                title={item.analysisStatus === 'complete' ? 'AI Analysis available' : 'No AI analysis yet'}
-                className={cn(
-                  'p-2 rounded-lg transition-all duration-200',
-                  item.analysisStatus === 'complete'
-                    ? 'text-purple-400 bg-purple-500/20'
-                    : 'text-zinc-600 bg-transparent'
-                )}
-              >
-                <Sparkles className="w-4 h-4" />
-              </div>
-            )}
-
+      {minimal ? (
+        /* Minimal mode: just filename + star + menu */
+        <div className="flex items-center justify-between mt-2 px-0.5">
+          <p className="text-sm text-zinc-300 truncate flex-1">{item.name || (isVideo ? 'Video' : 'Image')}</p>
+          <div className="flex items-center gap-1 flex-shrink-0">
             {onStar && (
-              <motion.button
-                whileTap={{ scale: 0.85 }}
-                animate={isStarAnimating ? {
-                  scale: [1, 1.3, 1],
-                  rotate: [0, 10, -10, 0]
-                } : {}}
-                transition={{ duration: 0.4 }}
-                onClick={handleStarClick}
-                className={cn(
-                  'p-2 rounded-lg transition-all duration-200',
-                  item.isStarred
-                    ? 'text-amber-400 bg-amber-500/20'
-                    : 'text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10'
-                )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onStar() }}
+                className="p-1.5 rounded-lg text-zinc-500 hover:text-amber-400 transition-colors"
               >
-                <Star
-                  className="w-4 h-4"
-                  fill={item.isStarred ? 'currentColor' : 'none'}
-                  strokeWidth={item.isStarred ? 0 : 2}
-                />
-              </motion.button>
+                <Star className={cn('w-4 h-4', item.isStarred && 'fill-amber-400 text-amber-400')} />
+              </button>
             )}
-
             {onMenuClick && (
               <button
                 onClick={(e) => { e.stopPropagation(); onMenuClick(e) }}
-                className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors"
+                className="p-1.5 rounded-lg text-zinc-500 hover:text-white transition-colors"
               >
                 <MoreHorizontal className="w-4 h-4" />
               </button>
             )}
           </div>
         </div>
-      </div>
+      ) : (
+        /* Full mode: performance data, metrics, score pills, actions */
+        <div className="p-4 space-y-3">
+          {hasPerf ? (
+            <>
+              {/* Text content (for Best Copy page) - show more lines when no media */}
+              {textContent && (
+                <div className="min-h-[120px]">
+                  <div className="flex items-start gap-3 mb-3">
+                    {rankBadge && (
+                      <div className={cn(
+                        'flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm',
+                        'bg-gradient-to-br shadow-lg border',
+                        rankBadge === 1 ? 'from-amber-400 to-yellow-500 text-black border-amber-300' :
+                        rankBadge === 2 ? 'from-zinc-300 to-zinc-400 text-black border-zinc-200' :
+                        rankBadge === 3 ? 'from-orange-400 to-orange-600 text-white border-orange-300' :
+                        'from-zinc-600 to-zinc-700 text-white border-zinc-500'
+                      )}>
+                        {rankBadge}
+                      </div>
+                    )}
+                    {item.name && (
+                      <h3 className="text-base font-semibold text-white leading-tight">{item.name}</h3>
+                    )}
+                  </div>
+                  <p className="text-sm text-zinc-400 line-clamp-6 leading-relaxed">{textContent}</p>
+                </div>
+              )}
 
-      <div className="absolute inset-0 pointer-events-none rounded-2xl ring-1 ring-inset ring-white/5" />
+              {/* Name and subtitle */}
+              {(item.name || subtitle) && !textContent && (
+                <div className="space-y-0.5">
+                  {item.name && (
+                    <p className="text-sm font-medium text-white truncate">{item.name}</p>
+                  )}
+                  {subtitle && (
+                    <p className="text-xs text-zinc-500 truncate">{subtitle}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Revenue — large and prominent in green */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold font-mono tabular-nums text-emerald-400">
+                    {formatCurrency(item.revenue)}
+                  </span>
+                  <span className="text-xs text-zinc-500 font-medium">Revenue</span>
+                </div>
+
+                <span className="text-xs text-zinc-500 font-mono">
+                  {formatCurrency(item.spend)} spent
+                </span>
+              </div>
+
+              {/* Metrics row: Custom metrics OR default (Thumbstop/Hold or CTR/CPC) */}
+              <div className={cn('grid gap-2', customMetrics && customMetrics.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+                {customMetrics ? (
+                  customMetrics.map((metric, i) => (
+                    <div key={i}>
+                      <div className="text-[10px] text-zinc-600 uppercase tracking-wide">{metric.label}</div>
+                      <div className="text-xs font-mono text-zinc-300">{metric.value}</div>
+                    </div>
+                  ))
+                ) : item.thumbstopRate !== null && item.thumbstopRate !== undefined ? (
+                  <>
+                    <div>
+                      <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Thumbstop</div>
+                      <div className="text-xs font-mono text-zinc-300">{item.thumbstopRate.toFixed(1)}%</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Hold</div>
+                      <div className="text-xs font-mono text-zinc-300">{item.holdRate !== null ? `${item.holdRate.toFixed(1)}%` : '\u2014'}</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-[10px] text-zinc-600 uppercase tracking-wide">CTR</div>
+                      <div className="text-xs font-mono text-zinc-300">{item.ctr.toFixed(2)}%</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-zinc-600 uppercase tracking-wide">CPC</div>
+                      <div className="text-xs font-mono text-zinc-300">${item.cpc.toFixed(2)}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Composite score pills — always show all 4, grey when null */}
+              <div className="flex flex-wrap gap-1.5">
+                <ScorePill label="Hook" value={item.hookScore} />
+                <ScorePill label="Hold" value={item.holdScore} />
+                <ScorePill label="Click" value={item.clickScore} />
+                <ScorePill label="Conv" value={item.convertScore} />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* No performance data — show metadata */}
+              {item.name && (
+                <p className="text-sm font-medium text-white truncate">{item.name}</p>
+              )}
+              <p className="text-sm text-zinc-500">Not used in any ads</p>
+              <div className="flex items-center gap-2 text-xs">
+                {item.width && item.height && (
+                  <span className="text-zinc-500">{item.width} x {item.height}</span>
+                )}
+                {item.fileSize && (
+                  <span className="text-zinc-500">{formatFileSize(item.fileSize)}</span>
+                )}
+              </div>
+              {item.syncedAt && (
+                <p className="text-xs text-zinc-600">
+                  Synced {new Date(item.syncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </p>
+              )}
+            </>
+          )}
+
+          {/* Bottom Row: Stats + AI Analysis indicator + Actions */}
+          <div className="flex items-center justify-between pt-3 border-t border-border">
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              {hasPerf ? (
+                <>
+                  <span>{item.adCount} ads</span>
+                  <span className="text-zinc-700">|</span>
+                  <span>{item.adsetCount} sets</span>
+                </>
+              ) : (
+                <>
+                  <span>{item.adCount} ads</span>
+                  <span className="text-zinc-700">|</span>
+                  <span>{item.campaignCount} campaigns</span>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {/* AI Analysis indicator (videos only) - grey when not analyzed, purple when complete */}
+              {isVideo && (
+                <div
+                  title={item.analysisStatus === 'complete' ? 'AI Analysis available' : 'No AI analysis yet'}
+                  className={cn(
+                    'p-2 rounded-lg transition-all duration-200',
+                    item.analysisStatus === 'complete'
+                      ? 'text-purple-400 bg-purple-500/20'
+                      : 'text-zinc-600 bg-transparent'
+                  )}
+                >
+                  <Sparkles className="w-4 h-4" />
+                </div>
+              )}
+
+              {onStar && (
+                <motion.button
+                  whileTap={{ scale: 0.85 }}
+                  animate={isStarAnimating ? {
+                    scale: [1, 1.3, 1],
+                    rotate: [0, 10, -10, 0]
+                  } : {}}
+                  transition={{ duration: 0.4 }}
+                  onClick={handleStarClick}
+                  className={cn(
+                    'p-2 rounded-lg transition-all duration-200',
+                    item.isStarred
+                      ? 'text-amber-400 bg-amber-500/20'
+                      : 'text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10'
+                  )}
+                >
+                  <Star
+                    className="w-4 h-4"
+                    fill={item.isStarred ? 'currentColor' : 'none'}
+                    strokeWidth={item.isStarred ? 0 : 2}
+                  />
+                </motion.button>
+              )}
+
+              {onMenuClick && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onMenuClick(e) }}
+                  className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-bg-hover transition-colors"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={cn('absolute inset-0 pointer-events-none ring-1 ring-inset ring-white/5', minimal ? 'rounded-xl' : 'rounded-2xl')} />
     </motion.div>
   )
 }
