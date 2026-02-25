@@ -39,6 +39,9 @@ interface MediaLibraryRow {
   width?: number
   height?: number
   synced_at: string
+  storage_url?: string
+  storage_path?: string
+  download_status?: string
 }
 
 /**
@@ -278,17 +281,56 @@ export async function POST(request: NextRequest) {
     // ─── Step C: Upsert only new items to media_library ────────────────
     const now = new Date().toISOString()
 
-    const imageRows: MediaLibraryRow[] = newImages.map(img => ({
-      user_id: userId,
-      ad_account_id: cleanAdAccountId,
-      media_hash: img.hash,
-      media_type: 'image' as const,
-      name: img.name,
-      url: img.url,
-      width: img.width,
-      height: img.height,
-      synced_at: now,
-    }))
+    // Look up existing storage URLs for these hashes (from any user on this account).
+    // AI images created by save-generated-image already have storage_url — copy it
+    // so new users on the same account see the image immediately without re-downloading.
+    const allNewHashes = [...newImages.map(i => i.hash), ...newVideos.map(v => v.id)]
+    const existingStorageMap = new Map<string, { storage_url: string; storage_path: string }>()
+
+    if (allNewHashes.length > 0) {
+      const { data: storageRows } = await supabaseAdmin
+        .from('media_library')
+        .select('media_hash, storage_url, storage_path')
+        .eq('ad_account_id', cleanAdAccountId)
+        .in('media_hash', allNewHashes)
+        .not('storage_url', 'is', null)
+        .limit(allNewHashes.length)
+
+      if (storageRows) {
+        for (const row of storageRows) {
+          if (row.storage_url && !existingStorageMap.has(row.media_hash)) {
+            existingStorageMap.set(row.media_hash, {
+              storage_url: row.storage_url,
+              storage_path: row.storage_path,
+            })
+          }
+        }
+      }
+
+      if (existingStorageMap.size > 0) {
+        console.log(`[Media Sync] Found ${existingStorageMap.size} existing storage URLs to copy for new rows`)
+      }
+    }
+
+    const imageRows: MediaLibraryRow[] = newImages.map(img => {
+      const existing = existingStorageMap.get(img.hash)
+      return {
+        user_id: userId,
+        ad_account_id: cleanAdAccountId,
+        media_hash: img.hash,
+        media_type: 'image' as const,
+        name: img.name,
+        url: img.url,
+        width: img.width,
+        height: img.height,
+        synced_at: now,
+        ...(existing ? {
+          storage_url: existing.storage_url,
+          storage_path: existing.storage_path,
+          download_status: 'complete',
+        } : {}),
+      }
+    })
 
     const videoRows: MediaLibraryRow[] = newVideos.map(vid => {
       let bestThumbUri = ''
@@ -304,6 +346,7 @@ export async function POST(request: NextRequest) {
         bestThumbHeight = sorted[0].height || 0
       }
 
+      const existing = existingStorageMap.get(vid.id)
       return {
         user_id: userId,
         ad_account_id: cleanAdAccountId,
@@ -314,6 +357,11 @@ export async function POST(request: NextRequest) {
         width: bestThumbWidth,
         height: bestThumbHeight,
         synced_at: now,
+        ...(existing ? {
+          storage_url: existing.storage_url,
+          storage_path: existing.storage_path,
+          download_status: 'complete',
+        } : {}),
       }
     })
 

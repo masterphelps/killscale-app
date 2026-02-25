@@ -311,7 +311,7 @@ export async function POST(req: Request) {
         await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.95 })
 
         const cleanAccountId = adAccountId.replace(/^act_/, '')
-        const storagePath = `${userId}/${cleanAccountId}/videos/rendered/${overlayId}.mp4`
+        const storagePath = `${cleanAccountId}/videos/rendered/${overlayId}.mp4`
 
         let blobResponse: Response
         try {

@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       } else if (effectiveIsRunway) {
         // Runway requires an HTTPS URL — upload to Supabase Storage to get a public URL
         const ext = productImageMimeType.includes('png') ? 'png' : 'jpg'
-        const storagePath = `${userId}/${adAccountId.replace(/^act_/, '')}/runway-input/${Date.now()}.${ext}`
+        const storagePath = `${adAccountId.replace(/^act_/, '')}/runway-input/${Date.now()}.${ext}`
         const { error: uploadErr } = await supabase.storage
           .from('media')
           .upload(storagePath, rawBuffer, { contentType: productImageMimeType, upsert: true })

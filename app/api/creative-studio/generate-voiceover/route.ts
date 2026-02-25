@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     // Upload to Supabase Storage
     const cleanAccountId = job.ad_account_id.replace(/^act_/, '')
-    const storagePath = `${userId}/${cleanAccountId}/voiceovers/${jobId}.mp3`
+    const storagePath = `${cleanAccountId}/voiceovers/${jobId}.mp3`
 
     const { error: uploadError } = await supabase
       .storage

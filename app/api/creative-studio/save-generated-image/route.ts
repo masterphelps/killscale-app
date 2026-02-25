@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // ─── Storage-only mode: just persist to Supabase for AI Tasks ─────────────
     if (!saveToLibrary) {
       const tempId = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-      const storagePath = `${userId}/${cleanAccountId}/generated/${tempId}.${ext}`
+      const storagePath = `${cleanAccountId}/generated/${tempId}.${ext}`
 
       // Upload with retry (up to 3 attempts)
       let uploadError: Error | null = null
@@ -68,12 +68,38 @@ export async function POST(request: NextRequest) {
         .from('media')
         .getPublicUrl(storagePath)
 
-      console.log('[SaveGeneratedImage] Stored to Supabase only (not in media library)')
+      const storageUrl = publicUrlData?.publicUrl || null
+
+      // Auto-insert into media_library so AI images are instantly browsable
+      const { error: insertError } = await supabase
+        .from('media_library')
+        .upsert(
+          {
+            user_id: userId,
+            ad_account_id: cleanAccountId,
+            media_hash: `ai_image_${tempId}`,
+            media_type: 'image',
+            name: imageName,
+            storage_url: storageUrl,
+            url: storageUrl,
+            storage_path: storagePath,
+            source_type: 'ai_image',
+            download_status: 'complete',
+            file_size_bytes: fileBuffer.length,
+            synced_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,ad_account_id,media_hash' }
+        )
+
+      if (insertError) {
+        console.error('[SaveGeneratedImage] Auto-insert to media_library failed:', insertError)
+      }
 
       return NextResponse.json({
         success: true,
-        storageUrl: publicUrlData?.publicUrl || null,
+        storageUrl,
         storagePath,
+        mediaHash: `ai_image_${tempId}`,
       })
     }
 
@@ -132,7 +158,7 @@ export async function POST(request: NextRequest) {
     console.log('[SaveGeneratedImage] Uploaded to Meta with hash:', metaHash)
 
     // Step 2: Upload to Supabase Storage for local access (with retry)
-    const storagePath = `${userId}/${cleanAccountId}/generated/${metaHash}.${ext}`
+    const storagePath = `${cleanAccountId}/generated/${metaHash}.${ext}`
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const { error: uploadErr } = await supabase
@@ -155,10 +181,12 @@ export async function POST(request: NextRequest) {
 
     const storageUrl = publicUrlData?.publicUrl || null
 
-    // Step 3: Insert into media_library with Meta's real hash
+    // Step 3: Upsert into media_library with Meta's real hash
+    // Uses upsert so if sync-media already created a row for this hash, we update it
+    // with the storage data instead of silently failing on INSERT conflict.
     const { data: mediaRow, error: insertError } = await supabase
       .from('media_library')
-      .insert({
+      .upsert({
         user_id: userId,
         ad_account_id: cleanAccountId,
         media_hash: metaHash,
@@ -169,13 +197,14 @@ export async function POST(request: NextRequest) {
         download_status: 'complete',
         file_size_bytes: fileBuffer.length,
         name: imageName,
+        source_type: 'ai_image',
         synced_at: new Date().toISOString(),
-      })
+      }, { onConflict: 'user_id,ad_account_id,media_hash' })
       .select()
       .single()
 
     if (insertError) {
-      console.error('[SaveGeneratedImage] Insert error:', insertError)
+      console.error('[SaveGeneratedImage] Upsert error:', insertError)
     }
 
     console.log('[SaveGeneratedImage] Saved image to library with Meta hash:', metaHash)

@@ -11,6 +11,46 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+/**
+ * Auto-insert a completed AI video into media_library so it's
+ * instantly browsable in Creative Studio. Uses upsert to be idempotent.
+ */
+async function autoInsertToMediaLibrary(
+  jobId: string,
+  userId: string,
+  adAccountId: string,
+  rawVideoUrl: string,
+  videoStyle?: string | null,
+) {
+  const cleanAccountId = adAccountId.replace(/^act_/, '')
+  const styleName = videoStyle
+    ? videoStyle.charAt(0).toUpperCase() + videoStyle.slice(1)
+    : 'Generated'
+
+  const { error } = await supabase
+    .from('media_library')
+    .upsert(
+      {
+        user_id: userId,
+        ad_account_id: cleanAccountId,
+        media_hash: `ai_video_raw_${jobId}`,
+        media_type: 'video',
+        name: `AI Video - ${styleName}`,
+        storage_url: rawVideoUrl,
+        url: rawVideoUrl,
+        source_type: 'ai_video',
+        source_job_id: jobId,
+        download_status: 'complete',
+        synced_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,ad_account_id,media_hash' }
+    )
+
+  if (error) {
+    console.error(`[VideoStatus] Failed to auto-insert job ${jobId} to media_library:`, error)
+  }
+}
+
 // ── Runway helpers ──────────────────────────────────────────────────────────
 function isRunwayJob(soraJobId: string | null): boolean {
   return !!soraJobId?.startsWith('runway:')
@@ -60,7 +100,7 @@ async function downloadAndStoreRunwayVideo(
 
   const videoBuffer = Buffer.from(await res.arrayBuffer())
   const cleanAccountId = adAccountId.replace(/^act_/, '')
-  const storagePath = `${userId}/${cleanAccountId}/videos/${jobId}.mp4`
+  const storagePath = `${cleanAccountId}/videos/${jobId}.mp4`
 
   const { error: uploadError } = await supabase.storage
     .from('media')
@@ -164,7 +204,7 @@ async function downloadAndStoreVeoVideo(
   }
 
   const cleanAccountId = adAccountId.replace(/^act_/, '')
-  const storagePath = `${userId}/${cleanAccountId}/videos/${jobId}.mp4`
+  const storagePath = `${cleanAccountId}/videos/${jobId}.mp4`
 
   const { error: uploadError } = await supabase.storage
     .from('media')
@@ -341,6 +381,9 @@ export async function GET(request: NextRequest) {
                   })
                   .eq('id', job.id)
                 console.log(`[VideoStatus] Saved partial 8s video for ${job.id}`)
+                if (partialUrl) {
+                  await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, partialUrl, job.video_style)
+                }
                 return NextResponse.json({
                   jobId: job.id,
                   status: 'complete',
@@ -480,6 +523,10 @@ export async function GET(request: NextRequest) {
                   generation_label: 'Refund: Extension trigger failed',
                 })
 
+                if (partialUrl) {
+                  await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, partialUrl, job.video_style)
+                }
+
                 return NextResponse.json({
                   jobId: job.id,
                   status: 'complete',
@@ -515,6 +562,10 @@ export async function GET(request: NextRequest) {
             .eq('id', job.id)
 
           console.log(`[VideoStatus] Veo ext video complete: ${job.id}, ${job.target_duration_seconds}s, stored at ${rawVideoUrl}`)
+
+          if (rawVideoUrl) {
+            await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
+          }
 
           return NextResponse.json({
             jobId: job.id,
@@ -596,6 +647,10 @@ export async function GET(request: NextRequest) {
             .eq('id', job.id)
 
           console.log(`[VideoStatus] Runway video complete: ${job.id}, stored at ${rawVideoUrl}`)
+
+          if (rawVideoUrl) {
+            await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
+          }
 
           return NextResponse.json({
             jobId: job.id,
@@ -732,6 +787,10 @@ export async function GET(request: NextRequest) {
 
           console.log(`[VideoStatus] Veo video complete: ${job.id}, stored at ${rawVideoUrl}, extensionUri=${videoUri}`)
 
+          if (rawVideoUrl) {
+            await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
+          }
+
           return NextResponse.json({
             jobId: job.id,
             status: 'complete',
@@ -806,7 +865,7 @@ export async function GET(request: NextRequest) {
 
         const videoBuffer = Buffer.from(await contentRes.arrayBuffer())
         const cleanAccountId = job.ad_account_id.replace(/^act_/, '')
-        const storagePath = `${userId}/${cleanAccountId}/videos/${job.id}.mp4`
+        const storagePath = `${cleanAccountId}/videos/${job.id}.mp4`
 
         const { error: uploadError } = await supabase.storage
           .from('media')
@@ -829,6 +888,10 @@ export async function GET(request: NextRequest) {
           .eq('id', job.id)
 
         console.log(`[VideoStatus] Video complete: ${job.id}, stored at ${rawVideoUrl}`)
+
+        if (rawVideoUrl) {
+          await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
+        }
 
         return NextResponse.json({
           jobId: job.id,
@@ -996,6 +1059,9 @@ export async function POST(request: NextRequest) {
                       job.raw_video_url = partialUrl
                       job.duration_seconds = 8
                       job.error_message = 'Extension failed. 8s partial video saved.'
+                      if (partialUrl) {
+                        await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, partialUrl, job.video_style)
+                      }
                     } catch (dlErr) {
                       console.error(`[VideoStatus/List] Failed to save partial video for ${job.id}:`, dlErr)
                       job.status = 'failed'
@@ -1065,6 +1131,9 @@ export async function POST(request: NextRequest) {
                       job.status = 'complete'
                       job.raw_video_url = partialUrl
                       job.duration_seconds = 8
+                      if (partialUrl) {
+                        await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, partialUrl, job.video_style)
+                      }
                     } catch { /* already logged */ }
                   }
                   return
@@ -1089,6 +1158,9 @@ export async function POST(request: NextRequest) {
                   job.raw_video_url = rawVideoUrl
                   job.duration_seconds = job.target_duration_seconds || 15
                   console.log(`[VideoStatus/List] Veo ext video complete: ${job.id}, ${job.target_duration_seconds}s, stored at ${rawVideoUrl}`)
+                  if (rawVideoUrl) {
+                    await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, rawVideoUrl, job.video_style)
+                  }
                 } catch (dlErr) {
                   console.error(`[VideoStatus/List] Error finalizing Veo ext video ${job.id}:`, dlErr)
                 }
@@ -1116,6 +1188,9 @@ export async function POST(request: NextRequest) {
                   job.progress_pct = 100
                   job.raw_video_url = rawVideoUrl
                   console.log(`[VideoStatus/List] Runway video complete: ${job.id}, stored at ${rawVideoUrl}`)
+                  if (rawVideoUrl) {
+                    await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, rawVideoUrl, job.video_style)
+                  }
                 } catch (dlErr) {
                   console.error(`[VideoStatus/List] Error finalizing Runway video ${job.id}:`, dlErr)
                 }
@@ -1199,6 +1274,9 @@ export async function POST(request: NextRequest) {
                   job.progress_pct = 100
                   job.raw_video_url = rawVideoUrl
                   console.log(`[VideoStatus/List] Veo video complete: ${job.id}, stored at ${rawVideoUrl}, extensionUri=${videoUri}`)
+                  if (rawVideoUrl) {
+                    await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, rawVideoUrl, job.video_style)
+                  }
                 } catch (dlErr) {
                   console.error(`[VideoStatus/List] Error finalizing Veo video ${job.id}:`, dlErr)
                 }
@@ -1237,7 +1315,7 @@ export async function POST(request: NextRequest) {
 
                   const videoBuffer = Buffer.from(await contentRes.arrayBuffer())
                   const cleanAccountId = job.ad_account_id.replace(/^act_/, '')
-                  const storagePath = `${job.user_id}/${cleanAccountId}/videos/${job.id}.mp4`
+                  const storagePath = `${cleanAccountId}/videos/${job.id}.mp4`
 
                   const { error: uploadError } = await supabase.storage
                     .from('media')
@@ -1260,6 +1338,9 @@ export async function POST(request: NextRequest) {
                   job.progress_pct = 100
                   job.raw_video_url = rawVideoUrl
                   console.log(`[VideoStatus/List] Video complete: ${job.id}, stored at ${rawVideoUrl}`)
+                  if (rawVideoUrl) {
+                    await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, rawVideoUrl, job.video_style)
+                  }
                 } catch (dlErr) {
                   console.error(`[VideoStatus/List] Error finalizing video ${job.id}:`, dlErr)
                 }

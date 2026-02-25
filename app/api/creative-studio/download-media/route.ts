@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
           // Rate limit: 500ms between video source fetches (Meta API)
           await delay(500)
         } else {
-          // Images: use the permanent CDN URL directly
+          // Images: try the stored CDN URL first, refresh from Meta API if expired
           sourceUrl = item.url
         }
 
@@ -159,7 +159,30 @@ export async function POST(request: NextRequest) {
         }
 
         // Download the file
-        const fileRes = await fetch(sourceUrl)
+        let fileRes = await fetch(sourceUrl)
+
+        // If image CDN URL expired (403/400), refresh from Meta adimages API
+        if (!fileRes.ok && item.media_type === 'image') {
+          try {
+            const refreshRes = await fetch(
+              `${META_GRAPH_URL}/act_${cleanAccountId}/adimages?fields=url&hashes=${JSON.stringify([item.media_hash])}&access_token=${connection.access_token}`
+            )
+            const refreshData = await refreshRes.json()
+            const freshUrl = refreshData?.data?.[0]?.url
+            if (freshUrl) {
+              // Update the stored URL for future use
+              await supabase
+                .from('media_library')
+                .update({ url: freshUrl })
+                .eq('id', item.id)
+              fileRes = await fetch(freshUrl)
+            }
+            await delay(500)
+          } catch (refreshErr) {
+            console.error(`[DownloadMedia] Meta refresh error for image ${item.media_hash}:`, refreshErr)
+          }
+        }
+
         if (!fileRes.ok) {
           console.error(`[DownloadMedia] Failed to fetch ${item.media_hash}: ${fileRes.status}`)
           await markFailed(item.id)
@@ -175,8 +198,8 @@ export async function POST(request: NextRequest) {
         const ext = getExtension(contentType, item.media_type, isVideoFile)
         const mimeType = getMimeType(contentType, item.media_type, isVideoFile)
 
-        // Storage path: {user_id}/{account_id}/{type}/{hash}.{ext}
-        const storagePath = `${userId}/${cleanAccountId}/${item.media_type}/${item.media_hash}.${ext}`
+        // Storage path: {account_id}/{type}/{hash}.{ext}
+        const storagePath = `${cleanAccountId}/${item.media_type}/${item.media_hash}.${ext}`
 
         // Upload to Supabase Storage (public bucket "media")
         const { error: uploadError } = await supabase
@@ -202,7 +225,7 @@ export async function POST(request: NextRequest) {
 
         const storageUrl = publicUrlData?.publicUrl || null
 
-        // Update media_library row
+        // Update this user's media_library row
         await supabase
           .from('media_library')
           .update({
@@ -212,6 +235,20 @@ export async function POST(request: NextRequest) {
             file_size_bytes: fileBytes.length,
           })
           .eq('id', item.id)
+
+        // Also update sibling rows (other users on same ad account with same hash)
+        // so they get the storage URL immediately without re-downloading
+        await supabase
+          .from('media_library')
+          .update({
+            storage_path: storagePath,
+            storage_url: storageUrl,
+            download_status: 'complete',
+            file_size_bytes: fileBytes.length,
+          })
+          .eq('ad_account_id', cleanAccountId)
+          .eq('media_hash', item.media_hash)
+          .is('storage_url', null)
 
         processed++
         newlyCompleted++
