@@ -12,6 +12,8 @@ import { stubRenderer } from '@/lib/rve/stub-renderer'
 import { overlayConfigToRVEOverlays, rveOverlaysToOverlayConfig } from '@/lib/rve-bridge'
 import { createKillScaleImageAdaptor, createKillScaleVideoAdaptor } from '@/lib/rve/adaptors/killscale-media-adaptor'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
+import { CreativeStudioMediaModal, type SelectedMediaItem } from '@/components/creative-studio/creative-studio-media-modal'
+import { getSrcDuration } from '@/lib/rve/hooks/use-src-duration'
 import {
   ArrowLeft,
   Save,
@@ -23,7 +25,7 @@ import {
   Mic,
   Megaphone,
   Library,
-  Play,
+  Plus,
   X,
   Film,
 } from 'lucide-react'
@@ -83,10 +85,8 @@ export default function VideoEditorPage() {
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   const [nameInput, setNameInput] = useState('')
 
-  // Browse Library modal
-  const [showBrowseLibrary, setShowBrowseLibrary] = useState(false)
-  const [libraryVideos, setLibraryVideos] = useState<Array<{ id: string; mediaHash: string; name: string | null; storageUrl: string | null; thumbnailUrl: string | null; width: number | null; height: number | null }>>([])
-  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false)
+  // Media picker modal (Creative Studio media modal)
+  const [showMediaPicker, setShowMediaPicker] = useState(false)
 
   // Version history
   const [versions, setVersions] = useState<Array<{
@@ -471,129 +471,155 @@ export default function VideoEditorPage() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
-  // Load library videos for Browse Library modal
-  const loadLibraryVideos = useCallback(async () => {
-    if (!user?.id || !currentAccountId) return
-    setIsLoadingLibrary(true)
-    try {
-      const params = new URLSearchParams({ userId: user.id, adAccountId: currentAccountId, mediaType: 'video' })
-      const res = await fetch(`/api/creative-studio/media?${params}`)
-      const data = await res.json()
-      if (data.assets) {
-        setLibraryVideos(data.assets.filter((a: any) => a.storageUrl).map((a: any) => ({
-          id: a.id,
-          mediaHash: a.mediaHash,
-          name: a.name,
-          storageUrl: a.storageUrl,
-          thumbnailUrl: a.thumbnailUrl,
-          width: a.width,
-          height: a.height,
-        })))
-      }
-    } catch (err) {
-      console.error('Failed to load library videos:', err)
-    } finally {
-      setIsLoadingLibrary(false)
-    }
-  }, [user?.id, currentAccountId])
-
-  // Append a library video to the timeline
-  const handleAppendLibraryVideo = useCallback(async (video: { id: string; storageUrl: string; name: string | null }) => {
+  // Handle media selected from Creative Studio media modal
+  const handleMediaSelected = useCallback(async (item: SelectedMediaItem) => {
+    setShowMediaPicker(false)
     const current = currentOverlaysRef.current
-    if (!current.length || !video.storageUrl) return
 
-    // Find last end frame of existing video overlays
-    let lastEndFrame = 0
-    let videoRow = 5
-    for (const o of current) {
-      if (o.type === OverlayType.VIDEO) {
-        videoRow = o.row
-        const end = o.from + o.durationInFrames
-        if (end > lastEndFrame) lastEndFrame = end
-      }
-    }
+    if (item.mediaType === 'video') {
+      // Add as video clip overlay (similar to VideoOverlayPanel.handleAddClip)
+      const videoSrc = item.storageUrl || item.url
+      if (!videoSrc) return
 
-    // Default to 8 seconds for library videos (we don't know exact duration)
-    const clipDurationFrames = 8 * FPS
-    const newClip: ClipOverlay = {
-      id: Date.now(),
-      type: OverlayType.VIDEO,
-      content: video.storageUrl,
-      src: video.storageUrl,
-      from: lastEndFrame,
-      durationInFrames: clipDurationFrames,
-      left: 0,
-      top: 0,
-      width: 1080,
-      height: 1920,
-      row: videoRow,
-      isDragging: false,
-      rotation: 0,
-      styles: { objectFit: 'cover', volume: 1 },
-    }
-
-    const allOverlays = [...current, newClip]
-    const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
-    window.dispatchEvent(event)
-
-    const updatedConfig = rveOverlaysToOverlayConfig(allOverlays, overlayConfigRef.current)
-    overlayConfigRef.current = updatedConfig
-
-    // Create or update composition with source_library_ids
-    if (!user?.id || !currentAccountId) return
-
-    if (!compositionId && !isComposition) {
-      // First library video appended → create composition
+      let clipDurationFrames = 8 * FPS // fallback = 8 seconds
       try {
-        const sourceJobIds = jobId ? [jobId] : []
-        const sourceLibraryIds = [video.id]
-        const totalDuration = durationSec + 8
+        const result = await getSrcDuration(videoSrc)
+        clipDurationFrames = result.durationInFrames
+      } catch {
+        console.warn('Failed to get video duration, using fallback')
+      }
 
-        const res = await fetch('/api/creative-studio/video-composition', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            adAccountId: currentAccountId,
-            sourceJobIds,
-            sourceLibraryIds,
-            overlayConfig: overlayConfigRef.current || { style: 'clean' },
-            title: video.name || 'Library Composition',
-            durationSeconds: totalDuration,
-          }),
-        })
-        const data = await res.json()
-        if (data.compositionId) {
-          setCompositionId(data.compositionId)
-          setIsComposition(true)
-          setVersions([])
-          setActiveVersion(null)
-          const newUrl = new URL(window.location.href)
-          newUrl.searchParams.delete('jobId')
-          newUrl.searchParams.set('compositionId', data.compositionId)
-          window.history.replaceState({}, '', newUrl.toString())
+      // Find last end frame and row of existing video overlays
+      let lastEndFrame = 0
+      let videoRow = 5
+      for (const o of current) {
+        if (o.type === OverlayType.VIDEO) {
+          videoRow = o.row
+          const end = o.from + o.durationInFrames
+          if (end > lastEndFrame) lastEndFrame = end
         }
-      } catch (err) {
-        console.error('Failed to create composition from library:', err)
       }
-    } else if (compositionId) {
-      // Update existing composition with new library source
-      try {
-        await fetch('/api/creative-studio/video-composition', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            compositionId,
-            userId: user.id,
-            sourceLibraryIds: [video.id],
-          }),
-        })
-      } catch (err) {
-        console.error('Failed to update composition with library video:', err)
+
+      const width = item.width || 1080
+      const height = item.height || 1920
+
+      const newClip: ClipOverlay = {
+        id: Date.now(),
+        type: OverlayType.VIDEO,
+        content: item.thumbnailUrl || videoSrc,
+        src: videoSrc,
+        from: lastEndFrame,
+        durationInFrames: clipDurationFrames,
+        left: 0,
+        top: 0,
+        width,
+        height,
+        row: videoRow,
+        isDragging: false,
+        rotation: 0,
+        styles: { objectFit: 'cover', volume: 1 },
       }
+
+      const allOverlays = [...current, newClip]
+      const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
+      window.dispatchEvent(event)
+
+      const updatedConfig = rveOverlaysToOverlayConfig(allOverlays, overlayConfigRef.current)
+      overlayConfigRef.current = updatedConfig
+
+      // Create or update composition with source_library_ids
+      if (!user?.id || !currentAccountId) return
+
+      const clipDurationSec = Math.round(clipDurationFrames / FPS)
+
+      if (!compositionId && !isComposition) {
+        try {
+          const sourceJobIds = jobId ? [jobId] : []
+          const sourceLibraryIds = [item.mediaHash]
+          const totalDuration = durationSec + clipDurationSec
+
+          const res = await fetch('/api/creative-studio/video-composition', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              adAccountId: currentAccountId,
+              sourceJobIds,
+              sourceLibraryIds,
+              overlayConfig: overlayConfigRef.current || { style: 'clean' },
+              title: item.name || 'Library Composition',
+              durationSeconds: totalDuration,
+            }),
+          })
+          const data = await res.json()
+          if (data.compositionId) {
+            setCompositionId(data.compositionId)
+            setIsComposition(true)
+            setVersions([])
+            setActiveVersion(null)
+            const newUrl = new URL(window.location.href)
+            newUrl.searchParams.delete('jobId')
+            newUrl.searchParams.set('compositionId', data.compositionId)
+            window.history.replaceState({}, '', newUrl.toString())
+          }
+        } catch (err) {
+          console.error('Failed to create composition from media:', err)
+        }
+      } else if (compositionId) {
+        try {
+          await fetch('/api/creative-studio/video-composition', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              compositionId,
+              userId: user.id,
+              sourceLibraryIds: [item.mediaHash],
+            }),
+          })
+        } catch (err) {
+          console.error('Failed to update composition with media:', err)
+        }
+      }
+      return
     }
 
-    setShowBrowseLibrary(false)
+    if (item.mediaType === 'image') {
+      // Add as image overlay (similar to ImageOverlayPanel.handleAddImage)
+      const imageSrc = item.storageUrl || item.url
+      if (!imageSrc) return
+
+      const width = item.width || 1080
+      const height = item.height || 1920
+      const imageDurationFrames = 200 // ~6.7 seconds at 30fps
+
+      const newId = current.length > 0 ? Math.max(...current.map(o => o.id)) + 1 : 0
+      const newOverlay: Overlay = {
+        id: newId,
+        type: OverlayType.IMAGE,
+        content: imageSrc,
+        src: imageSrc,
+        from: 0,
+        durationInFrames: imageDurationFrames,
+        left: 0,
+        top: 0,
+        width,
+        height,
+        row: 1,
+        isDragging: false,
+        rotation: 0,
+        styles: {
+          objectFit: 'contain',
+          animation: { enter: 'fadeIn', exit: 'fadeOut' },
+        },
+      }
+
+      const allOverlays = [...current, newOverlay]
+      const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
+      window.dispatchEvent(event)
+
+      const updatedConfig = rveOverlaysToOverlayConfig(allOverlays, overlayConfigRef.current)
+      overlayConfigRef.current = updatedConfig
+    }
   }, [jobId, user?.id, currentAccountId, compositionId, isComposition, durationSec])
 
   // Append a sibling concept video to the timeline
@@ -884,6 +910,8 @@ export default function VideoEditorPage() {
             }
             if (fromParam === 'ai-tasks') {
               router.push('/dashboard/creative-studio/ai-tasks')
+            } else if (fromParam === 'creative-studio') {
+              router.push('/dashboard/creative-studio/media')
             } else if (videoStyle === 'ugc') {
               router.push('/dashboard/creative-studio/ad-studio')
             } else if (backCanvasId) {
@@ -1087,13 +1115,13 @@ export default function VideoEditorPage() {
             </button>
           )}
 
-          {/* Browse Library */}
+          {/* Add Media (opens Creative Studio media modal) */}
           <button
-            onClick={() => { setShowBrowseLibrary(true); loadLibraryVideos() }}
+            onClick={() => setShowMediaPicker(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
           >
-            <Library className="w-3.5 h-3.5" />
-            Browse Library
+            <Plus className="w-3.5 h-3.5" />
+            Add Media
           </button>
 
           {/* Voiceover */}
@@ -1181,7 +1209,7 @@ export default function VideoEditorPage() {
           videoHeight={1920}
           sidebarWidth="24rem"
           sidebarIconWidth="3.75rem"
-          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER]}
+          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER, OverlayType.VIDEO, OverlayType.IMAGE]}
           adaptors={mediaAdaptors}
           isLoadingProject={isLoading}
           onAIGenerate={handleAIGenerate}
@@ -1278,58 +1306,15 @@ export default function VideoEditorPage() {
         </div>
       )}
 
-      {/* Browse Library Modal */}
-      {showBrowseLibrary && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowBrowseLibrary(false)}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-              <h3 className="text-sm font-semibold text-white">Browse Library Videos</h3>
-              <button onClick={() => setShowBrowseLibrary(false)} className="p-1 rounded-lg text-zinc-400 hover:text-white transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {isLoadingLibrary ? (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
-                </div>
-              ) : libraryVideos.length === 0 ? (
-                <div className="text-center py-16 text-zinc-500 text-sm">
-                  No videos in your library yet. Save videos from AI Tasks or Creative Studio first.
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {libraryVideos.map(v => (
-                    <button
-                      key={v.id}
-                      onClick={() => handleAppendLibraryVideo({ id: v.id, storageUrl: v.storageUrl!, name: v.name })}
-                      className="group relative aspect-[9/16] rounded-lg overflow-hidden bg-zinc-800 hover:ring-2 hover:ring-purple-500 transition-all"
-                    >
-                      {v.thumbnailUrl ? (
-                        <img src={v.thumbnailUrl} alt={v.name || 'Video'} className="w-full h-full object-cover" />
-                      ) : v.storageUrl ? (
-                        <video src={`${v.storageUrl}#t=0.1`} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                          <Play className="w-8 h-8" />
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <p className="text-xs text-white truncate">{v.name || 'Untitled'}</p>
-                      </div>
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-8 h-8 rounded-full bg-purple-500/80 flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">+</span>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Creative Studio Media Modal */}
+      {user?.id && currentAccountId && (
+        <CreativeStudioMediaModal
+          isOpen={showMediaPicker}
+          onClose={() => setShowMediaPicker(false)}
+          userId={user.id}
+          adAccountId={currentAccountId}
+          onSelect={handleMediaSelected}
+        />
       )}
 
       {/* Export Progress Modal */}
