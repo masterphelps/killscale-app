@@ -77,6 +77,9 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
   const [customEndDate, setCustomEndDate] = useState('')
   const [showDatePicker, setShowDatePicker] = useState(false)
 
+  // Source filter (All / Meta / AI Generated)
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'meta' | 'ai'>('all')
+
   // Starred items
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
 
@@ -608,6 +611,8 @@ export default function CreativeStudioLayout({ children }: { children: React.Rea
     openTheater,
     openTheaterWithAsset,
     closeTheater,
+    sourceFilter,
+    setSourceFilter,
     refresh: loadData,
     handleSync,
     removeAsset,

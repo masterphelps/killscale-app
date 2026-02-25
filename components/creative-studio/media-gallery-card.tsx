@@ -80,8 +80,8 @@ export function MediaGalleryCard({
   onSelect,
   onStar,
   onMenuClick,
-  videoSourceUrl,
-  onRequestVideoSource,
+  // videoSourceUrl and onRequestVideoSource are accepted but unused —
+  // videos only use storageUrl (Supabase). No external URL fetching.
   customMetrics,
   subtitle,
   rankBadge,
@@ -111,7 +111,7 @@ export function MediaGalleryCard({
     return `$${val.toFixed(0)}`
   }
 
-  const effectiveVideoSource = storageUrl && isVideo ? storageUrl : videoSourceUrl
+  // Videos only use Supabase storage URLs — never external/Meta URLs that expire
 
   // Detect touch device (mobile) for scroll-to-play vs hover-to-play
   const isTouchDevice = useRef(false)
@@ -122,17 +122,7 @@ export function MediaGalleryCard({
     isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0
   }, [])
 
-  // Request video source on hover (desktop) or when scrolled into view (mobile)
-  // For videos without storageUrl: eagerly fetch so we can use <video #t=0.3> as poster
-  const hasRequestedSource = useRef(false)
-  useEffect(() => {
-    const needsEagerFetch = isVideo && !storageUrl && !hasRequestedSource.current && onRequestVideoSource
-    const shouldRequest = isTouchDevice.current ? isInView : isHovered
-    if ((shouldRequest || needsEagerFetch) && isVideo && !effectiveVideoSource && !hasRequestedSource.current && onRequestVideoSource) {
-      hasRequestedSource.current = true
-      onRequestVideoSource()
-    }
-  }, [isHovered, isInView, isVideo, effectiveVideoSource, onRequestVideoSource, storageUrl])
+  // No external video source fetching — only Supabase storage URLs are used
 
   // Intersection Observer — scroll-to-play on mobile
   useEffect(() => {
@@ -150,7 +140,7 @@ export function MediaGalleryCard({
 
   // Play/pause logic — hover on desktop, scroll visibility on mobile
   useEffect(() => {
-    if (!videoRef.current || !isVideo || !effectiveVideoSource) return
+    if (!videoRef.current || !isVideo || !storageUrl) return
 
     const shouldPlay = isTouchDevice.current ? isInView : isHovered
 
@@ -162,7 +152,7 @@ export function MediaGalleryCard({
       videoRef.current.currentTime = 0
       setVideoPlaying(false)
     }
-  }, [isHovered, isInView, isVideo, effectiveVideoSource])
+  }, [isHovered, isInView, isVideo, storageUrl])
 
   const handleStarClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -203,10 +193,10 @@ export function MediaGalleryCard({
     >
       {/* Media Container - 4:3 aspect ratio (hidden for copy-only cards) */}
       {!textContent && <div className="relative aspect-[4/3] overflow-hidden bg-zinc-900">
-        {(storageUrl || effectiveVideoSource || thumbnailUrl) && !imageError ? (
+        {(storageUrl || thumbnailUrl) && !imageError ? (
           <>
-            {isVideo && (storageUrl || effectiveVideoSource) && !thumbnailUrl ? (
-              // Video with playable source but no thumbnail — use <video> as poster
+            {isVideo && storageUrl ? (
+              // Video: always use <video #t=1> from Supabase storage as poster
               <motion.div
                 initial={false}
                 animate={{
@@ -218,7 +208,7 @@ export function MediaGalleryCard({
               >
                 <video
                   ref={videoRef}
-                  src={`${storageUrl || effectiveVideoSource}#t=0.3`}
+                  src={`${storageUrl}#t=1`}
                   muted
                   loop
                   playsInline
@@ -236,7 +226,7 @@ export function MediaGalleryCard({
               // Mobile browsers throttle video loading, so <img> ensures thumbnails always show
               <>
                 <motion.img
-                  src={isVideo ? thumbnailUrl! : (storageUrl || thumbnailUrl!)}
+                  src={storageUrl || thumbnailUrl!}
                   alt=""
                   onLoad={() => setImageLoaded(true)}
                   onError={() => setImageError(true)}
@@ -252,10 +242,10 @@ export function MediaGalleryCard({
                   )}
                 />
 
-                {isVideo && effectiveVideoSource && (
+                {isVideo && storageUrl && (
                   <video
                     ref={videoRef}
-                    src={effectiveVideoSource}
+                    src={storageUrl}
                     muted
                     loop
                     playsInline

@@ -3190,7 +3190,7 @@ export default function AdStudioPage() {
                 <div className="flex items-center gap-3 relative">
                   <ImagePlus className="w-8 h-8 text-purple-400" />
                   <div>
-                    <h2 className="text-xl font-bold text-white">Guided Image Ads</h2>
+                    <h2 className="text-xl font-bold text-white">Image Ads</h2>
                     <p className="text-sm text-zinc-400">AI-powered workflows that turn your product into scroll-stopping ad creatives.</p>
                   </div>
                 </div>
@@ -3351,91 +3351,6 @@ export default function AdStudioPage() {
               </div>
             </div>
 
-            {/* ── Guided Videos Section (Legacy) ── */}
-            <div className="space-y-4">
-              <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
-                {/* Gradient glow */}
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-500 to-amber-500" />
-                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-rose-500/10 to-transparent" />
-                <div className="flex items-center gap-3 relative">
-                  <Film className="w-8 h-8 text-rose-400" />
-                  <div>
-                    <h2 className="text-xl font-bold text-zinc-500">Guided Video Ads (Legacy)</h2>
-                    <p className="text-sm text-zinc-400">Concept-driven video ads with AI direction, overlays, and multi-clip editing.</p>
-                    <p className="text-xs text-zinc-600">These modes are being replaced by Video Ads above</p>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* Video Studio */}
-                <Link
-                  href="/dashboard/creative-studio/video-studio"
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-rose-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-rose-500/20 flex items-center justify-center mb-4 group-hover:bg-rose-500/30 transition-colors">
-                    <Video className="w-7 h-7 text-rose-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Create</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Unique creative concept videos from product details.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-rose-400 text-sm font-medium">
-                    Get started <ChevronRight className="w-4 h-4" />
-                  </div>
-                </Link>
-
-                {/* Product Video */}
-                <button
-                  onClick={() => setMode('product-video')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-indigo-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-indigo-500/20 flex items-center justify-center mb-4 group-hover:bg-indigo-500/30 transition-colors">
-                    <Play className="w-7 h-7 text-indigo-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Product Video</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Describe your vision, AI directs the shoot.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-indigo-400 text-sm font-medium">
-                    Get started <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* UGC Video */}
-                <button
-                  onClick={() => setMode('ugc-video')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-cyan-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-cyan-500/20 flex items-center justify-center mb-4 group-hover:bg-cyan-500/30 transition-colors">
-                    <User className="w-7 h-7 text-cyan-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">UGC Video</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    A real person talks about your product on camera.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-cyan-400 text-sm font-medium">
-                    Get started <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* Direct */}
-                <Link
-                  href="/dashboard/creative-studio/direct"
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
-                    <Clapperboard className="w-7 h-7 text-amber-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Direct</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Describe your concept, AI builds the shot list.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
-                    Get started <ChevronRight className="w-4 h-4" />
-                  </div>
-                </Link>
-              </div>
-            </div>
           </div>
         </div>
 

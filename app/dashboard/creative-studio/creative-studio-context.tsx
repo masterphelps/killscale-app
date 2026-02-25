@@ -121,6 +121,10 @@ export interface CreativeStudioContextValue {
   openTheaterWithAsset: (asset: StudioAsset) => void
   closeTheater: () => void
 
+  // Source filter (All / Meta / AI Generated)
+  sourceFilter: 'all' | 'meta' | 'ai'
+  setSourceFilter: (filter: 'all' | 'meta' | 'ai') => void
+
   // Actions
   refresh: () => Promise<void>
   handleSync: () => Promise<void>

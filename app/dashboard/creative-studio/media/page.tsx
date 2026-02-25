@@ -31,7 +31,6 @@ type FunnelStage = 'hook' | 'hold' | 'click' | 'convert' | 'scale'
 type ViewMode = 'gallery' | 'table'
 type SortOption = 'hookScore' | 'holdScore' | 'clickScore' | 'convertScore' | 'spend' | 'roas' | 'revenue' | 'fatigue' | 'adCount' | 'fileSize' | 'syncedAt' | 'name' | 'thumbstopRate' | 'holdRate' | 'ctr' | 'cpc' | 'impressions'
 type MediaTab = 'video' | 'image' | 'collection' | 'project'
-type SourceFilter = 'all' | 'ai_generated' | 'ai_edited' | 'ai_video' | 'project' | 'meta' | 'open_prompt'
 
 export default function AllMediaPage() {
   const { user } = useAuth()
@@ -52,6 +51,8 @@ export default function AllMediaPage() {
     clearStarred,
     handleSync,
     removeAsset,
+    sourceFilter,
+    setSourceFilter,
     datePreset,
     setDatePreset,
     customStartDate,
@@ -65,7 +66,6 @@ export default function AllMediaPage() {
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('gallery')
   const [mediaTab, setMediaTab] = useState<MediaTab>('video')
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('hookScore')
   const [sortDesc, setSortDesc] = useState(true)
   const [showSortDropdown, setShowSortDropdown] = useState(false)
@@ -645,13 +645,12 @@ export default function AllMediaPage() {
     }))
   }, [assets, funnelThresholds, scaleThreshold, sortBy, sortDesc, starredIds])
 
-  // Apply source filter
+  // Apply source filter (All / Meta / AI Generated)
   const sourceFilteredAssets = useMemo(() => {
     if (sourceFilter === 'all') return filteredAssets
-    return filteredAssets.filter(a => {
-      const src = (a as any).sourceType || 'meta'
-      return src === sourceFilter
-    })
+    if (sourceFilter === 'meta') return filteredAssets.filter(a => !a.sourceType || a.sourceType === 'meta')
+    // 'ai' — includes ai_video, ai_image, ai_generated, ai_edited, open_prompt, project
+    return filteredAssets.filter(a => a.sourceType && a.sourceType !== 'meta')
   }, [filteredAssets, sourceFilter])
 
   const videos = useMemo(() => sourceFilteredAssets.filter(a => a.mediaType === 'video' && (a as any).sourceType !== 'project'), [sourceFilteredAssets])
@@ -925,27 +924,19 @@ export default function AllMediaPage() {
           </div>
 
           {/* Source Filter Pills */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {([
-              { value: 'all' as SourceFilter, label: 'All' },
-              { value: 'ai_generated' as SourceFilter, label: 'AI Generated' },
-              { value: 'ai_video' as SourceFilter, label: 'AI Video' },
-              { value: 'ai_edited' as SourceFilter, label: 'Edited' },
-              { value: 'project' as SourceFilter, label: 'Project' },
-              { value: 'meta' as SourceFilter, label: 'Meta Synced' },
-              { value: 'open_prompt' as SourceFilter, label: 'Open Prompt' },
-            ]).map((filter) => (
+          <div className="flex items-center gap-2">
+            {(['all', 'meta', 'ai'] as const).map(filter => (
               <button
-                key={filter.value}
-                onClick={() => setSourceFilter(filter.value)}
+                key={filter}
+                onClick={() => setSourceFilter(filter)}
                 className={cn(
-                  'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
-                  sourceFilter === filter.value
-                    ? 'bg-accent/20 border-accent text-accent'
-                    : 'bg-transparent border-border text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
+                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  sourceFilter === filter
+                    ? 'bg-accent/20 text-accent border border-accent/30'
+                    : 'bg-bg-card text-zinc-400 border border-border hover:text-white'
                 )}
               >
-                {filter.label}
+                {filter === 'all' ? 'All Sources' : filter === 'meta' ? 'Meta' : 'AI Generated'}
               </button>
             ))}
           </div>
@@ -956,7 +947,7 @@ export default function AllMediaPage() {
           {mediaTab === 'video' ? videos.length : mediaTab === 'image' ? images.length : mediaTab === 'collection' ? (selectedCollectionId ? collectionAssets.length : collections.length) : projects.length} {mediaTab === 'video' ? 'videos' : mediaTab === 'image' ? 'images' : mediaTab === 'collection' ? (selectedCollectionId ? 'items' : 'collections') : 'projects'}
           {Object.entries(funnelThresholds).some(([, v]) => v !== null) &&
             ` filtered by ${Object.entries(funnelThresholds).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}+`).join(' + ')}`}
-          {sourceFilter !== 'all' && ` · source: ${sourceFilter.replace('_', ' ')}`}
+          {sourceFilter !== 'all' && ` · source: ${sourceFilter === 'meta' ? 'Meta' : 'AI Generated'}`}
         </div>
 
         {/* Content */}

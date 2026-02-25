@@ -88,47 +88,6 @@ ks('pageview');
 </script>
 <!-- End KillScale Pixel -->`
 
-const getShopifyPurchaseSnippet = (pixelId: string, pixelSecret: string) => `<!-- KillScale Purchase Tracking - Add to Shopify Order Status Scripts -->
-<script>
-(function() {
-  function getCookie(name) {
-    var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-    return match ? decodeURIComponent(match[2]) : null;
-  }
-  var utmData = {};
-  try {
-    var stored = getCookie('ks_utm') || localStorage.getItem('ks_utm');
-    if (stored) utmData = JSON.parse(stored);
-  } catch(e) {}
-  if (typeof Shopify !== 'undefined' && Shopify.checkout) {
-    var checkout = Shopify.checkout;
-    fetch('https://app.killscale.com/api/pixel/purchase', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pixel_id: '${pixelId}',
-        pixel_secret: '${pixelSecret}',
-        order_id: String(checkout.order_id),
-        order_total: parseFloat(checkout.total_price),
-        utm_source: utmData.utm_source || null,
-        utm_medium: utmData.utm_medium || null,
-        utm_campaign: utmData.utm_campaign || null,
-        utm_content: utmData.utm_content || null,
-        utm_term: utmData.utm_term || null,
-        session_id: getCookie('ks_session') || null,
-        client_id: getCookie('ks_client') || localStorage.getItem('ks_client') || null,
-        landing_page: utmData.landing_page || null,
-        referrer: utmData.referrer || null,
-        page_views: parseInt(utmData.page_views) || null,
-        event_time: new Date().toISOString(),
-        click_time: utmData.click_time || null
-      })
-    }).catch(function(e) { console.log('KillScale: purchase event failed', e); });
-  }
-})();
-</script>
-<!-- End KillScale Purchase Tracking -->`
-
 export function PixelPanel({ workspaceId }: PixelPanelProps) {
   const { user } = useAuth()
   const { reloadConfig } = useAttribution()
@@ -152,13 +111,6 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
   // Source breakdown
   const [sourceBreakdown, setSourceBreakdown] = useState<SourceBreakdown | null>(null)
   const [isLoadingBreakdown, setIsLoadingBreakdown] = useState(false)
-
-  // Shopify connection
-  const [shopifyConnection, setShopifyConnection] = useState<{
-    shop_domain: string
-    shop_name?: string
-    created_at: string
-  } | null>(null)
 
   // Kiosk
   const [kioskSettings, setKioskSettings] = useState<KioskSettings>({ enabled: false, slug: null, hasPin: false })
@@ -274,26 +226,6 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
     }
   }, [user?.id, workspaceId])
 
-  // Load shopify connection
-  const loadShopifyConnection = useCallback(async () => {
-    if (!workspaceId) return
-    try {
-      const { data, error } = await supabase
-        .from('shopify_connections')
-        .select('shop_domain, shop_name, created_at')
-        .eq('workspace_id', workspaceId)
-        .single()
-
-      if (!error && data) {
-        setShopifyConnection(data)
-      } else {
-        setShopifyConnection(null)
-      }
-    } catch {
-      setShopifyConnection(null)
-    }
-  }, [workspaceId])
-
   // Load kiosk settings
   const loadKioskSettings = useCallback(async () => {
     if (!user?.id || !workspaceId) return
@@ -339,10 +271,9 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
 
     loadPixelData()
     loadSourceBreakdown()
-    loadShopifyConnection()
     loadKioskSettings()
     loadWorkspaceAccounts()
-  }, [user, workspaceId, loadPixelData, loadSourceBreakdown, loadShopifyConnection, loadKioskSettings, loadWorkspaceAccounts])
+  }, [user, workspaceId, loadPixelData, loadSourceBreakdown, loadKioskSettings, loadWorkspaceAccounts])
 
   // Update attribution source
   const updateAttributionSource = async (newSource: 'native' | 'pixel') => {
@@ -569,47 +500,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
         </p>
       </div>
 
-      {/* ───────────────────── 2. Shopify Purchase Tracking ───────────────────── */}
-      {shopifyConnection && (
-        <div className="p-4 bg-bg-card border border-border rounded-xl">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-sm">Shopify Purchase Tracking</h3>
-            <button
-              onClick={async () => {
-                await navigator.clipboard.writeText(getShopifyPurchaseSnippet(wp.pixel_id, wp.pixel_secret))
-                setCopiedPixelId('shopify')
-                setTimeout(() => setCopiedPixelId(null), 2000)
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors"
-            >
-              {copiedPixelId === 'shopify' ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  Copy
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="p-3 bg-bg-dark rounded-lg">
-            <pre className="text-xs text-zinc-400 overflow-x-auto font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
-              {getShopifyPurchaseSnippet(wp.pixel_id, wp.pixel_secret)}
-            </pre>
-          </div>
-
-          <p className="text-xs text-zinc-600 mt-2">
-            Add to <strong>Shopify Admin &rarr; Settings &rarr; Checkout &rarr; Order status page</strong> under &quot;Additional scripts&quot;.
-            This fires purchase events with your Shopify order ID for accurate attribution.
-          </p>
-        </div>
-      )}
-
-      {/* ───────────────────── 3. Attribution Insights ───────────────────── */}
+      {/* ───────────────────── 2. Attribution Insights ───────────────────── */}
       <div className="p-4 bg-bg-card border border-border rounded-xl">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-sm">Attribution Insights</h3>
