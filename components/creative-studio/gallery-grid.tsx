@@ -1,6 +1,7 @@
 'use client'
 
 import Masonry from 'react-masonry-css'
+import { cn } from '@/lib/utils'
 import { MediaGalleryCard } from './media-gallery-card'
 import { SkeletonCard } from './skeleton-card'
 import { EmptyState } from './empty-state'
@@ -21,15 +22,25 @@ interface GalleryGridProps {
   customMetrics?: (item: StudioAsset) => { label: string; value: string }[]
   textContent?: (item: StudioAsset) => string | undefined
   subtitle?: (item: StudioAsset) => string | undefined
+  minimal?: boolean
 }
 
-const breakpointColumns = {
+const defaultBreakpoints = {
   default: 4,
   1536: 4,  // 2xl
   1280: 3,  // xl
   1024: 3,  // lg
   768: 2,   // md
   640: 1,   // sm
+}
+
+const minimalBreakpoints = {
+  default: 5,
+  1536: 5,   // 2xl
+  1280: 4,   // xl
+  1024: 3,   // lg
+  768: 2,    // md
+  640: 1,    // sm
 }
 
 export function GalleryGrid({
@@ -46,12 +57,18 @@ export function GalleryGrid({
   customMetrics,
   textContent,
   subtitle,
+  minimal,
 }: GalleryGridProps) {
   if (isLoading) {
     return (
-      <div className="max-w-[1200px] mx-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {Array.from({ length: 8 }).map((_, i) => (
+      <div className={minimal ? '' : 'max-w-[1200px] mx-auto'}>
+        <div className={cn(
+          'grid',
+          minimal
+            ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4'
+            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
+        )}>
+          {Array.from({ length: minimal ? 10 : 8 }).map((_, i) => (
             <SkeletonCard key={i} index={i} />
           ))}
         </div>
@@ -64,14 +81,14 @@ export function GalleryGrid({
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto">
+    <div className={minimal ? '' : 'max-w-[1200px] mx-auto'}>
       <Masonry
-        breakpointCols={breakpointColumns}
-        className="flex -ml-6 w-auto"
-        columnClassName="pl-6 bg-clip-padding"
+        breakpointCols={minimal ? minimalBreakpoints : defaultBreakpoints}
+        className={minimal ? 'flex -ml-4 w-auto' : 'flex -ml-6 w-auto'}
+        columnClassName={minimal ? 'pl-4 bg-clip-padding' : 'pl-6 bg-clip-padding'}
       >
         {items.map((item, index) => (
-          <div key={item.id} className="mb-6">
+          <div key={item.id} className={minimal ? 'mb-4' : 'mb-6'}>
             <MediaGalleryCard
               item={item}
               index={index}
@@ -84,6 +101,7 @@ export function GalleryGrid({
               customMetrics={customMetrics ? customMetrics(item) : undefined}
               textContent={textContent ? textContent(item) : undefined}
               subtitle={subtitle ? subtitle(item) : undefined}
+              minimal={minimal}
             />
           </div>
         ))}
