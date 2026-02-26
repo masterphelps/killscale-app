@@ -661,6 +661,8 @@ export function TheaterModal({
                           onClose()
                           if (item.sourceCompositionId) {
                             router.push(`/dashboard/creative-studio/video-editor?compositionId=${item.sourceCompositionId}&from=creative-studio`)
+                          } else if (item.sourceJobId) {
+                            router.push(`/dashboard/creative-studio/video-editor?jobId=${item.sourceJobId}&from=creative-studio`)
                           } else {
                             router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
                           }

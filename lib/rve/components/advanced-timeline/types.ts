@@ -122,6 +122,8 @@ export interface TimelineProps {
   onCollapseChange?: (collapsed: boolean) => void; // Callback when timeline collapse state changes
   // Overlays for thumbnail generation (passed through to content)
   overlays?: any[]; // Overlay data for thumbnail generation
+  // Track action callbacks
+  onAddClipAfter?: (trackIndex: number, startTime: number) => void;
 }
 
 // Timeline content area props
@@ -173,4 +175,6 @@ export interface TimelineContentProps {
   splittingEnabled?: boolean; // Whether splitting mode is enabled
   // Hide items during drag
   hideItemsOnDrag?: boolean; // Whether to hide selected timeline items during drag operations (default: false)
+  // Track action callbacks
+  onAddClipAfter?: (trackIndex: number, startTime: number) => void;
 } 

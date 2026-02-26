@@ -259,8 +259,8 @@ export const useTimelineHandlers = ({
         
         // Check if this is local media (has src already) or external media (needs adaptor)
         let videoUrl: string;
-        if (video._isLocalMedia && video.src) {
-          // Local media - use src directly
+        if ((video._isLocalMedia || video.src) && video.src) {
+          // Local media or direct src (e.g. KillScale media panel) - use src directly
           videoUrl = video.src;
         } else {
           // External media - use adaptor
@@ -310,8 +310,8 @@ export const useTimelineHandlers = ({
         
         // Check if this is local media (has src already) or external media (needs adaptor)
         let imageUrl: string;
-        if (image._isLocalMedia && image.src) {
-          // Local media - use src directly
+        if ((image._isLocalMedia || image.src) && image.src) {
+          // Local media or direct src (e.g. KillScale media panel) - use src directly
           imageUrl = image.src;
         } else {
           // External media - use adaptor

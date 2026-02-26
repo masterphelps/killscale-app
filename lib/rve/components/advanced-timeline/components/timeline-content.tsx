@@ -44,6 +44,7 @@ export const TimelineContent: React.FC<TimelineContentProps> = ({
   onContextMenuOpenChange,
   splittingEnabled = false,
   hideItemsOnDrag = false,
+  onAddClipAfter,
 }) => {
   const currentTime = currentFrame / fps;
 
@@ -386,11 +387,10 @@ export const TimelineContent: React.FC<TimelineContentProps> = ({
 
               // Calculate track index
               // NOTE: Markers are now in a separate container, so relativeY is already relative to tracks
-              const adjustedY = Math.max(0, relativeY);
               const trackHeight = TIMELINE_CONSTANTS.TRACK_HEIGHT;
-              const targetTrackIndex = Math.max(
+              const rawTrackIndex = Math.max(
                 0,
-                Math.min(tracks.length - 1, Math.floor(adjustedY / trackHeight))
+                Math.min(tracks.length - 1, Math.floor(Math.max(0, relativeY) / trackHeight))
               );
 
               // If between tracks, insertionIndex will be set. Prefer inserting a new track
@@ -408,9 +408,39 @@ export const TimelineContent: React.FC<TimelineContentProps> = ({
                 return;
               }
 
+              // Smart track resolution: if target track has overlap, find nearest empty track
+              const duration = dragData.duration || viewportDuration * 0.08;
+              const checkOverlap = (ti: number, st: number, dur: number): boolean => {
+                if (ti < 0 || ti >= tracks.length) return false; // New track = no overlap
+                const track = tracks[ti];
+                const endTime = st + dur;
+                return track.items.some((item) => st < item.end && endTime > item.start);
+              };
+
+              let resolvedTrackIndex = rawTrackIndex;
+              if (checkOverlap(rawTrackIndex, dropTime, duration)) {
+                let bestTrack = -1;
+                let bestDistance = Infinity;
+                for (let i = 0; i < tracks.length; i++) {
+                  if (!checkOverlap(i, dropTime, duration)) {
+                    const dist = Math.abs(i - rawTrackIndex);
+                    if (dist < bestDistance) {
+                      bestDistance = dist;
+                      bestTrack = i;
+                    }
+                  }
+                }
+                if (bestTrack >= 0) {
+                  resolvedTrackIndex = bestTrack;
+                } else {
+                  // No empty track — create a new one
+                  resolvedTrackIndex = tracks.length;
+                }
+              }
+
               handleNewItemDrop(
                 dragData.type || 'clip',
-                targetTrackIndex,
+                resolvedTrackIndex,
                 dropTime,
                 dragData
               );
@@ -524,6 +554,7 @@ export const TimelineContent: React.FC<TimelineContentProps> = ({
                 hideItemsOnDrag={hideItemsOnDrag}
                 currentFrame={currentFrame}
                 fps={fps}
+                onAddClipAfter={onAddClipAfter}
               />
             );
           })}

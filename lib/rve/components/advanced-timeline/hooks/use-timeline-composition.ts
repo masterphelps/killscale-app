@@ -24,12 +24,14 @@ export const useTimelineComposition = ({
   zoomScale 
 }: UseTimelineCompositionProps): UseTimelineCompositionReturn => {
   // Composition duration is the max end across all items; never less than provided totalDuration
+  // Tiny 0.5s buffer gives room for the "+" add button after clips
   const compositionDuration = useMemo(() => {
     const maxItemEnd = tracks.reduce((acc, track) => {
       const trackMax = track.items.reduce((m, it) => Math.max(m, it.end), 0);
       return Math.max(acc, trackMax);
     }, 0);
-    return Math.max(totalDuration, maxItemEnd);
+    const contentDuration = Math.max(totalDuration, maxItemEnd);
+    return contentDuration + 0.5;
   }, [tracks, totalDuration]);
 
   const viewportDuration = useMemo(() => 

@@ -85,6 +85,8 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
   showAspectRatioControls = false,
   // Update present history ref
   updatePresentHistoryRef,
+  // Track action callbacks
+  onAddClipAfter,
 }, ref) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   
@@ -530,6 +532,7 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
             splittingEnabled={isSplittingEnabled}
             hideItemsOnDrag={effectiveHideItemsOnDrag}
             onNewItemDrop={onNewItemDrop}
+            onAddClipAfter={onAddClipAfter}
           />
         </div>
       </div>

@@ -22,10 +22,8 @@ import {
   CheckCircle,
   History,
   ChevronDown,
-  Mic,
   Megaphone,
   Library,
-  Plus,
   X,
   Film,
 } from 'lucide-react'
@@ -110,7 +108,6 @@ export default function VideoEditorPage() {
   // Voiceover state
   const [isGeneratingVoiceover, setIsGeneratingVoiceover] = useState(false)
   const [selectedVoice, setSelectedVoice] = useState('onyx')
-  const [showVoiceMenu, setShowVoiceMenu] = useState(false)
   const [hasVoiceover, setHasVoiceover] = useState(false)
 
   // Launch Wizard state
@@ -321,13 +318,14 @@ export default function VideoEditorPage() {
       try {
         setVideoUrl(videoUrlParam)
         // Probe video duration via a hidden <video> element
+        let probedDuration = 10
         const video = document.createElement('video')
         video.preload = 'metadata'
         video.src = videoUrlParam
         await new Promise<void>((resolve) => {
           video.onloadedmetadata = () => {
             if (video.duration && isFinite(video.duration)) {
-              setDurationSec(Math.round(video.duration))
+              probedDuration = Math.round(video.duration)
             }
             resolve()
           }
@@ -335,7 +333,16 @@ export default function VideoEditorPage() {
           // Timeout after 5s
           setTimeout(resolve, 5000)
         })
-        setInitialOverlays([])
+        setDurationSec(probedDuration)
+
+        // Create a base video clip overlay so the editor has something to display
+        const rveOverlays = overlayConfigToRVEOverlays(
+          { style: 'clean' },
+          videoUrlParam,
+          probedDuration,
+          FPS,
+        )
+        setInitialOverlays(rveOverlays)
       } catch (err) {
         console.error('Failed to load direct video:', err)
       } finally {
@@ -840,9 +847,36 @@ export default function VideoEditorPage() {
       console.error('Voiceover generation failed:', err)
     } finally {
       setIsGeneratingVoiceover(false)
-      setShowVoiceMenu(false)
     }
   }, [jobId, compositionId, user?.id, selectedVoice, isGeneratingVoiceover])
+
+  // Caption style state (for sidebar Captions panel)
+  const [currentCaptionStyle, setCurrentCaptionStyle] = useState('capcut')
+
+  // New sidebar panel handlers
+  const handleAddCTA = useCallback((template: { id: string; label: string; text: string; buttonColor: string; textColor: string; style: string }) => {
+    handleAIGenerate?.(`Add a "${template.text}" call-to-action button with ${template.buttonColor} background at the end of the video`)
+  }, [handleAIGenerate])
+
+  const handleAddMedia = useCallback((item: { id: string; name: string; mediaType: 'VIDEO' | 'IMAGE'; thumbnailUrl?: string; storageUrl?: string }) => {
+    // TODO: Add media to timeline via ks-inject-overlays event
+    console.log('Add media to timeline:', item)
+  }, [])
+
+  const handleAddMusic = useCallback((trackUrl: string, title: string, duration: number) => {
+    // TODO: Add SoundOverlay to timeline via ks-inject-overlays event
+    console.log('Add music track:', title, trackUrl, duration)
+  }, [])
+
+  const handleAddText = useCallback((preset: { label: string; fontSize: number; fontWeight: string }) => {
+    handleAIGenerate?.(`Add a ${preset.label.toLowerCase()} text overlay that says "${preset.label}"`)
+  }, [handleAIGenerate])
+
+  const handleStyleChange = useCallback((style: string) => {
+    setCurrentCaptionStyle(style)
+    // TODO: Apply style directly to overlayConfigRef instead of routing through AI
+    handleAIGenerate?.(`Change the caption style to ${style}`)
+  }, [handleAIGenerate])
 
   // Launch as ad — use ad_copy from job directly + create Creative from video
   const handleLaunchAsAd = useCallback(async () => {
@@ -879,7 +913,12 @@ export default function VideoEditorPage() {
   const [aiGeneratedConfig, setAiGeneratedConfig] = useState<OverlayConfig | null>(null)
 
   // Stable project ID — set once on mount so editor never remounts when transitioning to composition
-  const [stableProjectId] = useState(() => compositionIdParam ? `comp-${compositionIdParam}` : `video-${jobId}`)
+  // For direct videoUrl paths (no jobId), generate a unique ID so autosave doesn't load stale data
+  const [stableProjectId] = useState(() => {
+    if (compositionIdParam) return `comp-${compositionIdParam}`
+    if (jobId) return `video-${jobId}`
+    return `direct-${Date.now()}`
+  })
   // Effective ID for save operations
   const effectiveJobId = jobId
 
@@ -902,7 +941,7 @@ export default function VideoEditorPage() {
   return (
     <div className="flex flex-col h-screen dark rve-editor">
       {/* KillScale Header Bar */}
-      <div className="flex items-center justify-between px-4 lg:px-6 py-2 border-b border-zinc-800/50 flex-shrink-0 bg-bg-dark z-10">
+      <div className="flex items-center justify-between px-4 lg:px-6 py-2.5 border-b border-border flex-shrink-0 bg-bg-dark z-10">
         <button
           onClick={() => {
             if (isDirty && !window.confirm('You have unsaved changes. Leave without saving?')) {
@@ -943,7 +982,7 @@ export default function VideoEditorPage() {
           <div className="relative">
             <button
               onClick={() => setShowVersions(!showVersions)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-zinc-400 bg-bg-card hover:bg-bg-hover transition-colors"
             >
               <History className="w-3.5 h-3.5" />
               {activeVersion !== null ? `v${activeVersion}` : 'Versions'}
@@ -951,11 +990,11 @@ export default function VideoEditorPage() {
               <ChevronDown className="w-3 h-3" />
             </button>
             {showVersions && (
-              <div className="absolute right-0 top-full mt-1 w-52 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-1 max-h-52 overflow-y-auto">
+              <div className="absolute right-0 top-full mt-1 w-52 bg-bg-card border border-border rounded-lg shadow-xl z-50 py-1 max-h-52 overflow-y-auto">
                 <button
                   onClick={() => { setActiveVersion(null); setShowVersions(false) }}
                   className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                    activeVersion === null ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-zinc-800'
+                    activeVersion === null ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-bg-hover'
                   }`}
                 >
                   Current (unsaved)
@@ -978,6 +1017,32 @@ export default function VideoEditorPage() {
               </div>
             )}
           </div>
+
+          {/* Save button */}
+          <SaveButton
+            jobId={effectiveJobId}
+            compositionId={compositionId}
+            isComposition={isComposition}
+            userId={user?.id}
+            adAccountId={currentAccountId}
+            videoUrl={videoUrl}
+            durationSec={durationSec}
+            canvasIdRef={canvasIdRef}
+            isSaving={isSaving}
+            setIsSaving={setIsSaving}
+            overlayConfigRef={overlayConfigRef}
+            setActiveVersion={setActiveVersion}
+            loadVersions={isComposition ? loadCompositionVersions : loadVersions}
+            projectName={projectName}
+            onNameRequired={() => {
+              setPendingSaveAfterName(true)
+              setNameInput(projectName || '')
+              setShowNamePrompt(true)
+            }}
+            onSaved={() => setIsDirty(false)}
+            setCompositionId={setCompositionId}
+            setIsComposition={setIsComposition}
+          />
 
           {/* Save to Library */}
           <button
@@ -1115,83 +1180,6 @@ export default function VideoEditorPage() {
             </button>
           )}
 
-          {/* Add Media (opens Creative Studio media modal) */}
-          <button
-            onClick={() => setShowMediaPicker(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Media
-          </button>
-
-          {/* Voiceover */}
-          <div className="relative">
-              <button
-                onClick={() => setShowVoiceMenu(!showVoiceMenu)}
-                disabled={isGeneratingVoiceover}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  hasVoiceover
-                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/20 hover:bg-blue-500/30'
-                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                } disabled:opacity-50`}
-              >
-                {isGeneratingVoiceover ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
-                {hasVoiceover ? 'Voiceover' : 'Add Voice'}
-              </button>
-              {showVoiceMenu && (
-                <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
-                  <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Select Voice</div>
-                  {VOICES.map(v => (
-                    <button
-                      key={v.id}
-                      onClick={() => setSelectedVoice(v.id)}
-                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between ${
-                        selectedVoice === v.id ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                    >
-                      <span>{v.label}</span>
-                      <span className="text-zinc-600 text-[10px]">{v.desc}</span>
-                    </button>
-                  ))}
-                  <div className="border-t border-zinc-800 mt-1 pt-1 px-2 pb-1">
-                    <button
-                      onClick={handleGenerateVoiceover}
-                      disabled={isGeneratingVoiceover}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors"
-                    >
-                      {isGeneratingVoiceover ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mic className="w-3 h-3" />}
-                      {hasVoiceover ? 'Regenerate' : 'Generate'} Voiceover
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-          {/* Save button */}
-          <SaveButton
-            jobId={effectiveJobId}
-            compositionId={compositionId}
-            isComposition={isComposition}
-            userId={user?.id}
-            adAccountId={currentAccountId}
-            videoUrl={videoUrl}
-            durationSec={durationSec}
-            canvasIdRef={canvasIdRef}
-            isSaving={isSaving}
-            setIsSaving={setIsSaving}
-            overlayConfigRef={overlayConfigRef}
-            setActiveVersion={setActiveVersion}
-            loadVersions={isComposition ? loadCompositionVersions : loadVersions}
-            projectName={projectName}
-            onNameRequired={() => {
-              setPendingSaveAfterName(true)
-              setNameInput(projectName || '')
-              setShowNamePrompt(true)
-            }}
-            onSaved={() => setIsDirty(false)}
-            setCompositionId={setCompositionId}
-            setIsComposition={setIsComposition}
-          />
         </div>
       </div>
 
@@ -1209,7 +1197,7 @@ export default function VideoEditorPage() {
           videoHeight={1920}
           sidebarWidth="24rem"
           sidebarIconWidth="3.75rem"
-          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER, OverlayType.VIDEO, OverlayType.IMAGE]}
+          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER, OverlayType.IMAGE, OverlayType.LOCAL_DIR]}
           adaptors={mediaAdaptors}
           isLoadingProject={isLoading}
           onAIGenerate={handleAIGenerate}
@@ -1218,6 +1206,20 @@ export default function VideoEditorPage() {
           siblingClips={siblingClips}
           onAppendSibling={handleAppendSibling}
           appendedSiblings={appendedSiblings}
+          voices={VOICES.map(v => ({ id: v.id, label: v.label }))}
+          selectedVoice={selectedVoice}
+          onSelectVoice={setSelectedVoice}
+          onGenerateVoiceover={handleGenerateVoiceover}
+          isGeneratingVoiceover={isGeneratingVoiceover}
+          hasVoiceover={hasVoiceover}
+          onAddCTA={handleAddCTA}
+          onAddMedia={handleAddMedia}
+          onAddMusic={handleAddMusic}
+          onAddText={handleAddText}
+          onStyleChange={handleStyleChange}
+          currentCaptionStyle={currentCaptionStyle}
+          editorUserId={user?.id}
+          editorAdAccountId={currentAccountId || undefined}
         />
       </div>
 
@@ -1235,7 +1237,7 @@ export default function VideoEditorPage() {
       {/* Project Name Prompt Modal */}
       {showNamePrompt && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setShowNamePrompt(false); setPendingSaveAfterName(false) }}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+          <div className="bg-bg-card border border-border rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-white mb-1">Name this project</h3>
             {pendingSaveAfterName && (
               <p className="text-xs text-zinc-500 mb-3">A name is required before saving.</p>
@@ -1267,7 +1269,7 @@ export default function VideoEditorPage() {
                 }
               }}
               placeholder="e.g. Summer Sale Hero"
-              className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-600 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+              className="w-full px-3 py-2.5 rounded-lg bg-bg-hover border border-border text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
             />
             <div className="flex gap-2 justify-end">
               <button
@@ -1320,7 +1322,7 @@ export default function VideoEditorPage() {
       {/* Export Progress Modal */}
       {showExportModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { if (!isExporting) setShowExportModal(false) }}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+          <div className="bg-bg-card border border-border rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-white">Export Video</h3>
               {!isExporting && (
@@ -1339,7 +1341,7 @@ export default function VideoEditorPage() {
                 <p className="text-xs text-zinc-500 mb-4">{exportError}</p>
                 <button
                   onClick={() => setShowExportModal(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-bg-hover text-zinc-300 hover:bg-bg-card transition-colors"
                 >
                   Close
                 </button>
@@ -1354,7 +1356,7 @@ export default function VideoEditorPage() {
                   <a
                     href={renderedVideoUrl}
                     download="exported-video.mp4"
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-bg-hover text-zinc-300 hover:bg-bg-card transition-colors"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Download
@@ -1675,7 +1677,7 @@ function VersionButton({
     <button
       onClick={() => onLoad(version.overlay_config)}
       className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-        isActive ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-zinc-800'
+        isActive ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-bg-hover'
       }`}
     >
       v{version.version} &middot; {new Date(version.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}

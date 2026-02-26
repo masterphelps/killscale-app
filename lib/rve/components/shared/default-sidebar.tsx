@@ -1,18 +1,13 @@
 import * as React from "react";
 import {
-  Film,
-  Music,
-  Type,
-  Subtitles,
-  ImageIcon,
   FolderOpen,
-  Sticker,
-  Layout,
+  Type,
+  Music,
+  Subtitles,
+  MousePointerClick,
   ChevronsLeft,
   Settings,
-  Sparkles,
-  Plus,
-  Check,
+  Film,
 } from "lucide-react";
 
 // Import OverlayType directly from types to avoid export issues
@@ -22,18 +17,19 @@ import { OverlayType } from "../../types";
 import { useEditorSidebar } from "../../contexts/sidebar-context";
 import { useEditorContext } from "../../contexts/editor-context";
 
-// Import overlay panels directly
-import { VideoOverlayPanel } from "../overlay/video/video-overlay-panel";
+// Import new KillScale panel components
+import { MediaPanel } from "../panels/media-panel";
 import { TextOverlaysPanel } from "../overlay/text/text-overlays-panel";
-import SoundsOverlayPanel from "../overlay/sounds/sounds-overlay-panel";
+import { AudioPanel } from "../panels/audio-panel";
 import { CaptionsOverlayPanel } from "../overlay/captions/captions-overlay-panel";
-import { ImageOverlayPanel } from "../overlay/images/image-overlay-panel";
-import { LocalMediaPanel } from "../overlay/local-media/local-media-panel";
-import { StickersPanel } from "../overlay/stickers/stickers-panel";
-import { TemplateOverlayPanel } from "../overlay/templates/template-overlay-panel";
+import { AISection } from "../panels/ai-section";
+import { CTAPanel } from "../panels/cta-panel";
+
+// Import settings panel (kept from original)
 import { SettingsPanel } from "../settings/settings-panel";
-import { AIOverlayPanel } from "../overlay/ai/ai-overlay-panel";
-import type { SiblingClip } from "../react-video-editor";
+
+// Import video clips panel for project video gallery + per-clip settings
+import { VideoClipsPanel } from "../panels/video-clips-panel";
 
 // Import UI components directly
 import {
@@ -57,8 +53,6 @@ import { Button } from "../ui/button";
 interface DefaultSidebarProps {
   /** Custom logo element to display in the header */
   logo?: React.ReactNode;
-  /** Footer text to display at the bottom of the sidebar */
-  footerText?: string;
   /** Array of overlay types to disable/hide from the sidebar */
   disabledPanels?: OverlayType[];
   /** Whether to show icon titles in the sidebar */
@@ -70,11 +64,28 @@ interface DefaultSidebarProps {
   /** Whether a transcript is available for AI generation */
   hasAITranscript?: boolean;
   /** Sibling concept videos from the same canvas */
-  siblingClips?: SiblingClip[];
+  siblingClips?: any[];
   /** Callback when user clicks "Add" on a sibling clip */
-  onAppendSibling?: (sibling: SiblingClip) => void;
+  onAppendSibling?: (sibling: any) => void;
   /** Set of sibling jobIds already appended to the timeline */
   appendedSiblings?: Set<string>;
+  // New panel callbacks
+  onAddCTA?: (template: { id: string; label: string; text: string; buttonColor: string; textColor: string; style: string }) => void;
+  onAddMedia?: (item: { id: string; name: string; mediaType: 'VIDEO' | 'IMAGE'; thumbnailUrl?: string; storageUrl?: string }) => void;
+  onAddMusic?: (trackUrl: string, title: string, duration: number) => void;
+  onAddText?: (preset: { label: string; fontSize: number; fontWeight: string }) => void;
+  onStyleChange?: (style: string) => void;
+  currentCaptionStyle?: string;
+  // Voiceover
+  voices?: { id: string; label: string }[];
+  selectedVoice?: string;
+  onSelectVoice?: (voiceId: string) => void;
+  onGenerateVoiceover?: () => Promise<void>;
+  isGeneratingVoiceover?: boolean;
+  hasVoiceover?: boolean;
+  // Media panel
+  editorUserId?: string;
+  editorAdAccountId?: string;
 }
 
 /**
@@ -97,6 +108,20 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
   siblingClips,
   onAppendSibling,
   appendedSiblings,
+  onAddCTA,
+  onAddMedia,
+  onAddMusic,
+  onAddText,
+  onStyleChange,
+  currentCaptionStyle,
+  voices,
+  selectedVoice,
+  onSelectVoice,
+  onGenerateVoiceover,
+  isGeneratingVoiceover,
+  hasVoiceover,
+  editorUserId,
+  editorAdAccountId,
 }) => {
   const { activePanel, setActivePanel, isOpen, setIsOpen } = useEditorSidebar();
   const { setSelectedOverlayId, selectedOverlayId, overlays } = useEditorContext();
@@ -111,6 +136,8 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
   
   const getPanelTitle = (type: OverlayType): string => {
     switch (type) {
+      case OverlayType.MEDIA:
+        return "Media";
       case OverlayType.VIDEO:
         return "Video";
       case OverlayType.TEXT:
@@ -118,7 +145,9 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
       case OverlayType.SOUND:
         return "Audio";
       case OverlayType.CAPTION:
-        return "Caption";
+        return "Captions";
+      case OverlayType.CTA:
+        return "CTA";
       case OverlayType.IMAGE:
         return "Image";
       case OverlayType.LOCAL_DIR:
@@ -137,73 +166,12 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
   };
 
   const navigationItems = [
-    {
-      title: getPanelTitle(OverlayType.VIDEO),
-      url: "#",
-      icon: Film,
-      panel: OverlayType.VIDEO,
-      type: OverlayType.VIDEO,
-    },
-    {
-      title: getPanelTitle(OverlayType.TEXT),
-      url: "#",
-      icon: Type,
-      panel: OverlayType.TEXT,
-      type: OverlayType.TEXT,
-    },
-    {
-      title: getPanelTitle(OverlayType.SOUND),
-      url: "#",
-      icon: Music,
-      panel: OverlayType.SOUND,
-      type: OverlayType.SOUND,
-    },
-    {
-      title: getPanelTitle(OverlayType.CAPTION),
-      url: "#",
-      icon: Subtitles,
-      panel: OverlayType.CAPTION,
-      type: OverlayType.CAPTION,
-    },
-    {
-      title: getPanelTitle(OverlayType.IMAGE),
-      url: "#",
-      icon: ImageIcon,
-      panel: OverlayType.IMAGE,
-      type: OverlayType.IMAGE,
-    },
-    {
-      title: getPanelTitle(OverlayType.STICKER),
-      url: "#",
-      icon: Sticker,
-      panel: OverlayType.STICKER,
-      type: OverlayType.STICKER,
-    },
-    {
-      title: getPanelTitle(OverlayType.LOCAL_DIR),
-      url: "#",
-      icon: FolderOpen,
-      panel: OverlayType.LOCAL_DIR,
-      type: OverlayType.LOCAL_DIR,
-    },
-    {
-      title: getPanelTitle(OverlayType.TEMPLATE),
-      url: "#",
-      icon: Layout,
-      panel: OverlayType.TEMPLATE,
-      type: OverlayType.TEMPLATE,
-    },
-    ...(onAIGenerate
-      ? [
-          {
-            title: getPanelTitle(OverlayType.AI),
-            url: "#",
-            icon: Sparkles,
-            panel: OverlayType.AI,
-            type: OverlayType.AI,
-          },
-        ]
-      : []),
+    { title: 'Media', url: '#', icon: FolderOpen, panel: OverlayType.MEDIA, type: OverlayType.MEDIA },
+    { title: 'Video', url: '#', icon: Film, panel: OverlayType.VIDEO, type: OverlayType.VIDEO },
+    { title: 'Text', url: '#', icon: Type, panel: OverlayType.TEXT, type: OverlayType.TEXT },
+    { title: 'Audio', url: '#', icon: Music, panel: OverlayType.SOUND, type: OverlayType.SOUND },
+    { title: 'Captions', url: '#', icon: Subtitles, panel: OverlayType.CAPTION, type: OverlayType.CAPTION },
+    { title: 'CTA', url: '#', icon: MousePointerClick, panel: OverlayType.CTA, type: OverlayType.CTA },
   ].filter((item) => !disabledPanels.includes(item.type));
 
   /**
@@ -212,90 +180,54 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
    */
   const renderActivePanel = () => {
     switch (activePanel) {
+      case OverlayType.MEDIA:
+        return <MediaPanel userId={editorUserId || ''} adAccountId={editorAdAccountId || ''} onAddMedia={onAddMedia || (() => {})} />;
+      case OverlayType.VIDEO:
+        return <VideoClipsPanel />;
       case OverlayType.TEXT:
         return <TextOverlaysPanel />;
       case OverlayType.SOUND:
-        return <SoundsOverlayPanel />;
-      case OverlayType.VIDEO:
         return (
-          <>
-            {siblingClips && siblingClips.length > 0 && onAppendSibling && (
-              <div className="px-1 pb-3 mb-3 border-b border-border">
-                <h4 className="text-xs font-medium text-muted-foreground mb-2">Concept Videos</h4>
-                <div className="space-y-2">
-                  {siblingClips.map((sibling) => {
-                    const isAppended = appendedSiblings?.has(sibling.jobId) ?? false;
-                    return (
-                      <div
-                        key={sibling.jobId}
-                        className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50 hover:bg-muted transition-colors"
-                      >
-                        {/* Small 9:16 video thumbnail */}
-                        <div className="relative w-10 h-[71px] rounded overflow-hidden bg-black flex-shrink-0">
-                          <video
-                            src={sibling.rawVideoUrl}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                            preload="metadata"
-                          />
-                          <span className="absolute bottom-0.5 right-0.5 text-[9px] bg-black/70 text-white px-1 rounded">
-                            {sibling.durationSeconds}s
-                          </span>
-                        </div>
-                        {/* Info + Add button */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-medium text-foreground truncate">
-                            {sibling.conceptTitle}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            Concept {sibling.adIndex + 1}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => !isAppended && onAppendSibling(sibling)}
-                          disabled={isAppended}
-                          className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors flex-shrink-0 ${
-                            isAppended
-                              ? 'bg-emerald-500/20 text-emerald-400 cursor-default'
-                              : 'bg-primary/20 text-primary hover:bg-primary/30'
-                          }`}
-                        >
-                          {isAppended ? (
-                            <><Check className="w-3 h-3" /> Added</>
-                          ) : (
-                            <><Plus className="w-3 h-3" /> Add</>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <VideoOverlayPanel onAIGenerate={onAIGenerate} />
-          </>
+          <AudioPanel
+            onAIGenerate={onAIGenerate || (async () => {})}
+            isAIGenerating={isAIGenerating || false}
+            voices={voices || []}
+            selectedVoice={selectedVoice || 'alloy'}
+            onSelectVoice={onSelectVoice || (() => {})}
+            onGenerateVoiceover={onGenerateVoiceover || (async () => {})}
+            isGeneratingVoiceover={isGeneratingVoiceover || false}
+            hasVoiceover={hasVoiceover || false}
+            onAddMusic={onAddMusic || (() => {})}
+          />
         );
       case OverlayType.CAPTION:
-        return <CaptionsOverlayPanel />;
-      case OverlayType.IMAGE:
-        return <ImageOverlayPanel />;
-      case OverlayType.STICKER:
-        return <StickersPanel />;
-      case OverlayType.LOCAL_DIR:
-        return <LocalMediaPanel />;
-      case OverlayType.TEMPLATE:
-        return <TemplateOverlayPanel />;
+        return (
+          <div className="flex flex-col h-full">
+            <div className="px-2 pt-2 flex-shrink-0">
+              <AISection
+                onGenerate={(instruction) => (onAIGenerate || (async () => {}))(`Generate captions: ${instruction}`)}
+                isGenerating={isAIGenerating || false}
+                placeholder="Generate captions from audio..."
+                quickActions={[
+                  { label: 'Generate captions from audio', instruction: 'Generate captions from the video audio' },
+                ]}
+              />
+            </div>
+            <div className="flex-1 min-h-0">
+              <CaptionsOverlayPanel />
+            </div>
+          </div>
+        );
+      case OverlayType.CTA:
+        return (
+          <CTAPanel
+            onAIGenerate={onAIGenerate || (async () => {})}
+            isAIGenerating={isAIGenerating || false}
+            onAddCTA={onAddCTA || (() => {})}
+          />
+        );
       case OverlayType.SETTINGS:
         return <SettingsPanel />;
-      case OverlayType.AI:
-        return onAIGenerate ? (
-          <AIOverlayPanel
-            onGenerate={onAIGenerate}
-            isGenerating={isAIGenerating}
-            hasTranscript={hasAITranscript}
-          />
-        ) : null;
       default:
         return null;
     }
@@ -319,8 +251,8 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                   <div className="flex aspect-square size-9 items-center justify-center rounded-lg">
                     {logo || (
                       <img
-                        src="/icons/logo-rve.png"
-                        alt="RVE Logo"
+                        src="/icons/killscale-favicon.png"
+                        alt="KillScale"
                         width={27}
                         height={27}
                       />
@@ -350,9 +282,9 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                       className="flex flex-col items-center gap-2 px-1.5 py-2.5"
                       data-active={activePanel === item.panel}
                     >
-                      <item.icon className={`h-5 w-5 ${item.type === OverlayType.AI ? 'text-purple-400' : ''}`} strokeWidth={1.5} />
+                      <item.icon className={`h-7 w-7 ${item.type === OverlayType.AI ? 'text-purple-400' : ''}`} strokeWidth={1.5} />
                       {showIconTitles && (
-                        <span className={`text-[8px] leading-none ${item.type === OverlayType.AI ? 'text-purple-400' : ''}`}>
+                        <span className={`text-[11px] leading-none ${item.type === OverlayType.AI ? 'text-purple-400' : ''}`}>
                           {item.title}
                         </span>
                       )}
@@ -383,9 +315,9 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                       className="flex flex-col items-center gap-2 px-1.5 py-2.5"
                       data-active={activePanel === OverlayType.SETTINGS}
                     >
-                      <Settings className="h-5 w-5" strokeWidth={1.5} />
+                      <Settings className="h-7 w-7" strokeWidth={1.5} />
                       {showIconTitles && (
-                        <span className="text-[8px] leading-none">
+                        <span className="text-[11px] leading-none">
                           Settings
                         </span>
                       )}
@@ -421,7 +353,7 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
             </div>
           </div>
         </SidebarHeader>
-        <SidebarContent className="bg-background px-2 pt-1">
+        <SidebarContent className="bg-background px-2 pt-1 overflow-x-hidden">
           {renderActivePanel()}
         </SidebarContent>
       </Sidebar>

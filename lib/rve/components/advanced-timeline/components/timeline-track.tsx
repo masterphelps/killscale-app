@@ -13,18 +13,18 @@ interface TimelineTrackProps {
   trackIndex: number;
   trackCount: number;
   onItemSelect?: (itemId: string) => void;
-  onDeleteItems?: (itemIds: string[]) => void; // Updated to take array of item IDs
-  onDuplicateItems?: (itemIds: string[]) => void; // Updated to take array of item IDs
-  onSplitItems?: (itemId: string, splitTime: number) => void; // Callback when item should be split
-  selectedItemIds?: string[]; // Currently selected item IDs (supports multiple)
-  onSelectedItemsChange?: (itemIds: string[]) => void; // Callback when selection changes
+  onDeleteItems?: (itemIds: string[]) => void;
+  onDuplicateItems?: (itemIds: string[]) => void;
+  onSplitItems?: (itemId: string, splitTime: number) => void;
+  selectedItemIds?: string[];
+  onSelectedItemsChange?: (itemIds: string[]) => void;
   onItemMove?: (itemId: string, newStart: number, newEnd: number, newTrackId: string) => void;
   onDragStart?: (
     item: TimelineItemType,
     clientX: number,
     clientY: number,
     action: "move" | "resize-start" | "resize-end",
-    selectedItemIds?: string[] // Add selectedItemIds parameter
+    selectedItemIds?: string[]
   ) => void;
   zoomScale?: number;
   isDragging?: boolean;
@@ -35,11 +35,12 @@ interface TimelineTrackProps {
     top: number;
   }>;
   isValidDrop?: boolean;
-  onContextMenuOpenChange?: (isOpen: boolean) => void; // New prop for context menu state
-  splittingEnabled?: boolean; // Whether splitting mode is enabled
-  hideItemsOnDrag?: boolean; // Whether to hide selected timeline items during drag operations (default: false)
-  currentFrame?: number; // Current playhead frame position
-  fps?: number; // Frames per second for time conversion
+  onContextMenuOpenChange?: (isOpen: boolean) => void;
+  splittingEnabled?: boolean;
+  hideItemsOnDrag?: boolean;
+  currentFrame?: number;
+  fps?: number;
+  onAddClipAfter?: (trackIndex: number, startTime: number) => void;
 }
 
 export const TimelineTrack: React.FC<TimelineTrackProps> = ({
@@ -65,11 +66,25 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
   hideItemsOnDrag = false,
   currentFrame,
   fps = 30,
+  onAddClipAfter,
 }) => {
   const { magneticPreview } = useTimelineStore();
 
   // Find gaps in the track for gap indicators
   const gaps = findGapsInTrack(track.items);
+
+  // Sort items by start time for adjacency detection
+  const sortedItems = React.useMemo(
+    () => [...track.items].sort((a, b) => a.start - b.start),
+    [track.items]
+  );
+
+  // Find the end time of the last item on this track
+  const lastItemEnd = React.useMemo(
+    () => sortedItems.length > 0 ? sortedItems[sortedItems.length - 1].end : 0,
+    [sortedItems]
+  );
+
 
   // Handle item selection change with support for multi-selection
   const handleSelectionChange = (itemId: string, isMultiple: boolean) => {
@@ -186,7 +201,32 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
             trackId={track.id}
           />
         ))}
-      
+
+      {/* "+" add clip button — appears after the last item on the track */}
+      {sortedItems.length > 0 && !isDragging && (
+        <div
+          className="absolute top-1/2 -translate-y-1/2 z-10 opacity-0 hover:opacity-100 transition-opacity duration-150"
+          style={{
+            left: `${(lastItemEnd / totalDuration) * 100}%`,
+            marginLeft: 4,
+          }}
+        >
+          <button
+            className="flex items-center justify-center rounded-md bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] hover:border-white/20 text-white/40 hover:text-white/80 transition-all duration-150"
+            style={{
+              width: 28,
+              height: TIMELINE_CONSTANTS.TRACK_ITEM_HEIGHT - 4,
+            }}
+            onClick={() => onAddClipAfter?.(trackIndex, lastItemEnd)}
+            title="Add clip"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Ghost elements for this track */}
       {ghostElements.map((ghostElement, ghostIndex) => (
         <TimelineGhostElement

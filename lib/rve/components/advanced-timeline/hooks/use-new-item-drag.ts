@@ -41,7 +41,8 @@ const checkForOverlap = (
   startTime: number,
   duration: number
 ): boolean => {
-  if (trackIndex < 0 || trackIndex >= tracks.length) return true;
+  if (trackIndex < 0) return true;
+  if (trackIndex >= tracks.length) return false; // New track = no overlap
   
   const track = tracks[trackIndex];
   const endTime = startTime + duration;
@@ -91,12 +92,12 @@ export const useNewItemDrag = ({
       );
 
       // Calculate track index
-      const headerHeight = TIMELINE_CONSTANTS.MARKERS_HEIGHT;
-      const adjustedY = Math.max(0, relativeY - headerHeight);
+      // Note: timelineRef is on the zoomable content div (below markers), so relativeY
+      // is already relative to the tracks area — no need to subtract MARKERS_HEIGHT
       const trackHeight = TIMELINE_CONSTANTS.TRACK_HEIGHT;
       const trackIndex = Math.max(
         0,
-        Math.min(tracks.length - 1, Math.floor(adjustedY / trackHeight))
+        Math.min(tracks.length - 1, Math.floor(relativeY / trackHeight))
       );
 
       // Calculate width and duration based on item data
@@ -124,13 +125,39 @@ export const useNewItemDrag = ({
       // Calculate start time for collision detection
       const startTime = (leftPercentage / 100) * totalDuration;
 
-      // Check for collisions
+      // Check for collisions on the target track
       const hasOverlap = checkForOverlap(tracks, trackIndex, startTime, duration);
-      const isValidDrop = !hasOverlap;
+
+      // If there's overlap on the target track, try to find a nearby empty track
+      let resolvedTrackIndex = trackIndex;
+      let isValidDrop = !hasOverlap;
+
+      if (hasOverlap) {
+        // Search for the nearest track without overlap
+        let bestTrack = -1;
+        let bestDistance = Infinity;
+        for (let i = 0; i < tracks.length; i++) {
+          if (!checkForOverlap(tracks, i, startTime, duration)) {
+            const dist = Math.abs(i - trackIndex);
+            if (dist < bestDistance) {
+              bestDistance = dist;
+              bestTrack = i;
+            }
+          }
+        }
+        if (bestTrack >= 0) {
+          resolvedTrackIndex = bestTrack;
+          isValidDrop = true;
+        } else {
+          // No empty track found — drop will create a new track, so show as valid
+          resolvedTrackIndex = tracks.length; // after last track
+          isValidDrop = true;
+        }
+      }
 
       // Only update if position or validity changed significantly (throttling)
       const currentPosition = {
-        trackIndex,
+        trackIndex: resolvedTrackIndex,
         left: Math.round(leftPercentage),
         isValid: isValidDrop,
       };
@@ -147,7 +174,7 @@ export const useNewItemDrag = ({
 
       lastPositionRef.current = currentPosition;
 
-      const topPercentage = trackIndex * (100 / tracks.length);
+      const topPercentage = Math.min(resolvedTrackIndex, tracks.length - 1) * (100 / tracks.length);
 
       // Update validity state in store (triggers ghost color change)
       setIsValidDrop(isValidDrop);
@@ -225,14 +252,17 @@ export const useNewItemDrag = ({
       }
     ) => {
       // Before dropping, check one more time for collisions
+      // trackIndex >= tracks.length means "create a new track" — no overlap possible
       const duration = itemData?.duration || totalDuration * 0.08;
 
-      const hasOverlap = checkForOverlap(tracks, trackIndex, startTime, duration);
+      if (trackIndex < tracks.length) {
+        const hasOverlap = checkForOverlap(tracks, trackIndex, startTime, duration);
 
-      if (hasOverlap) {
-        // Don't drop if there would be an overlap
-        handleNewItemDragEnd();
-        return;
+        if (hasOverlap) {
+          // Don't drop if there would be an overlap on an existing track
+          handleNewItemDragEnd();
+          return;
+        }
       }
 
       // Call the provided drop handler

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Masonry from 'react-masonry-css'
 import { cn } from '@/lib/utils'
 import { MediaGalleryCard } from './media-gallery-card'
@@ -24,6 +25,9 @@ interface GalleryGridProps {
   subtitle?: (item: StudioAsset) => string | undefined
   minimal?: boolean
 }
+
+const INITIAL_BATCH = 30
+const LOAD_MORE_BATCH = 20
 
 const defaultBreakpoints = {
   default: 4,
@@ -59,6 +63,40 @@ export function GalleryGrid({
   subtitle,
   minimal,
 }: GalleryGridProps) {
+  const [visibleCount, setVisibleCount] = useState(INITIAL_BATCH)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // Reset visible count when items change (new filter, new data, etc.)
+  const prevItemsLenRef = useRef(items.length)
+  useEffect(() => {
+    if (items.length !== prevItemsLenRef.current) {
+      setVisibleCount(INITIAL_BATCH)
+      prevItemsLenRef.current = items.length
+    }
+  }, [items.length])
+
+  // IntersectionObserver to load more items when sentinel enters viewport
+  const loadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + LOAD_MORE_BATCH, items.length))
+  }, [items.length])
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMore()
+        }
+      },
+      { rootMargin: '400px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [loadMore])
+
   if (isLoading) {
     return (
       <div className={minimal ? '' : 'max-w-[1200px] mx-auto'}>
@@ -80,6 +118,9 @@ export function GalleryGrid({
     return <EmptyState type="media" onSync={onSync} onUpload={onUpload} />
   }
 
+  const visibleItems = items.slice(0, visibleCount)
+  const hasMore = visibleCount < items.length
+
   return (
     <div className={minimal ? '' : 'max-w-[1200px] mx-auto'}>
       <Masonry
@@ -87,7 +128,7 @@ export function GalleryGrid({
         className={minimal ? 'flex -ml-4 w-auto' : 'flex -ml-6 w-auto'}
         columnClassName={minimal ? 'pl-4 bg-clip-padding' : 'pl-6 bg-clip-padding'}
       >
-        {items.map((item, index) => (
+        {visibleItems.map((item, index) => (
           <div key={item.id} className={minimal ? 'mb-4' : 'mb-6'}>
             <MediaGalleryCard
               item={item}
@@ -106,6 +147,10 @@ export function GalleryGrid({
           </div>
         ))}
       </Masonry>
+      {/* Sentinel for infinite scroll — triggers loading more items */}
+      {hasMore && (
+        <div ref={sentinelRef} className="h-px" />
+      )}
     </div>
   )
 }
