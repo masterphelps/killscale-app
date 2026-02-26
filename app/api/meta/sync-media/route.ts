@@ -26,6 +26,8 @@ interface MetaVideo {
     data: Array<{ uri: string; width: number; height: number }>
   }
   length: number
+  width?: number
+  height?: number
 }
 
 interface MediaLibraryRow {
@@ -243,7 +245,7 @@ export async function POST(request: NextRequest) {
         const batch = newVideoIds.slice(i, i + 50)
         const batchReqs = batch.map(id => ({
           method: 'GET',
-          relative_url: `${id}?fields=id,title,thumbnails,length`
+          relative_url: `${id}?fields=id,title,thumbnails,length,width,height`
         }))
 
         try {
@@ -263,6 +265,8 @@ export async function POST(request: NextRequest) {
                     title: body.title || 'Untitled Video',
                     thumbnails: body.thumbnails,
                     length: body.length || 0,
+                    width: body.width || 0,
+                    height: body.height || 0,
                   })
                 } catch { /* skip parse errors */ }
               }
@@ -346,6 +350,13 @@ export async function POST(request: NextRequest) {
         bestThumbHeight = sorted[0].height || 0
       }
 
+      // Use actual video dimensions (from Meta API width/height fields).
+      // Fall back to thumbnail dimensions only if video dims unavailable.
+      // Thumbnail dims are often landscape even for portrait videos, causing
+      // incorrect bounding boxes in the video editor.
+      const videoWidth = vid.width && vid.width > 0 ? vid.width : bestThumbWidth
+      const videoHeight = vid.height && vid.height > 0 ? vid.height : bestThumbHeight
+
       const existing = existingStorageMap.get(vid.id)
       return {
         user_id: userId,
@@ -354,8 +365,8 @@ export async function POST(request: NextRequest) {
         media_type: 'video' as const,
         name: vid.title || 'Untitled Video',
         video_thumbnail_url: bestThumbUri,
-        width: bestThumbWidth,
-        height: bestThumbHeight,
+        width: videoWidth,
+        height: videoHeight,
         synced_at: now,
         ...(existing ? {
           storage_url: existing.storage_url,

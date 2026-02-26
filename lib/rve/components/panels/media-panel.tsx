@@ -47,6 +47,16 @@ function MediaItemCard({ item, onAddMedia }: { item: MediaItem; onAddMedia: (ite
       duration = videoRef.current.duration
     }
 
+    // For videos, prefer actual video dimensions from the <video> element (videoWidth/videoHeight)
+    // over stored dimensions from media_library, which may be thumbnail dimensions (often landscape
+    // even for portrait videos). This fixes bounding box aspect ratio issues in the editor preview.
+    let actualWidth = item.width
+    let actualHeight = item.height
+    if (isVideo && videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+      actualWidth = videoRef.current.videoWidth
+      actualHeight = videoRef.current.videoHeight
+    }
+
     // Build drag data matching the format the timeline expects
     const dragData = {
       isNewItem: true,
@@ -59,8 +69,8 @@ function MediaItemCard({ item, onAddMedia }: { item: MediaItem; onAddMedia: (ite
         _sourceDisplayName: 'KillScale',
         thumbnail: item.thumbnailUrl || '',
         src: item.storageUrl || item.thumbnailUrl || '',
-        width: item.width,
-        height: item.height,
+        width: actualWidth,
+        height: actualHeight,
       },
     }
 
