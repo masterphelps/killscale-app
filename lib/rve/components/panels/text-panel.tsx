@@ -17,7 +17,7 @@ const TEXT_PRESETS = [
 
 export function TextPanel({ onAIGenerate, isAIGenerating, onAddText }: TextPanelProps) {
   return (
-    <div className="p-3 space-y-2">
+    <div className="p-3 space-y-3">
       <AISection
         onGenerate={(instruction) => onAIGenerate(`Add text overlay: ${instruction}`)}
         isGenerating={isAIGenerating}
@@ -26,12 +26,12 @@ export function TextPanel({ onAIGenerate, isAIGenerating, onAddText }: TextPanel
           { label: 'Add hook text', instruction: 'Add a bold hook text overlay in the first 2 seconds' },
         ]}
       />
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {TEXT_PRESETS.map((preset) => (
           <button
             key={preset.label}
             onClick={() => onAddText?.(preset)}
-            className="w-full text-center py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+            className="w-full text-center py-3.5 rounded-lg bg-bg-hover hover:bg-bg-card border border-border transition-colors"
             style={{
               fontSize: `${Math.min(preset.fontSize / 4, 20)}px`,
               fontWeight: preset.fontWeight === 'bold' ? 700 : preset.fontWeight === 'semibold' ? 600 : 400,

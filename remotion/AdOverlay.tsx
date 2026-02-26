@@ -68,6 +68,28 @@ const STYLE_PRESETS: Record<OverlayStyle, {
     ctaTextColor: '#ffffff',
     shadowIntensity: 0.4,
   },
+  wordflash: {
+    fontFamily: '"Inter", "SF Pro Display", -apple-system, sans-serif',
+    hookBg: 'transparent',
+    hookTextColor: '#ffffff',
+    captionBg: 'transparent',
+    captionTextColor: 'rgba(255,255,255,0.4)',
+    captionHighlight: '#ffffff',
+    ctaBg: '#8B5CF6',
+    ctaTextColor: '#ffffff',
+    shadowIntensity: 0.9,
+  },
+  promopunch: {
+    fontFamily: '"Impact", "Arial Black", sans-serif',
+    hookBg: 'rgba(239,68,68,0.9)',
+    hookTextColor: '#ffffff',
+    captionBg: 'transparent',
+    captionTextColor: '#ffffff',
+    captionHighlight: '#EF4444',
+    ctaBg: '#EF4444',
+    ctaTextColor: '#ffffff',
+    shadowIntensity: 0.7,
+  },
 }
 
 // ─── Animation Helpers ───────────────────────────────────────────────────────

@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KillScale — Feature Cards Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0D0B14;
+    --bg-card: #1A1725;
+    --bg-card-hover: #231F30;
+    --border: rgba(124, 58, 237, 0.15);
+    --border-hover: rgba(124, 58, 237, 0.4);
+    --purple: #7c3aed;
+    --purple-light: #a78bfa;
+    --purple-glow: rgba(124, 58, 237, 0.25);
+    --green: #10b981;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
+    --text: #F5F3FF;
+    --text-secondary: #A1A1AA;
+    --text-dim: #71717A;
+    --serif: 'DM Serif Display', serif;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    text-align: center;
+    padding: 80px 24px 20px;
+  }
+  .page-header h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .page-header p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ── Category Section ── */
+  .category {
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .category-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 48px;
+    margin-bottom: 16px;
+  }
+  .category-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .category-header h2 {
+    font-family: var(--serif);
+    font-size: 1.4rem;
+    color: var(--text);
+  }
+  .category-header .count {
+    background: rgba(124, 58, 237, 0.15);
+    color: var(--purple-light);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+
+  /* ── Carousel Track ── */
+  .carousel-wrapper {
+    position: relative;
+    overflow: hidden;
+    padding: 8px 0 24px;
+  }
+
+  .carousel-track {
+    display: flex;
+    gap: 16px;
+    width: max-content;
+    padding: 0 16px;
+    will-change: transform;
+  }
+
+  /* ── Feature Card ── */
+  .card {
+    flex-shrink: 0;
+    width: 300px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 0;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
+    position: relative;
+  }
+  .card:hover {
+    border-color: var(--border-hover);
+    background: var(--bg-card-hover);
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 12px 40px rgba(124, 58, 237, 0.15), 0 0 0 1px rgba(124, 58, 237, 0.1);
+  }
+
+  /* Card top accent line */
+  .card-accent {
+    height: 3px;
+    width: 100%;
+  }
+
+  .card-body {
+    padding: 20px;
+  }
+
+  /* Card icon + name row */
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1.3;
+    color: var(--text);
+  }
+  .card-tagline {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+
+  /* Stats row */
+  .card-stats {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .stat {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 6px 10px;
+    text-align: center;
+    flex: 1;
+    min-width: 70px;
+  }
+  .stat-value {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .stat-label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 1px;
+  }
+
+  /* Detail bullets */
+  .card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .detail {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+  .detail-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+
+  /* Category-specific accent colors */
+  .cat-intelligence .card-accent { background: linear-gradient(90deg, var(--purple), var(--blue)); }
+  .cat-intelligence .card-icon { background: rgba(124, 58, 237, 0.15); }
+  .cat-intelligence .stat-value { color: var(--purple-light); }
+  .cat-intelligence .detail-dot { background: var(--purple-light); }
+  .cat-intelligence .category-icon { background: rgba(124, 58, 237, 0.15); }
+
+  .cat-creative .card-accent { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+  .cat-creative .card-icon { background: rgba(6, 182, 212, 0.15); }
+  .cat-creative .stat-value { color: var(--cyan); }
+  .cat-creative .detail-dot { background: var(--cyan); }
+  .cat-creative .category-icon { background: rgba(6, 182, 212, 0.15); }
+
+  .cat-ai .card-accent { background: linear-gradient(90deg, var(--pink), var(--purple)); }
+  .cat-ai .card-icon { background: rgba(236, 72, 153, 0.15); }
+  .cat-ai .stat-value { color: var(--pink); }
+  .cat-ai .detail-dot { background: var(--pink); }
+  .cat-ai .category-icon { background: rgba(236, 72, 153, 0.15); }
+
+  .cat-competitor .card-accent { background: linear-gradient(90deg, var(--amber), var(--red)); }
+  .cat-competitor .card-icon { background: rgba(245, 158, 11, 0.15); }
+  .cat-competitor .stat-value { color: var(--amber); }
+  .cat-competitor .detail-dot { background: var(--amber); }
+  .cat-competitor .category-icon { background: rgba(245, 158, 11, 0.15); }
+
+  .cat-campaigns .card-accent { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+  .cat-campaigns .card-icon { background: rgba(16, 185, 129, 0.15); }
+  .cat-campaigns .stat-value { color: var(--green); }
+  .cat-campaigns .detail-dot { background: var(--green); }
+  .cat-campaigns .category-icon { background: rgba(16, 185, 129, 0.15); }
+
+  .cat-attribution .card-accent { background: linear-gradient(90deg, var(--blue), var(--purple)); }
+  .cat-attribution .card-icon { background: rgba(59, 130, 246, 0.15); }
+  .cat-attribution .stat-value { color: var(--blue); }
+  .cat-attribution .detail-dot { background: var(--blue); }
+  .cat-attribution .category-icon { background: rgba(59, 130, 246, 0.15); }
+
+  .cat-platform .card-accent { background: linear-gradient(90deg, var(--purple-light), var(--pink)); }
+  .cat-platform .card-icon { background: rgba(167, 139, 250, 0.15); }
+  .cat-platform .stat-value { color: var(--purple-light); }
+  .cat-platform .detail-dot { background: var(--purple-light); }
+  .cat-platform .category-icon { background: rgba(167, 139, 250, 0.15); }
+
+  .cat-workspace .card-accent { background: linear-gradient(90deg, var(--green), var(--amber)); }
+  .cat-workspace .card-icon { background: rgba(16, 185, 129, 0.15); }
+  .cat-workspace .stat-value { color: var(--green); }
+  .cat-workspace .detail-dot { background: var(--green); }
+  .cat-workspace .category-icon { background: rgba(16, 185, 129, 0.15); }
+
+  /* ── Fade edges ── */
+  .carousel-wrapper::before,
+  .carousel-wrapper::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 80px;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .carousel-wrapper::before {
+    left: 0;
+    background: linear-gradient(90deg, var(--bg), transparent);
+  }
+  .carousel-wrapper::after {
+    right: 0;
+    background: linear-gradient(-90deg, var(--bg), transparent);
+  }
+
+  /* ── Footer note ── */
+  .footer-note {
+    text-align: center;
+    padding: 40px 24px 80px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  .footer-note span {
+    color: var(--purple-light);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Everything You Get</h1>
+  <p>44 features across 8 categories — built for Meta Ads teams who want to stop guessing and start scaling.</p>
+</div>
+
+<!-- ═══════ CATEGORY 1: Performance Intelligence ═══════ -->
+<section class="category cat-intelligence">
+  <div class="category-header">
+    <div class="category-icon">📊</div>
+    <h2>Performance Intelligence</h2>
+    <span class="count">7 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="55">
+      <!-- Card 1: Instant Verdicts -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">⚡</div>
+            <div>
+              <div class="card-title">Instant Verdicts</div>
+              <div class="card-tagline">Know exactly what to do with every campaign</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Verdicts</div></div>
+            <div class="stat"><div class="stat-value">2</div><div class="stat-label">Modes</div></div>
+            <div class="stat"><div class="stat-value">&lt;1s</div><div class="stat-label">Speed</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Scale / Watch / Kill / Learn</div>
+            <div class="detail"><div class="detail-dot"></div>ROAS-based or CPR-based scoring</div>
+            <div class="detail"><div class="detail-dot"></div>Configurable thresholds per workspace</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Performance Dashboard -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">📈</div>
+            <div>
+              <div class="card-title">Performance Dashboard</div>
+              <div class="card-tagline">Every metric at every level in one view</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">12+</div><div class="stat-label">Metrics</div></div>
+            <div class="stat"><div class="stat-value">3</div><div class="stat-label">Levels</div></div>
+            <div class="stat"><div class="stat-value">∞</div><div class="stat-label">Drill-down</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Campaign → Ad Set → Ad hierarchy</div>
+            <div class="detail"><div class="detail-dot"></div>Spend, Revenue, ROAS, CPA, AOV, CTR</div>
+            <div class="detail"><div class="detail-dot"></div>Date range filtering with presets</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Health Score -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">💓</div>
+            <div>
+              <div class="card-title">Health Score</div>
+              <div class="card-tagline">4-factor performance diagnosis</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Factors</div></div>
+            <div class="stat"><div class="stat-value">0–100</div><div class="stat-label">Score</div></div>
+            <div class="stat"><div class="stat-value">AI</div><div class="stat-label">Powered</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Budget Efficiency 30% · Fatigue 25%</div>
+            <div class="detail"><div class="detail-dot"></div>Profitability 25% · Trend 20%</div>
+            <div class="detail"><div class="detail-dot"></div>AI-powered optimization recommendations</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Andromeda Audit -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🔬</div>
+            <div>
+              <div class="card-title">Andromeda Audit</div>
+              <div class="card-tagline">Score against Meta's ML best practices</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">5</div><div class="stat-label">Factors</div></div>
+            <div class="stat"><div class="stat-value">0–100</div><div class="stat-label">Score</div></div>
+            <div class="stat"><div class="stat-value">Chat</div><div class="stat-label">Follow-up</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>CBO adoption · Creative consolidation</div>
+            <div class="detail"><div class="detail-dot"></div>Ad set count · Learning phase · Budget stability</div>
+            <div class="detail"><div class="detail-dot"></div>AI chat for follow-up questions</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 5: Trends & Analytics -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">📉</div>
+            <div>
+              <div class="card-title">Trends & Analytics</div>
+              <div class="card-tagline">30-day performance time series</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">30</div><div class="stat-label">Day Range</div></div>
+            <div class="stat"><div class="stat-value">6+</div><div class="stat-label">Charts</div></div>
+            <div class="stat"><div class="stat-value">CSV</div><div class="stat-label">Export</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Revenue vs Spend area charts</div>
+            <div class="detail"><div class="detail-dot"></div>ROAS, CTR, CPC, CPA tracking</div>
+            <div class="detail"><div class="detail-dot"></div>Treemap spend allocation by campaign</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 6: Creative Fatigue Detection -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🔋</div>
+            <div>
+              <div class="card-title">Fatigue Detection</div>
+              <div class="card-tagline">Know when your ads are wearing out</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Levels</div></div>
+            <div class="stat"><div class="stat-value">Live</div><div class="stat-label">Tracking</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Healthy → Warning → Fatiguing → Fatigued</div>
+            <div class="detail"><div class="detail-dot"></div>Thumbstop rate decay tracking</div>
+            <div class="detail"><div class="detail-dot"></div>Visual fatigue badges per creative</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 7: Alerts System -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🚨</div>
+            <div>
+              <div class="card-title">Smart Alerts</div>
+              <div class="card-tagline">Never miss a money-bleeding campaign</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">8</div><div class="stat-label">Alert Types</div></div>
+            <div class="stat"><div class="stat-value">3</div><div class="stat-label">Priority Levels</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Money bleeding · Below breakeven alerts</div>
+            <div class="detail"><div class="detail-dot"></div>Scale candidate detection</div>
+            <div class="detail"><div class="detail-dot"></div>Bulk actions: pause, scale, dismiss</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DUPLICATE SET for infinite scroll -->
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">⚡</div>
+            <div>
+              <div class="card-title">Instant Verdicts</div>
+              <div class="card-tagline">Know exactly what to do with every campaign</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Verdicts</div></div>
+            <div class="stat"><div class="stat-value">2</div><div class="stat-label">Modes</div></div>
+            <div class="stat"><div class="stat-value">&lt;1s</div><div class="stat-label">Speed</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Scale / Watch / Kill / Learn</div>
+            <div class="detail"><div class="detail-dot"></div>ROAS-based or CPR-based scoring</div>
+            <div class="detail"><div class="detail-dot"></div>Configurable thresholds per workspace</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">📈</div>
+            <div>
+              <div class="card-title">Performance Dashboard</div>
+              <div class="card-tagline">Every metric at every level in one view</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">12+</div><div class="stat-label">Metrics</div></div>
+            <div class="stat"><div class="stat-value">3</div><div class="stat-label">Levels</div></div>
+            <div class="stat"><div class="stat-value">∞</div><div class="stat-label">Drill-down</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Campaign → Ad Set → Ad hierarchy</div>
+            <div class="detail"><div class="detail-dot"></div>Spend, Revenue, ROAS, CPA, AOV, CTR</div>
+            <div class="detail"><div class="detail-dot"></div>Date range filtering with presets</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">💓</div>
+            <div>
+              <div class="card-title">Health Score</div>
+              <div class="card-tagline">4-factor performance diagnosis</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Factors</div></div>
+            <div class="stat"><div class="stat-value">0–100</div><div class="stat-label">Score</div></div>
+            <div class="stat"><div class="stat-value">AI</div><div class="stat-label">Powered</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Budget Efficiency 30% · Fatigue 25%</div>
+            <div class="detail"><div class="detail-dot"></div>Profitability 25% · Trend 20%</div>
+            <div class="detail"><div class="detail-dot"></div>AI-powered optimization recommendations</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🔬</div>
+            <div>
+              <div class="card-title">Andromeda Audit</div>
+              <div class="card-tagline">Score against Meta's ML best practices</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">5</div><div class="stat-label">Factors</div></div>
+            <div class="stat"><div class="stat-value">0–100</div><div class="stat-label">Score</div></div>
+            <div class="stat"><div class="stat-value">Chat</div><div class="stat-label">Follow-up</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>CBO adoption · Creative consolidation</div>
+            <div class="detail"><div class="detail-dot"></div>Ad set count · Learning phase · Budget stability</div>
+            <div class="detail"><div class="detail-dot"></div>AI chat for follow-up questions</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">📉</div>
+            <div>
+              <div class="card-title">Trends & Analytics</div>
+              <div class="card-tagline">30-day performance time series</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">30</div><div class="stat-label">Day Range</div></div>
+            <div class="stat"><div class="stat-value">6+</div><div class="stat-label">Charts</div></div>
+            <div class="stat"><div class="stat-value">CSV</div><div class="stat-label">Export</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Revenue vs Spend area charts</div>
+            <div class="detail"><div class="detail-dot"></div>ROAS, CTR, CPC, CPA tracking</div>
+            <div class="detail"><div class="detail-dot"></div>Treemap spend allocation by campaign</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🔋</div>
+            <div>
+              <div class="card-title">Fatigue Detection</div>
+              <div class="card-tagline">Know when your ads are wearing out</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Levels</div></div>
+            <div class="stat"><div class="stat-value">Live</div><div class="stat-label">Tracking</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Healthy → Warning → Fatiguing → Fatigued</div>
+            <div class="detail"><div class="detail-dot"></div>Thumbstop rate decay tracking</div>
+            <div class="detail"><div class="detail-dot"></div>Visual fatigue badges per creative</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🚨</div>
+            <div>
+              <div class="card-title">Smart Alerts</div>
+              <div class="card-tagline">Never miss a money-bleeding campaign</div>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">8</div><div class="stat-label">Alert Types</div></div>
+            <div class="stat"><div class="stat-value">3</div><div class="stat-label">Priority Levels</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Money bleeding · Below breakeven alerts</div>
+            <div class="detail"><div class="detail-dot"></div>Scale candidate detection</div>
+            <div class="detail"><div class="detail-dot"></div>Bulk actions: pause, scale, dismiss</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 2: Creative Studio ═══════ -->
+<section class="category cat-creative">
+  <div class="category-header">
+    <div class="category-icon">🎬</div>
+    <h2>Creative Studio</h2>
+    <span class="count">6 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="50">
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🎯</div>
+            <div><div class="card-title">Creative Scoring</div><div class="card-tagline">Hook, Hold, Click, Convert — scored 0–100</div></div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Scores</div></div>
+            <div class="stat"><div class="stat-value">$50</div><div class="stat-label">Min Spend</div></div>
+            <div class="stat"><div class="stat-value">0–100</div><div class="stat-label">Range</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Funnel stage scoring per creative asset</div>
+            <div class="detail"><div class="detail-dot"></div>Color-coded badges: green/amber/orange/red</div>
+            <div class="detail"><div class="detail-dot"></div>Filter by score range across gallery</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🖼️</div>
+            <div><div class="card-title">Media Gallery</div><div class="card-tagline">Your creative library with live performance</div></div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">2</div><div class="stat-label">View Modes</div></div>
+            <div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Play</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Masonry grid + sortable table views</div>
+            <div class="detail"><div class="detail-dot"></div>Scroll-to-play mobile · Hover-to-play desktop</div>
+            <div class="detail"><div class="detail-dot"></div>Funnel filter bar with score sliders</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🎭</div>
+            <div><div class="card-title">Theater Mode</div><div class="card-tagline">Full-screen creative deep dives</div></div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">Full</div><div class="stat-label">Detail</div></div>
+            <div class="stat"><div class="stat-value">Daily</div><div class="stat-label">Breakdown</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Video player + multi-panel stats</div>
+            <div class="detail"><div class="detail-dot"></div>Audience breakdown by demo & geo</div>
+            <div class="detail"><div class="detail-dot"></div>Day-by-day performance trends</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">🧠</div>
+            <div><div class="card-title">Video Analysis</div><div class="card-tagline">AI watches your video and scores every second</div></div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">AI</div><div class="stat-label">Gemini 2.0</div></div>
+            <div class="stat"><div class="stat-value">4</div><div class="stat-label">Stages</div></div>
+            <div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Transcript</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Hook/Hold/Click/Convert timestamps</div>
+            <div class="detail"><div class="detail-dot"></div>Script rewrite suggestions</div>
+            <div class="detail"><div class="detail-dot"></div>Quick wins for immediate improvements</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">⭐</div>
+            <div><div class="card-title">Starred Ads</div><div class="card-tagline">Save winners, build new campaigns from them</div></div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">1-Click</div><div class="stat-label">Star</div></div>
+            <div class="stat"><div class="stat-value">CBO</div><div class="stat-label">Auto-Build</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Star from any table row or gallery card</div>
+            <div class="detail"><div class="detail-dot"></div>Inventory popover with quick preview</div>
+            <div class="detail"><div class="detail-dot"></div>Build Performance Sets from top creatives</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">📝</div>
+            <div><div class="card-title">Copy Library</div><div class="card-tagline">Every ad copy variation ranked by performance</div></div>
+          </div>
+          <div class="card-stats">
+            <div class="stat"><div class="stat-value">Deduped</div><div class="stat-label">Variations</div></div>
+            <div class="stat"><div class="stat-value">AI</div><div class="stat-label">+ Manual</div></div>
+          </div>
+          <div class="card-details">
+            <div class="detail"><div class="detail-dot"></div>Unique copy variations with ROAS metrics</div>
+            <div class="detail"><div class="detail-dot"></div>AI-generated copies with "AI" badge</div>
+            <div class="detail"><div class="detail-dot"></div>Save from Ad Studio or AI Tasks</div>
+          </div>
+        </div>
+      </div>
+      <!-- Duplicate for infinite scroll -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎯</div><div><div class="card-title">Creative Scoring</div><div class="card-tagline">Hook, Hold, Click, Convert — scored 0–100</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Scores</div></div><div class="stat"><div class="stat-value">$50</div><div class="stat-label">Min Spend</div></div><div class="stat"><div class="stat-value">0–100</div><div class="stat-label">Range</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Funnel stage scoring per creative asset</div><div class="detail"><div class="detail-dot"></div>Color-coded badges: green/amber/orange/red</div><div class="detail"><div class="detail-dot"></div>Filter by score range across gallery</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🖼️</div><div><div class="card-title">Media Gallery</div><div class="card-tagline">Your creative library with live performance</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">2</div><div class="stat-label">View Modes</div></div><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Play</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Masonry grid + sortable table views</div><div class="detail"><div class="detail-dot"></div>Scroll-to-play mobile · Hover-to-play desktop</div><div class="detail"><div class="detail-dot"></div>Funnel filter bar with score sliders</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎭</div><div><div class="card-title">Theater Mode</div><div class="card-tagline">Full-screen creative deep dives</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Full</div><div class="stat-label">Detail</div></div><div class="stat"><div class="stat-value">Daily</div><div class="stat-label">Breakdown</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Video player + multi-panel stats</div><div class="detail"><div class="detail-dot"></div>Audience breakdown by demo & geo</div><div class="detail"><div class="detail-dot"></div>Day-by-day performance trends</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🧠</div><div><div class="card-title">Video Analysis</div><div class="card-tagline">AI watches your video and scores every second</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">AI</div><div class="stat-label">Gemini 2.0</div></div><div class="stat"><div class="stat-value">4</div><div class="stat-label">Stages</div></div><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Transcript</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Hook/Hold/Click/Convert timestamps</div><div class="detail"><div class="detail-dot"></div>Script rewrite suggestions</div><div class="detail"><div class="detail-dot"></div>Quick wins for immediate improvements</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">⭐</div><div><div class="card-title">Starred Ads</div><div class="card-tagline">Save winners, build new campaigns from them</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1-Click</div><div class="stat-label">Star</div></div><div class="stat"><div class="stat-value">CBO</div><div class="stat-label">Auto-Build</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Star from any table row or gallery card</div><div class="detail"><div class="detail-dot"></div>Inventory popover with quick preview</div><div class="detail"><div class="detail-dot"></div>Build Performance Sets from top creatives</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📝</div><div><div class="card-title">Copy Library</div><div class="card-tagline">Every ad copy variation ranked by performance</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Deduped</div><div class="stat-label">Variations</div></div><div class="stat"><div class="stat-value">AI</div><div class="stat-label">+ Manual</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Unique copy variations with ROAS metrics</div><div class="detail"><div class="detail-dot"></div>AI-generated copies with "AI" badge</div><div class="detail"><div class="detail-dot"></div>Save from Ad Studio or AI Tasks</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 3: AI Generation ═══════ -->
+<section class="category cat-ai">
+  <div class="category-header">
+    <div class="category-icon">✨</div>
+    <h2>AI Generation</h2>
+    <span class="count">8 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="65">
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">✍️</div><div><div class="card-title">Ad Copy Generation</div><div class="card-tagline">3 ad variations from competitor inspiration</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">3</div><div class="stat-label">Variations</div></div><div class="stat"><div class="stat-value">Claude</div><div class="stat-label">Sonnet 4</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Headline + Primary Text + Description</div><div class="detail"><div class="detail-dot"></div>Angle tagging with "Why it works"</div><div class="detail"><div class="detail-dot"></div>Save to copy library for reuse</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎨</div><div><div class="card-title">Image Generation</div><div class="card-tagline">Your product in any ad style</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Styles</div></div><div class="stat"><div class="stat-value">5</div><div class="stat-label">Credits</div></div><div class="stat"><div class="stat-value">Gemini</div><div class="stat-label">2.5 Flash</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Lifestyle · Product · Minimal · Bold</div><div class="detail"><div class="detail-dot"></div>Dual-image: your product + competitor style</div><div class="detail"><div class="detail-dot"></div>Adjustment prompts for refinement</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎬</div><div><div class="card-title">Video Generation</div><div class="card-tagline">Scroll-stopping video ads with AI</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">3</div><div class="stat-label">Providers</div></div><div class="stat"><div class="stat-value">50</div><div class="stat-label">Credits</div></div><div class="stat"><div class="stat-value">4–12s</div><div class="stat-label">Duration</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Sora 2 Pro · Veo 3.1 · Runway Gen-4.5</div><div class="detail"><div class="detail-dot"></div>Visual metaphor concepts per product</div><div class="detail"><div class="detail-dot"></div>Inline generation with progress tracking</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">💡</div><div><div class="card-title">Video Concepts</div><div class="card-tagline">4 unique visual metaphors per product</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Concepts</div></div><div class="stat"><div class="stat-value">15</div><div class="stat-label">Visual Worlds</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Problem→Solution · Feature Spotlight</div><div class="detail"><div class="detail-dot"></div>Emotional Benefit · Social Proof angles</div><div class="detail"><div class="detail-dot"></div>Built-in cliché filtering</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎞️</div><div><div class="card-title">Overlay Editor</div><div class="card-tagline">Captions, hooks, CTAs on your videos</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">5</div><div class="stat-label">Overlay Types</div></div><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Versions</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Hook overlays · Auto-synced captions</div><div class="detail"><div class="detail-dot"></div>Non-destructive versioning + rollback</div><div class="detail"><div class="detail-dot"></div>Multi-clip timeline compositions</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎙️</div><div><div class="card-title">AI Voiceover</div><div class="card-tagline">6 professional voices for your ads</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">6</div><div class="stat-label">Voices</div></div><div class="stat"><div class="stat-value">OpenAI</div><div class="stat-label">TTS</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Choose voice per video clip</div><div class="detail"><div class="detail-dot"></div>Synced to overlay timeline</div><div class="detail"><div class="detail-dot"></div>Whisper transcription for captions</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🖌️</div><div><div class="card-title">Image Editor</div><div class="card-tagline">Smart text detection and editing</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">AI</div><div class="stat-label">Vision</div></div><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Versions</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Claude Vision detects all text blocks</div><div class="detail"><div class="detail-dot"></div>Edit headline, subtext, CTA inline</div><div class="detail"><div class="detail-dot"></div>Prompt-based image adjustments</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔍</div><div><div class="card-title">Product Analysis</div><div class="card-tagline">AI extracts everything from your URL</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Extract</div></div><div class="stat"><div class="stat-value">7</div><div class="stat-label">Fields</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Name, description, price, features, image</div><div class="detail"><div class="detail-dot"></div>Feeds all generation tools automatically</div><div class="detail"><div class="detail-dot"></div>Pill selector for attribute control</div></div></div></div>
+      <!-- Duplicates -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">✍️</div><div><div class="card-title">Ad Copy Generation</div><div class="card-tagline">3 ad variations from competitor inspiration</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">3</div><div class="stat-label">Variations</div></div><div class="stat"><div class="stat-value">Claude</div><div class="stat-label">Sonnet 4</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Headline + Primary Text + Description</div><div class="detail"><div class="detail-dot"></div>Angle tagging with "Why it works"</div><div class="detail"><div class="detail-dot"></div>Save to copy library for reuse</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎨</div><div><div class="card-title">Image Generation</div><div class="card-tagline">Your product in any ad style</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Styles</div></div><div class="stat"><div class="stat-value">5</div><div class="stat-label">Credits</div></div><div class="stat"><div class="stat-value">Gemini</div><div class="stat-label">2.5 Flash</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Lifestyle · Product · Minimal · Bold</div><div class="detail"><div class="detail-dot"></div>Dual-image: your product + competitor style</div><div class="detail"><div class="detail-dot"></div>Adjustment prompts for refinement</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎬</div><div><div class="card-title">Video Generation</div><div class="card-tagline">Scroll-stopping video ads with AI</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">3</div><div class="stat-label">Providers</div></div><div class="stat"><div class="stat-value">50</div><div class="stat-label">Credits</div></div><div class="stat"><div class="stat-value">4–12s</div><div class="stat-label">Duration</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Sora 2 Pro · Veo 3.1 · Runway Gen-4.5</div><div class="detail"><div class="detail-dot"></div>Visual metaphor concepts per product</div><div class="detail"><div class="detail-dot"></div>Inline generation with progress tracking</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">💡</div><div><div class="card-title">Video Concepts</div><div class="card-tagline">4 unique visual metaphors per product</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Concepts</div></div><div class="stat"><div class="stat-value">15</div><div class="stat-label">Visual Worlds</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Problem→Solution · Feature Spotlight</div><div class="detail"><div class="detail-dot"></div>Emotional Benefit · Social Proof angles</div><div class="detail"><div class="detail-dot"></div>Built-in cliché filtering</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎞️</div><div><div class="card-title">Overlay Editor</div><div class="card-tagline">Captions, hooks, CTAs on your videos</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">5</div><div class="stat-label">Overlay Types</div></div><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Versions</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Hook overlays · Auto-synced captions</div><div class="detail"><div class="detail-dot"></div>Non-destructive versioning + rollback</div><div class="detail"><div class="detail-dot"></div>Multi-clip timeline compositions</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎙️</div><div><div class="card-title">AI Voiceover</div><div class="card-tagline">6 professional voices for your ads</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">6</div><div class="stat-label">Voices</div></div><div class="stat"><div class="stat-value">OpenAI</div><div class="stat-label">TTS</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Choose voice per video clip</div><div class="detail"><div class="detail-dot"></div>Synced to overlay timeline</div><div class="detail"><div class="detail-dot"></div>Whisper transcription for captions</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🖌️</div><div><div class="card-title">Image Editor</div><div class="card-tagline">Smart text detection and editing</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">AI</div><div class="stat-label">Vision</div></div><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Versions</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Claude Vision detects all text blocks</div><div class="detail"><div class="detail-dot"></div>Edit headline, subtext, CTA inline</div><div class="detail"><div class="detail-dot"></div>Prompt-based image adjustments</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔍</div><div><div class="card-title">Product Analysis</div><div class="card-tagline">AI extracts everything from your URL</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Extract</div></div><div class="stat"><div class="stat-value">7</div><div class="stat-label">Fields</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Name, description, price, features, image</div><div class="detail"><div class="detail-dot"></div>Feeds all generation tools automatically</div><div class="detail"><div class="detail-dot"></div>Pill selector for attribute control</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 4: Competitor Research ═══════ -->
+<section class="category cat-competitor">
+  <div class="category-header">
+    <div class="category-icon">🕵️</div>
+    <h2>Competitor Research</h2>
+    <span class="count">5 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="45">
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔎</div><div><div class="card-title">Competitor Ad Search</div><div class="card-tagline">Search any brand's Meta Ad Library</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Any</div><div class="stat-label">Brand</div></div><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Complete</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Type-ahead autocomplete search</div><div class="detail"><div class="detail-dot"></div>Company logo + name results</div><div class="detail"><div class="detail-dot"></div>Powered by ScrapeCreators API</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📱</div><div><div class="card-title">Competitor Ad Grid</div><div class="card-tagline">Browse every ad a brand is running</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Scroll</div></div><div class="stat"><div class="stat-value">Video</div><div class="stat-label">Preview</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Masonry layout with hover-to-play</div><div class="detail"><div class="detail-dot"></div>Days active badge per ad</div><div class="detail"><div class="detail-dot"></div>Infinite scroll pagination</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📊</div><div><div class="card-title">Media Mix Analysis</div><div class="card-tagline">See what formats competitors use</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Formats</div></div><div class="stat"><div class="stat-value">%</div><div class="stat-label">Breakdown</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Video / Image / Carousel / Text split</div><div class="detail"><div class="detail-dot"></div>Interactive donut chart visualization</div><div class="detail"><div class="detail-dot"></div>Filter ads by format type</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🌐</div><div><div class="card-title">Landing Page Intel</div><div class="card-tagline">Know where competitors send traffic</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Top</div><div class="stat-label">Pages</div></div><div class="stat"><div class="stat-value">%</div><div class="stat-label">Frequency</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Top landing pages with percentage bars</div><div class="detail"><div class="detail-dot"></div>URL breakdown per campaign</div><div class="detail"><div class="detail-dot"></div>Identify winning funnels</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🪄</div><div><div class="card-title">Use as Inspiration</div><div class="card-tagline">One click from their ad to yours</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1-Click</div><div class="stat-label">Clone</div></div><div class="stat"><div class="stat-value">AI</div><div class="stat-label">Powered</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Select any competitor ad as reference</div><div class="detail"><div class="detail-dot"></div>AI generates copy + image in their style</div><div class="detail"><div class="detail-dot"></div>Your product, their proven format</div></div></div></div>
+      <!-- Duplicates -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔎</div><div><div class="card-title">Competitor Ad Search</div><div class="card-tagline">Search any brand's Meta Ad Library</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Any</div><div class="stat-label">Brand</div></div><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Complete</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Type-ahead autocomplete search</div><div class="detail"><div class="detail-dot"></div>Company logo + name results</div><div class="detail"><div class="detail-dot"></div>Powered by ScrapeCreators API</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📱</div><div><div class="card-title">Competitor Ad Grid</div><div class="card-tagline">Browse every ad a brand is running</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Scroll</div></div><div class="stat"><div class="stat-value">Video</div><div class="stat-label">Preview</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Masonry layout with hover-to-play</div><div class="detail"><div class="detail-dot"></div>Days active badge per ad</div><div class="detail"><div class="detail-dot"></div>Infinite scroll pagination</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📊</div><div><div class="card-title">Media Mix Analysis</div><div class="card-tagline">See what formats competitors use</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Formats</div></div><div class="stat"><div class="stat-value">%</div><div class="stat-label">Breakdown</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Video / Image / Carousel / Text split</div><div class="detail"><div class="detail-dot"></div>Interactive donut chart visualization</div><div class="detail"><div class="detail-dot"></div>Filter ads by format type</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🌐</div><div><div class="card-title">Landing Page Intel</div><div class="card-tagline">Know where competitors send traffic</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Top</div><div class="stat-label">Pages</div></div><div class="stat"><div class="stat-value">%</div><div class="stat-label">Frequency</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Top landing pages with percentage bars</div><div class="detail"><div class="detail-dot"></div>URL breakdown per campaign</div><div class="detail"><div class="detail-dot"></div>Identify winning funnels</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🪄</div><div><div class="card-title">Use as Inspiration</div><div class="card-tagline">One click from their ad to yours</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1-Click</div><div class="stat-label">Clone</div></div><div class="stat"><div class="stat-value">AI</div><div class="stat-label">Powered</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Select any competitor ad as reference</div><div class="detail"><div class="detail-dot"></div>AI generates copy + image in their style</div><div class="detail"><div class="detail-dot"></div>Your product, their proven format</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 5: Campaign Management ═══════ -->
+<section class="category cat-campaigns">
+  <div class="category-header">
+    <div class="category-icon">🚀</div>
+    <h2>Campaign Management</h2>
+    <span class="count">5 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="48">
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🧙</div><div><div class="card-title">Campaign Launcher</div><div class="card-tagline">Full campaigns in under 60 seconds</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Entity Types</div></div><div class="stat"><div class="stat-value">8</div><div class="stat-label">Steps</div></div><div class="stat"><div class="stat-value">&lt;60s</div><div class="stat-label">Launch</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Campaign · Ad Set · Ad · Performance Set</div><div class="detail"><div class="detail-dot"></div>CBO (Andromeda) or ABO targeting</div><div class="detail"><div class="detail-dot"></div>Created as PAUSED for review</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">⚙️</div><div><div class="card-title">Bulk Operations</div><div class="card-tagline">Pause, scale, or kill at scale</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Batch</div><div class="stat-label">Processing</div></div><div class="stat"><div class="stat-value">Safe</div><div class="stat-label">Scaling</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Andromeda-safe budget scaling</div><div class="detail"><div class="detail-dot"></div>Batch 5 at a time with cooldown</div><div class="detail"><div class="detail-dot"></div>Pause, resume, delete in bulk</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📤</div><div><div class="card-title">Direct Upload</div><div class="card-tagline">Videos up to 1GB, no Ads Manager</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1GB</div><div class="stat-label">Video Max</div></div><div class="stat"><div class="stat-value">30MB</div><div class="stat-label">Image Max</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Chunked upload bypasses size limits</div><div class="detail"><div class="detail-dot"></div>Drag-drop with progress tracking</div><div class="detail"><div class="detail-dot"></div>Direct to Meta — no middleman</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📚</div><div><div class="card-title">Media Library</div><div class="card-tagline">Browse and reuse existing creatives</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Search</div><div class="stat-label">& Filter</div></div><div class="stat"><div class="stat-value">Multi</div><div class="stat-label">Select</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Browse all account images and videos</div><div class="detail"><div class="detail-dot"></div>Multi-select for campaign creation</div><div class="detail"><div class="detail-dot"></div>Integrated into Launch Wizard</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">✏️</div><div><div class="card-title">Entity Management</div><div class="card-tagline">Edit, duplicate, delete from dashboard</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Inline</div><div class="stat-label">Actions</div></div><div class="stat"><div class="stat-value">Copy</div><div class="stat-label">Editing</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Overflow menu on every table row</div><div class="detail"><div class="detail-dot"></div>Ad copy editing on duplicate</div><div class="detail"><div class="detail-dot"></div>Edit budgets, names, status inline</div></div></div></div>
+      <!-- Duplicates -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🧙</div><div><div class="card-title">Campaign Launcher</div><div class="card-tagline">Full campaigns in under 60 seconds</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Entity Types</div></div><div class="stat"><div class="stat-value">8</div><div class="stat-label">Steps</div></div><div class="stat"><div class="stat-value">&lt;60s</div><div class="stat-label">Launch</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Campaign · Ad Set · Ad · Performance Set</div><div class="detail"><div class="detail-dot"></div>CBO (Andromeda) or ABO targeting</div><div class="detail"><div class="detail-dot"></div>Created as PAUSED for review</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">⚙️</div><div><div class="card-title">Bulk Operations</div><div class="card-tagline">Pause, scale, or kill at scale</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Batch</div><div class="stat-label">Processing</div></div><div class="stat"><div class="stat-value">Safe</div><div class="stat-label">Scaling</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Andromeda-safe budget scaling</div><div class="detail"><div class="detail-dot"></div>Batch 5 at a time with cooldown</div><div class="detail"><div class="detail-dot"></div>Pause, resume, delete in bulk</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📤</div><div><div class="card-title">Direct Upload</div><div class="card-tagline">Videos up to 1GB, no Ads Manager</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1GB</div><div class="stat-label">Video Max</div></div><div class="stat"><div class="stat-value">30MB</div><div class="stat-label">Image Max</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Chunked upload bypasses size limits</div><div class="detail"><div class="detail-dot"></div>Drag-drop with progress tracking</div><div class="detail"><div class="detail-dot"></div>Direct to Meta — no middleman</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📚</div><div><div class="card-title">Media Library</div><div class="card-tagline">Browse and reuse existing creatives</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Search</div><div class="stat-label">& Filter</div></div><div class="stat"><div class="stat-value">Multi</div><div class="stat-label">Select</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Browse all account images and videos</div><div class="detail"><div class="detail-dot"></div>Multi-select for campaign creation</div><div class="detail"><div class="detail-dot"></div>Integrated into Launch Wizard</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">✏️</div><div><div class="card-title">Entity Management</div><div class="card-tagline">Edit, duplicate, delete from dashboard</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Inline</div><div class="stat-label">Actions</div></div><div class="stat"><div class="stat-value">Copy</div><div class="stat-label">Editing</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Overflow menu on every table row</div><div class="detail"><div class="detail-dot"></div>Ad copy editing on duplicate</div><div class="detail"><div class="detail-dot"></div>Edit budgets, names, status inline</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 6: Attribution & Tracking ═══════ -->
+<section class="category cat-attribution">
+  <div class="category-header">
+    <div class="category-icon">🎯</div>
+    <h2>Attribution & Tracking</h2>
+    <span class="count">5 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="52">
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📡</div><div><div class="card-title">First-Party Pixel</div><div class="card-tagline">Your own tracking, independent of Meta</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1st</div><div class="stat-label">Party</div></div><div class="stat"><div class="stat-value">Edge</div><div class="stat-label">Runtime</div></div><div class="stat"><div class="stat-value">10+</div><div class="stat-label">Events</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>KS-XXXXXXX format per workspace</div><div class="detail"><div class="detail-dot"></div>UTM capture + persistent cookie</div><div class="detail"><div class="detail-dot"></div>Two-snippet: pageview + purchase</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔗</div><div><div class="card-title">Shopify Attribution</div><div class="card-tagline">Match orders to ads via order_id</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">JOIN</div><div class="stat-label">Model</div></div><div class="stat"><div class="stat-value">85%+</div><div class="stat-label">Match Rate</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Industry-standard (Northbeam/Triple Whale)</div><div class="detail"><div class="detail-dot"></div>Order-level deduplication</div><div class="detail"><div class="detail-dot"></div>Pixel + Shopify order JOIN on order_id</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🌊</div><div><div class="card-title">Attribution Waterfall</div><div class="card-tagline">4-layer attribution for max accuracy</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Layers</div></div><div class="stat"><div class="stat-value">2</div><div class="stat-label">Models</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Shopify UTM → Pixel → Meta → Unattributed</div><div class="detail"><div class="detail-dot"></div>First Touch or Last Touch selection</div><div class="detail"><div class="detail-dot"></div>Prevents double-counting revenue</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎁</div><div><div class="card-title">Affiliate Costs</div><div class="card-tagline">True ROAS with UpPromote commissions</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">True</div><div class="stat-label">ROAS</div></div><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Sync</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Revenue ÷ (Ad Spend + Commission)</div><div class="detail"><div class="detail-dot"></div>UpPromote API integration</div><div class="detail"><div class="detail-dot"></div>Total Costs card on dashboard</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🏪</div><div><div class="card-title">Sales Kiosk</div><div class="card-tagline">Log walk-in sales with ad attribution</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Public</div><div class="stat-label">URL</div></div><div class="stat"><div class="stat-value">PIN</div><div class="stat-label">Protected</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>No login required — public page</div><div class="detail"><div class="detail-dot"></div>Campaign → Ad Set → Ad picker</div><div class="detail"><div class="detail-dot"></div>Mobile-optimized for tablets</div></div></div></div>
+      <!-- Duplicates -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">📡</div><div><div class="card-title">First-Party Pixel</div><div class="card-tagline">Your own tracking, independent of Meta</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">1st</div><div class="stat-label">Party</div></div><div class="stat"><div class="stat-value">Edge</div><div class="stat-label">Runtime</div></div><div class="stat"><div class="stat-value">10+</div><div class="stat-label">Events</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>KS-XXXXXXX format per workspace</div><div class="detail"><div class="detail-dot"></div>UTM capture + persistent cookie</div><div class="detail"><div class="detail-dot"></div>Two-snippet: pageview + purchase</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔗</div><div><div class="card-title">Shopify Attribution</div><div class="card-tagline">Match orders to ads via order_id</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">JOIN</div><div class="stat-label">Model</div></div><div class="stat"><div class="stat-value">85%+</div><div class="stat-label">Match Rate</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Industry-standard (Northbeam/Triple Whale)</div><div class="detail"><div class="detail-dot"></div>Order-level deduplication</div><div class="detail"><div class="detail-dot"></div>Pixel + Shopify order JOIN on order_id</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🌊</div><div><div class="card-title">Attribution Waterfall</div><div class="card-tagline">4-layer attribution for max accuracy</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Layers</div></div><div class="stat"><div class="stat-value">2</div><div class="stat-label">Models</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Shopify UTM → Pixel → Meta → Unattributed</div><div class="detail"><div class="detail-dot"></div>First Touch or Last Touch selection</div><div class="detail"><div class="detail-dot"></div>Prevents double-counting revenue</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎁</div><div><div class="card-title">Affiliate Costs</div><div class="card-tagline">True ROAS with UpPromote commissions</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">True</div><div class="stat-label">ROAS</div></div><div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Sync</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Revenue ÷ (Ad Spend + Commission)</div><div class="detail"><div class="detail-dot"></div>UpPromote API integration</div><div class="detail"><div class="detail-dot"></div>Total Costs card on dashboard</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🏪</div><div><div class="card-title">Sales Kiosk</div><div class="card-tagline">Log walk-in sales with ad attribution</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Public</div><div class="stat-label">URL</div></div><div class="stat"><div class="stat-value">PIN</div><div class="stat-label">Protected</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>No login required — public page</div><div class="detail"><div class="detail-dot"></div>Campaign → Ad Set → Ad picker</div><div class="detail"><div class="detail-dot"></div>Mobile-optimized for tablets</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 7: Platform & Integrations ═══════ -->
+<section class="category cat-platform">
+  <div class="category-header">
+    <div class="category-icon">🔌</div>
+    <h2>Platform & Integrations</h2>
+    <span class="count">4 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="42">
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">Ⓜ️</div><div><div class="card-title">Meta Ads</div><div class="card-tagline">Full integration — 29 API endpoints</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">29</div><div class="stat-label">Endpoints</div></div><div class="stat"><div class="stat-value">OAuth</div><div class="stat-label">+ Refresh</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Create, edit, pause, scale, delete</div><div class="detail"><div class="detail-dot"></div>Two-step sync with rate limiting</div><div class="detail"><div class="detail-dot"></div>Batch API for 50 requests per call</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔵</div><div><div class="card-title">Google Ads</div><div class="card-tagline">Unified dashboard with Meta</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">OAuth</div><div class="stat-label">Connect</div></div><div class="stat"><div class="stat-value">Unified</div><div class="stat-label">View</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Campaign sync with platform badges</div><div class="detail"><div class="detail-dot"></div>Pause, resume, and budget editing</div><div class="detail"><div class="detail-dot"></div>Side-by-side with Meta data</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🛍️</div><div><div class="card-title">Shopify</div><div class="card-tagline">Revenue source of truth</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Webhook</div><div class="stat-label">Sync</div></div><div class="stat"><div class="stat-value">Real</div><div class="stat-label">Revenue</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Order-level webhook sync</div><div class="detail"><div class="detail-dot"></div>UTM extraction for attribution</div><div class="detail"><div class="detail-dot"></div>Historical order backfill</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🪙</div><div><div class="card-title">Credit System</div><div class="card-tagline">One balance for all AI generation</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">500</div><div class="stat-label">Monthly</div></div><div class="stat"><div class="stat-value">Roll</div><div class="stat-label">Over</div></div><div class="stat"><div class="stat-value">4</div><div class="stat-label">Top-Up Packs</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Images: 5 credits · Videos: 50 credits</div><div class="detail"><div class="detail-dot"></div>Failed generations auto-refunded</div><div class="detail"><div class="detail-dot"></div>Packs: 100/$20 to 1000/$200</div></div></div></div>
+      <!-- Duplicates -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">Ⓜ️</div><div><div class="card-title">Meta Ads</div><div class="card-tagline">Full integration — 29 API endpoints</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">29</div><div class="stat-label">Endpoints</div></div><div class="stat"><div class="stat-value">OAuth</div><div class="stat-label">+ Refresh</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Create, edit, pause, scale, delete</div><div class="detail"><div class="detail-dot"></div>Two-step sync with rate limiting</div><div class="detail"><div class="detail-dot"></div>Batch API for 50 requests per call</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔵</div><div><div class="card-title">Google Ads</div><div class="card-tagline">Unified dashboard with Meta</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">OAuth</div><div class="stat-label">Connect</div></div><div class="stat"><div class="stat-value">Unified</div><div class="stat-label">View</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Campaign sync with platform badges</div><div class="detail"><div class="detail-dot"></div>Pause, resume, and budget editing</div><div class="detail"><div class="detail-dot"></div>Side-by-side with Meta data</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🛍️</div><div><div class="card-title">Shopify</div><div class="card-tagline">Revenue source of truth</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">Webhook</div><div class="stat-label">Sync</div></div><div class="stat"><div class="stat-value">Real</div><div class="stat-label">Revenue</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Order-level webhook sync</div><div class="detail"><div class="detail-dot"></div>UTM extraction for attribution</div><div class="detail"><div class="detail-dot"></div>Historical order backfill</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🪙</div><div><div class="card-title">Credit System</div><div class="card-tagline">One balance for all AI generation</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">500</div><div class="stat-label">Monthly</div></div><div class="stat"><div class="stat-value">Roll</div><div class="stat-label">Over</div></div><div class="stat"><div class="stat-value">4</div><div class="stat-label">Top-Up Packs</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Images: 5 credits · Videos: 50 credits</div><div class="detail"><div class="detail-dot"></div>Failed generations auto-refunded</div><div class="detail"><div class="detail-dot"></div>Packs: 100/$20 to 1000/$200</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ CATEGORY 8: Workspace & Team ═══════ -->
+<section class="category cat-workspace">
+  <div class="category-header">
+    <div class="category-icon">👥</div>
+    <h2>Workspace & Team</h2>
+    <span class="count">4 features</span>
+  </div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" data-speed="40">
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🏢</div><div><div class="card-title">Multi-Tenant Workspaces</div><div class="card-tagline">One account, multiple businesses</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Workspaces</div></div><div class="stat"><div class="stat-value">Scoped</div><div class="stat-label">Settings</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Business type per workspace</div><div class="detail"><div class="detail-dot"></div>Workspace-scoped rules, pixels, settings</div><div class="detail"><div class="detail-dot"></div>Separate ad account linking</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">👤</div><div><div class="card-title">Team Roles</div><div class="card-tagline">Owner, Admin, Member, Viewer</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Roles</div></div><div class="stat"><div class="stat-value">Email</div><div class="stat-label">Invites</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Token-based invite acceptance</div><div class="detail"><div class="detail-dot"></div>Role management per workspace</div><div class="detail"><div class="detail-dot"></div>Granular access control</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔀</div><div><div class="card-title">Business Modes</div><div class="card-tagline">E-commerce ROAS or Lead Gen CPR</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">2</div><div class="stat-label">Modes</div></div><div class="stat"><div class="stat-value">Custom</div><div class="stat-label">Thresholds</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Different metrics per mode</div><div class="detail"><div class="detail-dot"></div>Configurable verdict thresholds</div><div class="detail"><div class="detail-dot"></div>Revenue or cost-per-result focus</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎟️</div><div><div class="card-title">7-Day Free Trial</div><div class="card-tagline">Full Pro access, no credit card</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">7</div><div class="stat-label">Days</div></div><div class="stat"><div class="stat-value">Full</div><div class="stat-label">Pro Access</div></div><div class="stat"><div class="stat-value">$0</div><div class="stat-label">No Card</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>3-step onboarding wizard</div><div class="detail"><div class="detail-dot"></div>All features unlocked immediately</div><div class="detail"><div class="detail-dot"></div>Upgrade CTA when trial expires</div></div></div></div>
+      <!-- Duplicates -->
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🏢</div><div><div class="card-title">Multi-Tenant Workspaces</div><div class="card-tagline">One account, multiple businesses</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">∞</div><div class="stat-label">Workspaces</div></div><div class="stat"><div class="stat-value">Scoped</div><div class="stat-label">Settings</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Business type per workspace</div><div class="detail"><div class="detail-dot"></div>Workspace-scoped rules, pixels, settings</div><div class="detail"><div class="detail-dot"></div>Separate ad account linking</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">👤</div><div><div class="card-title">Team Roles</div><div class="card-tagline">Owner, Admin, Member, Viewer</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">4</div><div class="stat-label">Roles</div></div><div class="stat"><div class="stat-value">Email</div><div class="stat-label">Invites</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Token-based invite acceptance</div><div class="detail"><div class="detail-dot"></div>Role management per workspace</div><div class="detail"><div class="detail-dot"></div>Granular access control</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🔀</div><div><div class="card-title">Business Modes</div><div class="card-tagline">E-commerce ROAS or Lead Gen CPR</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">2</div><div class="stat-label">Modes</div></div><div class="stat"><div class="stat-value">Custom</div><div class="stat-label">Thresholds</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>Different metrics per mode</div><div class="detail"><div class="detail-dot"></div>Configurable verdict thresholds</div><div class="detail"><div class="detail-dot"></div>Revenue or cost-per-result focus</div></div></div></div>
+      <div class="card"><div class="card-accent"></div><div class="card-body"><div class="card-top"><div class="card-icon">🎟️</div><div><div class="card-title">7-Day Free Trial</div><div class="card-tagline">Full Pro access, no credit card</div></div></div><div class="card-stats"><div class="stat"><div class="stat-value">7</div><div class="stat-label">Days</div></div><div class="stat"><div class="stat-value">Full</div><div class="stat-label">Pro Access</div></div><div class="stat"><div class="stat-value">$0</div><div class="stat-label">No Card</div></div></div><div class="card-details"><div class="detail"><div class="detail-dot"></div>3-step onboarding wizard</div><div class="detail"><div class="detail-dot"></div>All features unlocked immediately</div><div class="detail"><div class="detail-dot"></div>Upgrade CTA when trial expires</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="footer-note">
+  <span>44 features</span> across <span>8 categories</span> — and counting.
+</div>
+
+<script>
+  document.querySelectorAll('.carousel-track').forEach((track, index) => {
+    // Remove the manually duplicated cards — we'll clone programmatically
+    const cards = Array.from(track.querySelectorAll('.card'));
+    const uniqueCount = Math.ceil(cards.length / 2);
+    // Keep only the original set
+    cards.slice(uniqueCount).forEach(c => c.remove());
+
+    const originals = Array.from(track.querySelectorAll('.card'));
+    // Clone enough sets to guarantee seamless wrap (3 full copies)
+    for (let i = 0; i < 2; i++) {
+      originals.forEach(card => {
+        const clone = card.cloneNode(true);
+        clone.setAttribute('aria-hidden', 'true');
+        track.appendChild(clone);
+      });
+    }
+
+    // Measure one full set width (originals + gaps)
+    const gap = 16;
+    const setWidth = originals.reduce((sum, c) => sum + c.offsetWidth + gap, 0);
+
+    // Direction: even-indexed categories scroll right, odd scroll left
+    const direction = index % 2 === 0 ? -1 : 1;
+    const maxSpeed = parseFloat(track.dataset.speed) || 50; // px per second
+    let offset = direction === 1 ? -setWidth : 0;
+    let currentSpeed = maxSpeed;
+    let targetSpeed = maxSpeed;
+    let lastTime = null;
+
+    // Easing config: how fast to decelerate/accelerate (higher = snappier)
+    const easeRate = 3; // takes ~0.5s to fully stop or resume
+
+    track.closest('.carousel-wrapper').addEventListener('mouseenter', () => {
+      targetSpeed = 0;
+    });
+    track.closest('.carousel-wrapper').addEventListener('mouseleave', () => {
+      targetSpeed = maxSpeed;
+    });
+
+    function animate(now) {
+      if (lastTime === null) lastTime = now;
+      const delta = (now - lastTime) / 1000;
+      lastTime = now;
+
+      // Smoothly interpolate current speed toward target
+      if (currentSpeed !== targetSpeed) {
+        const diff = targetSpeed - currentSpeed;
+        currentSpeed += diff * Math.min(1, easeRate * delta);
+        // Snap to target when close enough to avoid floating point drift
+        if (Math.abs(currentSpeed - targetSpeed) < 0.5) {
+          currentSpeed = targetSpeed;
+        }
+      }
+
+      if (currentSpeed > 0.1) {
+        offset += direction * currentSpeed * delta;
+
+        // Seamless wrap
+        if (direction === -1 && offset <= -setWidth) {
+          offset += setWidth;
+        } else if (direction === 1 && offset >= 0) {
+          offset -= setWidth;
+        }
+
+        track.style.transform = `translateX(${offset}px)`;
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+  });
+</script>
+
+</body>
+</html>

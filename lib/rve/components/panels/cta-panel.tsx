@@ -40,17 +40,17 @@ export function CTAPanel({ onAIGenerate, isAIGenerating, onAddCTA }: CTAPanelPro
         ]}
       />
 
-      <p className="text-xs text-zinc-500 px-1">Templates</p>
-      <div className="grid grid-cols-2 gap-2">
+      <p className="text-sm text-zinc-500 px-1">Templates</p>
+      <div className="grid grid-cols-2 gap-2.5">
         {CTA_TEMPLATES.map((template) => (
           <button
             key={template.id}
             onClick={() => onAddCTA(template)}
-            className="rounded-lg overflow-hidden border border-white/10 hover:border-white/20 transition-colors"
+            className="rounded-lg overflow-hidden border border-border hover:border-zinc-600 transition-colors"
           >
-            <div className="h-20 flex items-center justify-center bg-zinc-900">
+            <div className="h-20 flex items-center justify-center bg-bg-card">
               <span
-                className="text-xs font-bold px-4 py-2"
+                className="text-sm font-bold px-4 py-2"
                 style={{
                   background: template.style === 'gradient' ? template.buttonColor : template.style === 'outline' ? 'transparent' : template.buttonColor,
                   color: template.textColor,
@@ -61,8 +61,8 @@ export function CTAPanel({ onAIGenerate, isAIGenerating, onAddCTA }: CTAPanelPro
                 {template.text}
               </span>
             </div>
-            <div className="px-2 py-1.5 bg-white/5">
-              <p className="text-xs text-zinc-400 text-center">{template.label}</p>
+            <div className="px-2.5 py-2 bg-bg-hover">
+              <p className="text-sm text-zinc-400 text-center">{template.label}</p>
             </div>
           </button>
         ))}

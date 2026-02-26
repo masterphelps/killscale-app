@@ -24,16 +24,16 @@ export function CaptionsPanel({ onAIGenerate, isAIGenerating, currentStyle, onSt
 
   return (
     <div className="p-3 space-y-3">
-      <div className="flex rounded-lg bg-white/5 p-1">
+      <div className="flex rounded-lg bg-bg-hover p-1">
         <button
           onClick={() => setActiveTab('style')}
-          className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${activeTab === 'style' ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+          className={`flex-1 text-sm py-2 rounded-md transition-colors ${activeTab === 'style' ? 'bg-bg-card text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
         >
           Style
         </button>
         <button
           onClick={() => setActiveTab('content')}
-          className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${activeTab === 'content' ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+          className={`flex-1 text-sm py-2 rounded-md transition-colors ${activeTab === 'content' ? 'bg-bg-card text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
         >
           Content
         </button>
@@ -49,17 +49,17 @@ export function CaptionsPanel({ onAIGenerate, isAIGenerating, currentStyle, onSt
       />
 
       {activeTab === 'style' && (
-        <div className="space-y-2">
-          <p className="text-xs text-zinc-500 px-1">Presets</p>
+        <div className="space-y-2.5">
+          <p className="text-sm text-zinc-500 px-1">Presets</p>
           {CAPTION_PRESETS.map((preset) => (
             <button
               key={preset.id}
               onClick={() => onStyleChange(preset.id)}
               className={`w-full rounded-lg overflow-hidden border transition-colors ${
-                currentStyle === preset.id ? 'border-purple-500' : 'border-white/10 hover:border-white/20'
+                currentStyle === preset.id ? 'border-purple-500' : 'border-border hover:border-zinc-600'
               }`}
             >
-              <div className="h-16 flex items-center justify-center" style={{ backgroundColor: '#18181b' }}>
+              <div className="h-16 flex items-center justify-center bg-bg-card">
                 <span
                   className="text-sm font-semibold px-2 py-1 rounded"
                   style={{
@@ -71,7 +71,7 @@ export function CaptionsPanel({ onAIGenerate, isAIGenerating, currentStyle, onSt
                   Hey there! This is <span style={{ color: preset.highlightColor, fontWeight: 800 }}>KillScale</span>
                 </span>
               </div>
-              <div className="px-3 py-2 bg-white/5">
+              <div className="px-3 py-2.5 bg-bg-hover">
                 <p className="text-sm text-white text-left">{preset.name}</p>
               </div>
             </button>
@@ -81,7 +81,7 @@ export function CaptionsPanel({ onAIGenerate, isAIGenerating, currentStyle, onSt
 
       {activeTab === 'content' && (
         <div className="space-y-2">
-          <p className="text-xs text-zinc-500 text-center py-8">
+          <p className="text-sm text-zinc-500 text-center py-8">
             Generate captions first using the AI section above, then edit them here.
           </p>
         </div>

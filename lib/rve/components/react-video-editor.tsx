@@ -49,6 +49,23 @@ export interface ReactVideoEditorProps extends Omit<ReactVideoEditorProviderProp
   onAppendSibling?: (sibling: SiblingClip) => void;
   /** Set of sibling jobIds already appended to the timeline */
   appendedSiblings?: Set<string>;
+  // New panel callbacks
+  onAddCTA?: (template: { id: string; label: string; text: string; buttonColor: string; textColor: string; style: string }) => void;
+  onAddMedia?: (item: { id: string; name: string; mediaType: 'VIDEO' | 'IMAGE'; thumbnailUrl?: string; storageUrl?: string }) => void;
+  onAddMusic?: (trackUrl: string, title: string, duration: number) => void;
+  onAddText?: (preset: { label: string; fontSize: number; fontWeight: string }) => void;
+  onStyleChange?: (style: string) => void;
+  currentCaptionStyle?: string;
+  // Voiceover (moved from page header to sidebar)
+  voices?: { id: string; label: string }[];
+  selectedVoice?: string;
+  onSelectVoice?: (voiceId: string) => void;
+  onGenerateVoiceover?: () => Promise<void>;
+  isGeneratingVoiceover?: boolean;
+  hasVoiceover?: boolean;
+  // Media panel
+  editorUserId?: string;
+  editorAdAccountId?: string;
 }
 
 export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
@@ -69,6 +86,20 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
   siblingClips,
   onAppendSibling,
   appendedSiblings,
+  onAddCTA,
+  onAddMedia,
+  onAddMusic,
+  onAddText,
+  onStyleChange,
+  currentCaptionStyle,
+  voices,
+  selectedVoice,
+  onSelectVoice,
+  onGenerateVoiceover,
+  isGeneratingVoiceover,
+  hasVoiceover,
+  editorUserId,
+  editorAdAccountId,
   ...providerProps
 }) => {
   const [isSaving, setIsSaving] = useState(false);
@@ -134,7 +165,7 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
       ) : (
         // Editor mode: Full editor interface with sidebar
         <>
-          {showSidebar && (customSidebar || <DefaultSidebar logo={sidebarLogo} footerText={sidebarFooterText || "RVE"} disabledPanels={disabledPanels || []} showIconTitles={showIconTitles} onAIGenerate={onAIGenerate} isAIGenerating={isAIGenerating} hasAITranscript={hasAITranscript} siblingClips={siblingClips} onAppendSibling={onAppendSibling} appendedSiblings={appendedSiblings} />)}
+          {showSidebar && (customSidebar || <DefaultSidebar logo={sidebarLogo} disabledPanels={disabledPanels || []} showIconTitles={showIconTitles} onAIGenerate={onAIGenerate} isAIGenerating={isAIGenerating} hasAITranscript={hasAITranscript} siblingClips={siblingClips} onAppendSibling={onAppendSibling} appendedSiblings={appendedSiblings} onAddCTA={onAddCTA} onAddMedia={onAddMedia} onAddMusic={onAddMusic} onAddText={onAddText} onStyleChange={onStyleChange} currentCaptionStyle={currentCaptionStyle} voices={voices} selectedVoice={selectedVoice} onSelectVoice={onSelectVoice} onGenerateVoiceover={onGenerateVoiceover} isGeneratingVoiceover={isGeneratingVoiceover} hasVoiceover={hasVoiceover} editorUserId={editorUserId} editorAdAccountId={editorAdAccountId} />)}
           <SidebarInset className={className}>
             <Editor />
           </SidebarInset>

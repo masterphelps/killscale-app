@@ -358,7 +358,7 @@ export default function AccountPage() {
             <div /> // Empty div for flex spacing
           )}
           <div className="flex items-center gap-2">
-            <img src="/logo-white.png" alt="KillScale" className="h-9" />
+            <img src="/logo-white.png" alt="KillScale" className="h-14 w-14 object-contain" />
           </div>
         </div>
       </nav>

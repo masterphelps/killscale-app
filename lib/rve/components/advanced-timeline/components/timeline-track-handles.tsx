@@ -120,7 +120,7 @@ export const TimelineTrackHandles: React.FC<TimelineTrackHandlesProps> = ({
                 onDragEnd={handleDragEnd}
                 title="Reorder track"
               >
-                <GripVertical className={`w-3 h-3 ${isBeingDragged ? 'text-primary' : 'text-muted-foreground'}`} />
+                <GripVertical className={`w-4 h-4 ${isBeingDragged ? 'text-primary' : 'text-muted-foreground'}`} />
               </div>
 
 
@@ -131,7 +131,7 @@ export const TimelineTrackHandles: React.FC<TimelineTrackHandlesProps> = ({
                 onClick={() => onToggleMagnetic?.(track.id)}
                 title={track.magnetic ? 'Disable magnetic timeline' : 'Enable magnetic timeline'}
               >
-                <Magnet className="w-3 h-3" />
+                <Magnet className="w-4 h-4" />
               </button>
 
               {/* Delete track */}
@@ -141,7 +141,7 @@ export const TimelineTrackHandles: React.FC<TimelineTrackHandlesProps> = ({
                 onClick={() => onTrackDelete?.(track.id)}
                 title="Delete track"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           );

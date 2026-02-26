@@ -101,7 +101,7 @@ export const AudioItemContent: React.FC<AudioItemContentProps> = ({
   itemHeight,
   isHovering = false
 }) => {
-  const iconClassName = `w-3 h-3 ${data?.isMuted ? 'text-red-400' : 'text-white/80'}`;
+  const iconClassName = `w-4 h-4 ${data?.isMuted ? 'text-red-400' : 'text-white/80'}`;
   
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -117,7 +117,7 @@ export const AudioItemContent: React.FC<AudioItemContentProps> = ({
       ) : data?.isLoadingWaveform ? (
         <div className="absolute inset-0 flex items-center justify-center bg-blue-500/20">
           <div className="flex items-center gap-2 px-2 py-1 bg-black/30 rounded backdrop-blur-sm">
-            <Loader2 className="w-3 h-3 animate-spin text-white/80" />
+            <Loader2 className="w-4 h-4 animate-spin text-white/80" />
             <span className="text-xs text-white/80">Loading...</span>
           </div>
         </div>

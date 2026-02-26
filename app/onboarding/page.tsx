@@ -508,7 +508,7 @@ function OnboardingContent() {
       <div className="max-w-xl mx-auto py-8 px-4">
         {/* Logo */}
         <div className="text-center mb-8">
-          <img src="/logo-white.png" alt="KillScale" className="h-11 inline-block" />
+          <img src="/logo-white.png" alt="KillScale" className="h-16 w-16 object-contain inline-block" />
         </div>
 
         {/* Step Progress Indicator */}

@@ -26,14 +26,14 @@ export function AISection({ quickActions, placeholder = 'Describe what you want.
   }
 
   return (
-    <div className="border-b border-white/10 pb-3 mb-3">
+    <div className="border-b border-border pb-3 mb-3">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 w-full text-left px-3 py-2 hover:bg-white/5 rounded-lg transition-colors"
+        className="flex items-center gap-2 w-full text-left px-3 py-2.5 hover:bg-bg-hover rounded-lg transition-colors"
       >
-        <Sparkles className="w-4 h-4 text-purple-400" />
+        <Sparkles className="w-5 h-5 text-purple-400" />
         <span className="text-sm font-medium text-purple-400">AI</span>
-        {isExpanded ? <ChevronUp className="w-3 h-3 ml-auto text-zinc-500" /> : <ChevronDown className="w-3 h-3 ml-auto text-zinc-500" />}
+        {isExpanded ? <ChevronUp className="w-4 h-4 ml-auto text-zinc-500" /> : <ChevronDown className="w-4 h-4 ml-auto text-zinc-500" />}
       </button>
 
       {isExpanded && (
@@ -43,9 +43,9 @@ export function AISection({ quickActions, placeholder = 'Describe what you want.
               key={action.label}
               onClick={() => handleGenerate(action.instruction)}
               disabled={isGenerating}
-              className="w-full text-left text-sm px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 transition-colors disabled:opacity-50"
+              className="w-full text-left text-sm px-3 py-2.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 transition-colors disabled:opacity-50"
             >
-              {isGenerating ? <Loader2 className="w-3 h-3 animate-spin inline mr-2" /> : <Sparkles className="w-3 h-3 inline mr-2" />}
+              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : <Sparkles className="w-4 h-4 inline mr-2" />}
               {action.label}
             </button>
           ))}
@@ -57,14 +57,14 @@ export function AISection({ quickActions, placeholder = 'Describe what you want.
               onKeyDown={(e) => e.key === 'Enter' && handleGenerate(prompt)}
               placeholder={placeholder}
               disabled={isGenerating}
-              className="flex-1 text-sm px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
+              className="flex-1 text-sm px-3 py-2.5 rounded-lg bg-bg-hover border border-border text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
             />
             <button
               onClick={() => handleGenerate(prompt)}
               disabled={!prompt.trim() || isGenerating}
-              className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Go'}
+              {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Go'}
             </button>
           </div>
         </div>

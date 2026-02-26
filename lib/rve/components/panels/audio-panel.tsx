@@ -25,7 +25,7 @@ interface AudioPanelProps {
   onAddMusic: (trackUrl: string, title: string, duration: number) => void
 }
 
-const GENRE_FILTERS = ['All', 'Upbeat', 'Chill', 'Electronic', 'Acoustic', 'Cinematic', 'Lo-fi']
+const GENRE_FILTERS = ['All', 'Beats', 'Adventure', 'Upbeat', 'Rock', 'Cinematic', 'Lofi', 'Funk', 'Electronic', 'Corporate']
 
 export function AudioPanel({
   onAIGenerate, isAIGenerating,
@@ -41,7 +41,15 @@ export function AudioPanel({
 
   useEffect(() => {
     loadTracks()
-  }, [activeGenre])
+  }, [activeGenre]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause()
+      audioRef.current = null
+    }
+  }, [])
 
   const loadTracks = async (query?: string) => {
     setIsLoadingTracks(true)
@@ -80,7 +88,7 @@ export function AudioPanel({
   }
 
   return (
-    <div className="p-3 space-y-4">
+    <div className="p-3 space-y-4 overflow-x-hidden">
       <AISection
         onGenerate={(instruction) => onAIGenerate(`Audio: ${instruction}`)}
         isGenerating={isAIGenerating}
@@ -88,12 +96,12 @@ export function AudioPanel({
       />
 
       {/* Voiceover Section */}
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <h3 className="text-sm font-medium text-zinc-300">Voiceover</h3>
         <select
           value={selectedVoice}
           onChange={(e) => onSelectVoice(e.target.value)}
-          className="w-full text-sm px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-purple-500/50"
+          className="w-full text-sm px-3 py-2.5 rounded-lg bg-bg-hover border border-border text-white focus:outline-none focus:border-purple-500/50"
         >
           {voices.map((v) => (
             <option key={v.id} value={v.id}>{v.label}</option>
@@ -102,15 +110,15 @@ export function AudioPanel({
         <button
           onClick={onGenerateVoiceover}
           disabled={isGeneratingVoiceover}
-          className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+          className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
         >
-          {isGeneratingVoiceover ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : <Volume2 className="w-4 h-4 inline mr-2" />}
+          {isGeneratingVoiceover ? <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> : <Volume2 className="w-5 h-5 inline mr-2" />}
           {hasVoiceover ? 'Regenerate Voiceover' : 'Generate Voiceover'}
         </button>
       </div>
 
       {/* Background Music Section */}
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <h3 className="text-sm font-medium text-zinc-300">Background Music</h3>
         <input
           type="text"
@@ -118,17 +126,17 @@ export function AudioPanel({
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && loadTracks()}
           placeholder="Search music..."
-          className="w-full text-sm px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500/50"
+          className="w-full text-sm px-3 py-2.5 rounded-lg bg-bg-hover border border-border text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500/50"
         />
         <div className="flex flex-wrap gap-1.5">
           {GENRE_FILTERS.map((genre) => (
             <button
               key={genre}
               onClick={() => setActiveGenre(genre)}
-              className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+              className={`text-sm px-3 py-1.5 rounded-full transition-colors ${
                 activeGenre === genre
                   ? 'bg-purple-600 text-white'
-                  : 'bg-white/5 text-zinc-400 hover:bg-white/10'
+                  : 'bg-bg-hover text-zinc-400 hover:bg-bg-card'
               }`}
             >
               {genre}
@@ -139,19 +147,19 @@ export function AudioPanel({
           {isLoadingTracks ? (
             <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-zinc-500" /></div>
           ) : tracks.length === 0 ? (
-            <p className="text-xs text-zinc-500 text-center py-4">No tracks found</p>
+            <p className="text-sm text-zinc-500 text-center py-4">No tracks found</p>
           ) : (
             tracks.map((track) => (
               <div
                 key={track.id}
-                className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 cursor-pointer group"
+                className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-bg-hover cursor-pointer group"
                 onClick={() => onAddMusic(track.previewUrl, track.title, track.duration)}
               >
                 <button
                   onClick={(e) => { e.stopPropagation(); togglePlayPreview(track) }}
-                  className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-600/50 transition-colors"
+                  className="w-9 h-9 rounded-full bg-bg-card flex items-center justify-center flex-shrink-0 group-hover:bg-purple-600/50 transition-colors"
                 >
-                  {playingTrackId === track.id ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 ml-0.5" />}
+                  {playingTrackId === track.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
                 </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white truncate">{track.title}</p>

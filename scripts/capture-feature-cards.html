@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920, initial-scale=1">
+<title>Feature Cards — Video Capture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF8FF;
+    --accent: #7c3aed;
+    --border: #E4DFF0;
+    --text: #1a1625;
+    --text-secondary: #5b5675;
+    --text-tertiary: #8c84a0;
+  }
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    width: 1920px;
+    height: 1080px;
+  }
+
+  .canvas {
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Subtle grid pattern background */
+  .canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(124,58,237,0.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(59,130,246,0.03) 0%, transparent 50%),
+      radial-gradient(circle at 50% 50%, rgba(236,72,153,0.02) 0%, transparent 60%);
+    z-index: 0;
+  }
+
+  /* Carousel rows - stacked tightly for video */
+  .fc-carousel {
+    position: relative;
+    overflow: hidden;
+    padding: 6px 0;
+    z-index: 1;
+  }
+  .fc-track {
+    display: flex;
+    gap: 14px;
+    width: max-content;
+    padding: 0;
+    will-change: transform;
+  }
+  /* Softer edge fades */
+  .fc-carousel::before,
+  .fc-carousel::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 180px;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .fc-carousel::before { left: 0; background: linear-gradient(90deg, var(--bg) 15%, transparent); }
+  .fc-carousel::after { right: 0; background: linear-gradient(-90deg, var(--bg) 15%, transparent); }
+
+  /* Feature card */
+  .fc {
+    flex-shrink: 0;
+    width: 270px;
+    border-radius: 14px;
+    position: relative;
+    cursor: default;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(124,58,237,0.04);
+  }
+  .fc-border {
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(124,58,237,0.15), rgba(59,130,246,0.08) 50%, rgba(124,58,237,0.1));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.5;
+  }
+  .fc-shimmer {
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .fc-shimmer::before {
+    content: '';
+    position: absolute;
+    inset: -50%;
+    background: conic-gradient(from 0deg, transparent 0deg, rgba(124,58,237,0.04) 60deg, rgba(59,130,246,0.03) 120deg, transparent 180deg, rgba(236,72,153,0.03) 240deg, rgba(16,185,129,0.04) 300deg, transparent 360deg);
+    animation: fc-shimmer 10s linear infinite;
+  }
+  @keyframes fc-shimmer { to { transform: rotate(360deg); } }
+  .fc-glass {
+    position: relative;
+    z-index: 2;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 14px;
+    border: 1px solid rgba(124,58,237,0.06);
+    overflow: hidden;
+  }
+  .fc-glass .fc-bar {
+    height: 2px;
+    opacity: 0.6;
+  }
+  .fc-body {
+    padding: 16px 16px 14px;
+  }
+  .fc-ico {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+  }
+  .fc-ico svg { width: 16px; height: 16px; }
+  .fc-name {
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+  .fc-desc {
+    font-size: 0.68rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+  .fc-metrics {
+    display: flex;
+    gap: 2px;
+    background: rgba(124,58,237,0.03);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(124,58,237,0.05);
+  }
+  .fc-m {
+    flex: 1;
+    padding: 6px 4px;
+    text-align: center;
+    position: relative;
+  }
+  .fc-m + .fc-m::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%; bottom: 20%;
+    width: 1px;
+    background: rgba(124,58,237,0.08);
+  }
+  .fc-m .mv {
+    font-weight: 800;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .fc-m .ml {
+    font-size: 0.52rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 1px;
+  }
+  .fc-bullets { display: none; } /* Hide bullets for compact video view */
+
+  /* Color themes */
+  .fct-perf .fc-ico { background: rgba(109,40,217,0.1); }
+  .fct-perf .fc-ico svg { stroke: #6d28d9; }
+  .fct-perf .fc-bar { background: linear-gradient(90deg, #6d28d9, #8b5cf6); }
+  .fct-perf .fc-m .mv { color: #6d28d9; }
+
+  .fct-studio .fc-ico { background: rgba(219,39,119,0.1); }
+  .fct-studio .fc-ico svg { stroke: #be185d; }
+  .fct-studio .fc-bar { background: linear-gradient(90deg, #be185d, #ec4899); }
+  .fct-studio .fc-m .mv { color: #be185d; }
+
+  .fct-ai .fc-ico { background: rgba(14,165,233,0.1); }
+  .fct-ai .fc-ico svg { stroke: #0284c7; }
+  .fct-ai .fc-bar { background: linear-gradient(90deg, #0284c7, #38bdf8); }
+  .fct-ai .fc-m .mv { color: #0284c7; }
+
+  .fct-comp .fc-ico { background: rgba(234,88,12,0.1); }
+  .fct-comp .fc-ico svg { stroke: #c2410c; }
+  .fct-comp .fc-bar { background: linear-gradient(90deg, #c2410c, #f97316); }
+  .fct-comp .fc-m .mv { color: #c2410c; }
+
+  .fct-camp .fc-ico { background: rgba(5,150,105,0.1); }
+  .fct-camp .fc-ico svg { stroke: #047857; }
+  .fct-camp .fc-bar { background: linear-gradient(90deg, #047857, #10b981); }
+  .fct-camp .fc-m .mv { color: #047857; }
+
+  .fct-attr .fc-ico { background: rgba(79,70,229,0.1); }
+  .fct-attr .fc-ico svg { stroke: #4338ca; }
+  .fct-attr .fc-bar { background: linear-gradient(90deg, #4338ca, #818cf8); }
+  .fct-attr .fc-m .mv { color: #4338ca; }
+
+  .fct-plat .fc-ico { background: rgba(161,98,7,0.1); }
+  .fct-plat .fc-ico svg { stroke: #a16207; }
+  .fct-plat .fc-bar { background: linear-gradient(90deg, #a16207, #eab308); }
+  .fct-plat .fc-m .mv { color: #a16207; }
+
+  .fct-work .fc-ico { background: rgba(190,24,93,0.1); }
+  .fct-work .fc-ico svg { stroke: #9d174d; }
+  .fct-work .fc-bar { background: linear-gradient(90deg, #9d174d, #f472b6); }
+  .fct-work .fc-m .mv { color: #9d174d; }
+
+  /* Watermark */
+  .watermark {
+    position: fixed;
+    bottom: 24px;
+    right: 32px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0.45;
+  }
+  .watermark span {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .watermark .pill {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    background: rgba(124,58,237,0.08);
+    padding: 4px 10px;
+    border-radius: 100px;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- Row 1: Performance Intelligence (left) -->
+  <div class="fc-carousel fct-perf">
+    <div class="fc-track" data-speed="40" data-dir="-1">
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="fc-name">Instant Verdicts</div><div class="fc-desc">Know exactly what to do with every campaign — scale, watch, kill, or learn.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Verdicts</div></div><div class="fc-m"><div class="mv">2</div><div class="ml">Modes</div></div><div class="fc-m"><div class="mv">&lt;1s</div><div class="ml">Speed</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div><div class="fc-name">Performance Dashboard</div><div class="fc-desc">Every metric at every level — campaign, ad set, ad — in one drill-down view.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">12+</div><div class="ml">Metrics</div></div><div class="fc-m"><div class="mv">3</div><div class="ml">Levels</div></div><div class="fc-m"><div class="mv">&infin;</div><div class="ml">Drill-down</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="fc-name">Health Score</div><div class="fc-desc">4-factor performance diagnosis: efficiency, fatigue, profitability, and trend.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Factors</div></div><div class="fc-m"><div class="mv">0–100</div><div class="ml">Score</div></div><div class="fc-m"><div class="mv">AI</div><div class="ml">Powered</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="fc-name">Andromeda Audit</div><div class="fc-desc">Score your account against Meta's ML best practices across 5 structural factors.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">5</div><div class="ml">Factors</div></div><div class="fc-m"><div class="mv">0–100</div><div class="ml">Score</div></div><div class="fc-m"><div class="mv">Chat</div><div class="ml">Follow-up</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div><div class="fc-name">Trends & Analytics</div><div class="fc-desc">30-day time series with revenue vs spend, ROAS, CTR, CPC, and more.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">30d</div><div class="ml">Range</div></div><div class="fc-m"><div class="mv">6+</div><div class="ml">Charts</div></div><div class="fc-m"><div class="mv">CSV</div><div class="ml">Export</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="13" x2="23" y2="11"/></svg></div><div class="fc-name">Fatigue Detection</div><div class="fc-desc">Know when your ads are wearing out before performance craters.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Levels</div></div><div class="fc-m"><div class="mv">Live</div><div class="ml">Tracking</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><div class="fc-name">Smart Alerts</div><div class="fc-desc">8 alert types with priority levels. Never miss money bleeding again.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">8</div><div class="ml">Types</div></div><div class="fc-m"><div class="mv">3</div><div class="ml">Priorities</div></div></div></div></div></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Creative Studio (right) -->
+  <div class="fc-carousel fct-studio">
+    <div class="fc-track" data-speed="35" data-dir="1">
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 10-5.12 5.12-2.88-2.88"/></svg></div><div class="fc-name">Creative Scoring</div><div class="fc-desc">Hook, Hold, Click, Convert — every creative scored 0 to 100.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Scores</div></div><div class="fc-m"><div class="mv">$50</div><div class="ml">Min Spend</div></div><div class="fc-m"><div class="mv">0–100</div><div class="ml">Range</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="fc-name">Media Gallery</div><div class="fc-desc">Masonry grid or sortable table. Scroll-to-play on mobile.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">2</div><div class="ml">Views</div></div><div class="fc-m"><div class="mv">Auto</div><div class="ml">Play</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="fc-name">Theater Mode</div><div class="fc-desc">Full-screen creative detail with video player and daily trends.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">Full</div><div class="ml">Detail</div></div><div class="fc-m"><div class="mv">Daily</div><div class="ml">Breakdown</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div class="fc-name">Starred Ads</div><div class="fc-desc">Star winners. Build CBO Performance Sets from your best creatives.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">1-Click</div><div class="ml">Star</div></div><div class="fc-m"><div class="mv">CBO</div><div class="ml">Auto-Build</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8Z"/><circle cx="12" cy="10" r="3"/></svg></div><div class="fc-name">Video Analysis</div><div class="fc-desc">Gemini watches your video and scores every second of the funnel.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">AI</div><div class="ml">Gemini</div></div><div class="fc-m"><div class="mv">4</div><div class="ml">Stages</div></div><div class="fc-m"><div class="mv">Auto</div><div class="ml">Transcript</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div><div class="fc-name">Copy Library</div><div class="fc-desc">Every ad copy variation ranked by ROAS. AI copies tagged with badges.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">Dedup</div><div class="ml">Variations</div></div><div class="fc-m"><div class="mv">AI</div><div class="ml">+ Manual</div></div></div></div></div></div>
+    </div>
+  </div>
+
+  <!-- Row 3: AI Generation (left) -->
+  <div class="fc-carousel fct-ai">
+    <div class="fc-track" data-speed="42" data-dir="-1">
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></div><div class="fc-name">Ad Copy Generation</div><div class="fc-desc">Claude writes 3 ad variations from competitor inspiration.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">3</div><div class="ml">Variations</div></div><div class="fc-m"><div class="mv">Claude</div><div class="ml">Sonnet 4</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="fc-name">Image Generation</div><div class="fc-desc">Gemini creates ads using your product photo in 4 styles.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Styles</div></div><div class="fc-m"><div class="mv">5cr</div><div class="ml">Cost</div></div><div class="fc-m"><div class="mv">Gemini</div><div class="ml">2.5 Flash</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div><div class="fc-name">Video Generation</div><div class="fc-desc">3 providers, 4–12 second ads. Sora, Veo, Runway.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">3</div><div class="ml">Providers</div></div><div class="fc-m"><div class="mv">50cr</div><div class="ml">Cost</div></div><div class="fc-m"><div class="mv">4–12s</div><div class="ml">Duration</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></div><div class="fc-name">Video Concepts</div><div class="fc-desc">4 visual metaphor concepts. 15 unique visual worlds.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Concepts</div></div><div class="fc-m"><div class="mv">15</div><div class="ml">Worlds</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg></div><div class="fc-name">Overlay Editor</div><div class="fc-desc">Captions, hooks, CTAs. Versioned with rollback. Multi-clip.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">5</div><div class="ml">Types</div></div><div class="fc-m"><div class="mv">&infin;</div><div class="ml">Versions</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div><div class="fc-name">AI Voiceover</div><div class="fc-desc">6 professional voices via OpenAI TTS. Timeline-synced.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">6</div><div class="ml">Voices</div></div><div class="fc-m"><div class="mv">TTS</div><div class="ml">OpenAI</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2Z"/></svg></div><div class="fc-name">Image Editor</div><div class="fc-desc">Claude Vision detects text blocks. Edit inline.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">AI</div><div class="ml">Vision</div></div><div class="fc-m"><div class="mv">&infin;</div><div class="ml">Versions</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div><div class="fc-name">Product Analysis</div><div class="fc-desc">Paste URL. AI extracts name, price, features, image.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">Auto</div><div class="ml">Extract</div></div><div class="fc-m"><div class="mv">7</div><div class="ml">Fields</div></div></div></div></div></div>
+    </div>
+  </div>
+
+  <!-- Row 4: Competitor + Campaign (right) -->
+  <div class="fc-carousel fct-comp">
+    <div class="fc-track" data-speed="33" data-dir="1">
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div><div class="fc-name">Ad Library Search</div><div class="fc-desc">Search any brand. Autocomplete with company logo.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">Any</div><div class="ml">Brand</div></div><div class="fc-m"><div class="mv">Auto</div><div class="ml">Complete</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div><div class="fc-name">Ad Grid</div><div class="fc-desc">Masonry layout. Hover-to-play video. Infinite scroll.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">&infin;</div><div class="ml">Scroll</div></div><div class="fc-m"><div class="mv">Video</div><div class="ml">Preview</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/></svg></div><div class="fc-name">Clone & Create</div><div class="fc-desc">Their ad becomes your ad. Your product, their format.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">1-Click</div><div class="ml">Clone</div></div><div class="fc-m"><div class="mv">AI</div><div class="ml">Powered</div></div></div></div></div></div>
+      <div class="fc fct-camp"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#047857,#10b981)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(5,150,105,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div><div class="fc-name">Campaign Launcher</div><div class="fc-desc">8-step wizard. Under 60 seconds to launch.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#047857">4</div><div class="ml">Types</div></div><div class="fc-m"><div class="mv" style="color:#047857">8</div><div class="ml">Steps</div></div><div class="fc-m"><div class="mv" style="color:#047857">&lt;60s</div><div class="ml">Launch</div></div></div></div></div></div>
+      <div class="fc fct-camp"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#047857,#10b981)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(5,150,105,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="fc-name">Bulk Operations</div><div class="fc-desc">Andromeda-safe scaling with cooldown tracking.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#047857">Batch</div><div class="ml">Process</div></div><div class="fc-m"><div class="mv" style="color:#047857">Safe</div><div class="ml">Scaling</div></div></div></div></div></div>
+      <div class="fc fct-camp"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#047857,#10b981)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(5,150,105,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="fc-name">Direct Upload</div><div class="fc-desc">Videos to 1GB. Images to 30MB. Direct to Meta.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#047857">1GB</div><div class="ml">Video</div></div><div class="fc-m"><div class="mv" style="color:#047857">30MB</div><div class="ml">Image</div></div></div></div></div></div>
+    </div>
+  </div>
+
+  <!-- Row 5: Attribution (left) -->
+  <div class="fc-carousel fct-attr">
+    <div class="fc-track" data-speed="38" data-dir="-1">
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h6"/><path d="M22 12h-6"/><path d="M12 2v6"/><path d="M12 22v-6"/><circle cx="12" cy="12" r="4"/></svg></div><div class="fc-name">First-Party Pixel</div><div class="fc-desc">Your own KS-XXXXXXX tracking. Edge runtime.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">1st</div><div class="ml">Party</div></div><div class="fc-m"><div class="mv">Edge</div><div class="ml">Runtime</div></div><div class="fc-m"><div class="mv">10+</div><div class="ml">Events</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div><div class="fc-name">Shopify Attribution</div><div class="fc-desc">JOIN model. Order-level deduplication. 85%+ match rate.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">JOIN</div><div class="ml">Model</div></div><div class="fc-m"><div class="mv">85%+</div><div class="ml">Match</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8a2 2 0 0 1 1.6-.8h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="fc-name">Attribution Waterfall</div><div class="fc-desc">Shopify UTM → Pixel → Meta API → Unattributed.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Layers</div></div><div class="fc-m"><div class="mv">2</div><div class="ml">Models</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg></div><div class="fc-name">Affiliate Costs</div><div class="fc-desc">True ROAS: Revenue ÷ (Ad Spend + Commissions).</div><div class="fc-metrics"><div class="fc-m"><div class="mv">True</div><div class="ml">ROAS</div></div><div class="fc-m"><div class="mv">Auto</div><div class="ml">Sync</div></div></div></div></div></div>
+      <div class="fc fct-plat"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#a16207,#eab308)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(161,98,7,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#a16207" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div><div class="fc-name">Meta Ads</div><div class="fc-desc">29 endpoints. OAuth, batch sync, rate-limit safe.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#a16207">29</div><div class="ml">Endpoints</div></div><div class="fc-m"><div class="mv" style="color:#a16207">OAuth</div><div class="ml">+ Refresh</div></div></div></div></div></div>
+      <div class="fc fct-plat"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#a16207,#eab308)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(161,98,7,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#a16207" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div><div class="fc-name">Google Ads</div><div class="fc-desc">Unified with Meta. Platform badges. Budgets + status.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#a16207">OAuth</div><div class="ml">Connect</div></div><div class="fc-m"><div class="mv" style="color:#a16207">Unified</div><div class="ml">View</div></div></div></div></div></div>
+    </div>
+  </div>
+
+  <!-- Row 6: Workspace + Platform (right) -->
+  <div class="fc-carousel fct-work">
+    <div class="fc-track" data-speed="30" data-dir="1">
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div><div class="fc-name">Multi-Tenant Workspaces</div><div class="fc-desc">One account, multiple businesses. Scoped settings.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">&infin;</div><div class="ml">Workspaces</div></div><div class="fc-m"><div class="mv">Scoped</div><div class="ml">Settings</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></div><div class="fc-name">Team Roles</div><div class="fc-desc">Owner, Admin, Member, Viewer. Email invites.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">4</div><div class="ml">Roles</div></div><div class="fc-m"><div class="mv">Email</div><div class="ml">Invites</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg></div><div class="fc-name">Business Modes</div><div class="fc-desc">E-commerce (ROAS) or Lead Gen (CPR).</div><div class="fc-metrics"><div class="fc-m"><div class="mv">2</div><div class="ml">Modes</div></div><div class="fc-m"><div class="mv">Custom</div><div class="ml">Thresholds</div></div></div></div></div></div>
+      <div class="fc"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar"></div><div class="fc-body"><div class="fc-ico"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></div><div class="fc-name">7-Day Free Trial</div><div class="fc-desc">Full Pro. No credit card. Everything unlocked.</div><div class="fc-metrics"><div class="fc-m"><div class="mv">7</div><div class="ml">Days</div></div><div class="fc-m"><div class="mv">Full</div><div class="ml">Pro</div></div><div class="fc-m"><div class="mv">$0</div><div class="ml">No Card</div></div></div></div></div></div>
+      <div class="fc fct-plat"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#a16207,#eab308)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(161,98,7,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#a16207" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div><div class="fc-name">Shopify</div><div class="fc-desc">Revenue source of truth. Webhook sync.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#a16207">Webhook</div><div class="ml">Sync</div></div><div class="fc-m"><div class="mv" style="color:#a16207">Real</div><div class="ml">Revenue</div></div></div></div></div></div>
+      <div class="fc fct-plat"><div class="fc-border"></div><div class="fc-shimmer"></div><div class="fc-glass"><div class="fc-bar" style="background:linear-gradient(90deg,#a16207,#eab308)"></div><div class="fc-body"><div class="fc-ico" style="background:rgba(161,98,7,0.1)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#a16207" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div><div class="fc-name">Credit System</div><div class="fc-desc">500/month, rollover. Top-up packs from $20.</div><div class="fc-metrics"><div class="fc-m"><div class="mv" style="color:#a16207">500</div><div class="ml">Monthly</div></div><div class="fc-m"><div class="mv" style="color:#a16207">Roll</div><div class="ml">Over</div></div></div></div></div></div>
+    </div>
+  </div>
+
+  <div class="watermark">
+    <span>KillScale</span>
+    <div class="pill">44 Features</div>
+  </div>
+</div>
+
+<script>
+  // Deterministic animation — controlled externally for frame-perfect capture
+  window.__carousels = [];
+  document.querySelectorAll('.fc-track').forEach((track) => {
+    const originals = Array.from(track.querySelectorAll('.fc'));
+    for (let i = 0; i < 3; i++) {
+      originals.forEach(card => {
+        const clone = card.cloneNode(true);
+        clone.setAttribute('aria-hidden', 'true');
+        track.appendChild(clone);
+      });
+    }
+    const gap = 14;
+    const setWidth = originals.reduce((sum, c) => sum + c.offsetWidth + gap, 0);
+    const direction = parseInt(track.dataset.dir) || -1;
+    const speed = parseFloat(track.dataset.speed) || 35;
+    let offset = direction === 1 ? -setWidth : 0;
+
+    window.__carousels.push({ track, setWidth, direction, speed, offset });
+
+    // Set initial position
+    track.style.transform = `translateX(${offset}px)`;
+  });
+
+  // Called from Puppeteer with exact deltaMs per frame
+  window.__advanceFrame = function(deltaMs) {
+    const deltaSec = deltaMs / 1000;
+    for (const c of window.__carousels) {
+      c.offset += c.direction * c.speed * deltaSec;
+      if (c.direction === -1 && c.offset <= -c.setWidth) c.offset += c.setWidth;
+      else if (c.direction === 1 && c.offset >= 0) c.offset -= c.setWidth;
+      c.track.style.transform = `translateX(${c.offset}px)`;
+    }
+  };
+
+  // Also run live animation for preview (stops if __captureMode is set)
+  if (!window.__captureMode) {
+    let lastTime = null;
+    function animate(now) {
+      if (window.__captureMode) return;
+      if (lastTime === null) lastTime = now;
+      const delta = (now - lastTime) / 1000;
+      lastTime = now;
+      for (const c of window.__carousels) {
+        c.offset += c.direction * c.speed * delta;
+        if (c.direction === -1 && c.offset <= -c.setWidth) c.offset += c.setWidth;
+        else if (c.direction === 1 && c.offset >= 0) c.offset -= c.setWidth;
+        c.track.style.transform = `translateX(${c.offset}px)`;
+      }
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  }
+</script>
+</body>
+</html>

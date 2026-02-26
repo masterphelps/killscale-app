@@ -28,7 +28,7 @@ export const useEditorSidebar = () => {
 export const SidebarProvider: React.FC<React.PropsWithChildren> = ({
   children,
 }) => {
-  const [activePanel, setActivePanel] = useState<OverlayType>(OverlayType.VIDEO);
+  const [activePanel, setActivePanel] = useState<OverlayType>(OverlayType.MEDIA);
   const uiSidebar = useSidebar();
 
   const setIsOpen = (open: boolean) => {

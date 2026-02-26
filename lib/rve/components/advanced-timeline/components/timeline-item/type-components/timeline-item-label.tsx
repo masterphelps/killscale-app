@@ -13,7 +13,7 @@ export const TimelineItemLabel: React.FC<TimelineItemLabelProps> = ({
   icon: Icon,
   label,
   defaultLabel,
-  iconClassName = "w-3 h-3 text-white/80",
+  iconClassName = "w-4 h-4 text-white/80",
   isHovering = false, // Default to false
   showBackground = false // Default to false
 }) => {
@@ -24,7 +24,7 @@ export const TimelineItemLabel: React.FC<TimelineItemLabelProps> = ({
       <div className="flex items-center min-w-0 w-full overflow-hidden">
         <div className={`flex items-center p-1 rounded-sm overflow-hidden ${showBackground ? 'bg-yellow-600 opacity-80' : ''}`}>
           <div className="flex-shrink-0 mr-2 flex items-center overflow-hidden">
-            <Icon className={showBackground ? `w-3 h-3 flex-shrink-0 ${showBackground ? 'text-white' : ''} ${iconClassName.includes('text-red-') ? 'text-red-400' : 'text-white'}` : `${iconClassName} flex-shrink-0`} />
+            <Icon className={showBackground ? `w-4 h-4 flex-shrink-0 ${showBackground ? 'text-white' : ''} ${iconClassName.includes('text-red-') ? 'text-red-400' : 'text-white'}` : `${iconClassName} flex-shrink-0`} />
           </div>
           <div className="min-w-0 overflow-hidden">
             <div className={`truncate text-xs font-normal whitespace-nowrap ${

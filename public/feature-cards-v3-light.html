@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KillScale — Feature Cards (Light)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #FAF8FF;
+    --bg-alt: #F0EDFA;
+    --bg-white: #FFFFFF;
+    --text: #1A1A1A;
+    --text-secondary: #6B7280;
+    --text-tertiary: #9CA3AF;
+    --accent: #7c3aed;
+    --accent-hover: #6d28d9;
+    --border: #E4DFF0;
+    --green: #10b981;
+    --red: #ef4444;
+    --serif: 'DM Serif Display', Georgia, serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+
+  /* ── Subtle texture ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 200px 200px;
+  }
+
+  /* ── Ambient glow (light version) ── */
+  .aurora {
+    position: fixed;
+    top: -300px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1400px;
+    height: 700px;
+    background: radial-gradient(ellipse at center, rgba(124,58,237,0.04) 0%, rgba(59,130,246,0.02) 40%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ══════════════════════
+     MOCK LANDING SECTION (before)
+     ══════════════════════ */
+  .mock-section {
+    position: relative;
+    z-index: 1;
+    padding: 80px 24px;
+    text-align: center;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  .mock-section .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+  }
+  .mock-section h2 {
+    font-family: var(--serif);
+    font-size: clamp(28px, 3.5vw, 42px);
+    font-weight: 400;
+    margin-bottom: 16px;
+    line-height: 1.2;
+    color: var(--text);
+  }
+  .mock-section p {
+    font-size: 16px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .mock-section.alt-bg {
+    background: var(--bg-alt);
+    max-width: 100%;
+    padding: 80px 24px;
+  }
+  .mock-section .screenshot-placeholder {
+    max-width: 800px;
+    margin: 32px auto 0;
+    height: 300px;
+    background: var(--bg-white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    font-size: 14px;
+    box-shadow:
+      0 0 30px rgba(124, 58, 237, 0.1),
+      0 25px 50px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ══════════════════════
+     FEATURES SECTION HEADER
+     ══════════════════════ */
+  .features-section {
+    position: relative;
+    z-index: 1;
+    padding: 100px 0 20px;
+  }
+  .features-header {
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto 48px;
+    padding: 0 24px;
+  }
+  .features-header .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+  }
+  .features-header h2 {
+    font-family: var(--serif);
+    font-size: clamp(32px, 4vw, 48px);
+    font-weight: 400;
+    line-height: 1.15;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+  .features-header p {
+    font-size: 17px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+  }
+  .features-stat-bar {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    margin-top: 40px;
+    padding: 20px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    max-width: 580px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .features-stat-bar .s {
+    text-align: center;
+  }
+  .features-stat-bar .s-val {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+  }
+  .features-stat-bar .s-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 2px;
+  }
+
+  /* ══════════════════════
+     CATEGORY SECTION
+     ══════════════════════ */
+  .category-section {
+    position: relative;
+    z-index: 1;
+    margin-top: 52px;
+    padding-bottom: 8px;
+  }
+  .category-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 48px;
+    margin-bottom: 18px;
+  }
+  .category-label .icon-wrap {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .category-label .icon-wrap svg {
+    width: 16px;
+    height: 16px;
+    position: relative;
+    z-index: 1;
+  }
+  .category-label h2 {
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+  }
+  .category-label .pill {
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 100px;
+    color: var(--text-tertiary);
+    border: 1px solid var(--border);
+    background: var(--bg-white);
+  }
+
+  /* ══════════════════════
+     CAROUSEL
+     ══════════════════════ */
+  .carousel-wrap {
+    position: relative;
+    overflow: hidden;
+    padding: 4px 0 16px;
+  }
+  .carousel-track {
+    display: flex;
+    gap: 16px;
+    width: max-content;
+    padding: 0 24px;
+    will-change: transform;
+  }
+
+  /* Edge masks — fade to page background */
+  .carousel-wrap::before,
+  .carousel-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 120px;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .carousel-wrap::before {
+    left: 0;
+    background: linear-gradient(90deg, var(--bg) 20%, transparent);
+  }
+  .carousel-wrap::after {
+    right: 0;
+    background: linear-gradient(-90deg, var(--bg) 20%, transparent);
+  }
+
+  /* ══════════════════════
+     FEATURE CARD — Light Theme
+     ══════════════════════ */
+  .card {
+    flex-shrink: 0;
+    width: 290px;
+    border-radius: 16px;
+    position: relative;
+    cursor: default;
+    transition: transform 0.4s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.4s ease;
+    box-shadow:
+      0 1px 3px rgba(0,0,0,0.04),
+      0 4px 16px rgba(124,58,237,0.04);
+  }
+  .card:hover {
+    transform: translateY(-6px) scale(1.02);
+    box-shadow:
+      0 8px 32px rgba(124,58,237,0.1),
+      0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  /* Outer border — prismatic on hover */
+  .card-border {
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(124,58,237,0.15), rgba(59,130,246,0.08) 50%, rgba(124,58,237,0.1));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    transition: opacity 0.4s;
+    opacity: 0.5;
+  }
+  .card:hover .card-border {
+    opacity: 1;
+  }
+
+  /* Prismatic shimmer on hover (light version) */
+  .card-shimmer {
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.5s;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .card:hover .card-shimmer {
+    opacity: 1;
+  }
+  .card-shimmer::before {
+    content: '';
+    position: absolute;
+    inset: -50%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(124,58,237,0.04) 60deg,
+      rgba(59,130,246,0.03) 120deg,
+      transparent 180deg,
+      rgba(236,72,153,0.03) 240deg,
+      rgba(16,185,129,0.04) 300deg,
+      transparent 360deg
+    );
+    animation: shimmer-rotate 10s linear infinite;
+  }
+  @keyframes shimmer-rotate {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Card frosted glass surface */
+  .card-glass {
+    position: relative;
+    z-index: 2;
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
+    border: 1px solid rgba(124,58,237,0.06);
+    overflow: hidden;
+  }
+
+  /* Category accent bar at top */
+  .card-glass .accent-bar {
+    height: 2px;
+    opacity: 0.6;
+    transition: opacity 0.4s;
+  }
+  .card:hover .card-glass .accent-bar {
+    opacity: 1;
+  }
+
+  .card-content {
+    padding: 20px 20px 18px;
+  }
+
+  /* Icon */
+  .card-feature-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    position: relative;
+  }
+  .card-feature-icon svg {
+    width: 18px;
+    height: 18px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .card-name {
+    font-weight: 700;
+    font-size: 0.92rem;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .card-desc {
+    font-size: 0.76rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-bottom: 16px;
+  }
+
+  /* Stats row */
+  .card-metrics {
+    display: flex;
+    gap: 2px;
+    background: rgba(124,58,237,0.03);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(124,58,237,0.05);
+  }
+  .card-metric {
+    flex: 1;
+    padding: 8px 6px;
+    text-align: center;
+    position: relative;
+  }
+  .card-metric + .card-metric::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 1px;
+    background: rgba(124,58,237,0.06);
+  }
+  .card-metric .mv {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .card-metric .ml {
+    font-size: 0.52rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 1px;
+    font-weight: 500;
+  }
+
+  /* Details */
+  .card-bullets {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .card-bullet {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    font-weight: 400;
+  }
+  .card-bullet .b-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 5px;
+    opacity: 0.8;
+  }
+
+  /* ══════════════════════
+     COLOR THEMES (Light-optimized — deeper saturated colors)
+     ══════════════════════ */
+
+  /* Performance Intelligence — Deep Violet */
+  .th-perf .icon-wrap { background: rgba(124,58,237,0.1); }
+  .th-perf .icon-wrap svg { stroke: #7c3aed; }
+  .th-perf .accent-bar { background: linear-gradient(90deg, #7c3aed, #3b82f6); }
+  .th-perf .card-feature-icon { background: rgba(124,58,237,0.08); }
+  .th-perf .card-feature-icon svg { stroke: #7c3aed; }
+  .th-perf .mv { color: #6d28d9; }
+  .th-perf .b-dot { background: #7c3aed; }
+
+  /* Creative Studio — Deep Teal */
+  .th-studio .icon-wrap { background: rgba(6,182,212,0.1); }
+  .th-studio .icon-wrap svg { stroke: #0891b2; }
+  .th-studio .accent-bar { background: linear-gradient(90deg, #0891b2, #3b82f6); }
+  .th-studio .card-feature-icon { background: rgba(6,182,212,0.08); }
+  .th-studio .card-feature-icon svg { stroke: #0891b2; }
+  .th-studio .mv { color: #0e7490; }
+  .th-studio .b-dot { background: #0891b2; }
+
+  /* AI Generation — Deep Rose */
+  .th-ai .icon-wrap { background: rgba(225,29,72,0.1); }
+  .th-ai .icon-wrap svg { stroke: #e11d48; }
+  .th-ai .accent-bar { background: linear-gradient(90deg, #e11d48, #7c3aed); }
+  .th-ai .card-feature-icon { background: rgba(225,29,72,0.08); }
+  .th-ai .card-feature-icon svg { stroke: #e11d48; }
+  .th-ai .mv { color: #be123c; }
+  .th-ai .b-dot { background: #e11d48; }
+
+  /* Competitor Research — Deep Amber */
+  .th-comp .icon-wrap { background: rgba(217,119,6,0.1); }
+  .th-comp .icon-wrap svg { stroke: #d97706; }
+  .th-comp .accent-bar { background: linear-gradient(90deg, #d97706, #dc2626); }
+  .th-comp .card-feature-icon { background: rgba(217,119,6,0.08); }
+  .th-comp .card-feature-icon svg { stroke: #d97706; }
+  .th-comp .mv { color: #b45309; }
+  .th-comp .b-dot { background: #d97706; }
+
+  /* Campaign Management — Deep Emerald */
+  .th-camp .icon-wrap { background: rgba(5,150,105,0.1); }
+  .th-camp .icon-wrap svg { stroke: #059669; }
+  .th-camp .accent-bar { background: linear-gradient(90deg, #059669, #0891b2); }
+  .th-camp .card-feature-icon { background: rgba(5,150,105,0.08); }
+  .th-camp .card-feature-icon svg { stroke: #059669; }
+  .th-camp .mv { color: #047857; }
+  .th-camp .b-dot { background: #059669; }
+
+  /* Attribution — Deep Sky Blue */
+  .th-attr .icon-wrap { background: rgba(37,99,235,0.1); }
+  .th-attr .icon-wrap svg { stroke: #2563eb; }
+  .th-attr .accent-bar { background: linear-gradient(90deg, #2563eb, #7c3aed); }
+  .th-attr .card-feature-icon { background: rgba(37,99,235,0.08); }
+  .th-attr .card-feature-icon svg { stroke: #2563eb; }
+  .th-attr .mv { color: #1d4ed8; }
+  .th-attr .b-dot { background: #2563eb; }
+
+  /* Platform — Violet */
+  .th-plat .icon-wrap { background: rgba(124,58,237,0.1); }
+  .th-plat .icon-wrap svg { stroke: #8b5cf6; }
+  .th-plat .accent-bar { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
+  .th-plat .card-feature-icon { background: rgba(139,92,246,0.08); }
+  .th-plat .card-feature-icon svg { stroke: #8b5cf6; }
+  .th-plat .mv { color: #7c3aed; }
+  .th-plat .b-dot { background: #8b5cf6; }
+
+  /* Workspace — Lime-Olive */
+  .th-work .icon-wrap { background: rgba(101,163,13,0.1); }
+  .th-work .icon-wrap svg { stroke: #65a30d; }
+  .th-work .accent-bar { background: linear-gradient(90deg, #65a30d, #ca8a04); }
+  .th-work .card-feature-icon { background: rgba(101,163,13,0.08); }
+  .th-work .card-feature-icon svg { stroke: #65a30d; }
+  .th-work .mv { color: #4d7c0f; }
+  .th-work .b-dot { background: #65a30d; }
+
+  /* ══════════════════════
+     FEATURES FOOTER CTA
+     ══════════════════════ */
+  .features-cta {
+    text-align: center;
+    padding: 60px 24px 0;
+    position: relative;
+    z-index: 1;
+  }
+  .features-cta .cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 32px;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    font-size: 15px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--sans);
+    text-decoration: none;
+  }
+  .features-cta .cta-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+  }
+  .features-cta p {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-tertiary);
+  }
+
+  /* ══════════════════════
+     RESPONSIVE
+     ══════════════════════ */
+  @media (max-width: 640px) {
+    .card { width: 260px; }
+    .features-stat-bar { gap: 28px; }
+    .category-label { padding: 0 24px; }
+    .features-header h2 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="aurora"></div>
+
+<!-- ════ MOCK: Landing page section BEFORE features ════ -->
+<div class="mock-section alt-bg">
+  <div class="eyebrow">Campaign Launcher</div>
+  <h2>Launch pre-optimized ads in less than 60 seconds</h2>
+  <p>Our guided flow handles the complexity so you can focus on creative. No more fumbling through Ads Manager.</p>
+  <div class="screenshot-placeholder">[ Campaign Launcher walkthrough ]</div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     FEATURE CARDS SECTION
+     ═══════════════════════════════════════ -->
+<section class="features-section">
+  <div class="features-header">
+    <div class="eyebrow">Everything Under The Hood</div>
+    <h2>44 features built for teams who refuse to guess</h2>
+    <p>From first-party attribution to AI video generation. One platform, zero guesswork.</p>
+    <div class="features-stat-bar">
+      <div class="s"><div class="s-val">44</div><div class="s-label">Features</div></div>
+      <div class="s"><div class="s-val">88+</div><div class="s-label">API Endpoints</div></div>
+      <div class="s"><div class="s-val">5</div><div class="s-label">AI Models</div></div>
+      <div class="s"><div class="s-val">48K</div><div class="s-label">Lines of Code</div></div>
+    </div>
+  </div>
+
+<!-- ════ 1. PERFORMANCE INTELLIGENCE ════ -->
+<section class="category-section th-perf">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+    <h2>Performance Intelligence</h2>
+    <span class="pill">7 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="35" data-dir="-1">
+      <!-- Instant Verdicts -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="card-name">Instant Verdicts</div><div class="card-desc">Know exactly what to do with every campaign — scale, watch, kill, or learn.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Verdicts</div></div><div class="card-metric"><div class="mv">2</div><div class="ml">Modes</div></div><div class="card-metric"><div class="mv">&lt;1s</div><div class="ml">Speed</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>ROAS-based or CPR-based scoring</div><div class="card-bullet"><span class="b-dot"></span>Configurable thresholds per workspace</div></div></div></div></div>
+
+      <!-- Performance Dashboard -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div><div class="card-name">Performance Dashboard</div><div class="card-desc">Every metric at every level — campaign, ad set, ad — in one drill-down view.</div><div class="card-metrics"><div class="card-metric"><div class="mv">12+</div><div class="ml">Metrics</div></div><div class="card-metric"><div class="mv">3</div><div class="ml">Levels</div></div><div class="card-metric"><div class="mv">&infin;</div><div class="ml">Drill-down</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Spend, Revenue, ROAS, CPA, AOV, CTR</div><div class="card-bullet"><span class="b-dot"></span>Date range filtering with presets</div></div></div></div></div>
+
+      <!-- Health Score -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="card-name">Health Score</div><div class="card-desc">4-factor performance diagnosis: efficiency, fatigue, profitability, and trend.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Factors</div></div><div class="card-metric"><div class="mv">0–100</div><div class="ml">Score</div></div><div class="card-metric"><div class="mv">AI</div><div class="ml">Powered</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Budget efficiency 30% · Fatigue 25%</div><div class="card-bullet"><span class="b-dot"></span>AI-powered optimization recommendations</div></div></div></div></div>
+
+      <!-- Andromeda Audit -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="card-name">Andromeda Audit</div><div class="card-desc">Score your account against Meta's ML best practices across 5 structural factors.</div><div class="card-metrics"><div class="card-metric"><div class="mv">5</div><div class="ml">Factors</div></div><div class="card-metric"><div class="mv">0–100</div><div class="ml">Score</div></div><div class="card-metric"><div class="mv">Chat</div><div class="ml">Follow-up</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>CBO, consolidation, learning, budget</div><div class="card-bullet"><span class="b-dot"></span>AI chat for follow-up questions</div></div></div></div></div>
+
+      <!-- Trends -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div><div class="card-name">Trends & Analytics</div><div class="card-desc">30-day time series with revenue vs spend, ROAS, CTR, CPC, and more.</div><div class="card-metrics"><div class="card-metric"><div class="mv">30d</div><div class="ml">Range</div></div><div class="card-metric"><div class="mv">6+</div><div class="ml">Charts</div></div><div class="card-metric"><div class="mv">CSV</div><div class="ml">Export</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Area charts, treemaps, funnels</div><div class="card-bullet"><span class="b-dot"></span>Hierarchical drilldown by entity</div></div></div></div></div>
+
+      <!-- Fatigue -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="13" x2="23" y2="11"/></svg></div><div class="card-name">Fatigue Detection</div><div class="card-desc">Know when your ads are wearing out before performance craters.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Levels</div></div><div class="card-metric"><div class="mv">Live</div><div class="ml">Tracking</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Healthy &rarr; Warning &rarr; Fatiguing &rarr; Fatigued</div><div class="card-bullet"><span class="b-dot"></span>Thumbstop rate decay curves</div></div></div></div></div>
+
+      <!-- Alerts -->
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><div class="card-name">Smart Alerts</div><div class="card-desc">8 alert types with priority levels. Never miss money bleeding again.</div><div class="card-metrics"><div class="card-metric"><div class="mv">8</div><div class="ml">Types</div></div><div class="card-metric"><div class="mv">3</div><div class="ml">Priorities</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Money bleeding, breakeven, scale alerts</div><div class="card-bullet"><span class="b-dot"></span>Bulk actions: pause, scale, dismiss</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 2. CREATIVE STUDIO ════ -->
+<section class="category-section th-studio">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg></div>
+    <h2>Creative Studio</h2>
+    <span class="pill">6 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="30" data-dir="1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 10-5.12 5.12-2.88-2.88"/></svg></div><div class="card-name">Creative Scoring</div><div class="card-desc">Hook, Hold, Click, Convert — every creative scored 0 to 100 on each stage.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Scores</div></div><div class="card-metric"><div class="mv">$50</div><div class="ml">Min Spend</div></div><div class="card-metric"><div class="mv">0–100</div><div class="ml">Range</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Color-coded: green, amber, orange, red</div><div class="card-bullet"><span class="b-dot"></span>Filter gallery by score range</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="card-name">Media Gallery</div><div class="card-desc">Masonry grid or sortable table. Scroll-to-play on mobile, hover on desktop.</div><div class="card-metrics"><div class="card-metric"><div class="mv">2</div><div class="ml">Views</div></div><div class="card-metric"><div class="mv">Auto</div><div class="ml">Play</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Funnel filter bar with score sliders</div><div class="card-bullet"><span class="b-dot"></span>Responsive mobile-first design</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="card-name">Theater Mode</div><div class="card-desc">Full-screen creative detail with video player, audience data, and daily trends.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Full</div><div class="ml">Detail</div></div><div class="card-metric"><div class="mv">Daily</div><div class="ml">Breakdown</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Multi-panel stats alongside video</div><div class="card-bullet"><span class="b-dot"></span>Audience breakdown by demo & geo</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8Z"/><circle cx="12" cy="10" r="3"/></svg></div><div class="card-name">Video Analysis</div><div class="card-desc">Gemini 2.0 Flash watches your video and scores every second of the funnel.</div><div class="card-metrics"><div class="card-metric"><div class="mv">AI</div><div class="ml">Gemini</div></div><div class="card-metric"><div class="mv">4</div><div class="ml">Stages</div></div><div class="card-metric"><div class="mv">Auto</div><div class="ml">Transcript</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Timestamped funnel stage scores</div><div class="card-bullet"><span class="b-dot"></span>Script rewrites and quick wins</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div class="card-name">Starred Ads</div><div class="card-desc">Star winners from any view. Build CBO Performance Sets from your top creatives.</div><div class="card-metrics"><div class="card-metric"><div class="mv">1-Click</div><div class="ml">Star</div></div><div class="card-metric"><div class="mv">CBO</div><div class="ml">Auto-Build</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Inventory popover with quick preview</div><div class="card-bullet"><span class="b-dot"></span>Build Performance Sets instantly</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div><div class="card-name">Copy Library</div><div class="card-desc">Every ad copy variation ranked by ROAS. AI-generated copies tagged with badges.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Dedup</div><div class="ml">Variations</div></div><div class="card-metric"><div class="mv">AI</div><div class="ml">+ Manual</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Unique variations with real metrics</div><div class="card-bullet"><span class="b-dot"></span>Save from Ad Studio or AI Tasks</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 3. AI GENERATION ════ -->
+<section class="category-section th-ai">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="m8 6 4-3 4 3"/><path d="m8 18 4 3 4-3"/><path d="M3 12h18"/><path d="m6 8-3 4 3 4"/><path d="m18 8 3 4-3 4"/></svg></div>
+    <h2>AI Generation</h2>
+    <span class="pill">8 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="38" data-dir="-1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></div><div class="card-name">Ad Copy Generation</div><div class="card-desc">Claude writes 3 ad variations from competitor inspiration with angle tagging.</div><div class="card-metrics"><div class="card-metric"><div class="mv">3</div><div class="ml">Variations</div></div><div class="card-metric"><div class="mv">Claude</div><div class="ml">Sonnet 4</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Headline + Primary + Description</div><div class="card-bullet"><span class="b-dot"></span>"Why it works" explanations</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><div class="card-name">Image Generation</div><div class="card-desc">Gemini creates ads using your product photo in 4 styles. Dual-image mode.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Styles</div></div><div class="card-metric"><div class="mv">5cr</div><div class="ml">Cost</div></div><div class="card-metric"><div class="mv">Gemini</div><div class="ml">2.5 Flash</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Lifestyle, Product, Minimal, Bold</div><div class="card-bullet"><span class="b-dot"></span>Your product + competitor style</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div><div class="card-name">Video Generation</div><div class="card-desc">3 providers, 4–12 second ads. Sora, Veo, Runway — pick your engine.</div><div class="card-metrics"><div class="card-metric"><div class="mv">3</div><div class="ml">Providers</div></div><div class="card-metric"><div class="mv">50cr</div><div class="ml">Cost</div></div><div class="card-metric"><div class="mv">4–12s</div><div class="ml">Duration</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Sora 2 Pro · Veo 3.1 · Runway Gen-4.5</div><div class="card-bullet"><span class="b-dot"></span>Inline generation with progress</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></div><div class="card-name">Video Concepts</div><div class="card-desc">4 visual metaphor concepts per product. 15 unique visual worlds, no clich&eacute;s.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Concepts</div></div><div class="card-metric"><div class="mv">15</div><div class="ml">Worlds</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Problem&rarr;Solution, Emotional, Spotlight</div><div class="card-bullet"><span class="b-dot"></span>Built-in clich&eacute; filtering</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg></div><div class="card-name">Overlay Editor</div><div class="card-desc">Non-destructive captions, hooks, CTAs. Versioned with rollback. Multi-clip.</div><div class="card-metrics"><div class="card-metric"><div class="mv">5</div><div class="ml">Types</div></div><div class="card-metric"><div class="mv">&infin;</div><div class="ml">Versions</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Whisper auto-synced captions</div><div class="card-bullet"><span class="b-dot"></span>Multi-clip timeline compositions</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div><div class="card-name">AI Voiceover</div><div class="card-desc">6 professional voices via OpenAI TTS. Synced to overlay timeline.</div><div class="card-metrics"><div class="card-metric"><div class="mv">6</div><div class="ml">Voices</div></div><div class="card-metric"><div class="mv">TTS</div><div class="ml">OpenAI</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Choose voice per video clip</div><div class="card-bullet"><span class="b-dot"></span>Whisper transcription for sync</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2Z"/></svg></div><div class="card-name">Image Editor</div><div class="card-desc">Claude Vision detects text blocks. Edit headline, subtext, CTA inline.</div><div class="card-metrics"><div class="card-metric"><div class="mv">AI</div><div class="ml">Vision</div></div><div class="card-metric"><div class="mv">&infin;</div><div class="ml">Versions</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Smart text detection + editing</div><div class="card-bullet"><span class="b-dot"></span>Prompt-based image refinement</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div><div class="card-name">Product Analysis</div><div class="card-desc">Paste a URL. AI extracts name, price, features, image. Feeds all tools.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Auto</div><div class="ml">Extract</div></div><div class="card-metric"><div class="mv">7</div><div class="ml">Fields</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Pill selector for attribute control</div><div class="card-bullet"><span class="b-dot"></span>Feeds copy, image, and video gen</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 4. COMPETITOR RESEARCH ════ -->
+<section class="category-section th-comp">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></div>
+    <h2>Competitor Research</h2>
+    <span class="pill">5 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="32" data-dir="1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div><div class="card-name">Ad Library Search</div><div class="card-desc">Search any brand. Autocomplete with company logo and name.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Any</div><div class="ml">Brand</div></div><div class="card-metric"><div class="mv">Auto</div><div class="ml">Complete</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Type-ahead search across Ad Library</div><div class="card-bullet"><span class="b-dot"></span>Company logo + name results</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div><div class="card-name">Ad Grid</div><div class="card-desc">Masonry layout. Hover-to-play video. Days active badge. Infinite scroll.</div><div class="card-metrics"><div class="card-metric"><div class="mv">&infin;</div><div class="ml">Scroll</div></div><div class="card-metric"><div class="mv">Video</div><div class="ml">Preview</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Filter by media type, days, status</div><div class="card-bullet"><span class="b-dot"></span>Full ad detail modal</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></div><div class="card-name">Media Mix</div><div class="card-desc">Video, image, carousel, text — see the exact format split any competitor uses.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Formats</div></div><div class="card-metric"><div class="mv">%</div><div class="ml">Split</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Interactive donut chart</div><div class="card-bullet"><span class="b-dot"></span>Filter ads by format type</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div><div class="card-name">Landing Pages</div><div class="card-desc">See where competitors funnel traffic. Top pages ranked by frequency.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Top</div><div class="ml">Pages</div></div><div class="card-metric"><div class="mv">%</div><div class="ml">Frequency</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>URL breakdown per campaign</div><div class="card-bullet"><span class="b-dot"></span>Identify winning funnels</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/></svg></div><div class="card-name">Clone & Create</div><div class="card-desc">One click: their ad becomes your ad. Your product, their proven format.</div><div class="card-metrics"><div class="card-metric"><div class="mv">1-Click</div><div class="ml">Clone</div></div><div class="card-metric"><div class="mv">AI</div><div class="ml">Powered</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Generates copy + image instantly</div><div class="card-bullet"><span class="b-dot"></span>Launch directly to Meta</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 5. CAMPAIGN MANAGEMENT ════ -->
+<section class="category-section th-camp">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></div>
+    <h2>Campaign Management</h2>
+    <span class="pill">5 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="33" data-dir="-1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div><div class="card-name">Campaign Launcher</div><div class="card-desc">8-step wizard. Campaigns, ad sets, ads, or Performance Sets. Under 60 seconds.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Types</div></div><div class="card-metric"><div class="mv">8</div><div class="ml">Steps</div></div><div class="card-metric"><div class="mv">&lt;60s</div><div class="ml">Launch</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>CBO (Andromeda) or ABO</div><div class="card-bullet"><span class="b-dot"></span>Created as PAUSED for review</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="card-name">Bulk Operations</div><div class="card-desc">Andromeda-safe scaling. Batch 5 at a time with cooldown tracking.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Batch</div><div class="ml">Process</div></div><div class="card-metric"><div class="mv">Safe</div><div class="ml">Scaling</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Pause, resume, delete in bulk</div><div class="card-bullet"><span class="b-dot"></span>Budget change cooldown tracking</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="card-name">Direct Upload</div><div class="card-desc">Videos up to 1GB. Images to 30MB. Chunked upload, direct to Meta.</div><div class="card-metrics"><div class="card-metric"><div class="mv">1GB</div><div class="ml">Video</div></div><div class="card-metric"><div class="mv">30MB</div><div class="ml">Image</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Chunked upload bypasses limits</div><div class="card-bullet"><span class="b-dot"></span>Drag-drop with progress tracking</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg></div><div class="card-name">Media Library</div><div class="card-desc">Browse existing account media. Search, filter, multi-select for campaigns.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Search</div><div class="ml">& Filter</div></div><div class="card-metric"><div class="mv">Multi</div><div class="ml">Select</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Video preview + image lightbox</div><div class="card-bullet"><span class="b-dot"></span>Integrated into Launch Wizard</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></div><div class="card-name">Inline Management</div><div class="card-desc">Edit, duplicate, delete — all from the dashboard table. Ad copy editing on clone.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Inline</div><div class="ml">Actions</div></div><div class="card-metric"><div class="mv">Copy</div><div class="ml">Editing</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Overflow menu on every row</div><div class="card-bullet"><span class="b-dot"></span>Edit budgets, names, status</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 6. ATTRIBUTION ════ -->
+<section class="category-section th-attr">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></div>
+    <h2>Attribution & Tracking</h2>
+    <span class="pill">5 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="34" data-dir="1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h6"/><path d="M22 12h-6"/><path d="M12 2v6"/><path d="M12 22v-6"/><circle cx="12" cy="12" r="4"/></svg></div><div class="card-name">First-Party Pixel</div><div class="card-desc">Your own KS-XXXXXXX tracking. Edge runtime. UTM capture + cookies.</div><div class="card-metrics"><div class="card-metric"><div class="mv">1st</div><div class="ml">Party</div></div><div class="card-metric"><div class="mv">Edge</div><div class="ml">Runtime</div></div><div class="card-metric"><div class="mv">10+</div><div class="ml">Events</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Two-snippet: pageview + purchase</div><div class="card-bullet"><span class="b-dot"></span>Independent of Meta's pixel</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div><div class="card-name">Shopify Attribution</div><div class="card-desc">JOIN model. Match orders to ads via order_id. Industry-standard accuracy.</div><div class="card-metrics"><div class="card-metric"><div class="mv">JOIN</div><div class="ml">Model</div></div><div class="card-metric"><div class="mv">85%+</div><div class="ml">Match</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Like Northbeam / Triple Whale</div><div class="card-bullet"><span class="b-dot"></span>Order-level deduplication</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8a2 2 0 0 1 1.6-.8h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="card-name">Attribution Waterfall</div><div class="card-desc">Shopify UTM &rarr; Pixel &rarr; Meta API &rarr; Unattributed. No double-counting.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Layers</div></div><div class="card-metric"><div class="mv">2</div><div class="ml">Models</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>First Touch or Last Touch</div><div class="card-bullet"><span class="b-dot"></span>Prevents revenue double-counting</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg></div><div class="card-name">Affiliate Costs</div><div class="card-desc">True ROAS: Revenue &divide; (Ad Spend + UpPromote commissions).</div><div class="card-metrics"><div class="card-metric"><div class="mv">True</div><div class="ml">ROAS</div></div><div class="card-metric"><div class="mv">Auto</div><div class="ml">Sync</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>UpPromote API integration</div><div class="card-bullet"><span class="b-dot"></span>Total Costs card on dashboard</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><rect x="2" y="7" width="20" height="5"/></svg></div><div class="card-name">Sales Kiosk</div><div class="card-desc">Public URL for walk-in sales. PIN-protected. Ad picker. Mobile-first.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Public</div><div class="ml">URL</div></div><div class="card-metric"><div class="mv">PIN</div><div class="ml">Secure</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Campaign &rarr; Ad Set &rarr; Ad picker</div><div class="card-bullet"><span class="b-dot"></span>Optimized for tablets</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 7. PLATFORM ════ -->
+<section class="category-section th-plat">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
+    <h2>Platform & Integrations</h2>
+    <span class="pill">4 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="28" data-dir="-1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div><div class="card-name">Meta Ads</div><div class="card-desc">Full integration. 29 API endpoints. OAuth, batch sync, rate-limit safe.</div><div class="card-metrics"><div class="card-metric"><div class="mv">29</div><div class="ml">Endpoints</div></div><div class="card-metric"><div class="mv">OAuth</div><div class="ml">+ Refresh</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Create, edit, pause, scale, delete</div><div class="card-bullet"><span class="b-dot"></span>Batch API: 50 requests per call</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div><div class="card-name">Google Ads</div><div class="card-desc">Unified with Meta. Campaign sync, budgets, status — with platform badges.</div><div class="card-metrics"><div class="card-metric"><div class="mv">OAuth</div><div class="ml">Connect</div></div><div class="card-metric"><div class="mv">Unified</div><div class="ml">View</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Side-by-side with Meta data</div><div class="card-bullet"><span class="b-dot"></span>Pause, resume, budget editing</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div><div class="card-name">Shopify</div><div class="card-desc">Revenue source of truth. Webhook sync. UTM extraction. Backfill.</div><div class="card-metrics"><div class="card-metric"><div class="mv">Webhook</div><div class="ml">Sync</div></div><div class="card-metric"><div class="mv">Real</div><div class="ml">Revenue</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Order-level webhook sync</div><div class="card-bullet"><span class="b-dot"></span>Historical order backfill</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div><div class="card-name">Credit System</div><div class="card-desc">500/month, rollover. Failed gens refunded. Top-up packs from $20.</div><div class="card-metrics"><div class="card-metric"><div class="mv">500</div><div class="ml">Monthly</div></div><div class="card-metric"><div class="mv">Roll</div><div class="ml">Over</div></div><div class="card-metric"><div class="mv">4</div><div class="ml">Packs</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Images: 5cr &middot; Videos: 50cr</div><div class="card-bullet"><span class="b-dot"></span>100/$20 to 1000/$200</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 8. WORKSPACE ════ -->
+<section class="category-section th-work">
+  <div class="category-label">
+    <div class="icon-wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+    <h2>Workspace & Team</h2>
+    <span class="pill">4 features</span>
+  </div>
+  <div class="carousel-wrap">
+    <div class="carousel-track" data-speed="26" data-dir="1">
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div><div class="card-name">Multi-Tenant Workspaces</div><div class="card-desc">One account, multiple businesses. Scoped rules, pixels, and settings.</div><div class="card-metrics"><div class="card-metric"><div class="mv">&infin;</div><div class="ml">Workspaces</div></div><div class="card-metric"><div class="mv">Scoped</div><div class="ml">Settings</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Business type per workspace</div><div class="card-bullet"><span class="b-dot"></span>Separate ad account linking</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></div><div class="card-name">Team Roles</div><div class="card-desc">Owner, Admin, Member, Viewer. Email invites with token acceptance.</div><div class="card-metrics"><div class="card-metric"><div class="mv">4</div><div class="ml">Roles</div></div><div class="card-metric"><div class="mv">Email</div><div class="ml">Invites</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Token-based invite acceptance</div><div class="card-bullet"><span class="b-dot"></span>Granular access control</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg></div><div class="card-name">Business Modes</div><div class="card-desc">E-commerce (ROAS) or Lead Gen (CPR). Different metrics, different verdicts.</div><div class="card-metrics"><div class="card-metric"><div class="mv">2</div><div class="ml">Modes</div></div><div class="card-metric"><div class="mv">Custom</div><div class="ml">Thresholds</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>Revenue or cost-per-result focus</div><div class="card-bullet"><span class="b-dot"></span>Configurable verdict thresholds</div></div></div></div></div>
+
+      <div class="card"><div class="card-border"></div><div class="card-shimmer"></div><div class="card-glass"><div class="accent-bar"></div><div class="card-content"><div class="card-feature-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></div><div class="card-name">7-Day Free Trial</div><div class="card-desc">Full Pro access. No credit card. 3-step onboarding. Everything unlocked.</div><div class="card-metrics"><div class="card-metric"><div class="mv">7</div><div class="ml">Days</div></div><div class="card-metric"><div class="mv">Full</div><div class="ml">Pro</div></div><div class="card-metric"><div class="mv">$0</div><div class="ml">No Card</div></div></div><div class="card-bullets"><div class="card-bullet"><span class="b-dot"></span>3-step onboarding wizard</div><div class="card-bullet"><span class="b-dot"></span>Upgrade CTA when trial ends</div></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+  <!-- Features CTA -->
+  <div class="features-cta">
+    <a href="https://app.killscale.com/signup" class="cta-btn">Start Free Trial <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
+    <p>7-day free trial. No credit card required.</p>
+  </div>
+
+</section><!-- end features-section -->
+
+<!-- ════ MOCK: Landing page section AFTER features ════ -->
+<div class="mock-section" style="padding: 120px 24px;">
+  <div class="eyebrow">Verdict System</div>
+  <h2>Know exactly what to do with every campaign</h2>
+  <p>Every campaign, ad set, and ad gets categorized based on your custom ROAS thresholds. No analysis paralysis — just clear actions.</p>
+</div>
+
+<!-- ════ CAROUSEL ENGINE ════ -->
+<script>
+document.querySelectorAll('.carousel-track').forEach((track) => {
+  const originals = Array.from(track.querySelectorAll('.card'));
+  for (let i = 0; i < 3; i++) {
+    originals.forEach(card => {
+      const clone = card.cloneNode(true);
+      clone.setAttribute('aria-hidden', 'true');
+      track.appendChild(clone);
+    });
+  }
+
+  const gap = 16;
+  const setWidth = originals.reduce((sum, c) => sum + c.offsetWidth + gap, 0);
+  const direction = parseInt(track.dataset.dir) || -1;
+  const maxSpeed = parseFloat(track.dataset.speed) || 35;
+  let offset = direction === 1 ? -setWidth : 0;
+  let currentSpeed = maxSpeed;
+  let targetSpeed = maxSpeed;
+  let lastTime = null;
+  const easeRate = 2.5;
+
+  track.closest('.carousel-wrap').addEventListener('mouseenter', () => { targetSpeed = 0; });
+  track.closest('.carousel-wrap').addEventListener('mouseleave', () => { targetSpeed = maxSpeed; lastTime = null; });
+
+  function animate(now) {
+    if (lastTime === null) lastTime = now;
+    const delta = (now - lastTime) / 1000;
+    lastTime = now;
+
+    if (currentSpeed !== targetSpeed) {
+      const diff = targetSpeed - currentSpeed;
+      currentSpeed += diff * Math.min(1, easeRate * delta);
+      if (Math.abs(currentSpeed - targetSpeed) < 0.3) currentSpeed = targetSpeed;
+    }
+
+    if (currentSpeed > 0.05) {
+      offset += direction * currentSpeed * delta;
+      if (direction === -1 && offset <= -setWidth) offset += setWidth;
+      else if (direction === 1 && offset >= 0) offset -= setWidth;
+      track.style.transform = `translateX(${offset}px)`;
+    }
+
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+});
+</script>
+
+</body>
+</html>

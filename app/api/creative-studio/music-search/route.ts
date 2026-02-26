@@ -1,47 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q') || ''
   const genre = searchParams.get('genre') || ''
-  const page = searchParams.get('page') || '1'
 
-  const apiKey = process.env.PIXABAY_API_KEY
-  if (!apiKey) {
+  let query = supabase
+    .from('music_tracks')
+    .select('id, title, artist, duration_seconds, genre, tags, storage_url')
+    .order('title')
+
+  if (genre) {
+    // Map UI genre filters to actual DB genres (case-insensitive partial match)
+    query = query.ilike('genre', `%${genre}%`)
+  }
+
+  if (q) {
+    // Search across title, artist, genre, and tags
+    query = query.or(`title.ilike.%${q}%,artist.ilike.%${q}%,genre.ilike.%${q}%,tags.ilike.%${q}%`)
+  }
+
+  const { data, error } = await query.limit(100)
+
+  if (error) {
+    console.error('[Music Search] Error:', error)
     return NextResponse.json({ tracks: [], total: 0 })
   }
 
-  try {
-    const params = new URLSearchParams({
-      key: apiKey,
-      q: q || genre || 'background music',
-      page,
-      per_page: '20',
-    })
+  const tracks = (data || []).map(t => ({
+    id: t.id,
+    title: t.title,
+    artist: t.artist,
+    duration: t.duration_seconds,
+    previewUrl: t.storage_url,
+    genre: t.genre,
+  }))
 
-    const response = await fetch(`https://pixabay.com/api/?${params}`, {
-      headers: { 'Accept': 'application/json' },
-    })
-
-    if (!response.ok) {
-      return NextResponse.json({ tracks: [], total: 0 })
-    }
-
-    const data = await response.json()
-
-    const tracks = (data.hits || []).map((hit: any) => ({
-      id: String(hit.id),
-      title: hit.tags?.split(',')[0]?.trim() || 'Untitled',
-      artist: hit.user || 'Unknown',
-      duration: hit.duration || 0,
-      previewUrl: hit.previewURL || '',
-      genre: genre || 'all',
-      thumbnailUrl: hit.previewURL || '',
-    }))
-
-    return NextResponse.json({ tracks, total: data.totalHits || 0 })
-  } catch (error) {
-    console.error('Music search error:', error)
-    return NextResponse.json({ tracks: [], total: 0 })
-  }
+  return NextResponse.json({ tracks, total: tracks.length })
 }

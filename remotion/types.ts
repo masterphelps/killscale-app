@@ -51,7 +51,7 @@ export interface EndCardOverlay {
   fontSize?: number         // default 48
 }
 
-export type OverlayStyle = 'capcut' | 'minimal' | 'bold' | 'clean'
+export type OverlayStyle = 'capcut' | 'minimal' | 'bold' | 'clean' | 'wordflash' | 'promopunch'
 
 export interface AppendedClip {
   videoUrl: string

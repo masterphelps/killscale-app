@@ -11,6 +11,8 @@ export enum OverlayType {
   TEMPLATE = "TEMPLATE",
   SETTINGS = "settings",
   AI = "ai",
+  CTA = "cta",
+  MEDIA = "media",
 }
 // Base overlay properties
 type BaseOverlay = {

@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KillScale Creative Suite — AI Ad Pipeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #09090b;
+    color: #e4e4e7;
+    font-family: 'Outfit', sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .canvas {
+    width: 1920px;
+    height: 1080px;
+    position: relative;
+    overflow: hidden;
+    background: #09090b;
+    background-image:
+      radial-gradient(ellipse 900px 500px at 50% 40%, rgba(59,130,246,0.06) 0%, transparent 100%),
+      radial-gradient(ellipse 600px 400px at 20% 60%, rgba(139,92,246,0.04) 0%, transparent 100%),
+      radial-gradient(ellipse 600px 400px at 80% 70%, rgba(16,185,129,0.04) 0%, transparent 100%);
+  }
+
+  /* Grid dots background */
+  .canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(63,63,70,0.3) 1px, transparent 1px);
+    background-size: 32px 32px;
+    z-index: 0;
+  }
+
+  /* ── LEFT SIDEBAR ── */
+  .sidebar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 340px;
+    background: linear-gradient(180deg, #0f0f12 0%, #0c0c0f 100%);
+    border-right: 1px solid #27272a;
+    padding: 36px 28px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px; color: #fff;
+  }
+
+  .logo-text {
+    font-size: 22px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #e4e4e7, #a1a1aa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-badge {
+    font-size: 10px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .sidebar h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin: 28px 0 14px;
+  }
+
+  .sidebar p {
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: #a1a1aa;
+  }
+
+  .sidebar .highlight {
+    color: #e4e4e7;
+    font-weight: 500;
+  }
+
+  .ai-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .ai-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #d4d4d8;
+    transition: all 0.2s;
+  }
+
+  .ai-chip .icon {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .ai-chip .role {
+    font-size: 11px;
+    color: #71717a;
+    font-weight: 400;
+  }
+
+  .ai-chip.claude .icon { background: #d97706; color: #fff; }
+  .ai-chip.gemini .icon { background: linear-gradient(135deg, #4285f4, #ea4335, #fbbc04, #34a853); color: #fff; }
+  .ai-chip.sora .icon { background: #000; border: 1px solid #3f3f46; color: #fff; }
+  .ai-chip.openai .icon { background: #000; border: 1px solid #3f3f46; color: #10b981; }
+
+  .menu-section {
+    margin-top: 24px;
+    flex: 1;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #a1a1aa;
+    margin-bottom: 2px;
+  }
+
+  .menu-item.active {
+    background: rgba(59,130,246,0.1);
+    color: #3b82f6;
+  }
+
+  .menu-item .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #3f3f46;
+  }
+
+  .menu-item.active .dot { background: #3b82f6; }
+
+  .menu-badge {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+    color: #fff;
+    font-weight: 600;
+    margin-left: auto;
+  }
+
+  /* ── MAIN WORKFLOW AREA ── */
+  .main {
+    position: absolute;
+    left: 340px;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    padding: 32px 40px;
+  }
+
+  .main-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+
+  .main-subtitle {
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #e4e4e7, #a1a1aa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 32px;
+    letter-spacing: -0.5px;
+  }
+
+  /* ── FLOW ROWS ── */
+  .flow-section {
+    position: absolute;
+  }
+
+  .flow-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .flow-label .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, #27272a, transparent);
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* ── NODES ── */
+  .node {
+    position: relative;
+    width: 130px;
+    padding: 14px 10px 12px;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .node:hover {
+    border-color: #3f3f46;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  .node .n-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    margin: 0 auto 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  .node .n-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #e4e4e7;
+    line-height: 1.3;
+  }
+
+  .node .n-sub {
+    font-size: 10px;
+    color: #71717a;
+    margin-top: 3px;
+    font-weight: 400;
+  }
+
+  .node .n-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    font-size: 8px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  /* Node color variants */
+  .node.input { border-color: #3b82f6; box-shadow: 0 0 20px rgba(59,130,246,0.1); }
+  .node.input .n-icon { background: rgba(59,130,246,0.15); color: #3b82f6; }
+
+  .node.claude { border-color: #d97706; box-shadow: 0 0 20px rgba(217,119,6,0.08); }
+  .node.claude .n-icon { background: rgba(217,119,6,0.15); color: #d97706; }
+  .node.claude .n-badge { background: #d97706; color: #fff; }
+
+  .node.gemini { border-color: #34a853; box-shadow: 0 0 20px rgba(52,168,83,0.08); }
+  .node.gemini .n-icon { background: linear-gradient(135deg, rgba(66,133,244,0.15), rgba(234,67,53,0.15), rgba(251,188,4,0.15), rgba(52,168,83,0.15)); color: #34a853; }
+  .node.gemini .n-badge { background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; }
+
+  .node.sora { border-color: #8b5cf6; box-shadow: 0 0 20px rgba(139,92,246,0.08); }
+  .node.sora .n-icon { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+  .node.sora .n-badge { background: #8b5cf6; color: #fff; }
+
+  .node.openai { border-color: #10b981; box-shadow: 0 0 20px rgba(16,185,129,0.08); }
+  .node.openai .n-icon { background: rgba(16,185,129,0.15); color: #10b981; }
+  .node.openai .n-badge { background: #10b981; color: #fff; }
+
+  .node.action { border-color: #3f3f46; }
+  .node.action .n-icon { background: rgba(161,161,170,0.1); color: #a1a1aa; }
+
+  .node.meta { border-color: #0866FF; box-shadow: 0 0 20px rgba(8,102,255,0.08); }
+  .node.meta .n-icon { background: rgba(8,102,255,0.15); color: #0866FF; }
+
+  .node.success { border-color: #10b981; box-shadow: 0 0 20px rgba(16,185,129,0.08); }
+  .node.success .n-icon { background: rgba(16,185,129,0.15); color: #10b981; }
+
+  .node.score { border-color: #eab308; box-shadow: 0 0 20px rgba(234,179,8,0.08); }
+  .node.score .n-icon { background: rgba(234,179,8,0.15); color: #eab308; }
+
+  /* ── CONNECTORS ── */
+  .connector {
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, #3f3f46, #52525b, #3f3f46);
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .connector::after {
+    content: '';
+    position: absolute;
+    right: -3px;
+    top: -4px;
+    width: 0; height: 0;
+    border-left: 6px solid #52525b;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+
+  .connector.blue { background: linear-gradient(90deg, rgba(59,130,246,0.3), rgba(59,130,246,0.5), rgba(59,130,246,0.3)); }
+  .connector.blue::after { border-left-color: rgba(59,130,246,0.5); }
+
+  .connector.purple { background: linear-gradient(90deg, rgba(139,92,246,0.3), rgba(139,92,246,0.5), rgba(139,92,246,0.3)); }
+  .connector.purple::after { border-left-color: rgba(139,92,246,0.5); }
+
+  .connector.green { background: linear-gradient(90deg, rgba(16,185,129,0.3), rgba(16,185,129,0.5), rgba(16,185,129,0.3)); }
+  .connector.green::after { border-left-color: rgba(16,185,129,0.5); }
+
+  .connector.orange { background: linear-gradient(90deg, rgba(217,119,6,0.3), rgba(217,119,6,0.5), rgba(217,119,6,0.3)); }
+  .connector.orange::after { border-left-color: rgba(217,119,6,0.5); }
+
+  /* ── VERTICAL CONNECTORS ── */
+  .v-connector {
+    position: absolute;
+    width: 2px;
+    background: linear-gradient(180deg, #3f3f46, #52525b, #3f3f46);
+  }
+
+  .v-connector::after {
+    content: '';
+    position: absolute;
+    bottom: -3px;
+    left: -4px;
+    width: 0; height: 0;
+    border-top: 6px solid #52525b;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+  }
+
+  /* ── BRANCH INDICATOR ── */
+  .branch-split {
+    position: relative;
+    width: 40px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .branch-split .or-badge {
+    font-size: 9px;
+    font-weight: 700;
+    color: #71717a;
+    background: #18181b;
+    border: 1px solid #27272a;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+  }
+
+  /* ── SECTION HEADERS in flow area ── */
+  .section-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+  }
+
+  .section-tag.blue { background: rgba(59,130,246,0.1); color: #3b82f6; border: 1px solid rgba(59,130,246,0.2); }
+  .section-tag.purple { background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.2); }
+  .section-tag.green { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+  .section-tag.amber { background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }
+
+  /* ── BOTTOM BAR ── */
+  .bottom-bar {
+    position: absolute;
+    bottom: 0; left: 340px; right: 0;
+    height: 52px;
+    background: linear-gradient(180deg, transparent, #09090b 40%);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 14px;
+    gap: 24px;
+    z-index: 10;
+  }
+
+  .bottom-bar span {
+    font-size: 11px;
+    color: #52525b;
+    font-weight: 500;
+  }
+
+  .bottom-bar a {
+    font-size: 11px;
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  /* Node small variant */
+  .node.sm {
+    width: 110px;
+    padding: 10px 8px 9px;
+  }
+  .node.sm .n-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+  .node.sm .n-label { font-size: 10.5px; }
+  .node.sm .n-sub { font-size: 9px; }
+
+  .connector.short { width: 28px; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- ═══════════ LEFT SIDEBAR ═══════════ -->
+  <div class="sidebar">
+    <div class="logo-row">
+      <div class="logo-icon">K</div>
+      <span class="logo-text">KillScale</span>
+      <span class="logo-badge">Creative Suite</span>
+    </div>
+
+    <h2>AI Pipeline</h2>
+    <p>
+      Generate <span class="highlight">ad images, videos, and copy</span> from a single product URL.
+      Four AI models work together to research competitors, write scripts, create visuals, and publish directly to Meta Ads.
+    </p>
+
+    <h2>Powered By</h2>
+    <div class="ai-stack">
+      <div class="ai-chip claude">
+        <div class="icon">C</div>
+        <div>
+          <div>Claude <span style="color:#71717a;font-size:11px;">Anthropic</span></div>
+          <div class="role">Ad Copy &amp; Video Scripts</div>
+        </div>
+      </div>
+      <div class="ai-chip gemini">
+        <div class="icon">G</div>
+        <div>
+          <div>Gemini <span style="color:#71717a;font-size:11px;">Google</span></div>
+          <div class="role">Image Generation</div>
+        </div>
+      </div>
+      <div class="ai-chip sora">
+        <div class="icon">S</div>
+        <div>
+          <div>Sora 2 Pro <span style="color:#71717a;font-size:11px;">OpenAI</span></div>
+          <div class="role">Video Generation</div>
+        </div>
+      </div>
+      <div class="ai-chip openai">
+        <div class="icon">⬡</div>
+        <div>
+          <div>GPT-4o <span style="color:#71717a;font-size:11px;">OpenAI</span></div>
+          <div class="role">Product Analysis</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Creative Suite Menu</h2>
+    <div class="menu-section">
+      <div class="menu-item"><div class="dot"></div> Overview</div>
+      <div class="menu-item active"><div class="dot"></div> Ad Studio</div>
+      <div class="menu-item"><div class="dot"></div> Video Studio <span class="menu-badge">NEW</span></div>
+      <div class="menu-item"><div class="dot"></div> AI Tasks</div>
+      <div class="menu-item"><div class="dot"></div> Ads</div>
+      <div class="menu-item"><div class="dot"></div> Media</div>
+      <div class="menu-item"><div class="dot"></div> Copy</div>
+    </div>
+  </div>
+
+  <!-- ═══════════ MAIN FLOW AREA ═══════════ -->
+  <div class="main">
+    <div class="main-title">Workflow</div>
+    <div class="main-subtitle">From Product URL to Running Ads</div>
+
+    <!-- ── ROW 1: IMAGE GENERATION FLOW ── -->
+    <div class="flow-section" style="top: 110px; left: 380px;">
+      <div class="section-tag blue">🖼 Image Ad Pipeline</div>
+      <div class="flow-row">
+        <!-- Input -->
+        <div class="node input">
+          <div class="n-icon">🔗</div>
+          <div class="n-label">Product URL</div>
+          <div class="n-sub">Enter your link</div>
+        </div>
+
+        <div class="connector blue"></div>
+
+        <!-- Competitor Research -->
+        <div class="node action">
+          <div class="n-icon">🔍</div>
+          <div class="n-label">Competitor Research</div>
+          <div class="n-sub">Ad Library scan</div>
+        </div>
+
+        <div class="connector orange"></div>
+
+        <!-- Claude: Ad Copy -->
+        <div class="node claude">
+          <div class="n-badge">CLAUDE</div>
+          <div class="n-icon">✍️</div>
+          <div class="n-label">Generate Ad Copy</div>
+          <div class="n-sub">Headlines &amp; text</div>
+        </div>
+
+        <div class="connector orange"></div>
+
+        <!-- Gemini: Image -->
+        <div class="node gemini">
+          <div class="n-badge">GEMINI</div>
+          <div class="n-icon">🎨</div>
+          <div class="n-label">Generate Image</div>
+          <div class="n-sub">Product + style</div>
+        </div>
+
+        <div class="connector green"></div>
+
+        <!-- Save / Edit -->
+        <div class="node action">
+          <div class="n-icon">💾</div>
+          <div class="n-label">Save &amp; Edit</div>
+          <div class="n-sub">Adjust / HD text</div>
+        </div>
+
+        <div class="connector blue"></div>
+
+        <!-- Create Ad -->
+        <div class="node meta">
+          <div class="n-icon" style="font-size:14px;font-weight:800;">f</div>
+          <div class="n-label">Create Ad</div>
+          <div class="n-sub">Publish to Meta</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ROW 2: VIDEO GENERATION FLOW ── -->
+    <div class="flow-section" style="top: 320px; left: 380px;">
+      <div class="section-tag purple">🎬 Video Ad Pipeline</div>
+      <div class="flow-row">
+        <!-- Input -->
+        <div class="node input">
+          <div class="n-icon">🔗</div>
+          <div class="n-label">Product URL</div>
+          <div class="n-sub">Enter your link</div>
+        </div>
+
+        <div class="connector blue"></div>
+
+        <!-- OpenAI: Analyze -->
+        <div class="node openai">
+          <div class="n-badge">GPT-4o</div>
+          <div class="n-icon">🧠</div>
+          <div class="n-label">Analyze Product</div>
+          <div class="n-sub">Extract features</div>
+        </div>
+
+        <div class="connector green"></div>
+
+        <!-- Claude: Script -->
+        <div class="node claude">
+          <div class="n-badge">CLAUDE</div>
+          <div class="n-icon">📝</div>
+          <div class="n-label">Video Script</div>
+          <div class="n-sub">Scene prompts</div>
+        </div>
+
+        <div class="connector purple"></div>
+
+        <!-- Sora: Video -->
+        <div class="node sora">
+          <div class="n-badge">SORA 2 PRO</div>
+          <div class="n-icon">🎥</div>
+          <div class="n-label">Generate Video</div>
+          <div class="n-sub">4-12s clips</div>
+        </div>
+
+        <div class="connector purple"></div>
+
+        <!-- Remotion: Edit -->
+        <div class="node action" style="border-color: #8b5cf6;">
+          <div class="n-icon" style="background: rgba(139,92,246,0.15); color: #8b5cf6;">✂️</div>
+          <div class="n-label">Overlay Editor</div>
+          <div class="n-sub">Text + branding</div>
+        </div>
+
+        <div class="connector blue"></div>
+
+        <!-- Create Ad -->
+        <div class="node meta">
+          <div class="n-icon" style="font-size:14px;font-weight:800;">f</div>
+          <div class="n-label">Create Ad</div>
+          <div class="n-sub">Publish to Meta</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ROW 3: MONITORING & OPTIMIZATION ── -->
+    <div class="flow-section" style="top: 530px; left: 380px;">
+      <div class="section-tag green">📊 Monitor &amp; Optimize</div>
+      <div class="flow-row">
+        <!-- Ads Running -->
+        <div class="node meta">
+          <div class="n-icon" style="font-size:14px;font-weight:800;">f</div>
+          <div class="n-label">Ads Running</div>
+          <div class="n-sub">Live on Meta</div>
+        </div>
+
+        <div class="connector blue"></div>
+
+        <!-- Performance Dashboard -->
+        <div class="node success">
+          <div class="n-icon">📈</div>
+          <div class="n-label">Performance Dashboard</div>
+          <div class="n-sub">ROAS &amp; spend</div>
+        </div>
+
+        <div class="connector green"></div>
+
+        <!-- Verdicts -->
+        <div class="node score">
+          <div class="n-icon">⚡</div>
+          <div class="n-label">AI Verdicts</div>
+          <div class="n-sub">Scale / Kill / Watch</div>
+        </div>
+
+        <div class="connector green"></div>
+
+        <!-- Creative Scores -->
+        <div class="node score">
+          <div class="n-icon">🎯</div>
+          <div class="n-label">Creative Scores</div>
+          <div class="n-sub">Hook · Hold · Click · Convert</div>
+        </div>
+
+        <div class="connector green"></div>
+
+        <!-- Trends -->
+        <div class="node success">
+          <div class="n-icon">📊</div>
+          <div class="n-label">Trends</div>
+          <div class="n-sub">30-day analysis</div>
+        </div>
+
+        <div class="connector orange"></div>
+
+        <!-- Loop back -->
+        <div class="node" style="border-color: #d97706; box-shadow: 0 0 20px rgba(217,119,6,0.1);">
+          <div class="n-icon" style="background: rgba(217,119,6,0.15); color: #d97706;">🔄</div>
+          <div class="n-label">Iterate</div>
+          <div class="n-sub">New creatives</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ROW 4: SESSION PERSISTENCE ── -->
+    <div class="flow-section" style="top: 726px; left: 380px;">
+      <div class="section-tag amber">⚡ AI Tasks — Session Persistence</div>
+      <div class="flow-row">
+        <div class="node action sm">
+          <div class="n-icon">📋</div>
+          <div class="n-label">Saved Sessions</div>
+          <div class="n-sub">Auto-saved</div>
+        </div>
+
+        <div class="connector short"></div>
+
+        <div class="node action sm">
+          <div class="n-icon">👁️</div>
+          <div class="n-label">View Copy</div>
+          <div class="n-sub">All variations</div>
+        </div>
+
+        <div class="connector short"></div>
+
+        <div class="node action sm">
+          <div class="n-icon">🖼</div>
+          <div class="n-label">Regenerate Images</div>
+          <div class="n-sub">New styles</div>
+        </div>
+
+        <div class="connector short"></div>
+
+        <div class="node action sm">
+          <div class="n-icon">🎨</div>
+          <div class="n-label">Adjust &amp; Refine</div>
+          <div class="n-sub">HD text mode</div>
+        </div>
+
+        <div class="connector short"></div>
+
+        <div class="node action sm">
+          <div class="n-icon">💾</div>
+          <div class="n-label">Save to Library</div>
+          <div class="n-sub">Copy &amp; media</div>
+        </div>
+
+        <div class="connector short blue"></div>
+
+        <div class="node meta sm">
+          <div class="n-icon" style="font-size:12px;font-weight:800;">f</div>
+          <div class="n-label">Create Ad</div>
+          <div class="n-sub">Launch wizard</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── VERTICAL CONNECTORS between rows ── -->
+    <!-- Row 1 "Create Ad" down to Row 3 "Ads Running" -->
+    <svg style="position:absolute; top:0; left:340px; width:100%; height:100%; z-index:1; pointer-events:none;">
+      <!-- Row 1 output → Row 3 start (Create Ad → Ads Running) -->
+      <defs>
+        <marker id="arrowDown" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+          <path d="M 1,1 L 7,4 L 1,7" fill="none" stroke="#3b82f6" stroke-width="1.5"/>
+        </marker>
+        <marker id="arrowUp" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+          <path d="M 1,1 L 7,4 L 1,7" fill="none" stroke="#d97706" stroke-width="1.5"/>
+        </marker>
+      </defs>
+
+      <!-- Image pipeline "Create Ad" → down to "Ads Running" -->
+      <path d="M 1065,265 L 1065,295 Q 1065,305 1055,305 L 95,305 Q 85,305 85,315 L 85,395 Q 85,405 95,405 L 35,405"
+            fill="none" stroke="rgba(59,130,246,0.25)" stroke-width="1.5" stroke-dasharray="6,4"/>
+
+      <!-- Video pipeline "Create Ad" → down to "Ads Running" -->
+      <path d="M 1065,475 L 1065,490 Q 1065,500 1055,500 L 95,500 Q 85,500 85,510 L 85,555 Q 85,565 95,565 L 35,565"
+            fill="none" stroke="rgba(139,92,246,0.25)" stroke-width="1.5" stroke-dasharray="6,4"/>
+
+      <!-- "Iterate" → loops back up to Row 1/2 start -->
+      <path d="M 1065,685 L 1100,685 Q 1115,685 1115,670 L 1115,125 Q 1115,110 1100,110 L 45,110 Q 35,110 35,120 L 35,140"
+            fill="none" stroke="rgba(217,119,6,0.2)" stroke-width="1.5" stroke-dasharray="6,4"
+            marker-end="url(#arrowUp)"/>
+    </svg>
+
+  </div>
+
+  <!-- ═══════════ BOTTOM BAR ═══════════ -->
+  <div class="bottom-bar">
+    <span>killscale.com</span>
+    <span>•</span>
+    <span>AI-Powered Ad Management for Meta Advertisers</span>
+  </div>
+
+</div>
+</body>
+</html>

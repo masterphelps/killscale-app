@@ -190,7 +190,13 @@ export async function GET(request: NextRequest) {
     // media_library hash. Replicate the gallery endpoint's full resolution:
     // aggregate spend per derivative hash, then match unmatched derivatives to
     // unmatched inventory videos using the same spend-ordered assignment.
-    if (allAdData.length === 0 && mediaStub.media_type === 'video') {
+    // Skip derivative resolution for AI-generated videos — they were never uploaded to
+    // Meta, so they can't have derivatives in ad_data. Without this guard the positional
+    // matching heuristic below would incorrectly assign an unrelated ad's stats to the
+    // AI video (the highest-spending unmatched derivative gets mapped to the first
+    // unmatched inventory item, which may be this freshly-created AI video).
+    const isAIVideo = mediaStub.source_type === 'ai_video' || mediaStub.source_job_id
+    if (allAdData.length === 0 && mediaStub.media_type === 'video' && !isAIVideo) {
       // Fetch all video ad_data for this account (same dataset the gallery uses)
       const { data: allVideoData } = await supabase
         .from('ad_data')

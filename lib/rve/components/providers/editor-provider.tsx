@@ -132,9 +132,9 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
         defaultOverlays !== previousDefaultOverlaysRef.current &&
         defaultOverlays.length > 0) {
       
-      // Check if there's a projectId or jobId in URL (meaning we loaded a project)
+      // Check if there's a projectId, jobId, or videoUrl in URL (meaning we loaded a project/video)
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-      const hasProjectId = urlParams?.has('projectId') || urlParams?.has('jobId');
+      const hasProjectId = urlParams?.has('projectId') || urlParams?.has('jobId') || urlParams?.has('videoUrl');
 
       if (hasProjectId) {
         console.log('[EditorProvider] Project loaded, applying project overlays:', defaultOverlays.length);
@@ -171,9 +171,9 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
         defaultAspectRatio !== previousDefaultAspectRatioRef.current &&
         defaultAspectRatio) {
       
-      // Check if there's a projectId or jobId in URL (meaning we loaded a project)
+      // Check if there's a projectId, jobId, or videoUrl in URL (meaning we loaded a project/video)
       const arUrlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-      const hasProjectId = arUrlParams?.has('projectId') || arUrlParams?.has('jobId');
+      const hasProjectId = arUrlParams?.has('projectId') || arUrlParams?.has('jobId') || arUrlParams?.has('videoUrl');
 
       if (hasProjectId) {
         console.log('[EditorProvider] Project loaded, applying project aspect ratio:', defaultAspectRatio);

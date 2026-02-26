@@ -321,8 +321,10 @@ export async function GET(request: NextRequest) {
 
       if (remainingUnmatched.size > 0) {
         // Find media_library video items with no perf data
+        // Exclude AI-generated videos — they'll never have matching ad_data derivatives
         const unmatchedLibraryVideos = filteredMediaItems.filter(
-          m => m.media_type === 'video' && !perfMap.has(m.media_hash)
+          m => m.media_type === 'video' && !perfMap.has(m.media_hash) &&
+            m.source_type !== 'ai_video' && !m.source_job_id
         )
 
         // If exactly 1 unmatched derivative group and 1 unmatched library video, match them

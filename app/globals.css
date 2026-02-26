@@ -42,20 +42,21 @@
 }
 
 /* ─── RVE Editor Theme ─── Scoped so it doesn't affect dashboard pages */
+/* Palette aligned with KillScale dashboard: bg-dark #09090b, bg-card #18181b, bg-hover #1f1f23, border #27272a */
 .rve-editor {
-  /* Base Palette (Dark Theme) */
-  --base-50: hsl(240 11.1% 98.2%);
-  --base-100: hsl(240 10% 96.1%);
-  --base-200: hsl(240 8% 90.2%);
-  --base-300: hsl(240 7.5% 84.3%);
-  --base-400: hsl(240 4.3% 63.9%);
-  --base-500: hsl(240 4.2% 46.3%);
-  --base-600: hsl(240 5.2% 33.9%);
-  --base-700: hsl(240 5.3% 26.1%);
-  --base-800: hsl(240 4.9% 16.1%);
-  --base-900: hsl(240 5.9% 10%);
-  --base-950: hsl(240 10% 3.9%);
-  --base-1000: hsl(0 0% 1.2%);
+  /* Base Palette — Creatify-inspired: #131414 main surface, #090a0a deepest */
+  --base-50: hsl(200 4% 97%);
+  --base-100: hsl(200 4% 93%);
+  --base-200: hsl(200 3% 83%);
+  --base-300: hsl(200 3% 72%);
+  --base-400: hsl(200 2% 54%);
+  --base-500: hsl(200 2% 40%);
+  --base-600: hsl(200 3% 28%);
+  --base-700: hsl(200 3% 20%);       /* ~#2f3233 — interactive pressed */
+  --base-800: hsl(200 3% 15%);       /* ~#252728 — borders, muted */
+  --base-900: hsl(200 3% 7.5%);      /* ~#131414 — main surface (matches Creatify) */
+  --base-950: hsl(200 5% 3.8%);      /* ~#090a0a — deepest bg */
+  --base-1000: hsl(200 5% 2%);
 
   --primary-50: hsl(207 64.7% 96.7%);
   --primary-100: hsl(211 62.2% 92.7%);
@@ -72,12 +73,12 @@
 
   --radius: 0.635rem;
 
-  /* Semantic Tokens */
-  --background: var(--base-950);
+  /* Semantic Tokens — lifted from near-black to #131414 surface */
+  --background: var(--base-900);        /* #131414 — main editor surface */
   --foreground: var(--base-200);
-  --card: var(--base-900);
-  --card-foreground: var(--base-900);
-  --popover: var(--base-900);
+  --card: var(--base-800);              /* slightly lighter for cards */
+  --card-foreground: var(--base-800);
+  --popover: var(--base-800);
   --popover-foreground: var(--base-200);
   --primary: var(--primary-600);
   --primary-foreground: hsl(0 0% 100%);
@@ -100,7 +101,7 @@
   --ring: var(--primary-600);
 
   /* Sidebar */
-  --sidebar: var(--base-900);
+  --sidebar: var(--base-900);           /* same surface as everything else */
   --sidebar-foreground: var(--base-200);
   --sidebar-primary: var(--primary-600);
   --sidebar-primary-foreground: hsl(0 0% 100%);
@@ -116,10 +117,10 @@
   --text-disabled: var(--base-600);
   --text-placeholder: var(--base-600);
 
-  /* Surfaces */
-  --surface: var(--base-950);
-  --surface-elevated: var(--base-900);
-  --surface-overlay: var(--base-800);
+  /* Surfaces — all lifted to #131414 level */
+  --surface: var(--base-900);           /* timeline content bg */
+  --surface-elevated: var(--base-800);  /* cards, elevated panels */
+  --surface-overlay: var(--base-700);   /* dropdowns, overlays */
 
   /* Interactive states */
   --interactive-hover: var(--base-800);
@@ -146,26 +147,26 @@
   --waveform-bar: hsl(54 91% 84%);
   --waveform-bar-foreground: hsl(0 0% 0%);
 
-  /* Timeline colors */
+  /* Timeline colors — matching lifted surface */
   --timeline-marker: hsl(0 62.8% 50.6%);
   --timeline-marker-hover: hsl(0 62.8% 45%);
-  --timeline-tick: hsl(0, 0%, 31%);
-  --timeline-tick-hover: hsl(0, 0%, 60%);
+  --timeline-tick: hsl(200 2% 30%);
+  --timeline-tick-hover: hsl(200 2% 50%);
   --timeline-ghost: hsl(0, 0%, 100%);
-  --timeline-row: hsl(240 5.9% 10%);
+  --timeline-row: var(--base-900);      /* Same as main surface */
 
   /* Keyframe colors */
   --keyframe-pink: hsl(316.7 77.8% 48.6%);
   --keyframe-pink-hover: hsl(316.7 77.8% 54%);
-  --keyframe-slate: hsl(217.2 32.6% 17.5%);
+  --keyframe-slate: hsl(200 3% 18%);
 
   /* Timeline item borders */
   --timeline-item-selected-border: hsl(211 62.2% 92.7%);
 
   /* Timeline resize handle colors */
-  --timeline-handle-bg: hsl(240 4.9% 16.1%);
-  --timeline-handle-indicator: hsl(240 10% 96.1%);
-  --timeline-handle-hover: hsl(240 5.2% 33.9%);
+  --timeline-handle-bg: var(--base-800);
+  --timeline-handle-indicator: hsl(200 4% 93%);
+  --timeline-handle-hover: var(--base-700);
 
   --display-weight: 300;
   --text-weight: 200;

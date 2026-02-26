@@ -187,7 +187,7 @@ export function MediaGalleryCard({
       onClick={onSelect}
       className={cn(
         minimal
-          ? 'rounded-xl overflow-hidden cursor-pointer group'
+          ? 'relative rounded-xl overflow-hidden cursor-pointer group'
           : cn(
               'relative rounded-2xl overflow-hidden cursor-pointer',
               'bg-bg-card border transition-all duration-300',

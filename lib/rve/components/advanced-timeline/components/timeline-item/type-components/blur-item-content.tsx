@@ -34,7 +34,7 @@ export const BlurItemContent: React.FC<BlurItemContentProps> = ({
       label={displayLabel}
       defaultLabel="BLUR"
       isHovering={isHovering}
-      iconClassName="w-3 h-3 text-white/80"
+      iconClassName="w-4 h-4 text-white/80"
     />
   );
 };

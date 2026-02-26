@@ -183,7 +183,7 @@ export function Sidebar() {
       {!isCollapsed ? (
         <div className="flex items-center justify-between mb-6">
           <Link href="/dashboard" className="flex items-center gap-2 px-2">
-            <img src="/logo-white.png" alt="KillScale" className="h-8" />
+            <img src="/logo-white.png" alt="KillScale" className="h-12 w-12 object-contain" />
           </Link>
           <button
             onClick={toggleSidebar}

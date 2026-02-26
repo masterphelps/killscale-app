@@ -65,7 +65,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <img src="/logo.png" alt="KillScale" className="h-12" />
+            <img src="/logo.png" alt="KillScale" className="h-[72px] w-[72px] object-contain" />
           </Link>
         </div>
 

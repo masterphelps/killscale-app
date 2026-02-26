@@ -72,7 +72,7 @@ function DashboardContent({ children, sidebarOpen, setSidebarOpen }: {
     <div className="min-h-screen bg-bg-dark text-white">
       {/* Mobile Header - only shows on mobile */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-bg-sidebar border-b border-border z-50 flex items-center justify-between px-4">
-        <img src="/logo-white.png" alt="KillScale" className="h-7" />
+        <img src="/logo-white.png" alt="KillScale" className="h-10 w-10 object-contain" />
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="p-2 text-zinc-400 hover:text-white transition-colors"

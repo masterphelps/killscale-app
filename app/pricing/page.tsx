@@ -95,7 +95,7 @@ export default function PricingPage() {
       <nav className="border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <img src="/logo-white.png" alt="KillScale" className="h-9" />
+            <img src="/logo-white.png" alt="KillScale" className="h-14 w-14 object-contain" />
           </Link>
           {user ? (
             <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-white">

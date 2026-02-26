@@ -225,7 +225,7 @@ export const VideoItemContent: React.FC<VideoItemContentProps> = ({
         icon={Loader2}
         label={"Loading..."}
         defaultLabel="VIDEO"
-        iconClassName="w-4 h-4 animate-spin text-white/60"
+        iconClassName="w-5 h-5 animate-spin text-white/60"
         isHovering={isHovering}
       />
     );
@@ -238,7 +238,7 @@ export const VideoItemContent: React.FC<VideoItemContentProps> = ({
         icon={Video}
         label={"VIDEO"}
         defaultLabel="VIDEO"
-        iconClassName="w-4 h-4 text-red-400"
+        iconClassName="w-5 h-5 text-red-400"
         isHovering={isHovering}
       />
     );
