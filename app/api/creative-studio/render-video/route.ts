@@ -118,7 +118,8 @@ export async function POST(req: Request) {
           return
         }
         videoUrl = job.raw_video_url || ''
-        durationInSeconds = job.duration_seconds || 10
+        // Only use DB duration as fallback — client sends actual timeline duration
+        if (!body.durationInSeconds) durationInSeconds = job.duration_seconds || 10
       } else if (compositionId) {
         const { data: comp, error: compError } = await supabaseAdmin
           .from('video_compositions')
@@ -146,7 +147,8 @@ export async function POST(req: Request) {
             videoUrl = firstJob.raw_video_url
           }
         }
-        durationInSeconds = comp.duration_seconds || durationInSeconds
+        // Only use DB duration as fallback — client sends actual timeline duration
+        if (!body.durationInSeconds) durationInSeconds = comp.duration_seconds || durationInSeconds
       }
 
       if (!videoUrl) {

@@ -7,6 +7,7 @@ import {
   spring,
   interpolate,
   OffthreadVideo,
+  Audio,
   Img,
 } from 'remotion'
 import type { AdOverlayProps, HookOverlay, CaptionOverlay, CTAOverlay, GraphicOverlay, OverlayStyle } from './types'
@@ -403,7 +404,7 @@ const GraphicItem: React.FC<{ config: GraphicOverlay; style: OverlayStyle }> = (
 
 // ─── Main Composition ────────────────────────────────────────────────────────
 
-export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSeconds, overlayConfig, trimStartSec, trimEndSec }) => {
+export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSeconds, overlayConfig, trimStartSec }) => {
   const { fps } = useVideoConfig()
   const totalFrames = Math.round(durationInSeconds * fps)
   const styleName = overlayConfig.style || 'capcut'
@@ -414,58 +415,115 @@ export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSecond
   // Trim: startFrom tells OffthreadVideo which frame of the source to begin at
   const trimStart = trimStartSec ? Math.round(trimStartSec * fps) : 0
 
+  // Multi-clip support: use videoClips if available, otherwise single videoUrl
+  const videoClips = overlayConfig.videoClips
+
   return (
     <AbsoluteFill>
-      {/* Background video — trimmed */}
-      <AbsoluteFill>
-        <OffthreadVideo
-          src={videoUrl}
-          startFrom={trimStart}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      </AbsoluteFill>
+      {/* Background video(s) */}
+      {videoClips && videoClips.length > 0 ? (
+        // Multi-clip timeline: each clip is a Sequence with its own OffthreadVideo
+        <>
+          {videoClips.map((clip, i) => (
+            <Sequence
+              key={`clip-${i}`}
+              from={clip.fromFrame}
+              durationInFrames={Math.max(1, clip.durationFrames)}
+            >
+              <AbsoluteFill>
+                <OffthreadVideo
+                  src={clip.videoUrl}
+                  startFrom={clip.videoStartTime ? Math.round(clip.videoStartTime * fps) : 0}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  volume={clip.volume ?? 1}
+                />
+              </AbsoluteFill>
+            </Sequence>
+          ))}
+        </>
+      ) : (
+        // Single video fallback (legacy)
+        <AbsoluteFill>
+          <OffthreadVideo
+            src={videoUrl}
+            startFrom={trimStart}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </AbsoluteFill>
+      )}
 
       {/* Hook text */}
-      {overlayConfig.hook && (
-        <Sequence
-          from={secToFrame(overlayConfig.hook.startSec)}
-          durationInFrames={secToFrame(overlayConfig.hook.endSec - overlayConfig.hook.startSec)}
-        >
-          <HookText config={overlayConfig.hook} style={styleName} brandColor={brandColor} />
-        </Sequence>
-      )}
+      {overlayConfig.hook && (() => {
+        const hookDur = secToFrame(overlayConfig.hook.endSec - overlayConfig.hook.startSec)
+        if (hookDur <= 0) return null
+        return (
+          <Sequence
+            from={secToFrame(overlayConfig.hook.startSec)}
+            durationInFrames={hookDur}
+          >
+            <HookText config={overlayConfig.hook} style={styleName} brandColor={brandColor} />
+          </Sequence>
+        )
+      })()}
 
       {/* Timed captions */}
-      {overlayConfig.captions?.map((caption, i) => (
-        <Sequence
-          key={`caption-${i}`}
-          from={secToFrame(caption.startSec)}
-          durationInFrames={secToFrame(caption.endSec - caption.startSec)}
-        >
-          <Caption config={caption} style={styleName} brandColor={brandColor} />
-        </Sequence>
-      ))}
+      {overlayConfig.captions?.map((caption, i) => {
+        const capDur = secToFrame(caption.endSec - caption.startSec)
+        if (capDur <= 0) return null
+        return (
+          <Sequence
+            key={`caption-${i}`}
+            from={secToFrame(caption.startSec)}
+            durationInFrames={capDur}
+          >
+            <Caption config={caption} style={styleName} brandColor={brandColor} />
+          </Sequence>
+        )
+      })}
 
       {/* CTA section */}
-      {overlayConfig.cta && (
-        <Sequence
-          from={secToFrame(overlayConfig.cta.startSec)}
-          durationInFrames={totalFrames - secToFrame(overlayConfig.cta.startSec)}
-        >
-          <CTASection config={overlayConfig.cta} style={styleName} brandColor={brandColor} />
-        </Sequence>
-      )}
+      {overlayConfig.cta && (() => {
+        const ctaFrom = secToFrame(overlayConfig.cta.startSec)
+        const ctaDur = overlayConfig.cta.durationSec
+          ? secToFrame(overlayConfig.cta.durationSec)
+          : totalFrames - ctaFrom
+        if (ctaDur <= 0 || ctaFrom >= totalFrames) return null
+        return (
+          <Sequence from={ctaFrom} durationInFrames={Math.max(1, ctaDur)}>
+            <CTASection config={overlayConfig.cta} style={styleName} brandColor={brandColor} />
+          </Sequence>
+        )
+      })()}
 
       {/* Graphics overlays */}
-      {overlayConfig.graphics?.map((graphic, i) => (
-        <Sequence
-          key={`graphic-${i}`}
-          from={secToFrame(graphic.startSec)}
-          durationInFrames={secToFrame(graphic.endSec - graphic.startSec)}
-        >
-          <GraphicItem config={graphic} style={styleName} />
-        </Sequence>
-      ))}
+      {overlayConfig.graphics?.map((graphic, i) => {
+        const gDur = secToFrame(graphic.endSec - graphic.startSec)
+        if (gDur <= 0) return null
+        return (
+          <Sequence
+            key={`graphic-${i}`}
+            from={secToFrame(graphic.startSec)}
+            durationInFrames={gDur}
+          >
+            <GraphicItem config={graphic} style={styleName} />
+          </Sequence>
+        )
+      })}
+
+      {/* Voiceover audio */}
+      {overlayConfig.voiceoverUrl && (
+        <Audio src={overlayConfig.voiceoverUrl} volume={1} />
+      )}
+
+      {/* Music tracks */}
+      {overlayConfig.musicTracks?.map((track, i) => {
+        const trackDur = Math.max(1, track.durationFrames)
+        return (
+          <Sequence key={`music-${i}`} from={track.fromFrame} durationInFrames={trackDur}>
+            <Audio src={track.src} volume={track.volume ?? 0.5} />
+          </Sequence>
+        )
+      })}
     </AbsoluteFill>
   )
 }
