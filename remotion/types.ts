@@ -30,11 +30,16 @@ export interface CTAOverlay {
   brandName?: string
   url?: string
   buttonColor?: string
+  textColor?: string
   startSec: number
+  durationSec?: number
   animation: 'pop' | 'fade' | 'slide'
   animationEnter?: string
   animationExit?: string
   fontSize?: number              // default 32
+  overlayType?: 'text' | 'cta'  // which RVE overlay type was used (cta = sidebar-created)
+  rveStyles?: Record<string, any> // full RVE styles for round-trip fidelity
+  rvePosition?: { left: number; top: number; width: number; height: number }
 }
 
 export interface GraphicOverlay {
@@ -100,6 +105,8 @@ export interface OverlayConfig {
   musicTracks?: MusicTrack[]
   appendedClips?: AppendedClip[]
   videoClips?: VideoClipEdit[]  // persisted video clip edits (cuts/trims/splits)
+  captionStyles?: Record<string, any>  // full RVE caption styles for round-trip fidelity
+  captionTemplate?: string              // RVE caption template name
 }
 
 // Full props passed to the Remotion composition

@@ -194,7 +194,8 @@ export function overlayConfigToRVEOverlays(
       row: captionRow,
       isDragging: false,
       rotation: 0,
-      styles: {
+      // Use saved styles if available, otherwise default
+      styles: (config.captionStyles as any) || {
         fontFamily: 'Outfit',
         fontSize: `${captions[0]?.fontSize || 36}px`,
         lineHeight: 1.3,
@@ -211,48 +212,94 @@ export function overlayConfigToRVEOverlays(
           borderRadius: '4px',
         },
       },
-      template: 'default',
+      template: config.captionTemplate || 'default',
     } satisfies RVECaptionOverlay)
   }
 
-  // 3. CTA → TextOverlay
+  // 3. CTA → restore as original overlay type (CTA or TEXT) with full styles
   if (config.cta) {
     const c = config.cta
-    const ctaPos = POSITION_MAP.bottom
-    const ctaTiming = clampTiming(secToFrames(c.startSec, fps), totalFrames - secToFrames(c.startSec, fps), totalFrames)
+    const ctaDur = c.durationSec ? secToFrames(c.durationSec, fps) : totalFrames - secToFrames(c.startSec, fps)
+    const ctaTiming = clampTiming(secToFrames(c.startSec, fps), ctaDur, totalFrames)
 
-    if (ctaTiming) overlays.push({
-      id: genId(),
-      type: OverlayType.TEXT,
-      content: c.buttonText,
-      from: ctaTiming.from,
-      durationInFrames: ctaTiming.durationInFrames,
-      left: ctaPos.left + 200,
-      top: ctaPos.top,
-      width: 680,
-      height: 120,
-      row: ctaRow,
-      isDragging: false,
-      rotation: 0,
-      styles: {
-        fontSize: `${c.fontSize || 32}px`,
-        fontWeight: '700',
-        color: '#FFFFFF',
-        backgroundColor: c.buttonColor || config.brandColor || '#3b82f6',
-        fontFamily: 'Outfit',
-        fontStyle: 'normal',
-        textDecoration: 'none',
-        textAlign: 'center',
-        padding: '16px 32px',
-        borderRadius: '16px',
-        animation: (c.animationEnter || c.animationExit) ? {
-          enter: c.animationEnter || 'none',
-          exit: c.animationExit || 'none',
-        } : undefined,
-        // @ts-expect-error — custom metadata property
-        __ksTag: META_TAG_CTA,
-      },
-    } satisfies TextOverlay)
+    if (ctaTiming) {
+      // Use stored position if available, otherwise default
+      const pos = c.rvePosition || { left: POSITION_MAP.bottom.left + 200, top: POSITION_MAP.bottom.top, width: 680, height: 120 }
+
+      if (c.overlayType === 'cta' && c.rveStyles) {
+        // Restore as native CTA overlay (sidebar-created) with full styles
+        overlays.push({
+          id: genId(),
+          type: OverlayType.CTA,
+          content: c.buttonText,
+          from: ctaTiming.from,
+          durationInFrames: ctaTiming.durationInFrames,
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          row: ctaRow,
+          isDragging: false,
+          rotation: 0,
+          styles: c.rveStyles,
+        } as RVECTAOverlay)
+      } else if (c.rveStyles) {
+        // Restore as TEXT overlay with full saved styles
+        overlays.push({
+          id: genId(),
+          type: OverlayType.TEXT,
+          content: c.buttonText,
+          from: ctaTiming.from,
+          durationInFrames: ctaTiming.durationInFrames,
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          row: ctaRow,
+          isDragging: false,
+          rotation: 0,
+          styles: {
+            ...c.rveStyles,
+            // @ts-expect-error — custom metadata property
+            __ksTag: META_TAG_CTA,
+          },
+        } satisfies TextOverlay)
+      } else {
+        // Fallback: default CTA styling (legacy configs without rveStyles)
+        overlays.push({
+          id: genId(),
+          type: OverlayType.TEXT,
+          content: c.buttonText,
+          from: ctaTiming.from,
+          durationInFrames: ctaTiming.durationInFrames,
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          row: ctaRow,
+          isDragging: false,
+          rotation: 0,
+          styles: {
+            fontSize: `${c.fontSize || 32}px`,
+            fontWeight: '700',
+            color: c.textColor || '#FFFFFF',
+            backgroundColor: c.buttonColor || config.brandColor || '#3b82f6',
+            fontFamily: 'Outfit',
+            fontStyle: 'normal',
+            textDecoration: 'none',
+            textAlign: 'center',
+            padding: '16px 32px',
+            borderRadius: '16px',
+            animation: (c.animationEnter || c.animationExit) ? {
+              enter: c.animationEnter || 'none',
+              exit: c.animationExit || 'none',
+            } : undefined,
+            // @ts-expect-error — custom metadata property
+            __ksTag: META_TAG_CTA,
+          },
+        } satisfies TextOverlay)
+      }
+    }
   }
 
   // 4. Graphics → ImageOverlay
@@ -525,6 +572,8 @@ export function rveOverlaysToOverlayConfig(
   const captions: KSCaptionOverlay[] = []
   let cta: KSCTAOverlay | undefined
   const graphics: KSGraphicOverlay[] = []
+  let captionStyles: Record<string, any> | undefined
+  let captionTemplate: string | undefined
 
   // End card reconstruction
   let endCardBg: { from: number; durationInFrames: number; backgroundColor: string } | undefined
@@ -575,11 +624,16 @@ export function rveOverlaysToOverlayConfig(
     return {
       buttonText: text.content,
       startSec: framesToSec(text.from - clipFrom, fps),
+      durationSec: framesToSec(text.durationInFrames, fps),
       animation: existingConfig?.cta?.animation || 'pop',
       animationEnter: anim?.enter || existingConfig?.cta?.animationEnter,
       animationExit: anim?.exit || existingConfig?.cta?.animationExit,
       buttonColor: text.styles.backgroundColor !== 'transparent' ? text.styles.backgroundColor : undefined,
+      textColor: text.styles.color,
       fontSize: parseInt(text.styles.fontSize) || 32,
+      overlayType: 'text',
+      rveStyles: { ...text.styles },
+      rvePosition: { left: text.left, top: text.top, width: text.width, height: text.height },
     }
   }
 
@@ -635,14 +689,14 @@ export function rveOverlaysToOverlayConfig(
       const clipFrom = clipRanges[ci]?.from || 0
 
       if (tag === META_TAG_CTA) {
-        if (ci === 0) {
-          cta = extractCTA(text, 0) // base clip uses absolute times
-        }
+        // Always capture CTA with absolute times for top-level config
+        // (videoClips format uses global overlays, not per-clip)
+        cta = extractCTA(text, 0)
         perClipCTAs[ci] = extractCTA(text, clipFrom)
       } else {
-        // Hook text
-        if (ci === 0 && !hook) {
-          hook = extractHook(text, 0) // base clip uses absolute times
+        // Hook text — always capture with absolute times
+        if (!hook) {
+          hook = extractHook(text, 0)
         }
         if (!perClipHooks[ci]) {
           perClipHooks[ci] = extractHook(text, clipFrom)
@@ -656,21 +710,27 @@ export function rveOverlaysToOverlayConfig(
       const clipFrom = clipRanges[ci]?.from || 0
       const extracted = extractCaptions(cap, clipFrom)
       perClipCaptions[ci].push(...extracted)
-      if (ci === 0) {
-        // Base clip captions use absolute times
-        const containerStartSec = framesToSec(cap.from, fps)
-        cap.captions.forEach(c => {
-          captions.push({
-            text: c.text,
-            startSec: containerStartSec + c.startMs / 1000,
-            endSec: containerStartSec + c.endMs / 1000,
-            fontSize: parseInt(cap.styles?.fontSize || '36') || 36,
-            fontWeight: typeof cap.styles?.fontWeight === 'number' ? cap.styles.fontWeight : 600,
-            position: nearestPosition(cap.top),
-            highlight: !!cap.styles?.highlightStyle,
-            highlightWord: c.words?.[0]?.word,
-          })
+      // Always capture captions with absolute times for top-level config
+      // (videoClips format uses global overlays, not per-clip)
+      const containerStartSec = framesToSec(cap.from, fps)
+      cap.captions.forEach(c => {
+        captions.push({
+          text: c.text,
+          startSec: containerStartSec + c.startMs / 1000,
+          endSec: containerStartSec + c.endMs / 1000,
+          fontSize: parseInt(cap.styles?.fontSize || '36') || 36,
+          fontWeight: typeof cap.styles?.fontWeight === 'number' ? cap.styles.fontWeight : 600,
+          position: nearestPosition(cap.top),
+          highlight: !!cap.styles?.highlightStyle,
+          highlightWord: c.words?.[0]?.word,
         })
+      })
+      // Capture full caption styles and template for round-trip fidelity
+      if (!captionStyles && cap.styles) {
+        captionStyles = { ...cap.styles }
+      }
+      if (!captionTemplate && cap.template) {
+        captionTemplate = cap.template
       }
     }
 
@@ -693,17 +753,25 @@ export function rveOverlaysToOverlayConfig(
       const ci = getClipIndex(ctaOverlay.from, ctaOverlay.durationInFrames)
       const clipFrom = clipRanges[ci]?.from || 0
       const anim = ctaOverlay.styles.animation
-      const extracted: KSCTAOverlay = {
+      // Always capture with absolute times for top-level config
+      cta = {
         buttonText: ctaOverlay.content,
-        startSec: framesToSec(ctaOverlay.from - (ci === 0 ? 0 : clipFrom), fps),
+        startSec: framesToSec(ctaOverlay.from, fps),
+        durationSec: framesToSec(ctaOverlay.durationInFrames, fps),
         animation: existingConfig?.cta?.animation || 'pop',
         animationEnter: anim?.enter || existingConfig?.cta?.animationEnter,
         animationExit: anim?.exit || existingConfig?.cta?.animationExit,
         buttonColor: ctaOverlay.styles.backgroundColor !== 'transparent' ? ctaOverlay.styles.backgroundColor : undefined,
+        textColor: ctaOverlay.styles.color,
         fontSize: parseInt(ctaOverlay.styles.fontSize) || 32,
+        overlayType: 'cta',
+        rveStyles: { ...ctaOverlay.styles },
+        rvePosition: { left: ctaOverlay.left, top: ctaOverlay.top, width: ctaOverlay.width, height: ctaOverlay.height },
       }
-      if (ci === 0) cta = extracted
-      perClipCTAs[ci] = extracted
+      perClipCTAs[ci] = {
+        ...cta,
+        startSec: framesToSec(ctaOverlay.from - clipFrom, fps),
+      }
     }
   }
 
@@ -814,5 +882,7 @@ export function rveOverlaysToOverlayConfig(
     musicTracks: musicTracks.length > 0 ? musicTracks : existingConfig?.musicTracks,
     appendedClips: appendedClips.length > 0 ? appendedClips : existingConfig?.appendedClips,
     videoClips: videoClips.length > 0 ? videoClips : undefined,
+    captionStyles: captionStyles || existingConfig?.captionStyles,
+    captionTemplate: captionTemplate || existingConfig?.captionTemplate,
   }
 }

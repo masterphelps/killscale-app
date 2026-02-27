@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { RefreshCw, Download, Upload, Loader2, Trash2, AlertTriangle, FolderKanban, Pencil, FolderPlus, FolderOpen, ChevronLeft, Plus, Check, X, FolderMinus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -49,7 +50,12 @@ export default function AllMediaPage() {
   } = useCreativeStudio()
 
   // View state
-  const [mediaTab, setMediaTab] = useState<MediaTab>('media')
+  const searchParams = useSearchParams()
+  const [mediaTab, setMediaTab] = useState<MediaTab>(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'project' || tab === 'collection') return tab
+    return 'media'
+  })
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('syncedAt')
   const [sortDesc, setSortDesc] = useState(true)
@@ -982,7 +988,7 @@ export default function AllMediaPage() {
                       </div>
                       <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Link
-                          href={`/dashboard/creative-studio/video-editor?compositionId=${(project as any).sourceCompositionId || ''}`}
+                          href={`/dashboard/creative-studio/video-editor?compositionId=${(project as any).sourceCompositionId || ''}&from=media-projects`}
                           onClick={(e) => e.stopPropagation()}
                           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
                         >

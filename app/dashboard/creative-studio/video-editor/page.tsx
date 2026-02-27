@@ -1145,6 +1145,8 @@ export default function VideoEditorPage() {
             }
             if (fromParam === 'ai-tasks') {
               router.push('/dashboard/creative-studio/ai-tasks')
+            } else if (fromParam === 'media-projects') {
+              router.push('/dashboard/creative-studio/media?tab=project')
             } else if (fromParam === 'creative-studio') {
               router.push('/dashboard/creative-studio/media')
             } else if (videoStyle === 'ugc') {
@@ -1257,14 +1259,28 @@ export default function VideoEditorPage() {
 
           {/* Export (download rendered video) */}
           {isRendered && renderedVideoUrl ? (
-            <a
-              href={renderedVideoUrl}
-              download="exported-video.mp4"
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch(renderedVideoUrl)
+                  const blob = await res.blob()
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `${projectName || 'video'}-v${activeVersion || 0}.mp4`
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                } catch (err) {
+                  console.error('Export download failed:', err)
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-700/50 text-zinc-200 hover:bg-zinc-600/50 border border-zinc-600/30 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               Export
-            </a>
+            </button>
           ) : (
             <span
               title="Render this version first"
