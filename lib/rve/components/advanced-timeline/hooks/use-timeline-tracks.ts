@@ -10,7 +10,7 @@ function tracksAreEqual(a: TimelineTrack[], b: TimelineTrack[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     const at = a[i], bt = b[i];
-    if (at.id !== bt.id || at.items.length !== bt.items.length) return false;
+    if (at.id !== bt.id || at.section !== bt.section || at.items.length !== bt.items.length) return false;
     for (let j = 0; j < at.items.length; j++) {
       const ai = at.items[j], bi = bt.items[j];
       if (ai.id !== bi.id || ai.start !== bi.start || ai.end !== bi.end || ai.trackId !== bi.trackId) return false;
@@ -104,12 +104,25 @@ export const useTimelineTracks = ({
     setIsAutoRemoveEnabled(autoRemoveEmptyTracks);
   }, [autoRemoveEmptyTracks]);
 
-  // Helper function to remove empty tracks
+  // Helper function to remove empty tracks (always preserves one track per section)
   const removeEmptyTracks = useCallback((tracks: TimelineTrack[], shouldRemove: boolean = isAutoRemoveEnabled): TimelineTrack[] => {
     if (!shouldRemove) return tracks;
-    
-    // Always keep at least one track, even if empty
-    const filteredTracks = tracks.filter(track => track.items.length > 0);
+
+    // Always keep one empty track per section as a placeholder
+    const sectionEmptyKept = new Set<string>();
+
+    const filteredTracks = tracks.filter(track => {
+      // Always keep tracks with items
+      if (track.items.length > 0) return true;
+      // Keep one empty track per section
+      if (track.section && !sectionEmptyKept.has(track.section)) {
+        sectionEmptyKept.add(track.section);
+        return true;
+      }
+      // Drop extra empty tracks (including non-section tracks)
+      return false;
+    });
+
     return filteredTracks.length === 0 ? [tracks[0] || {
       id: `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name: undefined,

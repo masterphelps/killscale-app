@@ -120,6 +120,9 @@ export const useTimelineHandlers = ({
         case OverlayType.CAPTION:
           setActivePanel(OverlayType.CAPTION);
           break;
+        case OverlayType.CTA:
+          setActivePanel(OverlayType.CTA);
+          break;
         case OverlayType.SHAPE:
           // For shapes, we might want to show the image panel or create a dedicated shapes panel
           // For now, let's use the image panel as it's the closest match
@@ -244,8 +247,8 @@ export const useTimelineHandlers = ({
   ) => {
     console.log('[TIMELINE-HANDLERS] New item drop', { itemType, trackIndex, startTime, itemData });
     
-    // Only handle video, image, audio, and text types from media grid
-    if (itemType !== 'video' && itemType !== 'image' && itemType !== 'audio' && itemType !== 'text') {
+    // Only handle video, image, audio, text, and cta types from media grid
+    if (itemType !== 'video' && itemType !== 'image' && itemType !== 'audio' && itemType !== 'text' && itemType !== 'cta') {
       console.warn('[TIMELINE-HANDLERS] Unsupported item type:', itemType);
       return;
     }
@@ -405,6 +408,49 @@ export const useTimelineHandlers = ({
             fontSizeScale: 1, // Default scale factor
           },
         };
+      } else if (itemType === 'cta' && itemData?.data) {
+        const cta = itemData.data;
+        const durationInFrames = Math.round((itemData.duration || 3) * FPS);
+        const canvasWidth = canvasDimensions.width;
+        const canvasHeight = canvasDimensions.height;
+
+        // CTA centered in the bottom third of the screen
+        const ctaWidth = Math.round(canvasWidth * 0.6);
+        const ctaHeight = 80;
+        const ctaLeft = Math.round((canvasWidth - ctaWidth) / 2);
+        const bottomThirdStart = Math.round(canvasHeight * (2 / 3));
+        const ctaTop = bottomThirdStart + Math.round((canvasHeight - bottomThirdStart - ctaHeight) / 2);
+
+        newOverlay = {
+          left: ctaLeft,
+          top: ctaTop,
+          width: ctaWidth,
+          height: ctaHeight,
+          durationInFrames,
+          from: Math.round(startTime * FPS),
+          rotation: 0,
+          row: trackIndex,
+          isDragging: false,
+          type: OverlayType.CTA,
+          content: cta.text || 'BUY NOW',
+          styles: {
+            opacity: 1,
+            zIndex: 200,
+            transform: 'none',
+            fontSize: '24px',
+            fontWeight: '700',
+            color: cta.textColor || '#ffffff',
+            backgroundColor: cta.style === 'gradient' ? 'transparent' : (cta.style === 'outline' ? 'transparent' : cta.buttonColor || '#ef4444'),
+            background: cta.style === 'gradient' ? cta.buttonColor : undefined,
+            fontFamily: 'Inter, sans-serif',
+            fontStyle: 'normal',
+            textDecoration: 'none',
+            textAlign: 'center' as const,
+            padding: '12px 32px',
+            borderRadius: cta.style === 'block' ? '4px' : '9999px',
+            border: cta.style === 'outline' ? `2px solid ${cta.buttonColor}` : 'none',
+          },
+        };
       } else {
         console.warn('[TIMELINE-HANDLERS] No data provided for item drop');
         return;
@@ -413,14 +459,14 @@ export const useTimelineHandlers = ({
       // Generate new ID
       const newId = overlays.length > 0 ? Math.max(...overlays.map((o) => o.id)) + 1 : 0;
       const overlayWithId = { ...newOverlay, id: newId } as Overlay;
-      
+
       // Add to overlays
       const updatedOverlays = [...overlays, overlayWithId];
       setOverlays(updatedOverlays);
-      
+
       // Select the new overlay
       setSelectedOverlayId(newId);
-      
+
       // Open the appropriate sidebar panel
       if (itemType === 'video') {
         setActivePanel(OverlayType.VIDEO);
@@ -430,6 +476,8 @@ export const useTimelineHandlers = ({
         setActivePanel(OverlayType.SOUND);
       } else if (itemType === 'text') {
         setActivePanel(OverlayType.TEXT);
+      } else if (itemType === 'cta') {
+        setActivePanel(OverlayType.CTA);
       }
       
       console.log('[TIMELINE-HANDLERS] Successfully created overlay', overlayWithId);

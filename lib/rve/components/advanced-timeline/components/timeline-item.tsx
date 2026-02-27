@@ -455,12 +455,13 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
       <ContextMenuTrigger asChild>
         <div
           ref={itemRef}
-          className={`timeline-item group absolute top-1/2 transform -translate-y-1/2 rounded flex items-center justify-center text-xs font-light text-white shadow-sm hover:shadow-md transition-shadow select-none overflow-hidden touch-none ${getCursorStyle().className} ${isSelected ? 'border-2 dark:border-white border-black' : 'border border-white/20'}`}
+          className={`timeline-item group absolute top-1/2 transform -translate-y-1/2 rounded flex items-center justify-center text-xs font-light text-white shadow-sm hover:shadow-md transition-shadow select-none overflow-hidden touch-none ${getCursorStyle().className} ${isSelected ? 'border-2' : 'border border-white/20'}`}
           style={{
             left: `${leftPercentage}%`,
             width: `${widthPercentage}%`,
             height: `${TIMELINE_CONSTANTS.TRACK_ITEM_HEIGHT}px`,
             backgroundColor: isShowingVideoThumbnails ? 'transparent' : (item.color || '#3b82f6'),
+            borderColor: isSelected ? '#d8b4fe' : undefined,
             opacity: isDragging  ? 0.5 : 1,
             userSelect: 'none',
             ...getCursorStyle().style,

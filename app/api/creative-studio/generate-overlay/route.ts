@@ -45,6 +45,92 @@ async function transcribeVideo(videoUrl: string): Promise<{ text: string; words:
   }
 }
 
+/**
+ * Transcribe ALL unique source videos in a multi-clip timeline.
+ *
+ * Each clip comes from a different source video, so Whisper timestamps are
+ * relative to each source video (starting at 0). We can't rely on
+ * `buildCaptionsFromWhisper`'s generic `videoClips` remapping because
+ * `sourceTimeToTimeline` matches words to clips by source timestamp range —
+ * words from clip 2 (at 0-8s) would collide with clip 1 (also at 0-8s).
+ *
+ * Instead, we remap each clip's words to their TIMELINE position here,
+ * producing words with absolute timeline timestamps. The caller should
+ * then call `buildCaptionsFromWhisper` WITHOUT `videoClips` so it uses
+ * the pre-remapped timestamps directly.
+ */
+async function transcribeMultiClipTimeline(
+  videoClips: VideoClipEdit[],
+  fps: number,
+): Promise<{ text: string; words: WhisperWord[] } | null> {
+  // Group clips by source video URL
+  const urlToClips = new Map<string, VideoClipEdit[]>()
+  for (const vc of videoClips) {
+    if (!vc.videoUrl) continue
+    const existing = urlToClips.get(vc.videoUrl) || []
+    existing.push(vc)
+    urlToClips.set(vc.videoUrl, existing)
+  }
+
+  if (urlToClips.size === 0) return null
+
+  // Transcribe each unique source video in parallel
+  const entries = Array.from(urlToClips.entries())
+  console.log(`[generate-overlay] Transcribing ${entries.length} unique source videos for ${videoClips.length} clips`)
+  const results = await Promise.all(
+    entries.map(async ([url]) => {
+      const result = await transcribeVideo(url)
+      return { url, result }
+    }),
+  )
+
+  // Build a map of URL → Whisper words
+  const urlToWords = new Map<string, WhisperWord[]>()
+  const allTexts: string[] = []
+  for (const { url, result } of results) {
+    if (result) {
+      urlToWords.set(url, result.words)
+      allTexts.push(result.text)
+    }
+  }
+
+  if (urlToWords.size === 0) return null
+
+  // Combine all words from all clips in timeline order.
+  // Remap each word to its ABSOLUTE timeline position so that
+  // buildCaptionsFromWhisper can use the timestamps directly.
+  const allWords: WhisperWord[] = []
+  // Sort clips by timeline position (fromFrame)
+  const sortedClips = [...videoClips].sort((a, b) => a.fromFrame - b.fromFrame)
+  for (const vc of sortedClips) {
+    const words = urlToWords.get(vc.videoUrl)
+    if (!words) continue
+    // Clip's source range
+    const sourceStart = vc.videoStartTime || 0
+    const speed = vc.speed || 1
+    const sourceEnd = sourceStart + (vc.durationFrames / fps) * speed
+    // Clip's timeline start position
+    const timelineStart = vc.fromFrame / fps
+    for (const w of words) {
+      if (w.start >= sourceStart - 0.05 && w.end <= sourceEnd + 0.1) {
+        // Remap from source time to absolute timeline time
+        allWords.push({
+          word: w.word,
+          start: timelineStart + (w.start - sourceStart) / speed,
+          end: timelineStart + (w.end - sourceStart) / speed,
+        })
+      }
+    }
+  }
+
+  if (allWords.length < 2) return null
+
+  return {
+    text: allTexts.join(' '),
+    words: allWords,
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { instruction, durationSeconds, currentConfig, videoUrl, transcript, videoClips, fps: reqFps } = await req.json()
@@ -55,12 +141,51 @@ export async function POST(req: NextRequest) {
 
     const fps = reqFps || 30
 
-    const duration = durationSeconds || 10
+    // Calculate actual timeline duration from videoClips if available.
+    // The DB's duration_seconds often only reflects the first clip and isn't
+    // updated when clips are added via the timeline editor.
+    let duration = durationSeconds || 10
+    if (videoClips && videoClips.length > 0) {
+      const clipsDuration = Math.max(
+        ...videoClips.map((vc: VideoClipEdit) => (vc.fromFrame + vc.durationFrames) / fps),
+      )
+      if (clipsDuration > duration) {
+        console.log(`[generate-overlay] Correcting duration from ${duration}s to ${clipsDuration.toFixed(1)}s (from videoClips)`)
+        duration = clipsDuration
+      }
+    }
 
-    // Transcribe video if URL provided and no cached transcript
+    // Transcribe video(s) if URL provided and no cached transcript.
+    // For multi-clip timelines, transcribe all unique source videos.
     let resolvedTranscript: { text: string; words: WhisperWord[] } | null = transcript || null
-    if (!resolvedTranscript && videoUrl) {
-      resolvedTranscript = await transcribeVideo(videoUrl)
+    // When true, word timestamps are already in absolute timeline time (multi-clip)
+    // and should NOT be re-remapped by buildCaptionsFromWhisper's videoClips logic.
+    let transcriptPreMapped = false
+
+    // Debug: log what we received
+    console.log('[generate-overlay] videoUrl:', videoUrl?.slice(-40))
+    console.log('[generate-overlay] hasCurrentConfig:', !!currentConfig, '| currentConfig.videoClips count:', currentConfig?.videoClips?.length)
+    if (currentConfig?.videoClips) {
+      for (const vc of currentConfig.videoClips) {
+        console.log(`  clip: url=${vc.videoUrl?.slice(-40)} fromFrame=${vc.fromFrame} dur=${vc.durationFrames} startTime=${vc.videoStartTime}`)
+      }
+    }
+
+    if (!resolvedTranscript) {
+      // Check if we have multiple clips with different source videos
+      const uniqueUrls = videoClips
+        ? new Set((videoClips as VideoClipEdit[]).map((vc: VideoClipEdit) => vc.videoUrl).filter(Boolean))
+        : new Set<string>()
+      console.log('[generate-overlay] uniqueUrls:', uniqueUrls.size, '| hasCachedTranscript:', !!transcript)
+
+      if (uniqueUrls.size > 1) {
+        // Multi-clip timeline — transcribe each source video, pre-map to timeline
+        resolvedTranscript = await transcribeMultiClipTimeline(videoClips, fps)
+        transcriptPreMapped = true
+      } else if (videoUrl) {
+        // Single video or single-source clips — transcribe the primary URL
+        resolvedTranscript = await transcribeVideo(videoUrl)
+      }
     }
 
     // Fast path: for "generate captions" with a transcript, build directly from
@@ -80,11 +205,23 @@ export async function POST(req: NextRequest) {
       }
       // Log first few Whisper word timestamps for debugging
       console.log('[generate-overlay] Whisper words (first 6):', resolvedTranscript.words.slice(0, 6).map(w => `"${w.word}" ${w.start.toFixed(2)}-${w.end.toFixed(2)}s`).join(', '))
-      const captions = buildCaptionsFromWhisper(resolvedTranscript.words, duration, videoClips, fps)
-      console.log('[generate-overlay] fast path: built', captions.length, 'captions')
-      for (const c of captions.slice(0, 5)) {
-        console.log(`  caption: "${c.text}" @ ${c.startSec.toFixed(2)}-${c.endSec.toFixed(2)}s`)
+      console.log('[generate-overlay] transcriptPreMapped:', transcriptPreMapped)
+      // When transcript is pre-mapped (multi-clip), words already have absolute timeline
+      // timestamps — skip videoClips remapping to avoid double-mapping.
+      const captions = buildCaptionsFromWhisper(
+        resolvedTranscript.words,
+        duration,
+        transcriptPreMapped ? undefined : videoClips,
+        fps,
+      )
+      console.log('[generate-overlay] fast path: built', captions.length, 'captions | duration:', duration)
+      for (const c of captions.slice(0, 3)) {
+        console.log(`  first: "${c.text}" @ ${c.startSec.toFixed(2)}-${c.endSec.toFixed(2)}s`)
       }
+      for (const c of captions.slice(-3)) {
+        console.log(`  last: "${c.text}" @ ${c.startSec.toFixed(2)}-${c.endSec.toFixed(2)}s`)
+      }
+      console.log('[generate-overlay] response config has videoClips:', !!(currentConfig?.videoClips?.length))
       const overlayConfig: OverlayConfig = {
         ...(currentConfig || {}),
         captions,

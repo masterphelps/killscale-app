@@ -71,9 +71,9 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
   showTimelineGuidelines = true,
   showUndoRedoControls = false,
   hideItemsOnDrag = true,
-  enableTrackDrag = true,
-  enableMagneticTrack = true,
-  enableTrackDelete = true,
+  enableTrackDrag: _enableTrackDrag = true,
+  enableMagneticTrack: _enableMagneticTrack = true,
+  enableTrackDelete: _enableTrackDelete = true,
   // Undo/Redo props from parent
   canUndo: parentCanUndo,
   canRedo: parentCanRedo,
@@ -322,10 +322,18 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
   // Enhanced auto-remove handler that applies changes immediately
   const handleEnhancedToggleAutoRemoveEmptyTracks = useCallback((enabled: boolean) => {
     handleToggleAutoRemoveEmptyTracks(enabled);
-    
-    // If enabling auto-remove, immediately clean up empty tracks
+
+    // If enabling auto-remove, immediately clean up empty tracks (but keep section placeholders)
     if (enabled && onTracksChange) {
-      const filteredTracks = tracks.filter(track => track.items.length > 0);
+      const sectionEmptyKept = new Set<string>();
+      const filteredTracks = tracks.filter(track => {
+        if (track.items.length > 0) return true;
+        if (track.section && !sectionEmptyKept.has(track.section)) {
+          sectionEmptyKept.add(track.section);
+          return true;
+        }
+        return false;
+      });
       const updatedTracks = filteredTracks.length === 0 ? [tracks[0] || {
         id: `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         name: undefined,
@@ -490,14 +498,8 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
       {/* Tracks container - flex layout with scroll */}
       <div className="timeline-tracks-wrapper flex flex-1 overflow-hidden">
         <div className="hidden md:block overflow-hidden">
-          <TimelineTrackHandles 
-            tracks={tracks} 
-            onTrackReorder={handleTrackReorder}
-            onTrackDelete={handleTrackDelete}
-            onToggleMagnetic={handleToggleMagnetic}
-            enableTrackDrag={enableTrackDrag}
-            enableMagneticTrack={enableMagneticTrack}
-            enableTrackDelete={enableTrackDelete}
+          <TimelineTrackHandles
+            tracks={tracks}
           />
         </div>
         

@@ -1,20 +1,45 @@
 import React from 'react';
 import { Overlay, OverlayType } from '../../../../types';
-import { TimelineTrack, TimelineItem } from '../../../advanced-timeline/types';
+import { TimelineTrack, TimelineItem, TimelineSection } from '../../../advanced-timeline/types';
 import { FPS } from '../../../advanced-timeline/constants';
+
+/** Fixed section order (top → bottom) */
+const SECTION_ORDER: TimelineSection[] = ['overlays', 'captions', 'media', 'audio'];
+
+/** Map overlay type to its timeline section */
+const getOverlaySection = (type: OverlayType): TimelineSection => {
+  switch (type) {
+    case OverlayType.VIDEO:
+      return 'media';
+    case OverlayType.SOUND:
+      return 'audio';
+    case OverlayType.CAPTION:
+      return 'captions';
+    case OverlayType.TEXT:
+    case OverlayType.CTA:
+    case OverlayType.IMAGE:
+    case OverlayType.STICKER:
+    case OverlayType.SHAPE:
+    default:
+      return 'overlays';
+  }
+};
 
 /**
  * Hook to handle data transformation between overlays and timeline tracks
  */
 export const useTimelineTransforms = () => {
   /**
-   * Transform overlays to timeline tracks format
+   * Transform overlays to timeline tracks format (grouped by section)
    */
   const transformOverlaysToTracks = React.useCallback((overlays: Overlay[]): TimelineTrack[] => {
-    // Group overlays by row
-    const rowMap = new Map<number, Overlay[]>();
-    
+    // 1. Classify each overlay into its section
+    const sectionOverlays = new Map<TimelineSection, Map<number, Overlay[]>>();
+    SECTION_ORDER.forEach(s => sectionOverlays.set(s, new Map()));
+
     overlays.forEach(overlay => {
+      const section = getOverlaySection(overlay.type);
+      const rowMap = sectionOverlays.get(section)!;
       const row = overlay.row || 0;
       if (!rowMap.has(row)) {
         rowMap.set(row, []);
@@ -22,80 +47,82 @@ export const useTimelineTransforms = () => {
       rowMap.get(row)!.push(overlay);
     });
 
-    // Convert to timeline tracks
+    // 2. Build tracks in fixed section order
     const tracks: TimelineTrack[] = [];
-    
-    // Ensure we have at least one track
-    const maxRow = Math.max(0, ...Array.from(rowMap.keys()));
-    
-    for (let i = 0; i <= maxRow; i++) {
-      const overlaysInRow = rowMap.get(i) || [];
-      
-      const items: TimelineItem[] = overlaysInRow.map(overlay => {
-        const baseItem = {
-          id: overlay.id.toString(),
-          trackId: `track-${i}`,
-          start: overlay.from / FPS, // Convert frames to seconds
-          end: (overlay.from + overlay.durationInFrames) / FPS,
-          label: getOverlayLabel(overlay),
-          type: mapOverlayTypeToTimelineType(overlay.type),
-          color: getOverlayColor(overlay.type),
-          data: overlay, // Store the original overlay data
-        };
+    let trackCounter = 0;
 
-        // Add media timing properties for video overlays
-        if (overlay.type === OverlayType.VIDEO) {
-          const videoOverlay = overlay as any;
-          const videoStartTimeSeconds = typeof videoOverlay.videoStartTime === 'number' ? videoOverlay.videoStartTime : 0;
-          
-          return {
-            ...baseItem,
-            mediaStart: videoStartTimeSeconds,
-            ...(videoOverlay.mediaSrcDuration && { 
-              mediaSrcDuration: videoOverlay.mediaSrcDuration,
-              mediaEnd: videoStartTimeSeconds + (overlay.durationInFrames / FPS)
-            }),
-          };
+    for (const section of SECTION_ORDER) {
+      const rowMap = sectionOverlays.get(section)!;
+
+      if (rowMap.size === 0) {
+        // Always emit 1 empty track per section
+        tracks.push({
+          id: `track-${trackCounter}`,
+          items: [],
+          magnetic: false,
+          visible: true,
+          muted: false,
+          section,
+        });
+        trackCounter++;
+      } else {
+        // Sort rows to preserve relative sub-ordering within section
+        const sortedRows = Array.from(rowMap.keys()).sort((a, b) => a - b);
+
+        for (const row of sortedRows) {
+          const overlaysInRow = rowMap.get(row)!;
+          const trackId = `track-${trackCounter}`;
+
+          const items: TimelineItem[] = overlaysInRow.map(overlay => {
+            const baseItem = {
+              id: overlay.id.toString(),
+              trackId,
+              start: overlay.from / FPS,
+              end: (overlay.from + overlay.durationInFrames) / FPS,
+              label: getOverlayLabel(overlay),
+              type: mapOverlayTypeToTimelineType(overlay.type),
+              color: getOverlayColor(overlay.type),
+              data: overlay,
+            };
+
+            if (overlay.type === OverlayType.VIDEO) {
+              const videoOverlay = overlay as any;
+              const videoStartTimeSeconds = typeof videoOverlay.videoStartTime === 'number' ? videoOverlay.videoStartTime : 0;
+              return {
+                ...baseItem,
+                mediaStart: videoStartTimeSeconds,
+                ...(videoOverlay.mediaSrcDuration && {
+                  mediaSrcDuration: videoOverlay.mediaSrcDuration,
+                  mediaEnd: videoStartTimeSeconds + (overlay.durationInFrames / FPS),
+                }),
+              };
+            }
+
+            if (overlay.type === OverlayType.SOUND) {
+              const audioOverlay = overlay as any;
+              const audioStartTimeSeconds = typeof audioOverlay.startFromSound === 'number' ? audioOverlay.startFromSound / FPS : 0;
+              return {
+                ...baseItem,
+                mediaStart: audioStartTimeSeconds,
+                mediaEnd: audioStartTimeSeconds + (overlay.durationInFrames / FPS),
+                ...(audioOverlay.mediaSrcDuration && { mediaSrcDuration: audioOverlay.mediaSrcDuration }),
+              };
+            }
+
+            return baseItem;
+          });
+
+          tracks.push({
+            id: trackId,
+            items,
+            magnetic: false,
+            visible: true,
+            muted: false,
+            section,
+          });
+          trackCounter++;
         }
-
-        // Add media timing properties for audio overlays  
-        if (overlay.type === OverlayType.SOUND) {
-          const audioOverlay = overlay as any;
-          // startFromSound is stored in frames, so convert to seconds for mediaStart
-          const audioStartTimeSeconds = typeof audioOverlay.startFromSound === 'number' ? audioOverlay.startFromSound / FPS : 0;
-          
-          return {
-            ...baseItem,
-            mediaStart: audioStartTimeSeconds,
-            mediaEnd: audioStartTimeSeconds + (overlay.durationInFrames / FPS),
-            ...(audioOverlay.mediaSrcDuration && { mediaSrcDuration: audioOverlay.mediaSrcDuration }),
-          };
-        }
-
-        // Return base item for other overlay types
-        return baseItem;
-      });
-
-      tracks.push({
-        id: `track-${i}`,
-        name: `Track ${i + 1}`,
-        items,
-        magnetic: false,
-        visible: true,
-        muted: false,
-      });
-    }
-
-    // If no tracks exist, create one empty track
-    if (tracks.length === 0) {
-      tracks.push({
-        id: 'track-0',
-        name: 'Track 1',
-        items: [],
-        magnetic: false,
-        visible: true,
-        muted: false,
-      });
+      }
     }
 
     return tracks;
@@ -169,6 +196,8 @@ const getOverlayLabel = (overlay: Overlay): string => {
       return content || 'Sticker';
     case OverlayType.SHAPE:
       return content || 'Shape';
+    case OverlayType.CTA:
+      return content || 'CTA';
     default:
       return 'Item';
   }
@@ -193,6 +222,8 @@ const mapOverlayTypeToTimelineType = (type: OverlayType): string => {
       return 'sticker';
     case OverlayType.SHAPE:
       return 'shape';
+    case OverlayType.CTA:
+      return 'cta';
     default:
       return 'unknown';
   }
@@ -204,20 +235,18 @@ const mapOverlayTypeToTimelineType = (type: OverlayType): string => {
 const getOverlayColor = (type: OverlayType): string => {
   switch (type) {
     case OverlayType.TEXT:
-      return '#3b82f6'; // blue
     case OverlayType.IMAGE:
-      return '#10b981'; // green
-    case OverlayType.VIDEO:
-      return '#8b5cf6'; // purple
-    case OverlayType.SOUND:
-      return '#f59e0b'; // amber
-    case OverlayType.CAPTION:
-      return '#ef4444'; // red
     case OverlayType.STICKER:
-      return '#ec4899'; // pink
     case OverlayType.SHAPE:
-      return '#6b7280'; // gray
+    case OverlayType.CTA:
+      return '#3b82f6'; // blue — overlays
+    case OverlayType.CAPTION:
+      return '#8b5cf6'; // purple — captions
+    case OverlayType.VIDEO:
+      return 'rgba(161, 161, 170, 0.3)'; // zinc — media (thumbnails visible)
+    case OverlayType.SOUND:
+      return '#f97316'; // orange — audio
     default:
-      return '#9ca3af'; // gray
+      return '#3b82f6'; // blue
   }
 };

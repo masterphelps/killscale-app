@@ -134,6 +134,10 @@ export function overlayConfigToRVEOverlays(
         textDecoration: 'none',
         textAlign: 'center',
         textShadow: '2px 2px 8px rgba(0,0,0,0.7)',
+        animation: (h.animationEnter || h.animationExit) ? {
+          enter: h.animationEnter || 'none',
+          exit: h.animationExit || 'none',
+        } : undefined,
         // Tag for reverse identification
         // @ts-expect-error — custom metadata property
         __ksTag: META_TAG_HOOK,
@@ -236,6 +240,10 @@ export function overlayConfigToRVEOverlays(
         textAlign: 'center',
         padding: '16px 32px',
         borderRadius: '16px',
+        animation: (c.animationEnter || c.animationExit) ? {
+          enter: c.animationEnter || 'none',
+          exit: c.animationExit || 'none',
+        } : undefined,
         // @ts-expect-error — custom metadata property
         __ksTag: META_TAG_CTA,
       },
@@ -314,6 +322,7 @@ export function overlayConfigToRVEOverlays(
         styles: {
           objectFit: 'cover',
           volume: vc.volume ?? (hasVoiceover ? 0 : 1),
+          animation: vc.animation,
         },
       }
       if (vc.videoStartTime != null) clip.videoStartTime = vc.videoStartTime
@@ -513,12 +522,15 @@ export function rveOverlaysToOverlayConfig(
   // Helper: extract overlay data for a given clip segment (time-shifted to clip-local)
   function extractHook(text: TextOverlay, clipFrom: number): KSHookOverlay {
     const lines = text.content.split('\n')
+    const anim = text.styles.animation
     return {
       line1: lines[0] || '',
       line2: lines[1],
       startSec: framesToSec(text.from - clipFrom, fps),
       endSec: framesToSec(text.from + text.durationInFrames - clipFrom, fps),
       animation: existingConfig?.hook?.animation || 'pop',
+      animationEnter: anim?.enter || existingConfig?.hook?.animationEnter,
+      animationExit: anim?.exit || existingConfig?.hook?.animationExit,
       fontSize: parseInt(text.styles.fontSize) || 52,
       fontWeight: parseInt(text.styles.fontWeight) || 800,
       position: nearestPosition(text.top),
@@ -526,10 +538,13 @@ export function rveOverlaysToOverlayConfig(
   }
 
   function extractCTA(text: TextOverlay, clipFrom: number): KSCTAOverlay {
+    const anim = text.styles.animation
     return {
       buttonText: text.content,
       startSec: framesToSec(text.from - clipFrom, fps),
       animation: existingConfig?.cta?.animation || 'pop',
+      animationEnter: anim?.enter || existingConfig?.cta?.animationEnter,
+      animationExit: anim?.exit || existingConfig?.cta?.animationExit,
       buttonColor: text.styles.backgroundColor !== 'transparent' ? text.styles.backgroundColor : undefined,
       fontSize: parseInt(text.styles.fontSize) || 32,
     }
@@ -672,6 +687,7 @@ export function rveOverlaysToOverlayConfig(
     if (v.speed != null) vc.speed = v.speed
     if (v.segments) vc.segments = v.segments
     if (v.mediaSrcDuration != null) vc.mediaSrcDuration = v.mediaSrcDuration
+    if (v.styles?.animation) vc.animation = v.styles.animation
     return vc
   })
 

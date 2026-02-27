@@ -29,6 +29,9 @@ export interface TimelineItem {
   speed?: number; // playback speed multiplier (e.g., 0.5 = half speed, 2 = double speed)
 }
 
+// Section types for grouped track layout
+export type TimelineSection = 'overlays' | 'captions' | 'media' | 'audio';
+
 // A track (row) in the timeline
 export interface TimelineTrack {
   id: string;
@@ -37,6 +40,7 @@ export interface TimelineTrack {
   magnetic?: boolean; // Whether magnetic timeline is enabled
   visible?: boolean;  // Whether track is visible
   muted?: boolean;    // Whether track is muted
+  section?: TimelineSection; // Which section this track belongs to
 }
 
 // Timeline component ref interface for imperative methods

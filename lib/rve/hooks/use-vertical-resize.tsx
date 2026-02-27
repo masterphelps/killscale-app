@@ -35,21 +35,17 @@ export const useVerticalResize = (options: UseVerticalResizeOptions = {}): UseVe
     initialHeight = 500,
     minHeight = 200,
     maxHeight = 800,
-    storageKey = 'editor-timeline-height',
+    storageKey,
   } = options;
 
-  // Try to load saved height from localStorage
-  // Note: maxHeight is dynamic (changes with track count), so we clamp the height
-  // in a separate useEffect when maxHeight changes (see below)
+  // Try to load saved height from localStorage (only if storageKey is provided)
   const getSavedHeight = useCallback(() => {
-    if (typeof window !== 'undefined') {
+    if (storageKey && typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem(storageKey);
         if (saved) {
           const height = parseInt(saved, 10);
           if (!isNaN(height) && height >= minHeight) {
-            // Return saved height clamped to current bounds
-            // This handles cases where maxHeight changed since last save
             return Math.min(height, maxHeight);
           }
         }
@@ -66,9 +62,9 @@ export const useVerticalResize = (options: UseVerticalResizeOptions = {}): UseVe
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
 
-  // Save height to localStorage whenever it changes
+  // Save height to localStorage whenever it changes (only if storageKey is provided)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (storageKey && typeof window !== 'undefined') {
       try {
         localStorage.setItem(storageKey, bottomHeight.toString());
       } catch (e) {

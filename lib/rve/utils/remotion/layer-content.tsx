@@ -122,6 +122,14 @@ export const LayerContent: React.FC<LayerContentProps> = ({
     case OverlayType.SOUND:
       return <SoundLayerContent overlay={overlay} {...(baseUrl && { baseUrl })} />;
 
+    case OverlayType.CTA:
+      // CTA renders like text with styled background
+      return (
+        <div style={{ ...commonStyle }}>
+          <TextLayerContent overlay={overlay as any} {...(fontInfos && { fontInfos })} />
+        </div>
+      );
+
     default:
       return null;
   }

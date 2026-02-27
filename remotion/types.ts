@@ -7,6 +7,8 @@ export interface HookOverlay {
   startSec: number
   endSec: number
   animation: 'pop' | 'fade' | 'slide'
+  animationEnter?: string        // RVE enter animation (e.g. 'slideIn', 'fadeIn')
+  animationExit?: string         // RVE exit animation (e.g. 'slideOut', 'fadeOut')
   fontSize?: number              // default 52
   fontWeight?: number            // default 800
   position?: 'top' | 'center' | 'bottom'  // default 'top'
@@ -30,6 +32,8 @@ export interface CTAOverlay {
   buttonColor?: string
   startSec: number
   animation: 'pop' | 'fade' | 'slide'
+  animationEnter?: string
+  animationExit?: string
   fontSize?: number              // default 32
 }
 
@@ -41,6 +45,7 @@ export interface GraphicOverlay {
   startSec: number
   endSec: number
   opacity?: number
+  animation?: { enter?: string; exit?: string }
 }
 
 export interface EndCardOverlay {
@@ -70,6 +75,7 @@ export interface VideoClipEdit {
   segments?: Array<{ startFrame: number; endFrame: number; speed?: number }>
   mediaSrcDuration?: number   // total source file duration in seconds
   volume?: number
+  animation?: { enter?: string; exit?: string }
 }
 
 export interface OverlayConfig {

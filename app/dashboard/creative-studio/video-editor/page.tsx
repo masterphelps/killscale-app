@@ -436,12 +436,28 @@ export default function VideoEditorPage() {
         // Mark as dirty when overlays change (after initial load)
         if (!isLoading) setIsDirty(true)
 
-        // Build set of video URLs currently on the timeline
+        // Keep overlayConfigRef in sync so Save always captures latest edits (animations, text, etc.)
+        const updatedConfig = rveOverlaysToOverlayConfig(overlays, overlayConfigRef.current)
+        overlayConfigRef.current = updatedConfig
+
+        // Build set of video URLs currently on the timeline and track actual duration
         const timelineUrls = new Set<string>()
+        let maxEndFrame = 0
         for (const o of overlays) {
           if (o.type === OverlayType.VIDEO && 'src' in o) {
             timelineUrls.add((o as ClipOverlay).src)
+            const endFrame = o.from + o.durationInFrames
+            if (endFrame > maxEndFrame) maxEndFrame = endFrame
           }
+        }
+        // Keep durationSec in sync with actual timeline content
+        // (DB's duration_seconds may only reflect the first clip)
+        if (maxEndFrame > 0) {
+          const actualDuration = maxEndFrame / FPS
+          setDurationSec(prev => {
+            if (Math.abs(prev - actualDuration) > 0.5) return actualDuration
+            return prev
+          })
         }
 
         // Sync appendedSiblings: only mark siblings whose video URL is on the timeline
@@ -768,7 +784,6 @@ export default function VideoEditorPage() {
     setIsGenerating(true)
     try {
       const currentConfig = overlayConfigRef.current
-      const hasExisting = currentConfig?.hook || currentConfig?.captions?.length || currentConfig?.cta
 
       // Caption requests ALWAYS go through Whisper for accurate timing.
       // Only use cached transcript for non-caption requests (hooks, CTAs, etc.)
@@ -781,7 +796,10 @@ export default function VideoEditorPage() {
         body: JSON.stringify({
           instruction: prompt,
           durationSeconds: durationSec,
-          currentConfig: hasExisting ? currentConfig : undefined,
+          // Always send currentConfig so videoClips/appendedClips are preserved
+          // in the response (API spreads it). Without this, multi-clip video
+          // tracks get replaced with a single track on injection.
+          currentConfig: currentConfig || undefined,
           videoUrl: !useTranscriptCache ? videoUrl : undefined,
           transcript: useTranscriptCache ? cachedTranscript : undefined,
           // Send current clip edits so captions remap to the edited timeline
@@ -855,8 +873,60 @@ export default function VideoEditorPage() {
 
   // New sidebar panel handlers
   const handleAddCTA = useCallback((template: { id: string; label: string; text: string; buttonColor: string; textColor: string; style: string }) => {
-    handleAIGenerate?.(`Add a "${template.text}" call-to-action button with ${template.buttonColor} background at the end of the video`)
-  }, [handleAIGenerate])
+    const current = currentOverlaysRef.current
+    const newId = current.length > 0 ? Math.max(...current.map(o => o.id)) + 1 : 0
+
+    // Place CTA at the last 3 seconds of the video, centered at bottom
+    const totalFrames = Math.round(durationSec * FPS)
+    const ctaDuration = Math.min(3 * FPS, totalFrames) // 3 seconds or video length
+    const ctaFrom = Math.max(0, totalFrames - ctaDuration)
+
+    const canvasWidth = 1080 // portrait default
+    const canvasHeight = 1920
+    const ctaWidth = Math.round(canvasWidth * 0.6)
+    const ctaHeight = 80
+    const ctaLeft = Math.round((canvasWidth - ctaWidth) / 2)
+    // Center in the bottom third of the screen
+    const bottomThirdStart = Math.round(canvasHeight * (2 / 3))
+    const bottomThirdCenter = bottomThirdStart + Math.round((canvasHeight - bottomThirdStart - ctaHeight) / 2)
+    const ctaTop = bottomThirdCenter
+
+    const newOverlay = {
+      id: newId,
+      left: ctaLeft,
+      top: ctaTop,
+      width: ctaWidth,
+      height: ctaHeight,
+      durationInFrames: ctaDuration,
+      from: ctaFrom,
+      rotation: 0,
+      row: (current.length > 0 ? Math.max(...current.map(o => o.row)) : 0) + 1,
+      isDragging: false,
+      type: 'cta' as const,
+      content: template.text,
+      styles: {
+        opacity: 1,
+        zIndex: 200,
+        transform: 'none',
+        fontSize: '24px',
+        fontWeight: '700',
+        color: template.textColor,
+        backgroundColor: template.style === 'gradient' ? 'transparent' : (template.style === 'outline' ? 'transparent' : template.buttonColor),
+        background: template.style === 'gradient' ? template.buttonColor : undefined,
+        fontFamily: 'Inter, sans-serif',
+        fontStyle: 'normal',
+        textDecoration: 'none',
+        textAlign: 'center' as const,
+        padding: '12px 32px',
+        borderRadius: template.style === 'block' ? '4px' : '9999px',
+        border: template.style === 'outline' ? `2px solid ${template.buttonColor}` : 'none',
+      },
+    }
+
+    const allOverlays = [...current, newOverlay]
+    const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
+    window.dispatchEvent(event)
+  }, [durationSec])
 
   const handleAddMedia = useCallback((item: { id: string; name: string; mediaType: 'VIDEO' | 'IMAGE'; thumbnailUrl?: string; storageUrl?: string }) => {
     // TODO: Add media to timeline via ks-inject-overlays event
@@ -1197,7 +1267,7 @@ export default function VideoEditorPage() {
           videoHeight={1920}
           sidebarWidth="24rem"
           sidebarIconWidth="3.75rem"
-          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER, OverlayType.IMAGE, OverlayType.LOCAL_DIR]}
+          disabledPanels={[OverlayType.TEMPLATE, OverlayType.STICKER, OverlayType.LOCAL_DIR]}
           adaptors={mediaAdaptors}
           isLoadingProject={isLoading}
           onAIGenerate={handleAIGenerate}

@@ -129,7 +129,7 @@ export const CaptionsOverlayPanel: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-2 h-full [&_[data-radix-scroll-area-viewport]]:!scrollbar-none">
+    <div className="flex flex-col gap-4 p-2 h-full overflow-x-hidden [&_[data-radix-scroll-area-viewport]]:!scrollbar-none">
       {!localOverlay ? (
         <>
           {/* Show errors if any */}
@@ -246,7 +246,7 @@ export const CaptionsOverlayPanel: React.FC = () => {
           </div>
         </>
       ) : (
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <CaptionSettings
             currentFrame={currentFrame}
             localOverlay={localOverlay}

@@ -68,8 +68,11 @@ export const useOverlaySelection = () => {
           case OverlayType.CAPTION:
             setActivePanel(OverlayType.CAPTION);
             break;
+          case OverlayType.CTA:
+            setActivePanel(OverlayType.CTA);
+            break;
         }
-        
+
         // Open the sidebar to show the selected overlay's panel
         setIsOpen(true);
       }

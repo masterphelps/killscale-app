@@ -8,6 +8,7 @@ import {
   ChevronsLeft,
   Settings,
   Film,
+  ImageIcon,
 } from "lucide-react";
 
 // Import OverlayType directly from types to avoid export issues
@@ -24,6 +25,7 @@ import { AudioPanel } from "../panels/audio-panel";
 import { CaptionsOverlayPanel } from "../overlay/captions/captions-overlay-panel";
 import { AISection } from "../panels/ai-section";
 import { CTAPanel } from "../panels/cta-panel";
+import { ImageOverlayPanel } from "../overlay/images/image-overlay-panel";
 
 // Import settings panel (kept from original)
 import { SettingsPanel } from "../settings/settings-panel";
@@ -168,6 +170,7 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
   const navigationItems = [
     { title: 'Media', url: '#', icon: FolderOpen, panel: OverlayType.MEDIA, type: OverlayType.MEDIA },
     { title: 'Video', url: '#', icon: Film, panel: OverlayType.VIDEO, type: OverlayType.VIDEO },
+    { title: 'Images', url: '#', icon: ImageIcon, panel: OverlayType.IMAGE, type: OverlayType.IMAGE },
     { title: 'Text', url: '#', icon: Type, panel: OverlayType.TEXT, type: OverlayType.TEXT },
     { title: 'Audio', url: '#', icon: Music, panel: OverlayType.SOUND, type: OverlayType.SOUND },
     { title: 'Captions', url: '#', icon: Subtitles, panel: OverlayType.CAPTION, type: OverlayType.CAPTION },
@@ -184,6 +187,8 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
         return <MediaPanel userId={editorUserId || ''} adAccountId={editorAdAccountId || ''} onAddMedia={onAddMedia || (() => {})} />;
       case OverlayType.VIDEO:
         return <VideoClipsPanel />;
+      case OverlayType.IMAGE:
+        return <ImageOverlayPanel />;
       case OverlayType.TEXT:
         return <TextOverlaysPanel />;
       case OverlayType.SOUND:
@@ -221,8 +226,6 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
       case OverlayType.CTA:
         return (
           <CTAPanel
-            onAIGenerate={onAIGenerate || (async () => {})}
-            isAIGenerating={isAIGenerating || false}
             onAddCTA={onAddCTA || (() => {})}
           />
         );
@@ -248,13 +251,13 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild className="md:h-8 md:pb-4 md:pt-4 ">
                 <a href="#">
-                  <div className="flex aspect-square size-9 items-center justify-center rounded-lg">
+                  <div className="flex aspect-square size-10 items-center justify-center rounded-lg">
                     {logo || (
                       <img
                         src="/icons/killscale-favicon.png"
                         alt="KillScale"
-                        width={27}
-                        height={27}
+                        width={32}
+                        height={32}
                       />
                     )}
                   </div>

@@ -369,9 +369,10 @@ export async function POST(req: Request) {
         const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
         console.error('[RenderVideo] Render failed:', errDetail)
         if (overlayId) {
+          // Delete the overlay row on failure — failed renders shouldn't pollute version history
           await supabaseAdmin
             .from('video_overlays')
-            .update({ render_status: 'failed' })
+            .delete()
             .eq('id', overlayId)
         }
         await send({ type: 'error', message: errMsg })
@@ -384,9 +385,10 @@ export async function POST(req: Request) {
       const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
       console.error('[RenderVideo] Setup failed:', errDetail)
       if (overlayId) {
+        // Delete the overlay row on failure — failed renders shouldn't pollute version history
         await supabaseAdmin
           .from('video_overlays')
-          .update({ render_status: 'failed' })
+          .delete()
           .eq('id', overlayId)
       }
       await send({ type: 'error', message: errMsg })

@@ -253,6 +253,27 @@ export type StickerOverlay = BaseOverlay & {
   };
 };
 
+// CTA overlay — styled button text
+export type CTAOverlay = BaseOverlay & {
+  type: OverlayType.CTA;
+  content: string;
+  styles: BaseStyles & {
+    fontSize: string;
+    fontWeight: string;
+    color: string;
+    backgroundColor: string;
+    fontFamily: string;
+    fontStyle: string;
+    textDecoration: string;
+    textAlign?: "left" | "center" | "right";
+    padding?: string;
+    borderRadius?: string;
+    border?: string;
+    background?: string;
+    animation?: AnimationConfig;
+  };
+};
+
 export type Overlay =
   | TextOverlay
   | ImageOverlay
@@ -260,7 +281,8 @@ export type Overlay =
   | ClipOverlay
   | SoundOverlay
   | CaptionOverlay
-  | StickerOverlay;
+  | StickerOverlay
+  | CTAOverlay;
 
 export type MainProps = {
   readonly overlays: Overlay[];

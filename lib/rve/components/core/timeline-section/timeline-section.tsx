@@ -295,11 +295,9 @@ export const TimelineSection: React.FC<TimelineSectionProps> = () => {
           selectedItemIds={selectedOverlayIds.filter((id): id is number => typeof id === 'number' && !isNaN(id)).map((id: number) => id.toString())}
           onTracksChange={handleTracksChange}
           onNewItemDrop={handleNewItemDrop}
+          autoRemoveEmptyTracks={false}
           showZoomControls={true}
           showTimelineGuidelines={true}
-          enableTrackDrag={true}
-          enableMagneticTrack={true}
-          enableTrackDelete={true}
           showPlaybackControls={true}
           isPlaying={isPlaying}
           hideItemsOnDrag={true}

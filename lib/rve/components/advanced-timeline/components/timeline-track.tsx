@@ -114,10 +114,17 @@ export const TimelineTrack: React.FC<TimelineTrackProps> = ({
   // Determine which items to render and their positions
   const shouldShowPreview = magneticPreview && magneticPreview.trackId === track.id && isDragging;
 
+  // Empty section placeholder — dashed border, muted styling
+  const isEmptyPlaceholder = track.section && track.items.length === 0;
+
   return (
-    <div 
-      className="track relative bg-[var(--timeline-row)] border-b border-[var(--border)] w-full transition-all duration-200 ease-in-out"
-      style={{ 
+    <div
+      className={`track relative w-full transition-all duration-200 ease-in-out ${
+        isEmptyPlaceholder
+          ? 'bg-[var(--timeline-row)]/50 border-b border-dashed border-zinc-700/50'
+          : 'bg-[var(--timeline-row)] border-b border-[var(--border)]'
+      }`}
+      style={{
         height: `${TIMELINE_CONSTANTS.TRACK_HEIGHT}px`,
       }}
     >

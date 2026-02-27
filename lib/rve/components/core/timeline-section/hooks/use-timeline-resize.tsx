@@ -1,7 +1,7 @@
 import React from 'react';
 import { useVerticalResize } from '../../../../hooks/use-vertical-resize';
 import { TIMELINE_CONSTANTS } from '../../../advanced-timeline/constants';
-import { Overlay } from '../../../../types';
+import { Overlay, OverlayType } from '../../../../types';
 
 interface UseTimelineResizeOptions {
   overlays: Overlay[];
@@ -17,6 +17,8 @@ const HEIGHT_CONSTANTS = {
   MIN_TIMELINE_HEIGHT: 300,
   /** Additional padding for timeline (scrollbar + comfortable viewing) */
   TIMELINE_PADDING: 67,
+  /** Number of fixed section slots (Overlays, Captions, Media, Audio) */
+  SECTION_COUNT: 4,
 } as const;
 
 /**
@@ -26,14 +28,36 @@ const HEIGHT_CONSTANTS = {
  */
 export const useTimelineResize = ({ overlays }: UseTimelineResizeOptions) => {
   /**
-   * Calculate the number of tracks based on overlays
-   * Tracks are determined by the row property of overlays
-   * Memoized to avoid recalculation on every render
+   * Calculate the number of tracks based on section-aware layout.
+   *
+   * The timeline always has 4 sections (overlays, captions, media, audio),
+   * each with at least 1 track. Within a section, each unique `row` value
+   * used by overlays of that section type adds a track.
    */
   const trackCount = React.useMemo(() => {
-    if (overlays.length === 0) return 1; // Minimum 1 track
-    const maxRow = Math.max(...overlays.map(overlay => overlay.row || 0));
-    return maxRow + 1; // Rows are 0-indexed
+    // Map overlay type → section
+    const sectionRows: Record<string, Set<number>> = {
+      overlays: new Set<number>(),
+      captions: new Set<number>(),
+      media: new Set<number>(),
+      audio: new Set<number>(),
+    };
+
+    for (const overlay of overlays) {
+      const row = overlay.row || 0;
+      const t = overlay.type;
+      // Match getOverlaySection in use-timeline-transforms.ts
+      if (t === OverlayType.VIDEO) sectionRows.media.add(row);
+      else if (t === OverlayType.SOUND) sectionRows.audio.add(row);
+      else if (t === OverlayType.CAPTION) sectionRows.captions.add(row);
+      else sectionRows.overlays.add(row);
+    }
+
+    // Each section contributes at least 1 track (the empty placeholder)
+    return Object.values(sectionRows).reduce(
+      (sum, rows) => sum + Math.max(1, rows.size),
+      0,
+    );
   }, [overlays]);
 
   // Track previous track count to detect when new tracks are added
@@ -43,70 +67,58 @@ export const useTimelineResize = ({ overlays }: UseTimelineResizeOptions) => {
   const prevBottomHeightRef = React.useRef(0);
 
   /**
-   * Calculate dynamic max height based on track count
-   * Formula: Markers Height + (Track Count × Track Height) + Padding
+   * Height that shows ALL section tracks without scrolling.
+   * Also used as the max height for the resize handle.
+   * Includes 3 section-divider pixels (between the 4 sections).
    */
-  const dynamicMaxHeight = React.useMemo(() => {
-    return TIMELINE_CONSTANTS.MARKERS_HEIGHT + 
-           (trackCount * TIMELINE_CONSTANTS.TRACK_HEIGHT) + 
+  const allSectionsHeight = React.useMemo(() => {
+    const dividerPixels = (HEIGHT_CONSTANTS.SECTION_COUNT - 1); // 1px per divider
+    return TIMELINE_CONSTANTS.MARKERS_HEIGHT +
+           (trackCount * TIMELINE_CONSTANTS.TRACK_HEIGHT) +
+           dividerPixels +
            HEIGHT_CONSTANTS.TIMELINE_PADDING;
   }, [trackCount]);
 
   /**
-   * Calculate initial height: use full available viewport height on first load
-   * 
-   * Note: This is only called once during initialization (not on window resize)
-   * Users can manually resize the timeline, and their preference is saved to localStorage
-   */
-  const calculateInitialHeight = React.useCallback(() => {
-    if (typeof window === 'undefined') {
-      return HEIGHT_CONSTANTS.MIN_TIMELINE_HEIGHT; // SSR fallback
-    }
-    
-    // Use full available height: viewport height minus reserved space for header and video player
-    const viewportHeight = window.innerHeight;
-    const fullHeight = viewportHeight - HEIGHT_CONSTANTS.RESERVED_VIEWPORT_SPACE;
-    
-    // Ensure we never go below minimum height
-    return Math.max(HEIGHT_CONSTANTS.MIN_TIMELINE_HEIGHT, fullHeight);
-  }, []);
-
-  /**
-   * Vertical resize functionality for timeline with dynamic max height
+   * Vertical resize functionality for timeline with dynamic max height.
+   *
+   * We DON'T persist height to localStorage — the timeline always opens
+   * fully expanded to show every section track. Users can resize during
+   * the session but each new editor session starts expanded.
    */
   const { bottomHeight, isResizing, handleMouseDown, handleTouchStart, setHeight } = useVerticalResize({
-    initialHeight: calculateInitialHeight(),
+    initialHeight: allSectionsHeight,
     minHeight: 155,
-    maxHeight: dynamicMaxHeight,
-    storageKey: 'editor-timeline-height',
+    maxHeight: allSectionsHeight,
+    // No storageKey — don't persist height across sessions
   });
 
   /**
-   * Auto-expand timeline height when new tracks are added
-   * 
-   * Uses refs to avoid race conditions and infinite loops from including
-   * bottomHeight in the dependency array
+   * Ensure the timeline is always tall enough to show all sections.
+   * When tracks are added (or on first mount), expand to fit.
    */
+  const hasMountedRef = React.useRef(false);
   React.useEffect(() => {
+    if (!hasMountedRef.current) {
+      // On first mount, always expand to show all sections
+      hasMountedRef.current = true;
+      setHeight(allSectionsHeight);
+      prevTrackCountRef.current = trackCount;
+      return;
+    }
+
     const prevCount = prevTrackCountRef.current;
-    
     if (trackCount > prevCount) {
-      // Calculate how many new rows were added
+      // New tracks added — expand to fit
       const newRows = trackCount - prevCount;
       const additionalHeight = newRows * TIMELINE_CONSTANTS.TRACK_HEIGHT;
-      
-      // Expand the timeline to show the new row(s)
-      // Use the ref value to avoid bottomHeight dependency
       setHeight(prevBottomHeightRef.current + additionalHeight);
     }
-    
-    // Update the refs for next comparison
     prevTrackCountRef.current = trackCount;
-  }, [trackCount, setHeight]);
+  }, [trackCount, allSectionsHeight, setHeight]);
 
   /**
    * Keep the bottomHeight ref in sync
-   * Separate effect to avoid dependency issues
    */
   React.useEffect(() => {
     prevBottomHeightRef.current = bottomHeight;
@@ -118,7 +130,7 @@ export const useTimelineResize = ({ overlays }: UseTimelineResizeOptions) => {
     handleMouseDown,
     handleTouchStart,
     trackCount,
-    dynamicMaxHeight,
+    allSectionsHeight,
   };
 };
 

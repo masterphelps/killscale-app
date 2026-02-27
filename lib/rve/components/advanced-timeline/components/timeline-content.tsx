@@ -525,37 +525,45 @@ export const TimelineContent: React.FC<TimelineContentProps> = ({
               // Ghost creation: trackIndex * (100 / tracks.length) = ghost.top
               // So: trackIndex = ghost.top / (100 / tracks.length) = ghost.top * tracks.length / 100
               const calculatedIndex = Math.round(ghost.top * tracks.length / 100);
-              
+
               return calculatedIndex === index;
             }) || [];
 
+            // Insert section divider between sections (when section changes between consecutive tracks)
+            const prevTrack = index > 0 ? tracks[index - 1] : null;
+            const showSectionDivider = prevTrack && prevTrack.section !== track.section;
+
             return (
-              <TimelineTrack
-                key={track.id}
-                track={track}
-                trackIndex={index}
-                trackCount={tracks.length}
-                totalDuration={viewportDuration}
-                onItemSelect={onItemSelect}
-                onDeleteItems={onDeleteItems}
-                onDuplicateItems={onDuplicateItems}
-                onSplitItems={onSplitItems}
-                selectedItemIds={selectedItemIds}
-                onSelectedItemsChange={onSelectedItemsChange}
-                onItemMove={onItemMove}
-                onDragStart={handleDragStart}
-                zoomScale={zoomScale}
-                isDragging={isDragging}
-                draggedItemId={draggedItem?.id}
-                ghostElements={trackGhostElements}
-                isValidDrop={isValidDrop}
-                onContextMenuOpenChange={onContextMenuOpenChange}
-                splittingEnabled={splittingEnabled}
-                hideItemsOnDrag={hideItemsOnDrag}
-                currentFrame={currentFrame}
-                fps={fps}
-                onAddClipAfter={onAddClipAfter}
-              />
+              <React.Fragment key={track.id}>
+                {showSectionDivider && (
+                  <div className="h-px bg-border w-full" style={{ zIndex: 5 }} />
+                )}
+                <TimelineTrack
+                  track={track}
+                  trackIndex={index}
+                  trackCount={tracks.length}
+                  totalDuration={viewportDuration}
+                  onItemSelect={onItemSelect}
+                  onDeleteItems={onDeleteItems}
+                  onDuplicateItems={onDuplicateItems}
+                  onSplitItems={onSplitItems}
+                  selectedItemIds={selectedItemIds}
+                  onSelectedItemsChange={onSelectedItemsChange}
+                  onItemMove={onItemMove}
+                  onDragStart={handleDragStart}
+                  zoomScale={zoomScale}
+                  isDragging={isDragging}
+                  draggedItemId={draggedItem?.id}
+                  ghostElements={trackGhostElements}
+                  isValidDrop={isValidDrop}
+                  onContextMenuOpenChange={onContextMenuOpenChange}
+                  splittingEnabled={splittingEnabled}
+                  hideItemsOnDrag={hideItemsOnDrag}
+                  currentFrame={currentFrame}
+                  fps={fps}
+                  onAddClipAfter={onAddClipAfter}
+                />
+              </React.Fragment>
             );
           })}
           </div>

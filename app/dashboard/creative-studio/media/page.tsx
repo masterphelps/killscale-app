@@ -19,7 +19,6 @@ import type {
 } from '@/components/creative-studio/types'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import Link from 'next/link'
-import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import { useCreativeStudio } from '../creative-studio-context'
 import { useSubscription } from '@/lib/subscription'
 
@@ -46,6 +45,7 @@ export default function AllMediaPage() {
     clearStarred,
     handleSync,
     removeAsset,
+    refresh,
   } = useCreativeStudio()
 
   // View state
@@ -342,28 +342,50 @@ export default function AllMediaPage() {
     setMenuError(null)
 
     try {
-      const res = await fetch('/api/meta/media/delete', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: currentAccountId,
-          mediaId: asset.mediaType === 'video' ? asset.mediaHash : undefined,
-          mediaHash: asset.mediaType === 'image' ? asset.mediaHash : undefined,
-          mediaType: asset.mediaType
+      const isLocalUpload = asset.mediaHash.startsWith('upload_')
+
+      if (isLocalUpload) {
+        // Local upload — just remove from media_library and Supabase Storage (no Meta)
+        const res = await fetch('/api/creative-studio/register-upload', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId.replace(/^act_/, ''),
+            mediaHash: asset.mediaHash,
+          })
         })
-      })
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        if (data.inUse) {
-          setMenuUsageInfo({ inUse: true, usedByAds: data.usedByAds || [] })
-          setMenuError('Media is in use')
-        } else {
+        if (!res.ok) {
+          const data = await res.json()
           setMenuError(data.error || 'Failed to delete')
+          return
         }
-        return
+      } else {
+        // Meta-synced media — delete from Meta
+        const res = await fetch('/api/meta/media/delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            mediaId: asset.mediaType === 'video' ? asset.mediaHash : undefined,
+            mediaHash: asset.mediaType === 'image' ? asset.mediaHash : undefined,
+            mediaType: asset.mediaType
+          })
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          if (data.inUse) {
+            setMenuUsageInfo({ inUse: true, usedByAds: data.usedByAds || [] })
+            setMenuError('Media is in use')
+          } else {
+            setMenuError(data.error || 'Failed to delete')
+          }
+          return
+        }
       }
 
       // Success - remove from local state immediately (no sync needed)
@@ -478,38 +500,42 @@ export default function AllMediaPage() {
     setShowLaunchWizard(true)
   }, [starredIds, assets])
 
-  // Handle file upload to Meta
+  // Handle file upload — Supabase Storage via API (service role). Meta upload deferred to Launch Wizard.
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0 || !user || !currentAccountId) return
 
     setIsUploading(true)
-    setUploadProgress('Fetching token...')
+    const cleanAccountId = currentAccountId.replace(/^act_/, '')
+    let completed = 0
 
     try {
-      const tokenRes = await fetch(`/api/meta/token?userId=${user.id}&adAccountId=${currentAccountId}`)
-      if (!tokenRes.ok) throw new Error('Failed to get access token')
-      const { accessToken } = await tokenRes.json()
-
-      const cleanAccountId = currentAccountId.replace(/^act_/, '')
-      let completed = 0
-
       for (const file of Array.from(files)) {
         const isVideo = file.type.startsWith('video/')
         setUploadProgress(`Uploading ${completed + 1}/${files.length}: ${file.name}`)
 
-        if (isVideo) {
-          await uploadVideoToMeta(file, accessToken, cleanAccountId, (progress) => {
-            setUploadProgress(`Uploading ${completed + 1}/${files.length}: ${file.name} (${progress}%)`)
-          })
-        } else {
-          await uploadImageToMeta(file, accessToken, cleanAccountId)
+        // Send file to our API which uploads to Supabase Storage (service role) + registers in media_library
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('userId', user.id)
+        formData.append('adAccountId', cleanAccountId)
+        formData.append('mediaType', isVideo ? 'video' : 'image')
+        formData.append('name', file.name)
+
+        const res = await fetch('/api/creative-studio/register-upload', {
+          method: 'PUT',
+          body: formData,
+        })
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          console.error('Upload failed:', data.error || res.statusText)
         }
+
         completed++
       }
 
-      setUploadProgress('Syncing...')
-      await handleSync()
+      await refresh()
     } catch (error) {
       console.error('Upload failed:', error)
     } finally {
@@ -517,7 +543,7 @@ export default function AllMediaPage() {
       setUploadProgress('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
-  }, [user, currentAccountId, handleSync])
+  }, [user, currentAccountId, refresh])
 
   // Filter and sort
   const filteredAssets = useMemo(() => {
@@ -1197,13 +1223,47 @@ export default function AllMediaPage() {
               ) : (
                 <Trash2 className="w-4 h-4" />
               )}
-              {menuDeleting ? 'Deleting...' : 'Delete from Meta'}
+              {menuDeleting ? 'Deleting...' : (() => {
+                const a = assets.find(x => x.id === menuItemId)
+                return a?.mediaHash?.startsWith('upload_') ? 'Delete' : 'Delete from Meta'
+              })()}
             </button>
           )}
 
           {menuError && !menuUsageInfo?.inUse && (
-            <div className="px-4 py-2 text-xs text-red-400 border-t border-zinc-700">
-              {menuError}
+            <div className="px-4 py-2 border-t border-zinc-700">
+              <p className="text-xs text-red-400 mb-2">{menuError}</p>
+              <button
+                onClick={async () => {
+                  const asset = assets.find(a => a.id === menuItemId)
+                  if (!asset || !user || !currentAccountId) return
+                  setMenuDeleting(true)
+                  try {
+                    // Force remove from library only (skip Meta)
+                    await fetch('/api/creative-studio/register-upload', {
+                      method: 'DELETE',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        userId: user.id,
+                        adAccountId: currentAccountId.replace(/^act_/, ''),
+                        mediaHash: asset.mediaHash,
+                      })
+                    })
+                    removeAsset(asset.mediaHash)
+                    setMenuItemId(null)
+                    setMenuPosition(null)
+                    setMenuError(null)
+                  } catch {
+                    setMenuError('Failed to remove')
+                  } finally {
+                    setMenuDeleting(false)
+                  }
+                }}
+                disabled={menuDeleting}
+                className="text-xs text-zinc-400 hover:text-zinc-200 underline"
+              >
+                Remove from library only
+              </button>
             </div>
           )}
         </div>

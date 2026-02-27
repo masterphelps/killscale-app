@@ -18,7 +18,7 @@ export const TIMELINE_CONSTANTS = {
   TRACK_ITEM_HEIGHT: 40, // Height of each track item
   
   // Row handles width
-  HANDLE_WIDTH: 94, // Width of row handles column
+  HANDLE_WIDTH: 72, // Width of section labels column
   
   // Timeline markers
   MARKERS_HEIGHT: 40, // Height of time markers area - increased to show labels
