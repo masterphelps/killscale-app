@@ -70,13 +70,11 @@ export default function VideoEditorPage() {
   const [isDirty, setIsDirty] = useState(false)
   const [pendingSaveAfterName, setPendingSaveAfterName] = useState(false)
 
-  // Export (render with overlays baked in)
-  const [isExporting, setIsExporting] = useState(false)
-  const [showExportModal, setShowExportModal] = useState(false)
-  const [exportPhase, setExportPhase] = useState('')
-  const [exportProgress, setExportProgress] = useState(0)
-  const [exportError, setExportError] = useState<string | null>(null)
-  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null)
+  // Render (background job)
+  const [isRendering, setIsRendering] = useState(false)
+  const [renderingVersionId, setRenderingVersionId] = useState<string | null>(null)
+  const [renderToastMessage, setRenderToastMessage] = useState<string | null>(null)
+  const [renderToastType, setRenderToastType] = useState<'progress' | 'success' | 'error'>('progress')
 
   // Project naming
   const [projectName, setProjectName] = useState<string | null>(null)
@@ -88,10 +86,22 @@ export default function VideoEditorPage() {
 
   // Version history
   const [versions, setVersions] = useState<Array<{
-    id: string; version: number; overlay_config: OverlayConfig; render_status: string; created_at: string
+    id: string; version: number; overlay_config: OverlayConfig; render_status: string; rendered_video_url?: string | null; created_at: string
   }>>([])
   const [activeVersion, setActiveVersion] = useState<number | null>(null)
   const [showVersions, setShowVersions] = useState(false)
+
+  // Derive the currently selected version's data
+  const selectedVersionData = activeVersion !== null
+    ? versions.find(v => v.version === activeVersion)
+    : null
+  const isRendered = selectedVersionData?.render_status === 'complete'
+  const renderedVideoUrl = selectedVersionData?.rendered_video_url || null
+
+  // Reset savedToLibrary when switching versions
+  useEffect(() => {
+    setSavedToLibrary(false)
+  }, [activeVersion])
 
   // AI state
   const [isGenerating, setIsGenerating] = useState(false)
@@ -948,36 +958,117 @@ export default function VideoEditorPage() {
     handleAIGenerate?.(`Change the caption style to ${style}`)
   }, [handleAIGenerate])
 
-  // Launch as ad — use ad_copy from job directly + create Creative from video
+  // Launch as ad — use rendered video + ad_copy from job
   const handleLaunchAsAd = useCallback(async () => {
-    if (!user?.id || !videoUrl || !currentAccountId) return
+    if (!user?.id || !currentAccountId || !renderedVideoUrl) return
     setIsPreparingLaunch(true)
     try {
-      // Download video blob to create a File for the wizard
-      const videoRes = await fetch(videoUrl)
+      const videoRes = await fetch(renderedVideoUrl)
       const videoBlob = await videoRes.blob()
       const videoFile = new File([videoBlob], 'video-ad.mp4', { type: 'video/mp4' })
-
-      const creative: Creative = {
-        file: videoFile,
-        preview: videoUrl,
-        type: 'video',
-        uploaded: false,
-      }
-
+      const creative: Creative = { file: videoFile, preview: renderedVideoUrl, type: 'video', uploaded: false }
       setWizardCreatives([creative])
-      setWizardCopy(adCopy ? {
-        primaryText: adCopy.primaryText,
-        headline: adCopy.headline,
-        description: adCopy.description,
-      } : null)
+      setWizardCopy(adCopy ? { primaryText: adCopy.primaryText, headline: adCopy.headline, description: adCopy.description } : null)
       setShowLaunchWizard(true)
     } catch (err) {
       console.error('Failed to prepare ad launch:', err)
     } finally {
       setIsPreparingLaunch(false)
     }
-  }, [user?.id, videoUrl, currentAccountId, adCopy])
+  }, [user?.id, currentAccountId, renderedVideoUrl, adCopy])
+
+  // Render handler — kicks off background render via SSE
+  const handleRender = useCallback(async () => {
+    if (!user?.id || !currentAccountId || isRendering) return
+    if (!selectedVersionData) {
+      alert('Save a version first before rendering.')
+      return
+    }
+
+    setIsRendering(true)
+    setRenderToastMessage(`Rendering v${selectedVersionData.version}...`)
+    setRenderToastType('progress')
+    setRenderingVersionId(selectedVersionData.id)
+
+    try {
+      const config = selectedVersionData.overlay_config || overlayConfigRef.current || { style: 'clean' as const }
+      const body: Record<string, any> = {
+        overlayId: selectedVersionData.id,
+        overlayConfig: config,
+        userId: user.id,
+        adAccountId: currentAccountId,
+        durationInSeconds: durationSec,
+      }
+      if (isComposition && compositionId) {
+        body.compositionId = compositionId
+      } else if (jobId) {
+        body.videoJobId = jobId
+      } else if (videoUrl) {
+        body.videoUrl = videoUrl
+      }
+
+      const res = await fetch('/api/creative-studio/render-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const ct = res.headers.get('content-type') || ''
+      if (ct.includes('application/json')) {
+        const data = await res.json()
+        setRenderToastMessage(data.error || 'Render failed')
+        setRenderToastType('error')
+        setIsRendering(false)
+        setRenderingVersionId(null)
+        setTimeout(() => setRenderToastMessage(null), 5000)
+        return
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No response stream')
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'phase') {
+              setRenderToastMessage(`v${selectedVersionData.version}: ${data.phase}`)
+            } else if (data.type === 'done') {
+              setRenderToastMessage(`v${selectedVersionData.version} rendered successfully`)
+              setRenderToastType('success')
+              setIsRendering(false)
+              setRenderingVersionId(null)
+              if (isComposition) loadCompositionVersions()
+              else loadVersions()
+              setTimeout(() => setRenderToastMessage(null), 4000)
+            } else if (data.type === 'error') {
+              setRenderToastMessage(`Render failed: ${data.message}`)
+              setRenderToastType('error')
+              setIsRendering(false)
+              setRenderingVersionId(null)
+              if (isComposition) loadCompositionVersions()
+              else loadVersions()
+              setTimeout(() => setRenderToastMessage(null), 5000)
+            }
+          } catch { /* skip malformed SSE */ }
+        }
+      }
+    } catch (err) {
+      setRenderToastMessage(`Render failed: ${(err as Error).message}`)
+      setRenderToastType('error')
+      setIsRendering(false)
+      setRenderingVersionId(null)
+      setTimeout(() => setRenderToastMessage(null), 5000)
+    }
+  }, [user?.id, currentAccountId, isRendering, selectedVersionData, durationSec, isComposition, compositionId, jobId, videoUrl, loadVersions, loadCompositionVersions])
 
   // State for AI-generated config that needs to be injected into RVE
   const [aiGeneratedConfig, setAiGeneratedConfig] = useState<OverlayConfig | null>(null)
@@ -1074,6 +1165,7 @@ export default function VideoEditorPage() {
                     key={v.id}
                     version={v}
                     isActive={activeVersion === v.version}
+                    isRendering={renderingVersionId === v.id}
                     videoUrl={videoUrl}
                     durationSec={durationSec}
                     onLoad={(config) => {
@@ -1114,140 +1206,105 @@ export default function VideoEditorPage() {
             setIsComposition={setIsComposition}
           />
 
-          {/* Save to Library */}
+          {/* Render */}
           <button
-            onClick={async () => {
-              if ((!jobId && !compositionId) || !user?.id || !currentAccountId) return
-              setIsSavingToLibrary(true)
-              try {
-                const body: Record<string, string> = { userId: user.id, adAccountId: currentAccountId }
-                if (isComposition && compositionId) {
-                  body.compositionId = compositionId
-                } else if (jobId) {
-                  body.videoJobId = jobId
-                }
-                const res = await fetch('/api/creative-studio/save-video-to-library', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(body),
-                })
-                const data = await res.json()
-                if (data.success) setSavedToLibrary(true)
-                else alert(`Failed to save: ${data.error}`)
-              } catch (err) {
-                console.error('Save to library failed:', err)
-              } finally {
-                setIsSavingToLibrary(false)
-              }
-            }}
-            disabled={isSavingToLibrary || savedToLibrary}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              savedToLibrary
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/20'
-                : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/20 disabled:opacity-50'
-            }`}
-          >
-            {isSavingToLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedToLibrary ? <CheckCircle className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
-            {savedToLibrary ? 'Saved' : 'Library'}
-          </button>
-
-          {/* Export (render with overlays) */}
-          <button
-            onClick={async () => {
-              if (!user?.id || !currentAccountId) return
-              setShowExportModal(true)
-              setIsExporting(true)
-              setExportPhase('Preparing...')
-              setExportProgress(0)
-              setExportError(null)
-              setRenderedVideoUrl(null)
-
-              try {
-                // Save current overlay config first
-                const config = overlayConfigRef.current || { style: 'clean' as const }
-
-                const body: Record<string, any> = {
-                  overlayConfig: config,
-                  userId: user.id,
-                  adAccountId: currentAccountId,
-                  durationInSeconds: durationSec,
-                }
-                if (isComposition && compositionId) {
-                  body.compositionId = compositionId
-                } else if (jobId) {
-                  body.videoJobId = jobId
-                } else if (videoUrl) {
-                  body.videoUrl = videoUrl
-                }
-
-                const res = await fetch('/api/creative-studio/render-video', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(body),
-                })
-
-                // Handle non-SSE error responses (e.g. local dev guard, missing config)
-                const ct = res.headers.get('content-type') || ''
-                if (ct.includes('application/json')) {
-                  const data = await res.json()
-                  setExportError(data.error || 'Export failed')
-                  setIsExporting(false)
-                  return
-                }
-
-                const reader = res.body?.getReader()
-                if (!reader) throw new Error('No response stream')
-
-                const decoder = new TextDecoder()
-                let buffer = ''
-
-                while (true) {
-                  const { done, value } = await reader.read()
-                  if (done) break
-
-                  buffer += decoder.decode(value, { stream: true })
-                  const lines = buffer.split('\n\n')
-                  buffer = lines.pop() || ''
-
-                  for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue
-                    try {
-                      const data = JSON.parse(line.slice(6))
-                      if (data.type === 'phase') {
-                        setExportPhase(data.phase)
-                        setExportProgress(data.progress)
-                      } else if (data.type === 'done') {
-                        setRenderedVideoUrl(data.url)
-                        setIsExporting(false)
-                      } else if (data.type === 'error') {
-                        setExportError(data.message)
-                        setIsExporting(false)
-                      }
-                    } catch { /* skip malformed SSE */ }
-                  }
-                }
-              } catch (err) {
-                setExportError((err as Error).message)
-                setIsExporting(false)
-              }
-            }}
-            disabled={isExporting}
+            onClick={handleRender}
+            disabled={isRendering || activeVersion === null}
+            title={activeVersion === null ? 'Save a version first' : undefined}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 border border-blue-500/20 disabled:opacity-50 transition-colors"
           >
-            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
-            Export
+            {isRendering ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Film className="w-3.5 h-3.5" />}
+            Render
           </button>
 
-          {/* Launch as Ad */}
-          {!isComposition && (adCopy || backCanvasId) && (
+          {/* Separator */}
+          <div className="w-px h-5 bg-border mx-1" />
+
+          {/* Export (download rendered video) */}
+          {isRendered && renderedVideoUrl ? (
+            <a
+              href={renderedVideoUrl}
+              download="exported-video.mp4"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-700/50 text-zinc-200 hover:bg-zinc-600/50 border border-zinc-600/30 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </a>
+          ) : (
+            <span
+              title="Render this version first"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800/30 text-zinc-600 border border-zinc-700/20 cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </span>
+          )}
+
+          {/* Save to Library */}
+          {isRendered ? (
+            <button
+              onClick={async () => {
+                if (!user?.id || !currentAccountId || !renderedVideoUrl) return
+                setIsSavingToLibrary(true)
+                try {
+                  const body: Record<string, string> = { userId: user.id, adAccountId: currentAccountId, renderedVideoUrl }
+                  if (isComposition && compositionId) {
+                    body.compositionId = compositionId
+                  } else if (jobId) {
+                    body.videoJobId = jobId
+                  }
+                  const res = await fetch('/api/creative-studio/save-video-to-library', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  })
+                  const data = await res.json()
+                  if (data.success) setSavedToLibrary(true)
+                  else alert(`Failed to save: ${data.error}`)
+                } catch (err) {
+                  console.error('Save to library failed:', err)
+                } finally {
+                  setIsSavingToLibrary(false)
+                }
+              }}
+              disabled={isSavingToLibrary || savedToLibrary}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                savedToLibrary
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/20'
+                  : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/20 disabled:opacity-50'
+              }`}
+            >
+              {isSavingToLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedToLibrary ? <CheckCircle className="w-3.5 h-3.5" /> : <Library className="w-3.5 h-3.5" />}
+              {savedToLibrary ? 'Saved' : 'Library'}
+            </button>
+          ) : (
+            <span
+              title="Render this version first"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800/30 text-zinc-600 border border-zinc-700/20 cursor-not-allowed"
+            >
+              <Library className="w-3.5 h-3.5" />
+              Library
+            </span>
+          )}
+
+          {/* Create Ad */}
+          {isRendered && !isPreparingLaunch ? (
             <button
               onClick={handleLaunchAsAd}
               disabled={isPreparingLaunch}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border border-orange-500/20 disabled:opacity-50 transition-colors"
             >
-              {isPreparingLaunch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+              <Megaphone className="w-3.5 h-3.5" />
               Create Ad
             </button>
+          ) : (
+            <span
+              title={!isRendered ? 'Render this version first' : 'Preparing...'}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800/30 text-zinc-600 border border-zinc-700/20 cursor-not-allowed"
+            >
+              {isPreparingLaunch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+              Create Ad
+            </span>
           )}
 
         </div>
@@ -1389,116 +1446,6 @@ export default function VideoEditorPage() {
         />
       )}
 
-      {/* Export Progress Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { if (!isExporting) setShowExportModal(false) }}>
-          <div className="bg-bg-card border border-border rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-white">Export Video</h3>
-              {!isExporting && (
-                <button onClick={() => setShowExportModal(false)} className="p-1 rounded-lg text-zinc-400 hover:text-white transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {exportError ? (
-              <div className="text-center py-4">
-                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-3">
-                  <X className="w-6 h-6 text-red-400" />
-                </div>
-                <p className="text-sm text-red-400 mb-1">Export failed</p>
-                <p className="text-xs text-zinc-500 mb-4">{exportError}</p>
-                <button
-                  onClick={() => setShowExportModal(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-medium bg-bg-hover text-zinc-300 hover:bg-bg-card transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            ) : renderedVideoUrl ? (
-              <div className="text-center py-4">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
-                  <CheckCircle className="w-6 h-6 text-emerald-400" />
-                </div>
-                <p className="text-sm text-emerald-300 mb-4">Export complete!</p>
-                <div className="flex gap-2 justify-center">
-                  <a
-                    href={renderedVideoUrl}
-                    download="exported-video.mp4"
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-bg-hover text-zinc-300 hover:bg-bg-card transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Download
-                  </a>
-                  <button
-                    onClick={async () => {
-                      if (!user?.id || !currentAccountId) return
-                      setIsSavingToLibrary(true)
-                      try {
-                        const saveBody: Record<string, string> = {
-                          userId: user.id,
-                          adAccountId: currentAccountId,
-                          renderedVideoUrl,
-                        }
-                        if (isComposition && compositionId) {
-                          saveBody.compositionId = compositionId
-                        } else if (jobId) {
-                          saveBody.videoJobId = jobId
-                        }
-                        const res = await fetch('/api/creative-studio/save-video-to-library', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(saveBody),
-                        })
-                        const data = await res.json()
-                        if (data.success) {
-                          setSavedToLibrary(true)
-                          setShowExportModal(false)
-                        } else {
-                          alert(`Failed to save: ${data.error}`)
-                        }
-                      } catch (err) {
-                        console.error('Save to library failed:', err)
-                      } finally {
-                        setIsSavingToLibrary(false)
-                      }
-                    }}
-                    disabled={isSavingToLibrary || savedToLibrary}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/20 disabled:opacity-50 transition-colors"
-                  >
-                    {isSavingToLibrary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedToLibrary ? <CheckCircle className="w-3.5 h-3.5" /> : <Library className="w-3.5 h-3.5" />}
-                    {savedToLibrary ? 'Saved' : 'Save to Library'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                {/* Progress ring */}
-                <div className="relative w-20 h-20 mx-auto mb-4">
-                  <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-                    <circle cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="4" fill="none" className="text-zinc-800" />
-                    <circle
-                      cx="40" cy="40" r="36"
-                      stroke="currentColor" strokeWidth="4" fill="none"
-                      className="text-blue-400 transition-all duration-300"
-                      strokeDasharray={`${2 * Math.PI * 36}`}
-                      strokeDashoffset={`${2 * Math.PI * 36 * (1 - exportProgress)}`}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-sm font-medium text-white">{Math.round(exportProgress * 100)}%</span>
-                  </div>
-                </div>
-                <p className="text-sm text-zinc-300 mb-1">{exportPhase}</p>
-                <p className="text-[10px] text-zinc-600">This may take a minute...</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Launch Wizard for creating Meta ads from video */}
       {showLaunchWizard && currentAccountId && (
         <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
@@ -1535,6 +1482,25 @@ export default function VideoEditorPage() {
             preloadedCreatives={wizardCreatives}
             initialCopy={wizardCopy || undefined}
           />
+        </div>
+      )}
+
+      {/* Render toast notification */}
+      {renderToastMessage && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-sm transition-all ${
+          renderToastType === 'success'
+            ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-200'
+            : renderToastType === 'error'
+              ? 'bg-red-950/90 border-red-500/30 text-red-200'
+              : 'bg-zinc-900/90 border-zinc-700/50 text-zinc-200'
+        }`}>
+          {renderToastType === 'progress' && <Loader2 className="w-4 h-4 animate-spin text-blue-400 flex-shrink-0" />}
+          {renderToastType === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />}
+          {renderToastType === 'error' && <X className="w-4 h-4 text-red-400 flex-shrink-0" />}
+          <span className="text-sm">{renderToastMessage}</span>
+          <button onClick={() => setRenderToastMessage(null)} className="ml-2 p-0.5 rounded hover:bg-white/10 transition-colors">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>
@@ -1728,29 +1694,39 @@ function SaveButton({
 }
 
 /**
- * Version load button
+ * Version load button with render status indicators
  */
 function VersionButton({
   version,
   isActive,
+  isRendering,
   videoUrl,
   durationSec,
   onLoad,
 }: {
-  version: { id: string; version: number; overlay_config: OverlayConfig; created_at: string }
+  version: { id: string; version: number; overlay_config: OverlayConfig; render_status: string; rendered_video_url?: string | null; created_at: string }
   isActive: boolean
+  isRendering?: boolean
   videoUrl: string
   durationSec: number
   onLoad: (config: OverlayConfig) => void
 }) {
+  const isComplete = version.render_status === 'complete'
+  const isFailed = version.render_status === 'failed'
+
   return (
     <button
       onClick={() => onLoad(version.overlay_config)}
-      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+      className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
         isActive ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-400 hover:bg-bg-hover'
       }`}
     >
-      v{version.version} &middot; {new Date(version.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+      <span className="flex-1">
+        v{version.version} &middot; {new Date(version.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+      </span>
+      {isRendering && <Loader2 className="w-3 h-3 animate-spin text-blue-400 flex-shrink-0" />}
+      {!isRendering && isComplete && <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" title="Rendered" />}
+      {!isRendering && isFailed && <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" title="Render failed" />}
     </button>
   )
 }
