@@ -9,7 +9,7 @@ import { OverlayType } from '@/lib/rve/types'
 import type { Overlay, ClipOverlay } from '@/lib/rve/types'
 import { ReactVideoEditor, type SiblingClip } from '@/lib/rve/components/react-video-editor'
 import { stubRenderer } from '@/lib/rve/stub-renderer'
-import { overlayConfigToRVEOverlays, rveOverlaysToOverlayConfig } from '@/lib/rve-bridge'
+import { overlayConfigToRVEOverlays, rveOverlaysToOverlayConfig, META_TAG_MUSIC } from '@/lib/rve-bridge'
 import { createKillScaleImageAdaptor, createKillScaleVideoAdaptor } from '@/lib/rve/adaptors/killscale-media-adaptor'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { CreativeStudioMediaModal, type SelectedMediaItem } from '@/components/creative-studio/creative-studio-media-modal'
@@ -936,6 +936,10 @@ export default function VideoEditorPage() {
     const allOverlays = [...current, newOverlay]
     const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
     window.dispatchEvent(event)
+
+    // Immediately sync overlayConfigRef so subsequent AI generation reads the CTA
+    const updatedConfig = rveOverlaysToOverlayConfig(allOverlays as Overlay[], overlayConfigRef.current)
+    overlayConfigRef.current = updatedConfig
   }, [durationSec])
 
   const handleAddMedia = useCallback((item: { id: string; name: string; mediaType: 'VIDEO' | 'IMAGE'; thumbnailUrl?: string; storageUrl?: string }) => {
@@ -944,9 +948,40 @@ export default function VideoEditorPage() {
   }, [])
 
   const handleAddMusic = useCallback((trackUrl: string, title: string, duration: number) => {
-    // TODO: Add SoundOverlay to timeline via ks-inject-overlays event
-    console.log('Add music track:', title, trackUrl, duration)
-  }, [])
+    const current = currentOverlaysRef.current
+    const newId = current.length > 0 ? Math.max(...current.map(o => o.id)) + 1 : 0
+    const totalFrames = Math.round(durationSec * FPS)
+    const trackFrames = Math.min(Math.round(duration * FPS), totalFrames)
+
+    const newOverlay: Overlay = {
+      id: newId,
+      type: OverlayType.SOUND,
+      content: title,
+      src: trackUrl,
+      from: 0,
+      durationInFrames: trackFrames,
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+      row: (current.length > 0 ? Math.max(...current.map(o => o.row)) : 0) + 1,
+      isDragging: false,
+      rotation: 0,
+      styles: {
+        volume: 0.5,
+        // @ts-expect-error — custom metadata property
+        __ksTag: META_TAG_MUSIC,
+      },
+    }
+
+    const allOverlays = [...current, newOverlay]
+    const event = new CustomEvent('ks-inject-overlays', { detail: { overlays: allOverlays } })
+    window.dispatchEvent(event)
+
+    // Immediately sync overlayConfigRef so save/AI generation captures the music track
+    const updatedConfig = rveOverlaysToOverlayConfig(allOverlays, overlayConfigRef.current)
+    overlayConfigRef.current = updatedConfig
+  }, [durationSec])
 
   const handleAddText = useCallback((preset: { label: string; fontSize: number; fontWeight: string }) => {
     handleAIGenerate?.(`Add a ${preset.label.toLowerCase()} text overlay that says "${preset.label}"`)

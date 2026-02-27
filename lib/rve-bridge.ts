@@ -9,6 +9,7 @@ import type {
   OverlayConfig,
   AppendedClip,
   VideoClipEdit,
+  MusicTrack,
   HookOverlay as KSHookOverlay,
   CaptionOverlay as KSCaptionOverlay,
   CTAOverlay as KSCTAOverlay,
@@ -25,6 +26,7 @@ import {
   type CaptionOverlay as RVECaptionOverlay,
   type ImageOverlay,
   type SoundOverlay,
+  type CTAOverlay as RVECTAOverlay,
   type Caption,
 } from '@/lib/rve/types'
 
@@ -55,6 +57,8 @@ const META_TAG_GRAPHIC = '__ks_graphic'
 const META_TAG_CAPTION = '__ks_caption'
 const META_TAG_ENDCARD_BG = '__ks_endcard_bg'
 const META_TAG_ENDCARD_TEXT = '__ks_endcard_text'
+const META_TAG_VOICEOVER = '__ks_voiceover'
+export const META_TAG_MUSIC = '__ks_music'
 
 let nextId = 1000 // start high to avoid collisions with RVE's own IDs
 
@@ -97,6 +101,7 @@ export function overlayConfigToRVEOverlays(
   const ctaRow = config.cta ? nextRow++ : -1
   const graphicsRow = config.graphics?.length ? nextRow++ : -1
   const voiceoverRow = config.voiceoverUrl ? nextRow++ : -1
+  const musicRow = config.musicTracks?.length ? nextRow++ : -1
   const videoRow = nextRow++
   // End card gets its own rows after video
   const endCardBgRow = config.endCard ? nextRow++ : -1
@@ -279,7 +284,7 @@ export function overlayConfigToRVEOverlays(
     })
   }
 
-  // 5. Voiceover → SoundOverlay
+  // 5. Voiceover → SoundOverlay (tagged to distinguish from music)
   if (config.voiceoverUrl) {
     overlays.push({
       id: genId(),
@@ -297,8 +302,36 @@ export function overlayConfigToRVEOverlays(
       rotation: 0,
       styles: {
         volume: 1,
+        // @ts-expect-error — custom metadata property
+        __ksTag: META_TAG_VOICEOVER,
       },
     } satisfies SoundOverlay)
+  }
+
+  // 5b. Music tracks → SoundOverlay (no voiceover tag)
+  if (config.musicTracks) {
+    for (const track of config.musicTracks) {
+      overlays.push({
+        id: genId(),
+        type: OverlayType.SOUND,
+        content: track.title,
+        src: track.src,
+        from: track.fromFrame,
+        durationInFrames: track.durationFrames,
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        row: musicRow,
+        isDragging: false,
+        rotation: 0,
+        styles: {
+          volume: track.volume ?? 1,
+          // @ts-expect-error — custom metadata property
+          __ksTag: META_TAG_MUSIC,
+        },
+      } satisfies SoundOverlay)
+    }
   }
 
   // 6. Video clips — restore from saved edits (videoClips) or create full-length default
@@ -653,6 +686,25 @@ export function rveOverlaysToOverlayConfig(
         opacity: img.styles?.opacity ?? 1,
       })
     }
+
+    // Handle sidebar-created CTA overlays (type OverlayType.CTA, NOT TEXT with __ksTag)
+    if (o.type === OverlayType.CTA) {
+      const ctaOverlay = o as RVECTAOverlay
+      const ci = getClipIndex(ctaOverlay.from, ctaOverlay.durationInFrames)
+      const clipFrom = clipRanges[ci]?.from || 0
+      const anim = ctaOverlay.styles.animation
+      const extracted: KSCTAOverlay = {
+        buttonText: ctaOverlay.content,
+        startSec: framesToSec(ctaOverlay.from - (ci === 0 ? 0 : clipFrom), fps),
+        animation: existingConfig?.cta?.animation || 'pop',
+        animationEnter: anim?.enter || existingConfig?.cta?.animationEnter,
+        animationExit: anim?.exit || existingConfig?.cta?.animationExit,
+        buttonColor: ctaOverlay.styles.backgroundColor !== 'transparent' ? ctaOverlay.styles.backgroundColor : undefined,
+        fontSize: parseInt(ctaOverlay.styles.fontSize) || 32,
+      }
+      if (ci === 0) cta = extracted
+      perClipCTAs[ci] = extracted
+    }
   }
 
   // Build appended clips with per-clip overlay configs (legacy format)
@@ -691,14 +743,51 @@ export function rveOverlaysToOverlayConfig(
     return vc
   })
 
-  // Extract voiceover URL from sound overlays
+  // Extract voiceover URL from tagged sound overlays only (not music tracks)
   let voiceoverUrl: string | undefined
   for (const o of overlays) {
     if (o.type === OverlayType.SOUND) {
       const sound = o as SoundOverlay
-      if (sound.src) {
+      const tag = (sound.styles as any)?.__ksTag
+      if (tag === META_TAG_VOICEOVER && sound.src) {
         voiceoverUrl = sound.src
         break
+      }
+    }
+  }
+  // Fallback: if no tagged voiceover found but content is 'Voiceover', use that
+  // (handles overlays created before tagging was added)
+  if (!voiceoverUrl) {
+    for (const o of overlays) {
+      if (o.type === OverlayType.SOUND) {
+        const sound = o as SoundOverlay
+        const tag = (sound.styles as any)?.__ksTag
+        // Never treat music-tagged sounds as voiceover
+        if (tag === META_TAG_MUSIC) continue
+        if (sound.content === 'Voiceover' && sound.src) {
+          voiceoverUrl = sound.src
+          break
+        }
+      }
+    }
+  }
+
+  // Extract music tracks (non-voiceover sound overlays)
+  const musicTracks: MusicTrack[] = []
+  for (const o of overlays) {
+    if (o.type === OverlayType.SOUND) {
+      const sound = o as SoundOverlay
+      const tag = (sound.styles as any)?.__ksTag
+      // Skip voiceover-tagged sounds and legacy 'Voiceover' content sounds
+      if (tag === META_TAG_VOICEOVER || sound.content === 'Voiceover') continue
+      if (sound.src) {
+        musicTracks.push({
+          src: sound.src,
+          title: sound.content || 'Music',
+          fromFrame: sound.from,
+          durationFrames: sound.durationInFrames,
+          volume: sound.styles?.volume,
+        })
       }
     }
   }
@@ -722,6 +811,7 @@ export function rveOverlaysToOverlayConfig(
     brandColor: existingConfig?.brandColor,
     accentColor: existingConfig?.accentColor,
     voiceoverUrl: voiceoverUrl || existingConfig?.voiceoverUrl,
+    musicTracks: musicTracks.length > 0 ? musicTracks : existingConfig?.musicTracks,
     appendedClips: appendedClips.length > 0 ? appendedClips : existingConfig?.appendedClips,
     videoClips: videoClips.length > 0 ? videoClips : undefined,
   }

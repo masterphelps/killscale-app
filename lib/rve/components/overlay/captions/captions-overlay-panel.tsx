@@ -6,7 +6,7 @@ import { CaptionOverlay, OverlayType } from "../../../types";
 import { CaptionSettings } from "./caption-settings";
 import { CaptionsErrorDisplay } from "./captions-error-display";
 import { useCaptions } from "../../../hooks/use-captions";
-import { Upload, FileText, Loader2, AlertTriangle } from "lucide-react";
+import { Upload, FileText, Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "../../ui/alert";
 
 /**
@@ -42,6 +42,7 @@ export const CaptionsOverlayPanel: React.FC = () => {
     selectedOverlayId,
     setSelectedOverlayId,
     changeOverlay,
+    deleteOverlay,
     currentFrame,
   } = useEditorContext();
 
@@ -83,6 +84,13 @@ export const CaptionsOverlayPanel: React.FC = () => {
   }, [selectedOverlayId, setSelectedOverlayId]);
 
   const handleUpdateOverlay = (updatedOverlay: CaptionOverlay) => {
+    // If all captions were deleted, remove the overlay entirely and show create UI
+    if (!updatedOverlay.captions || updatedOverlay.captions.length === 0) {
+      deleteOverlay(updatedOverlay.id);
+      setLocalOverlay(null);
+      setSelectedOverlayId(null);
+      return;
+    }
     setLocalOverlay(updatedOverlay);
     changeOverlay(updatedOverlay.id, () => updatedOverlay);
   };
@@ -246,14 +254,31 @@ export const CaptionsOverlayPanel: React.FC = () => {
           </div>
         </>
       ) : (
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <CaptionSettings
-            currentFrame={currentFrame}
-            localOverlay={localOverlay}
-            setLocalOverlay={handleUpdateOverlay}
-            startFrame={localOverlay.from}
-            captions={localOverlay.captions}
-          />
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0">
+            <CaptionSettings
+              currentFrame={currentFrame}
+              localOverlay={localOverlay}
+              setLocalOverlay={handleUpdateOverlay}
+              startFrame={localOverlay.from}
+              captions={localOverlay.captions}
+            />
+          </div>
+          <div className="flex-shrink-0 px-2 pb-2 pt-1 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
+              onClick={() => {
+                deleteOverlay(localOverlay.id);
+                setLocalOverlay(null);
+                setSelectedOverlayId(null);
+              }}
+            >
+              <Trash2 className="w-3 h-3 mr-1.5" />
+              Remove All Captions
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -12,6 +12,7 @@ interface CaptionTimelineContainerProps {
   onInputChange: (index: number, field: 'startMs' | 'endMs', value: string) => void;
   onTimingChange: (index: number, field: 'startMs' | 'endMs', value: string) => void;
   onTextChange: (index: number, text: string) => void;
+  onDeleteCaption?: (index: number) => void;
 }
 
 export const CaptionTimelineContainer: React.FC<CaptionTimelineContainerProps> = ({
@@ -24,6 +25,7 @@ export const CaptionTimelineContainer: React.FC<CaptionTimelineContainerProps> =
   onInputChange,
   onTimingChange,
   onTextChange,
+  onDeleteCaption,
 }) => {
   return (
     <div
@@ -53,6 +55,7 @@ export const CaptionTimelineContainer: React.FC<CaptionTimelineContainerProps> =
             onInputChange={onInputChange}
             onTimingChange={onTimingChange}
             onTextChange={onTextChange}
+            onDelete={onDeleteCaption}
           />
         );
       })}

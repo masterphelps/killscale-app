@@ -160,6 +160,48 @@ export const useCaptionTimeline = ({
     });
   };
 
+  const handleDeleteCaption = (captionIndex: number) => {
+    if (!localOverlay?.captions) return
+    const newCaptions = localOverlay.captions.filter((_, i) => i !== captionIndex)
+
+    // Clear any timing errors for deleted and shifted indices
+    setTimingErrors({})
+    setInputValues({})
+
+    if (newCaptions.length === 0) {
+      // Signal empty captions — parent will handle removing the overlay
+      setLocalOverlay({ ...localOverlay, captions: [] })
+      return
+    }
+
+    // Recalculate container timing from remaining captions
+    const minStart = Math.min(...newCaptions.map(c => c.startMs))
+    const maxEnd = Math.max(...newCaptions.map(c => c.endMs))
+    const fps = 30
+    const overlayStartSec = localOverlay.from / fps
+    const newFromSec = overlayStartSec + minStart / 1000
+    const newDurSec = (maxEnd - minStart) / 1000
+
+    // Shift caption times so they're relative to the new container start
+    const shiftedCaptions = newCaptions.map(c => ({
+      ...c,
+      startMs: c.startMs - minStart,
+      endMs: c.endMs - minStart,
+      words: c.words?.map(w => ({
+        ...w,
+        startMs: w.startMs - minStart,
+        endMs: w.endMs - minStart,
+      })),
+    }))
+
+    setLocalOverlay({
+      ...localOverlay,
+      from: Math.round(newFromSec * fps),
+      durationInFrames: Math.max(1, Math.round(newDurSec * fps)),
+      captions: shiftedCaptions,
+    })
+  }
+
   const handleTimingChange = (captionIndex: number, field: 'startMs' | 'endMs', timeString: string) => {
     if (!localOverlay?.captions) return;
 
@@ -237,5 +279,6 @@ export const useCaptionTimeline = ({
     handleInputChange,
     handleCaptionTextChange,
     handleTimingChange,
+    handleDeleteCaption,
   };
 }; 

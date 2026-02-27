@@ -55,6 +55,7 @@ export const CaptionTimeline: React.FC<CaptionTimelineProps> = ({
     handleInputChange,
     handleCaptionTextChange,
     handleTimingChange,
+    handleDeleteCaption,
   } = useCaptionTimeline({
     localOverlay,
     setLocalOverlay,
@@ -72,6 +73,7 @@ export const CaptionTimeline: React.FC<CaptionTimelineProps> = ({
       onInputChange={handleInputChange}
       onTimingChange={handleTimingChange}
       onTextChange={handleCaptionTextChange}
+      onDeleteCaption={handleDeleteCaption}
     />
   );
 };

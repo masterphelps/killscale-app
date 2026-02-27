@@ -4,6 +4,7 @@ import { Caption } from "../../../types";
 import { cn } from "../../../utils/general/utils";
 import { CaptionTimeInput } from "./caption-time-input";
 import { CaptionTextEditor } from "./caption-text-editor";
+import { Trash2 } from "lucide-react";
 
 interface CaptionItemProps {
   caption: Caption;
@@ -16,6 +17,7 @@ interface CaptionItemProps {
   onInputChange: (index: number, field: 'startMs' | 'endMs', value: string) => void;
   onTimingChange: (index: number, field: 'startMs' | 'endMs', value: string) => void;
   onTextChange: (index: number, text: string) => void;
+  onDelete?: (index: number) => void;
 }
 
 export const CaptionItem = forwardRef<HTMLDivElement, CaptionItemProps>(
@@ -30,12 +32,13 @@ export const CaptionItem = forwardRef<HTMLDivElement, CaptionItemProps>(
     onInputChange,
     onTimingChange,
     onTextChange,
+    onDelete,
   }, ref) => {
     return (
       <Card
         ref={ref}
         className={cn(
-          "bg-background group transition-all duration-200 rounded-sm",
+          "bg-background group transition-all duration-200 rounded-sm relative",
           isActive
             ? "bg-background text-foreground border border-caption-overlay"
             : isUpcoming || isPast
@@ -43,6 +46,16 @@ export const CaptionItem = forwardRef<HTMLDivElement, CaptionItemProps>(
             : "border bg-muted text-muted-foreground hover:bg-caption-item/5 hover:border-caption-item/50"
         )}
       >
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(index)}
+            className="absolute top-1.5 right-1.5 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            title="Delete caption"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
         <CardContent className="p-3 space-y-2 rounded-sm">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
