@@ -78,6 +78,15 @@ export interface VideoClipEdit {
   animation?: { enter?: string; exit?: string }
 }
 
+/** Persisted music track on the timeline */
+export interface MusicTrack {
+  src: string
+  title: string
+  fromFrame: number
+  durationFrames: number
+  volume?: number
+}
+
 export interface OverlayConfig {
   hook?: HookOverlay
   captions?: CaptionOverlay[]
@@ -88,6 +97,7 @@ export interface OverlayConfig {
   brandColor?: string
   accentColor?: string
   voiceoverUrl?: string
+  musicTracks?: MusicTrack[]
   appendedClips?: AppendedClip[]
   videoClips?: VideoClipEdit[]  // persisted video clip edits (cuts/trims/splits)
 }
