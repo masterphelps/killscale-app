@@ -1,7 +1,7 @@
 import React from 'react'
 import { Composition } from 'remotion'
 import { AdOverlay } from './AdOverlay'
-import type { OverlayConfig } from './types'
+import type { AdOverlayProps, OverlayConfig } from './types'
 
 // Default overlay config for Remotion Studio preview
 const defaultOverlayConfig: OverlayConfig = {
@@ -29,6 +29,17 @@ const defaultOverlayConfig: OverlayConfig = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AdOverlayComp = AdOverlay as any
 
+const FPS = 30
+
+// Dynamic duration from inputProps — renders the full timeline length
+const calculateMetadata = ({ props }: { props: AdOverlayProps }) => {
+  const duration = props.durationInSeconds || 10
+  return {
+    durationInFrames: Math.max(1, Math.round(duration * FPS)),
+    fps: FPS,
+  }
+}
+
 export const RemotionRoot: React.FC = () => {
   return (
     <>
@@ -37,7 +48,7 @@ export const RemotionRoot: React.FC = () => {
         id="AdOverlay"
         component={AdOverlayComp}
         durationInFrames={300}
-        fps={30}
+        fps={FPS}
         width={1080}
         height={1920}
         defaultProps={{
@@ -45,13 +56,14 @@ export const RemotionRoot: React.FC = () => {
           durationInSeconds: 10,
           overlayConfig: defaultOverlayConfig,
         }}
+        calculateMetadata={calculateMetadata}
       />
       {/* 1:1 square ad (Feed) */}
       <Composition
         id="AdOverlaySquare"
         component={AdOverlayComp}
         durationInFrames={300}
-        fps={30}
+        fps={FPS}
         width={1080}
         height={1080}
         defaultProps={{
@@ -59,13 +71,14 @@ export const RemotionRoot: React.FC = () => {
           durationInSeconds: 10,
           overlayConfig: defaultOverlayConfig,
         }}
+        calculateMetadata={calculateMetadata}
       />
       {/* 16:9 landscape ad (YouTube) */}
       <Composition
         id="AdOverlayLandscape"
         component={AdOverlayComp}
         durationInFrames={300}
-        fps={30}
+        fps={FPS}
         width={1920}
         height={1080}
         defaultProps={{
@@ -73,6 +86,7 @@ export const RemotionRoot: React.FC = () => {
           durationInSeconds: 10,
           overlayConfig: defaultOverlayConfig,
         }}
+        calculateMetadata={calculateMetadata}
       />
     </>
   )
