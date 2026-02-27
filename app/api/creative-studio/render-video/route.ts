@@ -56,6 +56,7 @@ export async function POST(req: Request) {
     durationInSeconds?: number
     width?: number
     height?: number
+    overlayId?: string
   }
 
   try {
@@ -153,52 +154,75 @@ export async function POST(req: Request) {
         return
       }
 
-      // ── Create overlay record with render_status = 'rendering' ──
-      const parentField = compositionId
-        ? { composition_id: compositionId, video_job_id: null }
-        : videoJobId
-          ? { video_job_id: videoJobId, composition_id: null }
-          : { video_job_id: null, composition_id: null }
-
-      // Get next version number
-      const versionFilter = compositionId
-        ? { composition_id: compositionId }
-        : videoJobId
-          ? { video_job_id: videoJobId }
-          : null
-
-      let nextVersion = 1
-      if (versionFilter) {
-        const filterKey = Object.keys(versionFilter)[0]
-        const filterVal = Object.values(versionFilter)[0]
-        const { data: maxVersionRow } = await supabaseAdmin
+      // ── Create or update overlay record with render_status = 'rendering' ──
+      if (body.overlayId) {
+        // Update existing overlay row — re-render an existing version
+        const { data: existingOverlay, error: existingError } = await supabaseAdmin
           .from('video_overlays')
-          .select('version')
-          .eq(filterKey, filterVal)
-          .order('version', { ascending: false })
-          .limit(1)
+          .update({
+            render_status: 'rendering',
+            overlay_config: overlayConfig,
+            rendered_video_url: null,
+          })
+          .eq('id', body.overlayId)
+          .eq('user_id', userId)
+          .select('id')
           .single()
-        nextVersion = (maxVersionRow?.version ?? 0) + 1
-      }
 
-      const { data: overlay, error: overlayError } = await supabaseAdmin
-        .from('video_overlays')
-        .insert({
-          ...parentField,
-          user_id: userId,
-          version: nextVersion,
-          overlay_config: overlayConfig,
-          render_status: 'rendering',
-        })
-        .select('id')
-        .single()
+        if (existingError || !existingOverlay) {
+          console.error('Failed to update existing overlay record:', existingError)
+          await send({ type: 'error', message: 'Overlay version not found or unauthorized' })
+          return
+        }
+        overlayId = existingOverlay.id
+      } else {
+        // Create new overlay row — existing behavior
+        const parentField = compositionId
+          ? { composition_id: compositionId, video_job_id: null }
+          : videoJobId
+            ? { video_job_id: videoJobId, composition_id: null }
+            : { video_job_id: null, composition_id: null }
 
-      if (overlayError || !overlay) {
-        console.error('Failed to create overlay record:', overlayError)
-        await send({ type: 'error', message: 'Failed to create render record' })
-        return
+        // Get next version number
+        const versionFilter = compositionId
+          ? { composition_id: compositionId }
+          : videoJobId
+            ? { video_job_id: videoJobId }
+            : null
+
+        let nextVersion = 1
+        if (versionFilter) {
+          const filterKey = Object.keys(versionFilter)[0]
+          const filterVal = Object.values(versionFilter)[0]
+          const { data: maxVersionRow } = await supabaseAdmin
+            .from('video_overlays')
+            .select('version')
+            .eq(filterKey, filterVal)
+            .order('version', { ascending: false })
+            .limit(1)
+            .single()
+          nextVersion = (maxVersionRow?.version ?? 0) + 1
+        }
+
+        const { data: overlay, error: overlayError } = await supabaseAdmin
+          .from('video_overlays')
+          .insert({
+            ...parentField,
+            user_id: userId,
+            version: nextVersion,
+            overlay_config: overlayConfig,
+            render_status: 'rendering',
+          })
+          .select('id')
+          .single()
+
+        if (overlayError || !overlay) {
+          console.error('Failed to create overlay record:', overlayError)
+          await send({ type: 'error', message: 'Failed to create render record' })
+          return
+        }
+        overlayId = overlay.id
       }
-      overlayId = overlay.id
 
       // ── Create sandbox ──
       await send({ type: 'phase', phase: 'Creating render environment...', progress: 0 })
@@ -369,11 +393,19 @@ export async function POST(req: Request) {
         const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
         console.error('[RenderVideo] Render failed:', errDetail)
         if (overlayId) {
-          // Delete the overlay row on failure — failed renders shouldn't pollute version history
-          await supabaseAdmin
-            .from('video_overlays')
-            .delete()
-            .eq('id', overlayId)
+          if (body.overlayId) {
+            // Existing version — mark as failed, don't delete
+            await supabaseAdmin
+              .from('video_overlays')
+              .update({ render_status: 'failed' })
+              .eq('id', overlayId)
+          } else {
+            // Newly created version — delete the orphaned row
+            await supabaseAdmin
+              .from('video_overlays')
+              .delete()
+              .eq('id', overlayId)
+          }
         }
         await send({ type: 'error', message: errMsg })
       } finally {
@@ -385,11 +417,19 @@ export async function POST(req: Request) {
       const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
       console.error('[RenderVideo] Setup failed:', errDetail)
       if (overlayId) {
-        // Delete the overlay row on failure — failed renders shouldn't pollute version history
-        await supabaseAdmin
-          .from('video_overlays')
-          .delete()
-          .eq('id', overlayId)
+        if (body.overlayId) {
+          // Existing version — mark as failed, don't delete
+          await supabaseAdmin
+            .from('video_overlays')
+            .update({ render_status: 'failed' })
+            .eq('id', overlayId)
+        } else {
+          // Newly created version — delete the orphaned row
+          await supabaseAdmin
+            .from('video_overlays')
+            .delete()
+            .eq('id', overlayId)
+        }
       }
       await send({ type: 'error', message: errMsg })
       await writer.close().catch(() => {})
