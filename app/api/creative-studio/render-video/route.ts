@@ -17,7 +17,8 @@ if (process.env.GCP_SERVICE_ACCOUNT_EMAIL && !process.env.REMOTION_GCP_CLIENT_EM
   process.env.REMOTION_GCP_CLIENT_EMAIL = process.env.GCP_SERVICE_ACCOUNT_EMAIL
 }
 if (process.env.GCP_SERVICE_ACCOUNT_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY) {
-  process.env.REMOTION_GCP_PRIVATE_KEY = process.env.GCP_SERVICE_ACCOUNT_KEY
+  // Convert literal \n to real newlines (Vercel stores PEM keys with escaped newlines)
+  process.env.REMOTION_GCP_PRIVATE_KEY = process.env.GCP_SERVICE_ACCOUNT_KEY.replace(/\\n/g, '\n')
 }
 if (process.env.GOOGLE_CLOUD_PROJECT && !process.env.REMOTION_GCP_PROJECT_ID) {
   process.env.REMOTION_GCP_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT
