@@ -27,20 +27,56 @@ function selectCompositionId(width?: number, height?: number): string {
   return 'RVERender' // 9:16
 }
 
+// Map GCP env vars → REMOTION_GCP_* format expected by @remotion/cloudrun SDK
+if (process.env.GCP_SERVICE_ACCOUNT_EMAIL && !process.env.REMOTION_GCP_CLIENT_EMAIL) {
+  process.env.REMOTION_GCP_CLIENT_EMAIL = process.env.GCP_SERVICE_ACCOUNT_EMAIL
+}
+if (process.env.GOOGLE_CLOUD_PROJECT && !process.env.REMOTION_GCP_PROJECT_ID) {
+  process.env.REMOTION_GCP_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT
+}
+if (process.env.GCP_SERVICE_ACCOUNT_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY) {
+  process.env.REMOTION_GCP_PRIVATE_KEY = process.env.GCP_SERVICE_ACCOUNT_KEY
+}
+
 export async function POST(req: Request) {
   // Vercel stores PEM keys with literal \n text — OpenSSL needs real newlines
-  if (process.env.REMOTION_GCP_PRIVATE_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY.includes('\n')) {
-    // Key is stored as single line with literal backslash-n sequences
-    process.env.REMOTION_GCP_PRIVATE_KEY = process.env.REMOTION_GCP_PRIVATE_KEY.split(String.raw`\n`).join('\n')
+  const pk = process.env.REMOTION_GCP_PRIVATE_KEY || ''
+  const hasRealNewlines = pk.includes('\n')
+  const hasLiteralBackslashN = pk.includes('\\n')
+  const startsWithBegin = pk.startsWith('-----BEGIN')
+  const endsWithEnd = pk.trimEnd().endsWith('-----')
+  console.log('[RenderVideo] GCP Auth Diagnostics:', JSON.stringify({
+    REMOTION_GCP_CLIENT_EMAIL: process.env.REMOTION_GCP_CLIENT_EMAIL ? `${process.env.REMOTION_GCP_CLIENT_EMAIL.slice(0, 10)}...` : 'MISSING',
+    REMOTION_GCP_PROJECT_ID: process.env.REMOTION_GCP_PROJECT_ID || 'MISSING',
+    REMOTION_GCP_PRIVATE_KEY_length: pk.length,
+    REMOTION_GCP_PRIVATE_KEY_first50: pk.slice(0, 50),
+    hasRealNewlines,
+    hasLiteralBackslashN,
+    startsWithBegin,
+    endsWithEnd,
+    REMOTION_GCP_REGION: process.env.REMOTION_GCP_REGION || 'MISSING',
+    REMOTION_CLOUDRUN_URL: process.env.REMOTION_CLOUDRUN_URL ? 'SET' : 'MISSING',
+    // Check bridging source vars
+    GCP_SERVICE_ACCOUNT_EMAIL: process.env.GCP_SERVICE_ACCOUNT_EMAIL ? 'SET' : 'MISSING',
+    GCP_SERVICE_ACCOUNT_KEY: process.env.GCP_SERVICE_ACCOUNT_KEY ? `len=${process.env.GCP_SERVICE_ACCOUNT_KEY.length}` : 'MISSING',
+    GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || 'MISSING',
+  }))
+
+  if (!hasRealNewlines && hasLiteralBackslashN) {
+    process.env.REMOTION_GCP_PRIVATE_KEY = pk.split('\\n').join('\n')
+    console.log('[RenderVideo] Converted literal \\n → real newlines in private key')
+  } else if (!hasRealNewlines && !hasLiteralBackslashN) {
+    console.log('[RenderVideo] WARNING: Private key has no newlines at all — likely malformed')
   }
 
   const encoder = new TextEncoder()
   const stream = new TransformStream()
   const writer = stream.writable.getWriter()
 
-  const serviceName = process.env.REMOTION_CLOUDRUN_SERVICE_NAME
-  const directUrl = process.env.REMOTION_CLOUDRUN_URL
-  const serveUrl = process.env.REMOTION_CLOUDRUN_SERVE_URL
+  // Trim env vars — Vercel UI sometimes introduces trailing \n
+  const serviceName = process.env.REMOTION_CLOUDRUN_SERVICE_NAME?.trim()
+  const directUrl = process.env.REMOTION_CLOUDRUN_URL?.trim()
+  const serveUrl = process.env.REMOTION_CLOUDRUN_SERVE_URL?.trim()
 
   if ((!serviceName && !directUrl) || !serveUrl) {
     return new Response(
@@ -235,7 +271,7 @@ export async function POST(req: Request) {
 
       // ── Render via Cloud Run ──
       const remotionCompId = selectCompositionId(videoWidth, videoHeight)
-      const region = (process.env.REMOTION_GCP_REGION || 'us-east1') as 'us-east1'
+      const region = (process.env.REMOTION_GCP_REGION?.trim() || 'us-east1') as 'us-east1'
 
       await send({ type: 'phase', phase: 'Sending to Cloud Run...', progress: 0.05 })
 
