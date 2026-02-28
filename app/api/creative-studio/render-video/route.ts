@@ -13,19 +13,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Vercel stores PEM keys as single-line with literal "\n" text — OpenSSL needs real newlines
-if (process.env.REMOTION_GCP_PRIVATE_KEY) {
-  process.env.REMOTION_GCP_PRIVATE_KEY = process.env.REMOTION_GCP_PRIVATE_KEY.replace(/\\n/g, '\n')
-}
-// Diagnostic — remove after confirming auth works
-console.log('[RenderVideo] GCP auth check:', {
-  hasEmail: !!process.env.REMOTION_GCP_CLIENT_EMAIL,
-  emailPrefix: process.env.REMOTION_GCP_CLIENT_EMAIL?.substring(0, 15),
-  hasKey: !!process.env.REMOTION_GCP_PRIVATE_KEY,
-  keyStart: process.env.REMOTION_GCP_PRIVATE_KEY?.substring(0, 30),
-  hasProject: !!process.env.REMOTION_GCP_PROJECT_ID,
-  project: process.env.REMOTION_GCP_PROJECT_ID,
-})
 
 /**
  * Determine the correct Remotion composition ID based on video dimensions.
@@ -41,6 +28,16 @@ function selectCompositionId(width?: number, height?: number): string {
 }
 
 export async function POST(req: Request) {
+  // Vercel stores PEM keys as single-line with literal "\n" text — OpenSSL needs real newlines
+  if (process.env.REMOTION_GCP_PRIVATE_KEY) {
+    process.env.REMOTION_GCP_PRIVATE_KEY = process.env.REMOTION_GCP_PRIVATE_KEY.replace(/\\n/g, '\n')
+  }
+  console.log('[RenderVideo] GCP auth:', {
+    email: process.env.REMOTION_GCP_CLIENT_EMAIL?.substring(0, 15),
+    key: process.env.REMOTION_GCP_PRIVATE_KEY?.substring(0, 27),
+    project: process.env.REMOTION_GCP_PROJECT_ID,
+  })
+
   const encoder = new TextEncoder()
   const stream = new TransformStream()
   const writer = stream.writable.getWriter()
