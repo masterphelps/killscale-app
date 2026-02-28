@@ -28,15 +28,11 @@ function selectCompositionId(width?: number, height?: number): string {
 }
 
 export async function POST(req: Request) {
-  // Vercel stores PEM keys as single-line with literal "\n" text — OpenSSL needs real newlines
-  if (process.env.REMOTION_GCP_PRIVATE_KEY) {
-    process.env.REMOTION_GCP_PRIVATE_KEY = process.env.REMOTION_GCP_PRIVATE_KEY.replace(/\\n/g, '\n')
+  // Vercel stores PEM keys with literal \n text — OpenSSL needs real newlines
+  if (process.env.REMOTION_GCP_PRIVATE_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY.includes('\n')) {
+    // Key is stored as single line with literal backslash-n sequences
+    process.env.REMOTION_GCP_PRIVATE_KEY = process.env.REMOTION_GCP_PRIVATE_KEY.split(String.raw`\n`).join('\n')
   }
-  console.log('[RenderVideo] GCP auth:', {
-    email: process.env.REMOTION_GCP_CLIENT_EMAIL?.substring(0, 15),
-    key: process.env.REMOTION_GCP_PRIVATE_KEY?.substring(0, 27),
-    project: process.env.REMOTION_GCP_PROJECT_ID,
-  })
 
   const encoder = new TextEncoder()
   const stream = new TransformStream()
