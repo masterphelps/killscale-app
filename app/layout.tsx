@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: 'See your Meta Ads at a glance. Know what to scale, watch, and cut in 30 seconds.',
   icons: {
     icon: '/favicon.png',
-    apple: '/favicon.png',
+    apple: '/apple-touch-icon.png',
   },
 }
 
