@@ -9,6 +9,10 @@ import { createClient } from '@supabase/supabase-js'
 import { restoreSnapshot } from './restore-snapshot'
 import { bundleRemotionProject, formatSSE, type RenderProgress } from './helpers'
 import type { OverlayConfig } from '@/remotion/types'
+
+// Render can take several minutes — extend function lifetime (Vercel Pro w/ Fluid Compute: up to 800s)
+export const maxDuration = 800
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!

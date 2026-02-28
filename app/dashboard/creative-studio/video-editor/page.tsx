@@ -1066,6 +1066,7 @@ export default function VideoEditorPage() {
       const decoder = new TextDecoder()
       let buffer = ''
 
+      let receivedTerminal = false
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1081,6 +1082,7 @@ export default function VideoEditorPage() {
               setRenderProgress(pct)
               setRenderToastMessage(`v${selectedVersionData.version}: ${data.phase}`)
             } else if (data.type === 'done') {
+              receivedTerminal = true
               setRenderProgress(100)
               setRenderToastMessage(`v${selectedVersionData.version} rendered successfully`)
               setRenderToastType('success')
@@ -1090,6 +1092,7 @@ export default function VideoEditorPage() {
               else loadVersions()
               setTimeout(() => setRenderToastMessage(null), 4000)
             } else if (data.type === 'error') {
+              receivedTerminal = true
               setRenderToastMessage(`Render failed: ${data.message}`)
               setRenderToastType('error')
               setIsRendering(false)
@@ -1100,6 +1103,52 @@ export default function VideoEditorPage() {
             }
           } catch { /* skip malformed SSE */ }
         }
+      }
+
+      // Stream ended without done/error — connection dropped mid-render.
+      // Poll the overlay version until it completes or fails.
+      if (!receivedTerminal && selectedVersionData.id) {
+        setRenderToastMessage(`v${selectedVersionData.version}: Finalizing render...`)
+        const pollId = selectedVersionData.id
+        const pollInterval = setInterval(async () => {
+          try {
+            const pollRes = await fetch(`/api/creative-studio/overlay-versions?overlayId=${pollId}`)
+            if (!pollRes.ok) return
+            const pollData = await pollRes.json()
+            const version = pollData.versions?.find?.((v: { id: string }) => v.id === pollId) || pollData
+            if (version.render_status === 'complete') {
+              clearInterval(pollInterval)
+              setRenderProgress(100)
+              setRenderToastMessage(`v${selectedVersionData.version} rendered successfully`)
+              setRenderToastType('success')
+              setIsRendering(false)
+              setRenderingVersionId(null)
+              if (isComposition) loadCompositionVersions()
+              else loadVersions()
+              setTimeout(() => setRenderToastMessage(null), 4000)
+            } else if (version.render_status === 'failed') {
+              clearInterval(pollInterval)
+              setRenderToastMessage(`Render failed`)
+              setRenderToastType('error')
+              setIsRendering(false)
+              setRenderingVersionId(null)
+              if (isComposition) loadCompositionVersions()
+              else loadVersions()
+              setTimeout(() => setRenderToastMessage(null), 5000)
+            }
+          } catch { /* poll error — will retry */ }
+        }, 3000)
+        // Safety timeout: stop polling after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          if (isRendering) {
+            setRenderToastMessage(`Render may still be processing — check back shortly`)
+            setRenderToastType('error')
+            setIsRendering(false)
+            setRenderingVersionId(null)
+            setTimeout(() => setRenderToastMessage(null), 5000)
+          }
+        }, 300000)
       }
     } catch (err) {
       setRenderToastMessage(`Render failed: ${(err as Error).message}`)
