@@ -86,12 +86,14 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
   }
 
   useEffect(() => {
+    // Skip HTML5 preload when rendering server-side — OffthreadVideo uses FFmpeg
+    if (isRendering) return;
+
     const handle = delayRender("Loading video");
 
     // Create a video element to preload the video
     const video = document.createElement("video");
     video.src = videoSrc;
-    
 
     const handleLoadedMetadata = () => {
       continueRender(handle);
@@ -111,7 +113,7 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
       // Ensure we don't leave hanging render delays
       continueRender(handle);
     };
-  }, [overlay.src, videoSrc]);
+  }, [overlay.src, videoSrc, isRendering]);
 
   // Process video frame with greenscreen removal
   const processVideoFrame = useCallback(
