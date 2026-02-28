@@ -18,6 +18,19 @@ import type { AdOverlayProps, HookOverlay, CaptionOverlay, CTAOverlay, GraphicOv
 function cleanStyles(styles: Record<string, any> | undefined): React.CSSProperties {
   if (!styles) return {}
   const { __ksTag, fontSizeScale, ...css } = styles
+  // Convert rem font sizes to px (RVE editor uses 16px root on a scaled canvas;
+  // Remotion renders at full 1080x1920 where 1rem ≈ 16px is too small)
+  if (typeof css.fontSize === 'string' && css.fontSize.endsWith('rem')) {
+    const remValue = parseFloat(css.fontSize)
+    // The editor renders at ~360px wide viewport, composition is 1080px = 3x scale
+    // So 3.2rem in editor ≈ 3.2 * 16 * 3 = 153.6px in composition
+    css.fontSize = `${Math.round(remValue * 16 * 3)}px`
+  }
+  // Ensure WebkitBackgroundClip gradient text trick works in Remotion's Chromium
+  // React uses camelCase but some RVE styles may come as camelCase already
+  if (css.WebkitBackgroundClip === 'text') {
+    css.backgroundClip = 'text'
+  }
   return css as React.CSSProperties
 }
 
@@ -269,8 +282,12 @@ const Caption: React.FC<{
 }) => {
   const preset = STYLE_PRESETS[styleName]
   const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
   const opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' })
   const hasRve = !!(captionPosition && captionStyles)
+
+  // Animated highlight: the highlighted word pops in with a spring
+  const highlightSpring = spring({ frame, fps, config: { stiffness: 300, damping: 18, mass: 0.6 } })
 
   // Highlight a specific word in the text
   const renderText = (baseStyles: React.CSSProperties) => {
@@ -281,9 +298,26 @@ const Caption: React.FC<{
     const parts = config.text.split(new RegExp(`(${config.highlightWord})`, 'gi'))
 
     // RVE highlight styles if available
-    const hlStyle: React.CSSProperties = captionStyles?.highlightStyle
+    const rawHlStyle: React.CSSProperties = captionStyles?.highlightStyle
       ? cleanStyles(captionStyles.highlightStyle)
       : { color: brandColor || preset.captionHighlight }
+
+    // Animate the highlight: scale pops in, opacity transitions
+    const hlScale = rawHlStyle.scale
+      ? interpolate(highlightSpring, [0, 1], [1, Number(rawHlStyle.scale) || 1.07])
+      : interpolate(highlightSpring, [0, 1], [1, 1.07])
+
+    const hlStyle: React.CSSProperties = {
+      ...rawHlStyle,
+      scale: undefined, // handled via transform
+      display: 'inline-block',
+      transform: `scale(${hlScale})`,
+    }
+
+    // Dim non-highlighted words for contrast
+    const dimStyle: React.CSSProperties = {
+      opacity: interpolate(highlightSpring, [0, 1], [0.6, 0.5]),
+    }
 
     return (
       <>
@@ -291,7 +325,7 @@ const Caption: React.FC<{
           part.toLowerCase() === config.highlightWord!.toLowerCase() ? (
             <span key={i} style={hlStyle}>{part}</span>
           ) : (
-            <span key={i}>{part}</span>
+            <span key={i} style={dimStyle}>{part}</span>
           )
         )}
       </>

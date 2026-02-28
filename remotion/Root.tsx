@@ -1,6 +1,7 @@
 import React from 'react'
 import { Composition } from 'remotion'
 import { AdOverlay } from './AdOverlay'
+import { RVERender, type RVERenderProps } from './RVERender'
 import type { AdOverlayProps, OverlayConfig } from './types'
 
 // Default overlay config for Remotion Studio preview
@@ -28,11 +29,22 @@ const defaultOverlayConfig: OverlayConfig = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AdOverlayComp = AdOverlay as any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const RVERenderComp = RVERender as any
 
 const FPS = 30
 
 // Dynamic duration from inputProps — renders the full timeline length
 const calculateMetadata = ({ props }: { props: AdOverlayProps }) => {
+  const duration = props.durationInSeconds || 10
+  return {
+    durationInFrames: Math.max(1, Math.round(duration * FPS)),
+    fps: FPS,
+  }
+}
+
+// Same for RVERender compositions
+const calculateRVERenderMetadata = ({ props }: { props: RVERenderProps }) => {
   const duration = props.durationInSeconds || 10
   return {
     durationInFrames: Math.max(1, Math.round(duration * FPS)),
@@ -87,6 +99,50 @@ export const RemotionRoot: React.FC = () => {
           overlayConfig: defaultOverlayConfig,
         }}
         calculateMetadata={calculateMetadata}
+      />
+
+      {/* ── RVERender compositions ──
+       * These use the SAME Layer/LayerContent components as the editor preview,
+       * guaranteeing pixel-perfect match between what the user sees and what gets exported.
+       */}
+      <Composition
+        id="RVERender"
+        component={RVERenderComp}
+        durationInFrames={300}
+        fps={FPS}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          overlays: [],
+          durationInSeconds: 10,
+        }}
+        calculateMetadata={calculateRVERenderMetadata}
+      />
+      <Composition
+        id="RVERenderSquare"
+        component={RVERenderComp}
+        durationInFrames={300}
+        fps={FPS}
+        width={1080}
+        height={1080}
+        defaultProps={{
+          overlays: [],
+          durationInSeconds: 10,
+        }}
+        calculateMetadata={calculateRVERenderMetadata}
+      />
+      <Composition
+        id="RVERenderLandscape"
+        component={RVERenderComp}
+        durationInFrames={300}
+        fps={FPS}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          overlays: [],
+          durationInSeconds: 10,
+        }}
+        calculateMetadata={calculateRVERenderMetadata}
       />
     </>
   )

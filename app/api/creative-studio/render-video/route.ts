@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions'
 import { createClient } from '@supabase/supabase-js'
 import { formatSSE, type RenderProgress } from './helpers'
 import type { OverlayConfig } from '@/remotion/types'
+import { overlayConfigToRVEOverlays } from '@/lib/rve-bridge'
 
 // Render can take several minutes — extend function lifetime (Vercel Pro w/ Fluid Compute: up to 800s)
 export const maxDuration = 800
@@ -26,14 +27,15 @@ if (process.env.GOOGLE_CLOUD_PROJECT && !process.env.REMOTION_GCP_PROJECT_ID) {
 
 /**
  * Determine the correct Remotion composition ID based on video dimensions.
+ * Uses RVERender compositions (same Layer components as editor preview).
  * Falls back to vertical 9:16 (most common for ads).
  */
 function selectCompositionId(width?: number, height?: number): string {
-  if (!width || !height) return 'AdOverlay' // default 9:16
+  if (!width || !height) return 'RVERender' // default 9:16
   const ratio = width / height
-  if (ratio > 1.2) return 'AdOverlayLandscape' // 16:9
-  if (ratio > 0.85 && ratio < 1.15) return 'AdOverlaySquare' // 1:1
-  return 'AdOverlay' // 9:16
+  if (ratio > 1.2) return 'RVERenderLandscape' // 16:9
+  if (ratio > 0.85 && ratio < 1.15) return 'RVERenderSquare' // 1:1
+  return 'RVERender' // 9:16
 }
 
 export async function POST(req: Request) {
@@ -42,11 +44,12 @@ export async function POST(req: Request) {
   const writer = stream.writable.getWriter()
 
   const serviceName = process.env.REMOTION_CLOUDRUN_SERVICE_NAME
+  const directUrl = process.env.REMOTION_CLOUDRUN_URL
   const serveUrl = process.env.REMOTION_CLOUDRUN_SERVE_URL
 
-  if (!serviceName || !serveUrl) {
+  if ((!serviceName && !directUrl) || !serveUrl) {
     return new Response(
-      JSON.stringify({ error: 'Remotion Cloud Run is not configured. Set REMOTION_CLOUDRUN_SERVICE_NAME and REMOTION_CLOUDRUN_SERVE_URL.' }),
+      JSON.stringify({ error: 'Remotion Cloud Run is not configured. Set REMOTION_CLOUDRUN_URL (or REMOTION_CLOUDRUN_SERVICE_NAME) and REMOTION_CLOUDRUN_SERVE_URL.' }),
       { status: 501, headers: { 'Content-Type': 'application/json' } }
     )
   }
@@ -231,6 +234,10 @@ export async function POST(req: Request) {
         overlayId = overlay.id
       }
 
+      // ── Convert OverlayConfig → RVE Overlay[] (same format the editor preview uses) ──
+      const rveOverlays = overlayConfigToRVEOverlays(overlayConfig, videoUrl, durationInSeconds, 30)
+      console.log(`[RenderVideo] Converted overlayConfig → ${rveOverlays.length} RVE overlays`)
+
       // ── Render via Cloud Run ──
       const remotionCompId = selectCompositionId(videoWidth, videoHeight)
       const region = (process.env.REMOTION_GCP_REGION || 'us-east1') as 'us-east1'
@@ -240,18 +247,27 @@ export async function POST(req: Request) {
       let result: Awaited<ReturnType<typeof renderMediaOnCloudrun>>
       try {
         await send({ type: 'phase', phase: 'Rendering video...', progress: 0.1 })
+        console.log(`[RenderVideo] Rendering composition=${remotionCompId}, region=${region}, service=${serviceName || directUrl}, overlays=${rveOverlays.length}`)
         result = await renderMediaOnCloudrun({
           region,
-          serviceName,
+          // Use direct URL when available — bypasses getServiceInfo() which
+          // requires Cloud Run Admin API permissions we may not have.
+          // Falls back to serviceName for service discovery.
+          ...(directUrl
+            ? { cloudRunUrl: directUrl }
+            : { serviceName: serviceName! }),
           serveUrl,
           composition: remotionCompId,
           codec: 'h264',
           inputProps: {
-            videoUrl,
+            overlays: rveOverlays,
             durationInSeconds,
-            overlayConfig,
           },
           privacy: 'public',
+          // Skip getOrCreateBucket — the bucket already exists but its
+          // multi-region location (US) doesn't match us-east1, causing
+          // the SDK to try creating a new bucket which fails.
+          forceBucketName: 'remotioncloudrun-qt8g0b2rc1',
           updateRenderProgress: (progress: number) => {
             // Map 0-1 Cloud Run progress to 10-90% band
             const mapped = 0.1 + progress * 0.8
@@ -259,7 +275,17 @@ export async function POST(req: Request) {
           },
         })
       } catch (renderErr) {
-        const msg = renderErr instanceof Error ? renderErr.message : String(renderErr)
+        let msg: string
+        if (renderErr instanceof Error) {
+          msg = renderErr.message
+          console.error('[RenderVideo] Cloud Run render Error:', renderErr.message, renderErr.stack)
+        } else if (typeof renderErr === 'object' && renderErr !== null) {
+          msg = JSON.stringify(renderErr, Object.getOwnPropertyNames(renderErr), 2)
+          console.error('[RenderVideo] Cloud Run render error object:', msg)
+        } else {
+          msg = String(renderErr)
+          console.error('[RenderVideo] Cloud Run render error:', msg)
+        }
         await send({ type: 'error', message: `[Render] ${msg}` })
         return
       }
@@ -269,15 +295,15 @@ export async function POST(req: Request) {
         return
       }
 
-      const cloudRunUrl = result.publicUrl
+      const renderedPublicUrl = result.publicUrl
       const fileSize = result.size
 
-      if (!cloudRunUrl) {
+      if (!renderedPublicUrl) {
         await send({ type: 'error', message: '[Render] No public URL returned from Cloud Run' })
         return
       }
 
-      console.log(`[RenderVideo] Cloud Run complete: size=${fileSize}, url=${cloudRunUrl}`)
+      console.log(`[RenderVideo] Cloud Run complete: size=${fileSize}`)
 
       // ── Download from Cloud Run → Upload to Supabase Storage ──
       await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.9 })
@@ -287,7 +313,7 @@ export async function POST(req: Request) {
 
       let videoResponse: Response
       try {
-        videoResponse = await fetch(cloudRunUrl)
+        videoResponse = await fetch(renderedPublicUrl)
       } catch (fetchErr) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
         await send({ type: 'error', message: `[Download] Failed to download rendered video: ${msg}` })
@@ -302,7 +328,7 @@ export async function POST(req: Request) {
       const videoBuffer = Buffer.from(await videoResponse.arrayBuffer())
 
       if (videoBuffer.length < 10000) {
-        console.error(`[RenderVideo] Downloaded only ${videoBuffer.length} bytes (expected ${fileSize}) from ${cloudRunUrl}`)
+        console.error(`[RenderVideo] Downloaded only ${videoBuffer.length} bytes (expected ${fileSize})`)
         await send({ type: 'error', message: `[Download] Rendered file is corrupt (${videoBuffer.length} bytes). Please try rendering again.` })
         return
       }
