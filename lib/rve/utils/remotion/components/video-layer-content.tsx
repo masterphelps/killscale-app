@@ -2,7 +2,9 @@ import {
   useCurrentFrame,
   delayRender,
   continueRender,
-  Html5Video
+  Html5Video,
+  OffthreadVideo,
+  getRemotionEnvironment,
 } from "remotion";
 import { ClipOverlay } from "../../../types";
 import { animationTemplates, getAnimationKey } from "../../../adaptors/default-animation-adaptors";
@@ -56,6 +58,10 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const { baseUrl: contextBaseUrl } = useSafeEditorContext();
+  // Use OffthreadVideo (FFmpeg) when rendering server-side — Html5Video uses
+  // Chromium's native decoder which can't handle all codecs in headless mode.
+  const isRendering = getRemotionEnvironment().isRendering;
+  const VideoComponent = isRendering ? OffthreadVideo : Html5Video;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastProcessedFrameRef = useRef<CanvasImageSource | null>(null);
 
@@ -294,10 +300,10 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
       <div style={containerStyle}>
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           {/* Hidden video that feeds frames to canvas */}
-          <Html5Video
+          <VideoComponent
             src={videoSrc}
-            trimBefore={startFromFrames}
-            style={{ 
+            {...(isRendering ? { startFrom: startFromFrames } : { trimBefore: startFromFrames })}
+            style={{
               ...videoStyle,
               position: 'absolute',
               top: 0,
@@ -327,9 +333,9 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
   // Normal rendering without greenscreen removal
   return (
     <div style={containerStyle}>
-      <Html5Video
+      <VideoComponent
         src={videoSrc}
-        trimBefore={startFromFrames}
+        {...(isRendering ? { startFrom: startFromFrames } : { trimBefore: startFromFrames })}
         style={videoStyle}
         volume={overlay.styles.volume ?? 1}
         playbackRate={overlay.speed ?? 1}
