@@ -3,7 +3,7 @@
 import { useEffect, useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Star, Rocket, Pencil, DollarSign, TrendingUp, Eye, MousePointer, Users, Layers, Play, ChevronRight, ChevronDown, Image, Film, HardDrive, Calendar, Ruler, AlertTriangle, Download } from 'lucide-react'
+import { X, Star, Rocket, Pencil, DollarSign, TrendingUp, Eye, MousePointer, Users, Layers, Play, ChevronRight, ChevronDown, Image, Film, HardDrive, Calendar, Ruler, AlertTriangle, Download, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FatigueTrendChart } from './fatigue-trend-chart'
 import { PeriodComparison } from './period-comparison'
@@ -21,6 +21,8 @@ interface TheaterModalProps {
   isStarred: boolean
   onToggleStar: () => Promise<void>
   onBuildNewAds?: () => void
+  onDelete?: () => void
+  projectMode?: boolean
   // AI Analysis props
   analysisStatus: AnalysisStatus
   analysis: VideoAnalysis | null
@@ -91,6 +93,8 @@ export function TheaterModal({
   isStarred,
   onToggleStar,
   onBuildNewAds,
+  onDelete,
+  projectMode,
   analysisStatus,
   analysis,
   scriptSuggestions,
@@ -627,83 +631,121 @@ export function TheaterModal({
 
                   {/* Footer actions */}
                   <div className="pt-4 border-t border-border flex items-center justify-center gap-2 flex-wrap">
-                    <button
-                      onClick={handleToggleStar}
-                      disabled={isTogglingStarred}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
-                        isTogglingStarred && 'opacity-50 cursor-wait',
-                        isStarred
-                          ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/20'
-                          : 'bg-yellow-500/10 text-yellow-300/70 border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300'
-                      )}
-                    >
-                      <Star className={cn('w-3.5 h-3.5', isStarred && 'fill-yellow-400')} />
-                      {isStarred ? 'Starred' : 'Star'}
-                    </button>
+                    {projectMode ? (
+                      <>
+                        {/* Project mode: Edit + Delete only */}
+                        <button
+                          onClick={() => {
+                            onClose()
+                            router.push(`/dashboard/creative-studio/video-editor?compositionId=${item.sourceCompositionId || item.id}&from=media-projects`)
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                        {onDelete && (
+                          <button
+                            onClick={() => { onDelete(); onClose() }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Media mode: Star, Download, Edit, Build Ads, Delete */}
+                        <button
+                          onClick={handleToggleStar}
+                          disabled={isTogglingStarred}
+                          className={cn(
+                            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
+                            isTogglingStarred && 'opacity-50 cursor-wait',
+                            isStarred
+                              ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/20'
+                              : 'bg-yellow-500/10 text-yellow-300/70 border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300'
+                          )}
+                        >
+                          <Star className={cn('w-3.5 h-3.5', isStarred && 'fill-yellow-400')} />
+                          {isStarred ? 'Starred' : 'Star'}
+                        </button>
 
-                    {displayUrl && (
-                      <button
-                        onClick={() => {
-                          const ext = isVideo ? 'mp4' : 'png'
-                          const fname = `${(item.name || 'media').replace(/[^a-zA-Z0-9-_ ]/g, '')}.${ext}`
-                          const downloadUrl = isVideo && videoSource
-                            ? `/api/creative-studio/download-video?url=${encodeURIComponent(videoSource)}&filename=${encodeURIComponent(fname)}`
-                            : `/api/creative-studio/download-video?url=${encodeURIComponent(displayUrl)}&filename=${encodeURIComponent(fname)}`
-                          const a = document.createElement('a')
-                          a.href = downloadUrl
-                          a.download = fname
-                          document.body.appendChild(a)
-                          a.click()
-                          document.body.removeChild(a)
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300/70 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Download
-                      </button>
-                    )}
+                        {displayUrl && (
+                          <button
+                            onClick={() => {
+                              const ext = isVideo ? 'mp4' : 'png'
+                              const fname = `${(item.name || 'media').replace(/[^a-zA-Z0-9-_ ]/g, '')}.${ext}`
+                              const downloadUrl = isVideo && videoSource
+                                ? `/api/creative-studio/download-video?url=${encodeURIComponent(videoSource)}&filename=${encodeURIComponent(fname)}`
+                                : `/api/creative-studio/download-video?url=${encodeURIComponent(displayUrl)}&filename=${encodeURIComponent(fname)}`
+                              const a = document.createElement('a')
+                              a.href = downloadUrl
+                              a.download = fname
+                              document.body.appendChild(a)
+                              a.click()
+                              document.body.removeChild(a)
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300/70 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            Download
+                          </button>
+                        )}
 
-                    {!isVideo && displayUrl && (
-                      <button
-                        onClick={() => {
-                          onClose()
-                          router.push(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(displayUrl)}`)
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                    )}
+                        {!isVideo && displayUrl && (
+                          <button
+                            onClick={() => {
+                              onClose()
+                              router.push(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(displayUrl)}`)
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                        )}
 
-                    {isVideo && videoSource && (
-                      <button
-                        onClick={() => {
-                          onClose()
-                          if (item.sourceCompositionId) {
-                            router.push(`/dashboard/creative-studio/video-editor?compositionId=${item.sourceCompositionId}&from=creative-studio`)
-                          } else if (item.sourceJobId) {
-                            router.push(`/dashboard/creative-studio/video-editor?jobId=${item.sourceJobId}&from=creative-studio`)
-                          } else {
-                            router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
-                          }
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
-                      >
-                        <Film className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                    )}
+                        {isVideo && videoSource && (
+                          <button
+                            onClick={() => {
+                              onClose()
+                              if (item.sourceCompositionId) {
+                                router.push(`/dashboard/creative-studio/video-editor?compositionId=${item.sourceCompositionId}&from=creative-studio`)
+                              } else if (item.sourceJobId) {
+                                router.push(`/dashboard/creative-studio/video-editor?jobId=${item.sourceJobId}&from=creative-studio`)
+                              } else {
+                                router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
+                          >
+                            <Film className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                        )}
 
-                    {onBuildNewAds && !isRawAiAsset && (
-                      <button
-                        onClick={onBuildNewAds}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border border-orange-500/20 transition-colors"
-                      >
-                        <Rocket className="w-3.5 h-3.5" />
-                        Build Ads
-                      </button>
+                        {onBuildNewAds && !isRawAiAsset && (
+                          <button
+                            onClick={onBuildNewAds}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border border-orange-500/20 transition-colors"
+                          >
+                            <Rocket className="w-3.5 h-3.5" />
+                            Build Ads
+                          </button>
+                        )}
+
+                        {onDelete && (
+                          <button
+                            onClick={() => { onDelete(); onClose() }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

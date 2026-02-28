@@ -594,6 +594,15 @@ export default function AdStudioPage() {
         setOpenPromptScenePlan(restoredPlan)
         setOpenPromptMediaType('video')
         setMode('open-prompt')
+
+        // Restore source image if persisted
+        if (concept.sourceImage?.base64 && concept.sourceImage?.mimeType) {
+          setOpenPromptSourceImage({
+            base64: concept.sourceImage.base64,
+            mimeType: concept.sourceImage.mimeType,
+            preview: `data:${concept.sourceImage.mimeType};base64,${concept.sourceImage.base64}`,
+          })
+        }
       } catch (err) {
         console.error('[AdStudio] Failed to restore canvas:', err)
       }
@@ -2374,6 +2383,8 @@ export default function AdStudioPage() {
               // Store full scene plan for session restoration from AI Tasks
               scenePlan: openPromptScenePlan,
               originalPrompt: openPromptText,
+              // Persist source image for session restoration
+              ...(openPromptSourceImage ? { sourceImage: { base64: openPromptSourceImage.base64, mimeType: openPromptSourceImage.mimeType } } : {}),
             }],
           }),
         })

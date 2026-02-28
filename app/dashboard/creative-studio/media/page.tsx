@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { RefreshCw, Download, Upload, Loader2, Trash2, AlertTriangle, FolderKanban, Pencil, FolderPlus, FolderOpen, ChevronLeft, Plus, Check, X, FolderMinus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -9,30 +9,22 @@ import { useAccount } from '@/lib/account'
 import {
   GalleryGrid,
   StarredMediaBar,
-  TheaterModal,
+  MediaPreviewModal,
 } from '@/components/creative-studio'
 import type {
   StudioAsset,
-  StudioAssetDetail,
-  VideoAnalysis,
-  ScriptSuggestion,
-  AnalysisStatus,
 } from '@/components/creative-studio/types'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
-import Link from 'next/link'
 import { useCreativeStudio } from '../creative-studio-context'
-import { useSubscription } from '@/lib/subscription'
 
 type SortOption = 'name' | 'syncedAt' | 'fileSize' | 'mediaType'
 type MediaTab = 'media' | 'collection' | 'project'
 type TypeFilter = 'all' | 'video' | 'image'
 
 export default function AllMediaPage() {
+  const router = useRouter()
   const { user } = useAuth()
   const { currentAccountId } = useAccount()
-  const { plan, loading: subscriptionLoading } = useSubscription()
-  // Any paid user (including trial) gets full access
-  const isPro = subscriptionLoading || !!plan
   const {
     assets,
     isLoading,
@@ -64,8 +56,6 @@ export default function AllMediaPage() {
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<StudioAsset | null>(null)
-  const [detailData, setDetailData] = useState<StudioAssetDetail | null>(null)
-  const [isDetailLoading, setIsDetailLoading] = useState(false)
 
   // Launch Wizard state
   const [showLaunchWizard, setShowLaunchWizard] = useState(false)
@@ -76,14 +66,6 @@ export default function AllMediaPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // AI Analysis state
-  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('none')
-  const [analysis, setAnalysis] = useState<VideoAnalysis | null>(null)
-  const [scriptSuggestions, setScriptSuggestions] = useState<ScriptSuggestion[] | null>(null)
-  const [analyzedAt, setAnalyzedAt] = useState<string | null>(null)
-  const [analysisError, setAnalysisError] = useState<string | null>(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   // Media menu state
   const [menuItemId, setMenuItemId] = useState<string | null>(null)
@@ -108,6 +90,10 @@ export default function AllMediaPage() {
     sourceJobIds: string[];
   }>>([])
   const [isLoadingProjects, setIsLoadingProjects] = useState(false)
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
+  const [projectMenuPosition, setProjectMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
+  const projectMenuRef = useRef<HTMLDivElement>(null)
 
   // Collections tab state
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
@@ -196,12 +182,89 @@ export default function AllMediaPage() {
     }
   }, [user?.id, currentAccountId])
 
-  // Auto-load projects when switching to project tab
+  // Load projects + collections counts on mount so tab badges are accurate
+  useEffect(() => {
+    loadProjects()
+    loadCollections()
+  }, [loadProjects, loadCollections])
+
+  // Reload projects when switching to project tab (in case of new saves)
   useEffect(() => {
     if (mediaTab === 'project') {
       loadProjects()
     }
   }, [mediaTab, loadProjects])
+
+  // Close project menu on outside click
+  useEffect(() => {
+    if (!projectMenuId) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
+        setProjectMenuId(null)
+        setProjectMenuPosition(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [projectMenuId])
+
+  // Handle project menu click
+  const handleProjectMenuClick = useCallback((id: string, e: React.MouseEvent) => {
+    const rect = (e.target as HTMLElement).getBoundingClientRect()
+    setProjectMenuId(id)
+    setProjectMenuPosition({ x: rect.right, y: rect.bottom })
+  }, [])
+
+  // Handle project select — open theater modal
+  const handleProjectSelect = useCallback((id: string) => {
+    const project = projectCompositions.find(p => p.id === id)
+    if (!project) return
+    // Create a StudioAsset-compatible object for the theater modal
+    const projectAsset: StudioAsset = {
+      id: project.id,
+      mediaHash: project.id,
+      mediaType: 'video',
+      name: project.name || project.title || 'Untitled Project',
+      imageUrl: null,
+      thumbnailUrl: project.thumbnailUrl || null,
+      storageUrl: project.renderedVideoUrl || null,
+      width: 1080,
+      height: 1920,
+      fileSize: null,
+      downloadStatus: null,
+      syncedAt: project.createdAt,
+      hasPerformanceData: false,
+      spend: 0, revenue: 0, roas: 0, ctr: 0, cpm: 0, cpc: 0, impressions: 0, clicks: 0,
+      videoViews: null, videoThruplay: null, videoP100: null, avgWatchTime: null,
+      videoPlays: null, outboundClicks: null, thumbstopRate: null, holdRate: null, completionRate: null,
+      hookScore: null, holdScore: null, clickScore: null, convertScore: null,
+      fatigueScore: 0, fatigueStatus: 'healthy' as const, daysActive: 0,
+      firstSeen: null, lastSeen: null, adCount: 0, adsetCount: 0, campaignCount: 0,
+      sourceType: 'project',
+      sourceCompositionId: project.id,
+      isStarred: false,
+    }
+    setSelectedItem(projectAsset)
+  }, [projectCompositions])
+
+  // Delete a project (composition)
+  const handleDeleteProject = useCallback(async (projectId: string) => {
+    if (!user?.id) return
+    setDeletingProjectId(projectId)
+    try {
+      const params = new URLSearchParams({ compositionId: projectId, userId: user.id })
+      const res = await fetch(`/api/creative-studio/video-composition?${params}`, { method: 'DELETE' })
+      if (res.ok) {
+        setProjectCompositions(prev => prev.filter(p => p.id !== projectId))
+      }
+    } catch (err) {
+      console.error('Failed to delete project:', err)
+    } finally {
+      setDeletingProjectId(null)
+      setProjectMenuId(null)
+      setProjectMenuPosition(null)
+    }
+  }, [user?.id])
 
   // Auto-load collections when switching to collections tab
   useEffect(() => {
@@ -303,38 +366,13 @@ export default function AllMediaPage() {
     }
   }, [user?.id])
 
-  // Load detail data for selected asset
-  const loadDetailData = useCallback(async (asset: StudioAsset) => {
-    if (!user || !currentAccountId) return
-    setIsDetailLoading(true)
-    setDetailData(null)
-
-    try {
-      const params = new URLSearchParams({
-        userId: user.id,
-        adAccountId: currentAccountId,
-        mediaHash: asset.mediaHash,
-      })
-      const res = await fetch(`/api/creative-studio/media-detail?${params}`)
-      if (res.ok) {
-        const data: StudioAssetDetail = await res.json()
-        setDetailData(data)
-      }
-    } catch (error) {
-      console.error('Failed to load detail data:', error)
-    } finally {
-      setIsDetailLoading(false)
-    }
-  }, [user, currentAccountId])
-
   // Handle select item
   const handleSelect = useCallback((id: string) => {
     const asset = assets.find(a => a.id === id)
     if (asset) {
       setSelectedItem(asset)
-      loadDetailData(asset)
     }
-  }, [assets, loadDetailData])
+  }, [assets])
 
   const handleMenuClick = useCallback(async (id: string, e: React.MouseEvent) => {
     const rect = (e.target as HTMLElement).getBoundingClientRect()
@@ -369,10 +407,11 @@ export default function AllMediaPage() {
     }
   }, [assets, user, currentAccountId])
 
-  const handleDeleteMedia = useCallback(async () => {
-    if (!menuItemId || !user || !currentAccountId) return
+  const handleDeleteMedia = useCallback(async (overrideId?: string) => {
+    const targetId = overrideId || menuItemId
+    if (!targetId || !user || !currentAccountId) return
 
-    const asset = assets.find(a => a.id === menuItemId)
+    const asset = assets.find(a => a.id === targetId)
     if (!asset) return
 
     setMenuDeleting(true)
@@ -436,89 +475,6 @@ export default function AllMediaPage() {
       setMenuDeleting(false)
     }
   }, [menuItemId, assets, user, currentAccountId, removeAsset])
-
-  const handleCloseDetail = useCallback(() => {
-    setSelectedItem(null)
-    setDetailData(null)
-  }, [])
-
-  // Fetch analysis status for a video
-  const fetchAnalysisStatus = useCallback(async (mediaHash: string) => {
-    if (!user || !currentAccountId) return
-
-    try {
-      const params = new URLSearchParams({
-        userId: user.id,
-        adAccountId: currentAccountId,
-        mediaHash
-      })
-      const res = await fetch(`/api/creative-studio/analyze-video?${params}`)
-      const data = await res.json()
-
-      setAnalysisStatus(data.status || 'none')
-      setAnalysis(data.analysis || null)
-      setScriptSuggestions(data.scriptSuggestions || null)
-      setAnalyzedAt(data.analyzedAt || null)
-      setAnalysisError(data.errorMessage || null)
-    } catch (err) {
-      console.error('Failed to fetch analysis status:', err)
-      setAnalysisStatus('none')
-    }
-  }, [user, currentAccountId])
-
-  // Handle analyze video
-  const handleAnalyze = useCallback(async () => {
-    if (!user || !currentAccountId || !selectedItem) return
-
-    setIsAnalyzing(true)
-    setAnalysisStatus('processing')
-
-    try {
-      const res = await fetch('/api/creative-studio/analyze-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          adAccountId: currentAccountId,
-          mediaHash: selectedItem.mediaHash
-        })
-      })
-
-      const data = await res.json()
-
-      if (res.ok) {
-        setAnalysisStatus('complete')
-        setAnalysis(data.analysis)
-        setScriptSuggestions(data.scriptSuggestions)
-        setAnalyzedAt(data.analyzedAt)
-        setAnalysisError(null)
-      } else {
-        setAnalysisStatus('error')
-        setAnalysisError(data.error || 'Analysis failed')
-      }
-    } catch (err) {
-      setAnalysisStatus('error')
-      setAnalysisError('Network error')
-    } finally {
-      setIsAnalyzing(false)
-    }
-  }, [user, currentAccountId, selectedItem])
-
-  const handleReanalyze = handleAnalyze
-
-  // Fetch analysis status when selected item changes
-  useEffect(() => {
-    if (selectedItem && selectedItem.mediaType === 'video') {
-      fetchAnalysisStatus(selectedItem.mediaHash)
-    } else {
-      // Reset analysis state when not viewing a video
-      setAnalysisStatus('none')
-      setAnalysis(null)
-      setScriptSuggestions(null)
-      setAnalyzedAt(null)
-      setAnalysisError(null)
-    }
-  }, [selectedItem, fetchAnalysisStatus])
 
   // Handle build from starred
   const handleBuildFromStarred = useCallback(() => {
@@ -610,6 +566,34 @@ export default function AllMediaPage() {
 
   // Projects count for tab badge
   const projectCount = projectCompositions.length
+
+  // Convert project compositions to StudioAsset objects for GalleryGrid
+  const projectAssets = useMemo(() => {
+    return projectCompositions.map((p): StudioAsset & { isStarred: boolean } => ({
+      id: p.id,
+      mediaHash: p.id,
+      mediaType: 'video',
+      name: p.name || p.title || 'Untitled Project',
+      imageUrl: null,
+      thumbnailUrl: p.thumbnailUrl || null,
+      storageUrl: p.renderedVideoUrl || null,
+      width: 1080,
+      height: 1920,
+      fileSize: null,
+      downloadStatus: null,
+      syncedAt: p.createdAt,
+      hasPerformanceData: false,
+      spend: 0, revenue: 0, roas: 0, ctr: 0, cpm: 0, cpc: 0, impressions: 0, clicks: 0,
+      videoViews: null, videoThruplay: null, videoP100: null, avgWatchTime: null,
+      videoPlays: null, outboundClicks: null, thumbstopRate: null, holdRate: null, completionRate: null,
+      hookScore: null, holdScore: null, clickScore: null, convertScore: null,
+      fatigueScore: 0, fatigueStatus: 'healthy' as const, daysActive: 0,
+      firstSeen: null, lastSeen: null, adCount: 0, adsetCount: 0, campaignCount: 0,
+      sourceType: 'project',
+      sourceCompositionId: p.id,
+      isStarred: false,
+    }))
+  }, [projectCompositions])
 
   const collectionAssets = useMemo(() => {
     if (!selectedCollectionId) return []
@@ -973,7 +957,7 @@ export default function AllMediaPage() {
                   <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
                 ))}
               </div>
-            ) : projectCompositions.length === 0 ? (
+            ) : projectAssets.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-bg-card flex items-center justify-center mb-4">
                   <FolderKanban className="w-8 h-8 text-zinc-600" />
@@ -984,50 +968,24 @@ export default function AllMediaPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {projectCompositions.map((project) => (
-                  <Link
-                    key={project.id}
-                    href={`/dashboard/creative-studio/video-editor?compositionId=${project.id}&from=media-projects`}
-                    className="group bg-bg-card border border-border rounded-2xl overflow-hidden hover:border-zinc-600 transition-all cursor-pointer"
-                  >
-                    <div className="aspect-video bg-zinc-800/50 relative">
-                      {project.thumbnailUrl ? (
-                        <img
-                          src={project.thumbnailUrl}
-                          alt={project.name || project.title || 'Project'}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <FolderKanban className="w-10 h-10 text-zinc-700" />
-                        </div>
-                      )}
-                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-emerald-500/80 rounded text-xs text-white font-medium">
-                        Project
-                      </div>
-                      {project.renderedVideoUrl && (
-                        <div className="absolute top-2 right-2 px-2 py-0.5 bg-blue-500/80 rounded text-xs text-white font-medium">
-                          Rendered
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-4">
-                      <h3 className="text-sm font-semibold text-white truncate">{project.name || project.title || 'Untitled Project'}</h3>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-zinc-500">
-                        {project.durationSeconds && <span>{project.durationSeconds}s</span>}
-                        <span>{new Date(project.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/20 text-accent">
-                          <Pencil className="w-3 h-3" />
-                          Edit
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
+              <GalleryGrid
+                items={projectAssets}
+                isLoading={false}
+                onSelect={handleProjectSelect}
+                onMenu={handleProjectMenuClick}
+                videoSources={videoSources}
+                onRequestVideoSource={fetchVideoSource}
+                minimal
+                subtitle={(item) => {
+                  const project = projectCompositions.find(p => p.id === item.id)
+                  if (!project) return undefined
+                  const parts: string[] = []
+                  if (project.durationSeconds) parts.push(`${project.durationSeconds}s`)
+                  if (project.renderedVideoUrl) parts.push('Rendered')
+                  parts.push(new Date(project.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+                  return parts.join(' · ')
+                }}
+              />
             )
           ) : (
             /* Media tab - clean gallery */
@@ -1132,19 +1090,13 @@ export default function AllMediaPage() {
         </div>
       )}
 
-      {/* Theater Modal */}
-      <TheaterModal
+      {/* Media Preview Modal */}
+      <MediaPreviewModal
         item={selectedItem}
         isOpen={!!selectedItem}
-        onClose={handleCloseDetail}
-        detailData={detailData}
-        isLoadingDetail={isDetailLoading}
-        isStarred={selectedItem ? starredIds.has(selectedItem.mediaHash) : false}
-        onToggleStar={async () => {
-          if (selectedItem) {
-            await toggleStar(selectedItem.id)
-          }
-        }}
+        onClose={() => setSelectedItem(null)}
+        mode={mediaTab}
+        videoSource={selectedItem ? (videoSources[selectedItem.id] || null) : null}
         onBuildNewAds={() => {
           if (!selectedItem) return
           const a = selectedItem
@@ -1157,19 +1109,16 @@ export default function AllMediaPage() {
           }
           setWizardCreatives([creative])
           setSelectedItem(null)
-          setDetailData(null)
           setShowLaunchWizard(true)
         }}
-        // AI Analysis props
-        analysisStatus={analysisStatus}
-        analysis={analysis}
-        scriptSuggestions={scriptSuggestions}
-        analyzedAt={analyzedAt}
-        analysisError={analysisError}
-        isPro={isPro}
-        isAnalyzing={isAnalyzing}
-        onAnalyze={handleAnalyze}
-        onReanalyze={handleReanalyze}
+        onDelete={selectedItem ? () => {
+          if (mediaTab === 'project') {
+            handleDeleteProject(selectedItem.id)
+          } else {
+            handleDeleteMedia(selectedItem.id)
+          }
+          setSelectedItem(null)
+        } : undefined}
       />
 
       {/* Media Menu Dropdown */}
@@ -1243,7 +1192,7 @@ export default function AllMediaPage() {
             </div>
           ) : (
             <button
-              onClick={handleDeleteMedia}
+              onClick={() => handleDeleteMedia()}
               disabled={menuDeleting}
               className={cn(
                 "w-full px-4 py-3 flex items-center gap-3 text-sm text-left transition-colors",
@@ -1300,6 +1249,48 @@ export default function AllMediaPage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Project Menu Dropdown */}
+      {projectMenuId && projectMenuPosition && (
+        <div
+          ref={projectMenuRef}
+          className="fixed z-50 w-56 bg-bg-card border border-zinc-700 rounded-lg shadow-xl overflow-hidden"
+          style={{
+            left: Math.min(projectMenuPosition.x - 224, window.innerWidth - 240),
+            top: projectMenuPosition.y + 4
+          }}
+        >
+          <button
+            onClick={() => {
+              router.push(`/dashboard/creative-studio/video-editor?compositionId=${projectMenuId}&from=media-projects`)
+              setProjectMenuId(null)
+              setProjectMenuPosition(null)
+            }}
+            className="w-full px-4 py-3 flex items-center gap-3 text-sm text-left text-zinc-300 hover:bg-zinc-800 transition-colors"
+          >
+            <Pencil className="w-4 h-4" />
+            Open in Editor
+          </button>
+          <div className="border-t border-zinc-700" />
+          <button
+            onClick={() => handleDeleteProject(projectMenuId)}
+            disabled={deletingProjectId === projectMenuId}
+            className={cn(
+              "w-full px-4 py-3 flex items-center gap-3 text-sm text-left transition-colors",
+              deletingProjectId === projectMenuId
+                ? "text-zinc-500 cursor-not-allowed"
+                : "text-red-400 hover:bg-red-500/10"
+            )}
+          >
+            {deletingProjectId === projectMenuId ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+            {deletingProjectId === projectMenuId ? 'Deleting...' : 'Delete Project'}
+          </button>
         </div>
       )}
 

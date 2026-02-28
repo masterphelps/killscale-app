@@ -107,6 +107,10 @@ export function MediaGalleryCard({
   const storageUrl = item.storageUrl || null
   const thumbnailUrl = item.imageUrl || item.thumbnailUrl
 
+  // For masonry: use known dims, else default by media type (videos are 9:16, images 1:1)
+  const displayWidth = item.width || (isVideo ? 1080 : 1080)
+  const displayHeight = item.height || (isVideo ? 1920 : 1080)
+
   const formatCurrency = (val: number) => {
     if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`
     if (val >= 1000) return `$${(val / 1000).toFixed(1)}k`
@@ -197,16 +201,17 @@ export function MediaGalleryCard({
             )
       )}
     >
-      {/* Media Container - 4:3 aspect ratio (hidden for copy-only cards), natural ratio when minimal */}
+      {/* Media Container - native ratio in masonry (minimal), 4:3 fallback for non-minimal */}
       {!textContent && <div
         className={cn(
           'relative overflow-hidden bg-zinc-900',
-          minimal && item.width && item.height ? 'w-full' : 'aspect-[4/3]'
+          minimal ? 'w-full' : 'aspect-[4/3]'
         )}
-        style={minimal && item.width && item.height ? { paddingBottom: `${(item.height / item.width) * 100}%` } : undefined}
+        style={minimal ? { paddingBottom: `${(displayHeight / displayWidth) * 100}%` } : undefined}
       >
-        {/* Inner wrapper — absolute when using paddingBottom trick for natural ratio */}
-        <div className={minimal && item.width && item.height ? 'absolute inset-0' : 'contents'}>
+        {/* Inner wrapper — absolute when using paddingBottom trick */}
+        <div className={minimal ? 'absolute inset-0' : 'contents'}>
+
         {(storageUrl || thumbnailUrl) && !imageError ? (
           <>
             {isVideo && storageUrl ? (
