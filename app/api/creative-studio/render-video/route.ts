@@ -289,15 +289,18 @@ export async function POST(req: Request) {
               overlayConfig,
             },
             onProgress: async (update) => {
+              // Map Remotion's 0-1 overallProgress into the 25-90% band
+              // so sandbox setup (0-25%) and upload (90-100%) bookend it
+              const mappedProgress = 0.25 + (update.overallProgress * 0.65)
               switch (update.stage) {
                 case 'opening-browser':
-                  await send({ type: 'phase', phase: 'Opening browser...', progress: update.overallProgress })
+                  await send({ type: 'phase', phase: 'Opening browser...', progress: mappedProgress })
                   break
                 case 'selecting-composition':
-                  await send({ type: 'phase', phase: 'Selecting composition...', progress: update.overallProgress })
+                  await send({ type: 'phase', phase: 'Selecting composition...', progress: mappedProgress })
                   break
                 case 'render-progress':
-                  await send({ type: 'phase', phase: 'Rendering video...', progress: update.overallProgress })
+                  await send({ type: 'phase', phase: 'Rendering video...', progress: mappedProgress })
                   break
                 default:
                   break

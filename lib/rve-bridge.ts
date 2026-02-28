@@ -112,24 +112,15 @@ export function overlayConfigToRVEOverlays(
   // 1. Hook → TextOverlay (foreground)
   if (config.hook) {
     const h = config.hook
-    const pos = POSITION_MAP[h.position || 'top']
+    const pos = h.rvePosition || POSITION_MAP[h.position || 'top']
     const content = h.line2 ? `${h.line1}\n${h.line2}` : h.line1
     const hookTiming = clampTiming(secToFrames(h.startSec, fps), secToFrames(h.endSec - h.startSec, fps), totalFrames)
 
-    if (hookTiming) overlays.push({
-      id: genId(),
-      type: OverlayType.TEXT,
-      content,
-      from: hookTiming.from,
-      durationInFrames: hookTiming.durationInFrames,
-      left: pos.left,
-      top: pos.top,
-      width: pos.width,
-      height: pos.height,
-      row: hookRow,
-      isDragging: false,
-      rotation: 0,
-      styles: {
+    if (hookTiming) {
+      const hookStyles = h.rveStyles ? {
+        ...h.rveStyles,
+        __ksTag: META_TAG_HOOK,
+      } : {
         fontSize: `${h.fontSize || 52}px`,
         fontWeight: String(h.fontWeight || 800),
         color: '#FFFFFF',
@@ -137,17 +128,31 @@ export function overlayConfigToRVEOverlays(
         fontFamily: 'Outfit',
         fontStyle: 'normal',
         textDecoration: 'none',
-        textAlign: 'center',
+        textAlign: 'center' as const,
         textShadow: '2px 2px 8px rgba(0,0,0,0.7)',
         animation: (h.animationEnter || h.animationExit) ? {
           enter: h.animationEnter || 'none',
           exit: h.animationExit || 'none',
         } : undefined,
-        // Tag for reverse identification
-        // @ts-expect-error — custom metadata property
         __ksTag: META_TAG_HOOK,
-      },
-    } satisfies TextOverlay)
+      }
+      overlays.push({
+        id: genId(),
+        type: OverlayType.TEXT,
+        content,
+        from: hookTiming.from,
+        durationInFrames: hookTiming.durationInFrames,
+        left: pos.left,
+        top: pos.top,
+        width: pos.width,
+        height: pos.height,
+        row: hookRow,
+        isDragging: false,
+        rotation: 0,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        styles: hookStyles as any,
+      } satisfies Omit<TextOverlay, 'styles'> & { styles: any })
+    }
   }
 
   // 2. Captions → CaptionOverlay
@@ -178,7 +183,7 @@ export function overlayConfigToRVEOverlays(
       }
     })
 
-    const captionPos = POSITION_MAP[captions[0]?.position || 'bottom']
+    const captionPos = config.captionPosition || POSITION_MAP[captions[0]?.position || 'bottom']
     const capTiming = clampTiming(secToFrames(firstStart, fps), secToFrames(lastEnd - firstStart, fps), totalFrames)
 
     if (capTiming) overlays.push({
@@ -574,6 +579,7 @@ export function rveOverlaysToOverlayConfig(
   const graphics: KSGraphicOverlay[] = []
   let captionStyles: Record<string, any> | undefined
   let captionTemplate: string | undefined
+  let captionPosition: { left: number; top: number; width: number; height: number } | undefined
 
   // End card reconstruction
   let endCardBg: { from: number; durationInFrames: number; backgroundColor: string } | undefined
@@ -616,6 +622,8 @@ export function rveOverlaysToOverlayConfig(
       fontSize: parseInt(text.styles.fontSize) || 52,
       fontWeight: parseInt(text.styles.fontWeight) || 800,
       position: nearestPosition(text.top),
+      rveStyles: { ...text.styles },
+      rvePosition: { left: text.left, top: text.top, width: text.width, height: text.height },
     }
   }
 
@@ -725,12 +733,15 @@ export function rveOverlaysToOverlayConfig(
           highlightWord: c.words?.[0]?.word,
         })
       })
-      // Capture full caption styles and template for round-trip fidelity
+      // Capture full caption styles, template, and position for round-trip fidelity
       if (!captionStyles && cap.styles) {
         captionStyles = { ...cap.styles }
       }
       if (!captionTemplate && cap.template) {
         captionTemplate = cap.template
+      }
+      if (!captionPosition) {
+        captionPosition = { left: cap.left, top: cap.top, width: cap.width, height: cap.height }
       }
     }
 
@@ -884,5 +895,6 @@ export function rveOverlaysToOverlayConfig(
     videoClips: videoClips.length > 0 ? videoClips : undefined,
     captionStyles: captionStyles || existingConfig?.captionStyles,
     captionTemplate: captionTemplate || existingConfig?.captionTemplate,
+    captionPosition: captionPosition || existingConfig?.captionPosition,
   }
 }

@@ -75,6 +75,7 @@ export default function VideoEditorPage() {
   const [renderingVersionId, setRenderingVersionId] = useState<string | null>(null)
   const [renderToastMessage, setRenderToastMessage] = useState<string | null>(null)
   const [renderToastType, setRenderToastType] = useState<'progress' | 'success' | 'error'>('progress')
+  const [renderProgress, setRenderProgress] = useState(0)
 
   // Project naming
   const [projectName, setProjectName] = useState<string | null>(null)
@@ -1021,6 +1022,7 @@ export default function VideoEditorPage() {
     }
 
     setIsRendering(true)
+    setRenderProgress(0)
     setRenderToastMessage(`Rendering v${selectedVersionData.version}...`)
     setRenderToastType('progress')
     setRenderingVersionId(selectedVersionData.id)
@@ -1075,8 +1077,11 @@ export default function VideoEditorPage() {
           try {
             const data = JSON.parse(line.slice(6))
             if (data.type === 'phase') {
+              const pct = Math.round((data.progress ?? 0) * 100)
+              setRenderProgress(pct)
               setRenderToastMessage(`v${selectedVersionData.version}: ${data.phase}`)
             } else if (data.type === 'done') {
+              setRenderProgress(100)
               setRenderToastMessage(`v${selectedVersionData.version} rendered successfully`)
               setRenderToastType('success')
               setIsRendering(false)
@@ -1538,20 +1543,33 @@ export default function VideoEditorPage() {
 
       {/* Render toast notification */}
       {renderToastMessage && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-sm transition-all ${
+        <div className={`fixed bottom-6 right-6 z-50 rounded-xl shadow-2xl border backdrop-blur-sm transition-all overflow-hidden ${
           renderToastType === 'success'
             ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-200'
             : renderToastType === 'error'
               ? 'bg-red-950/90 border-red-500/30 text-red-200'
               : 'bg-zinc-900/90 border-zinc-700/50 text-zinc-200'
         }`}>
-          {renderToastType === 'progress' && <Loader2 className="w-4 h-4 animate-spin text-blue-400 flex-shrink-0" />}
-          {renderToastType === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />}
-          {renderToastType === 'error' && <X className="w-4 h-4 text-red-400 flex-shrink-0" />}
-          <span className="text-sm">{renderToastMessage}</span>
-          <button onClick={() => setRenderToastMessage(null)} className="ml-2 p-0.5 rounded hover:bg-white/10 transition-colors">
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-3 px-4 py-3">
+            {renderToastType === 'progress' && <Loader2 className="w-4 h-4 animate-spin text-blue-400 flex-shrink-0" />}
+            {renderToastType === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />}
+            {renderToastType === 'error' && <X className="w-4 h-4 text-red-400 flex-shrink-0" />}
+            <span className="text-sm">{renderToastMessage}</span>
+            {renderToastType === 'progress' && (
+              <span className="text-xs font-mono text-blue-400 ml-auto">{renderProgress}%</span>
+            )}
+            <button onClick={() => setRenderToastMessage(null)} className="ml-2 p-0.5 rounded hover:bg-white/10 transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {renderToastType === 'progress' && (
+            <div className="h-1 w-full bg-zinc-800">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                style={{ width: `${renderProgress}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

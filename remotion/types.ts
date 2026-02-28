@@ -12,6 +12,8 @@ export interface HookOverlay {
   fontSize?: number              // default 52
   fontWeight?: number            // default 800
   position?: 'top' | 'center' | 'bottom'  // default 'top'
+  rveStyles?: Record<string, any>  // full RVE styles for round-trip fidelity
+  rvePosition?: { left: number; top: number; width: number; height: number }
 }
 
 export interface CaptionOverlay {
@@ -107,6 +109,7 @@ export interface OverlayConfig {
   videoClips?: VideoClipEdit[]  // persisted video clip edits (cuts/trims/splits)
   captionStyles?: Record<string, any>  // full RVE caption styles for round-trip fidelity
   captionTemplate?: string              // RVE caption template name
+  captionPosition?: { left: number; top: number; width: number; height: number }  // exact canvas position
 }
 
 // Full props passed to the Remotion composition
