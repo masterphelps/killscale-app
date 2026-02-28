@@ -277,6 +277,8 @@ export async function POST(req: Request) {
         return
       }
 
+      console.log(`[RenderVideo] Cloud Run complete: size=${fileSize}, url=${cloudRunUrl}`)
+
       // ── Download from Cloud Run → Upload to Supabase Storage ──
       await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.9 })
 
@@ -288,41 +290,42 @@ export async function POST(req: Request) {
         videoResponse = await fetch(cloudRunUrl)
       } catch (fetchErr) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
-        await send({ type: 'error', message: `[Download] fetch failed: ${msg} url=${cloudRunUrl}` })
+        await send({ type: 'error', message: `[Download] Failed to download rendered video: ${msg}` })
         return
       }
 
       if (!videoResponse.ok) {
-        // Download failed — still save with Cloud Run URL directly
-        console.error(`[RenderVideo] Cloud Run download failed: ${videoResponse.status} from ${cloudRunUrl}`)
-        await supabaseAdmin
-          .from('video_overlays')
-          .update({ render_status: 'complete', rendered_video_url: cloudRunUrl })
-          .eq('id', overlayId)
-        await send({ type: 'done', url: cloudRunUrl, size: fileSize })
+        await send({ type: 'error', message: `[Download] Failed to download rendered video (HTTP ${videoResponse.status})` })
         return
       }
 
       const videoBuffer = Buffer.from(await videoResponse.arrayBuffer())
+
+      if (videoBuffer.length < 10000) {
+        console.error(`[RenderVideo] Downloaded only ${videoBuffer.length} bytes (expected ${fileSize}) from ${cloudRunUrl}`)
+        await send({ type: 'error', message: `[Download] Rendered file is corrupt (${videoBuffer.length} bytes). Please try rendering again.` })
+        return
+      }
 
       const { error: uploadError } = await supabaseAdmin.storage
         .from('media')
         .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
 
       if (uploadError) {
-        // Retry once
         const { error: retryError } = await supabaseAdmin.storage
           .from('media')
           .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
         if (retryError) {
-          console.error('[RenderVideo] Supabase upload retry failed:', retryError)
+          console.error('[RenderVideo] Supabase upload failed after retry:', retryError)
+          await send({ type: 'error', message: `[Upload] Failed to save rendered video to storage` })
+          return
         }
       }
 
       const { data: publicUrlData } = supabaseAdmin.storage
         .from('media')
         .getPublicUrl(storagePath)
-      const renderedVideoUrl = publicUrlData?.publicUrl || cloudRunUrl
+      const renderedVideoUrl = publicUrlData.publicUrl
 
       // ── Update overlay record ──
       await supabaseAdmin

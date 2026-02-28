@@ -10,9 +10,18 @@ import {
   Audio,
   Img,
 } from 'remotion'
-import type { AdOverlayProps, HookOverlay, CaptionOverlay, CTAOverlay, GraphicOverlay, OverlayStyle } from './types'
+import type { AdOverlayProps, HookOverlay, CaptionOverlay, CTAOverlay, GraphicOverlay, OverlayStyle, OverlayConfig } from './types'
 
-// ─── Style Presets ───────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Strip internal metadata keys from rveStyles before applying as CSS */
+function cleanStyles(styles: Record<string, any> | undefined): React.CSSProperties {
+  if (!styles) return {}
+  const { __ksTag, fontSizeScale, ...css } = styles
+  return css as React.CSSProperties
+}
+
+// ─── Style Presets (fallback when rveStyles not available) ────────────────────
 
 const STYLE_PRESETS: Record<OverlayStyle, {
   fontFamily: string
@@ -129,7 +138,54 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
 }) => {
   const preset = STYLE_PRESETS[styleName]
   const anim = useEntryAnimation(config.animation)
+  const hasRve = !!(config.rvePosition && config.rveStyles)
 
+  if (hasRve) {
+    // ── RVE mode: exact position + exact styles from the editor ──
+    const pos = config.rvePosition!
+    const styles = cleanStyles(config.rveStyles)
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'hidden',
+          opacity: anim.opacity,
+        }}
+      >
+        <div style={{ ...styles, width: '100%' }}>
+          {config.line1}
+        </div>
+        {config.line2 && (
+          <div
+            style={{
+              ...styles,
+              width: '100%',
+              color: config.line2Color || brandColor || '#10B981',
+              // Override gradient text for line2 if it has a solid color
+              ...(config.line2Color ? {
+                WebkitTextFillColor: config.line2Color,
+                WebkitBackgroundClip: undefined,
+                background: undefined,
+              } : {}),
+              marginTop: 8,
+            }}
+          >
+            {config.line2}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Fallback: preset-based positioning ──
   const positionStyle: React.CSSProperties = (() => {
     switch (config.position || 'top') {
       case 'center': return { top: '50%', transform: 'translateY(-50%)' }
@@ -138,7 +194,6 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
     }
   })()
 
-  // Merge animation transform with position transform
   const mergedStyle: React.CSSProperties = {
     position: 'absolute',
     left: 0,
@@ -149,7 +204,6 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
     padding: '0 40px',
     ...positionStyle,
     opacity: anim.opacity,
-    // Combine position transform (if center) with animation transform
     transform: [positionStyle.transform, anim.transform].filter(Boolean).join(' ') || undefined,
   }
 
@@ -200,27 +254,42 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
 
 // ─── Caption Component ───────────────────────────────────────────────────────
 
-const Caption: React.FC<{ config: CaptionOverlay; style: OverlayStyle; brandColor?: string }> = ({
+const Caption: React.FC<{
+  config: CaptionOverlay
+  style: OverlayStyle
+  brandColor?: string
+  captionStyles?: Record<string, any>
+  captionPosition?: { left: number; top: number; width: number; height: number }
+}> = ({
   config,
   style: styleName,
   brandColor,
+  captionStyles,
+  captionPosition,
 }) => {
   const preset = STYLE_PRESETS[styleName]
   const frame = useCurrentFrame()
   const opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' })
+  const hasRve = !!(captionPosition && captionStyles)
 
   // Highlight a specific word in the text
-  const renderText = () => {
+  const renderText = (baseStyles: React.CSSProperties) => {
     if (!config.highlightWord) {
       return <span>{config.text}</span>
     }
 
     const parts = config.text.split(new RegExp(`(${config.highlightWord})`, 'gi'))
+
+    // RVE highlight styles if available
+    const hlStyle: React.CSSProperties = captionStyles?.highlightStyle
+      ? cleanStyles(captionStyles.highlightStyle)
+      : { color: brandColor || preset.captionHighlight }
+
     return (
       <>
         {parts.map((part, i) =>
           part.toLowerCase() === config.highlightWord!.toLowerCase() ? (
-            <span key={i} style={{ color: brandColor || preset.captionHighlight }}>{part}</span>
+            <span key={i} style={hlStyle}>{part}</span>
           ) : (
             <span key={i}>{part}</span>
           )
@@ -229,6 +298,35 @@ const Caption: React.FC<{ config: CaptionOverlay; style: OverlayStyle; brandColo
     )
   }
 
+  if (hasRve) {
+    // ── RVE mode: exact position + exact styles from the editor ──
+    const pos = captionPosition!
+    const { highlightStyle, ...textCss } = captionStyles || {}
+    const styles = cleanStyles(textCss)
+
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'hidden',
+          opacity,
+        }}
+      >
+        <div style={{ ...styles, width: '100%' }}>
+          {renderText(styles)}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Fallback: preset-based positioning ──
   const captionPositionStyle: React.CSSProperties = (() => {
     switch (config.position || 'bottom') {
       case 'top': return { top: '12%' }
@@ -236,6 +334,16 @@ const Caption: React.FC<{ config: CaptionOverlay; style: OverlayStyle; brandColo
       default: return { bottom: '18%' }
     }
   })()
+
+  const fallbackStyles: React.CSSProperties = {
+    fontFamily: preset.fontFamily,
+    fontSize: config.fontSize || 36,
+    fontWeight: config.fontWeight || 600,
+    color: preset.captionTextColor,
+    textAlign: 'center',
+    lineHeight: 1.4,
+    textShadow: `0 1px 4px rgba(0,0,0,${preset.shadowIntensity})`,
+  }
 
   return (
     <div
@@ -260,18 +368,8 @@ const Caption: React.FC<{ config: CaptionOverlay; style: OverlayStyle; brandColo
           maxWidth: '90%',
         }}
       >
-        <div
-          style={{
-            fontFamily: preset.fontFamily,
-            fontSize: config.fontSize || 36,
-            fontWeight: config.fontWeight || 600,
-            color: preset.captionTextColor,
-            textAlign: 'center',
-            lineHeight: 1.4,
-            textShadow: `0 1px 4px rgba(0,0,0,${preset.shadowIntensity})`,
-          }}
-        >
-          {renderText()}
+        <div style={fallbackStyles}>
+          {renderText(fallbackStyles)}
         </div>
       </div>
     </div>
@@ -287,7 +385,35 @@ const CTASection: React.FC<{ config: CTAOverlay; style: OverlayStyle; brandColor
 }) => {
   const preset = STYLE_PRESETS[styleName]
   const anim = useEntryAnimation(config.animation)
+  const hasRve = !!(config.rvePosition && config.rveStyles)
 
+  if (hasRve) {
+    // ── RVE mode: exact position + exact styles from the editor ──
+    const pos = config.rvePosition!
+    const styles = cleanStyles(config.rveStyles)
+
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          opacity: anim.opacity,
+        }}
+      >
+        <div style={{ ...styles, width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {config.buttonText}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Fallback: preset-based positioning ──
   const buttonBg = config.buttonColor || brandColor || preset.ctaBg
 
   return (
@@ -348,6 +474,35 @@ const GraphicItem: React.FC<{ config: GraphicOverlay; style: OverlayStyle }> = (
   const frame = useCurrentFrame()
   const opacity = interpolate(frame, [0, 10], [0, config.opacity ?? 0.8], { extrapolateRight: 'clamp' })
 
+  if (config.rvePosition) {
+    // ── RVE mode: exact position from the editor ──
+    const pos = config.rvePosition
+    const styles = cleanStyles(config.rveStyles)
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          height: pos.height,
+          opacity,
+          ...(config.rotation ? { transform: `rotate(${config.rotation}deg)` } : {}),
+          ...styles,
+        }}
+      >
+        {config.imageUrl ? (
+          <Img src={config.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        ) : config.text ? (
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+            {config.text}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  // ── Fallback: preset-based positioning ──
   const positionStyle: React.CSSProperties = (() => {
     switch (config.position) {
       case 'top_left': return { top: 24, left: 24 }
@@ -476,7 +631,13 @@ export const AdOverlay: React.FC<AdOverlayProps> = ({ videoUrl, durationInSecond
             from={secToFrame(caption.startSec)}
             durationInFrames={capDur}
           >
-            <Caption config={caption} style={styleName} brandColor={brandColor} />
+            <Caption
+              config={caption}
+              style={styleName}
+              brandColor={brandColor}
+              captionStyles={overlayConfig.captionStyles}
+              captionPosition={overlayConfig.captionPosition}
+            />
           </Sequence>
         )
       })}
