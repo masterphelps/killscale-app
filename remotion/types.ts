@@ -53,6 +53,9 @@ export interface GraphicOverlay {
   endSec: number
   opacity?: number
   animation?: { enter?: string; exit?: string }
+  rveStyles?: Record<string, any>
+  rvePosition?: { left: number; top: number; width: number; height: number }
+  rotation?: number
 }
 
 export interface EndCardOverlay {
@@ -83,6 +86,8 @@ export interface VideoClipEdit {
   mediaSrcDuration?: number   // total source file duration in seconds
   volume?: number
   animation?: { enter?: string; exit?: string }
+  rveStyles?: Record<string, any>
+  greenscreen?: any           // GreenscreenConfig from RVE
 }
 
 /** Persisted music track on the timeline */
@@ -92,6 +97,11 @@ export interface MusicTrack {
   fromFrame: number
   durationFrames: number
   volume?: number
+  fadeIn?: number              // fade in duration in seconds
+  fadeOut?: number              // fade out duration in seconds
+  startFromSound?: number      // audio trim offset in seconds
+  mediaSrcDuration?: number    // source file total duration in seconds
+  rveStyles?: Record<string, any>
 }
 
 export interface OverlayConfig {

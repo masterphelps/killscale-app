@@ -1,13 +1,7 @@
-import {
-  addBundleToSandbox,
-  createSandbox,
-  renderMediaOnVercel,
-  uploadToVercelBlob,
-} from '@remotion/vercel'
+import { renderMediaOnCloudrun } from '@remotion/cloudrun/client'
 import { waitUntil } from '@vercel/functions'
 import { createClient } from '@supabase/supabase-js'
-import { restoreSnapshot } from './restore-snapshot'
-import { bundleRemotionProject, formatSSE, type RenderProgress } from './helpers'
+import { formatSSE, type RenderProgress } from './helpers'
 import type { OverlayConfig } from '@/remotion/types'
 
 // Render can take several minutes — extend function lifetime (Vercel Pro w/ Fluid Compute: up to 800s)
@@ -17,6 +11,17 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// Bridge existing GCP env vars to REMOTION_GCP_* format if needed
+if (process.env.GCP_SERVICE_ACCOUNT_EMAIL && !process.env.REMOTION_GCP_CLIENT_EMAIL) {
+  process.env.REMOTION_GCP_CLIENT_EMAIL = process.env.GCP_SERVICE_ACCOUNT_EMAIL
+}
+if (process.env.GCP_SERVICE_ACCOUNT_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY) {
+  process.env.REMOTION_GCP_PRIVATE_KEY = process.env.GCP_SERVICE_ACCOUNT_KEY
+}
+if (process.env.GOOGLE_CLOUD_PROJECT && !process.env.REMOTION_GCP_PROJECT_ID) {
+  process.env.REMOTION_GCP_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT
+}
 
 /**
  * Determine the correct Remotion composition ID based on video dimensions.
@@ -35,18 +40,13 @@ export async function POST(req: Request) {
   const stream = new TransformStream()
   const writer = stream.writable.getWriter()
 
-  if (!process.env.VERCEL) {
-    return new Response(
-      JSON.stringify({ error: 'Video export requires Vercel Sandbox and is only available in production. Deploy to Vercel to use this feature.' }),
-      { status: 501, headers: { 'Content-Type': 'application/json' } }
-    )
-  }
+  const serviceName = process.env.REMOTION_CLOUDRUN_SERVICE_NAME
+  const serveUrl = process.env.REMOTION_CLOUDRUN_SERVE_URL
 
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN
-  if (!blobToken) {
+  if (!serviceName || !serveUrl) {
     return new Response(
-      JSON.stringify({ error: 'BLOB_READ_WRITE_TOKEN is not set. Create a Vercel Blob store and connect it to your project.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      JSON.stringify({ error: 'Remotion Cloud Run is not configured. Set REMOTION_CLOUDRUN_SERVICE_NAME and REMOTION_CLOUDRUN_SERVE_URL.' }),
+      { status: 501, headers: { 'Content-Type': 'application/json' } }
     )
   }
 
@@ -230,201 +230,108 @@ export async function POST(req: Request) {
         overlayId = overlay.id
       }
 
-      // ── Create sandbox ──
-      await send({ type: 'phase', phase: 'Creating render environment...', progress: 0 })
+      // ── Render via Cloud Run ──
+      const remotionCompId = selectCompositionId(videoWidth, videoHeight)
+      const region = (process.env.REMOTION_GCP_REGION || 'us-east1') as 'us-east1'
 
-      let sandbox: Awaited<ReturnType<typeof createSandbox>>
-      let needsBundle = false
+      await send({ type: 'phase', phase: 'Sending to Cloud Run...', progress: 0.05 })
 
-      if (process.env.VERCEL) {
-        try {
-          await send({ type: 'phase', phase: 'Restoring snapshot...', progress: 0.05 })
-          sandbox = await restoreSnapshot()
-          await send({ type: 'phase', phase: 'Snapshot restored', progress: 0.15 })
-        } catch (snapshotErr) {
-          const snapshotMsg = snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr)
-          await send({ type: 'phase', phase: `No snapshot (${snapshotMsg.slice(0, 80)}), creating fresh sandbox...`, progress: 0.05 })
-          console.log('[RenderVideo] Snapshot restore failed:', snapshotMsg)
-          sandbox = await createSandbox({
-            onProgress: async ({ progress, message }) => {
-              await send({ type: 'phase', phase: message, progress })
-            },
-          })
-          needsBundle = true
-        }
-      } else {
-        sandbox = await createSandbox({
-          onProgress: async ({ progress, message }) => {
-            await send({
-              type: 'phase',
-              phase: message,
-              progress,
-              subtitle: 'This is only needed during development.',
-            })
+      let result: Awaited<ReturnType<typeof renderMediaOnCloudrun>>
+      try {
+        await send({ type: 'phase', phase: 'Rendering video...', progress: 0.1 })
+        result = await renderMediaOnCloudrun({
+          region,
+          serviceName,
+          serveUrl,
+          composition: remotionCompId,
+          codec: 'h264',
+          inputProps: {
+            videoUrl,
+            durationInSeconds,
+            overlayConfig,
           },
+          privacy: 'public',
         })
-        needsBundle = true
+      } catch (renderErr) {
+        const msg = renderErr instanceof Error ? renderErr.message : String(renderErr)
+        await send({ type: 'error', message: `[Render] ${msg}` })
+        return
       }
 
+      if (result.type === 'crash') {
+        await send({ type: 'error', message: `[Render] Cloud Run crashed: ${result.message}` })
+        return
+      }
+
+      const cloudRunUrl = result.publicUrl
+      const fileSize = result.size
+
+      if (!cloudRunUrl) {
+        await send({ type: 'error', message: '[Render] No public URL returned from Cloud Run' })
+        return
+      }
+
+      // ── Download from Cloud Run → Upload to Supabase Storage ──
+      await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.9 })
+
+      const cleanAccountId = adAccountId.replace(/^act_/, '')
+      const storagePath = `${cleanAccountId}/videos/rendered/${overlayId}.mp4`
+
+      let videoResponse: Response
       try {
-        if (needsBundle) {
-          // In dev, bundle at runtime. On Vercel, use pre-built bundle from build step.
-          if (!process.env.VERCEL) {
-            bundleRemotionProject('.remotion')
-          }
-          await send({ type: 'phase', phase: 'Uploading bundle to sandbox...', progress: 0.15 })
-          await sandbox.mkDir('remotion-bundle')
-          await addBundleToSandbox({ sandbox, bundleDir: '.remotion' })
-        }
+        videoResponse = await fetch(cloudRunUrl)
+      } catch (fetchErr) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        await send({ type: 'error', message: `[Download] fetch failed: ${msg} url=${cloudRunUrl}` })
+        return
+      }
 
-        // ── Render video ──
-        const remotionCompId = selectCompositionId(videoWidth, videoHeight)
-        await send({ type: 'phase', phase: 'Rendering video...', progress: 0.25 })
-
-        let sandboxFilePath: string
-        let renderContentType: string
-        try {
-          const result = await renderMediaOnVercel({
-            sandbox,
-            compositionId: remotionCompId,
-            inputProps: {
-              videoUrl,
-              durationInSeconds,
-              overlayConfig,
-            },
-            onProgress: async (update) => {
-              // Map Remotion's 0-1 overallProgress into the 25-90% band
-              // so sandbox setup (0-25%) and upload (90-100%) bookend it
-              const mappedProgress = 0.25 + (update.overallProgress * 0.65)
-              switch (update.stage) {
-                case 'opening-browser':
-                  await send({ type: 'phase', phase: 'Opening browser...', progress: mappedProgress })
-                  break
-                case 'selecting-composition':
-                  await send({ type: 'phase', phase: 'Selecting composition...', progress: mappedProgress })
-                  break
-                case 'render-progress':
-                  await send({ type: 'phase', phase: 'Rendering video...', progress: mappedProgress })
-                  break
-                default:
-                  break
-              }
-            },
-          })
-          sandboxFilePath = result.sandboxFilePath
-          renderContentType = result.contentType
-        } catch (renderErr) {
-          const msg = renderErr instanceof Error ? renderErr.message : String(renderErr)
-          await send({ type: 'error', message: `[Render] ${msg}` })
-          return
-        }
-
-        // ── Upload to Vercel Blob ──
-        await send({ type: 'phase', phase: 'Uploading to blob...', progress: 0.9 })
-
-        let blobUrl: string
-        let size: number
-        try {
-          const blobResult = await uploadToVercelBlob({
-            sandbox,
-            sandboxFilePath,
-            contentType: renderContentType,
-            blobToken,
-            access: 'public',
-          })
-          blobUrl = blobResult.url
-          size = blobResult.size
-        } catch (blobErr) {
-          const msg = blobErr instanceof Error ? blobErr.message : String(blobErr)
-          await send({ type: 'error', message: `[BlobUpload] ${msg}` })
-          return
-        }
-
-        // ── Download from Blob → Upload to Supabase Storage ──
-        await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.95 })
-
-        const cleanAccountId = adAccountId.replace(/^act_/, '')
-        const storagePath = `${cleanAccountId}/videos/rendered/${overlayId}.mp4`
-
-        let blobResponse: Response
-        try {
-          blobResponse = await fetch(blobUrl)
-        } catch (fetchErr) {
-          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
-          await send({ type: 'error', message: `[BlobDownload] fetch failed: ${msg} url=${blobUrl}` })
-          return
-        }
-
-        if (!blobResponse.ok) {
-          // Blob download failed — still save with blob URL directly
-          console.error(`[RenderVideo] Blob download failed: ${blobResponse.status} from ${blobUrl}`)
-          await supabaseAdmin
-            .from('video_overlays')
-            .update({ render_status: 'complete', rendered_video_url: blobUrl })
-            .eq('id', overlayId)
-          await send({ type: 'done', url: blobUrl, size })
-          return
-        }
-
-        const videoBuffer = Buffer.from(await blobResponse.arrayBuffer())
-
-        const { error: uploadError } = await supabaseAdmin.storage
-          .from('media')
-          .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-
-        if (uploadError) {
-          // Retry once
-          const { error: retryError } = await supabaseAdmin.storage
-            .from('media')
-            .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-          if (retryError) {
-            console.error('[RenderVideo] Supabase upload retry failed:', retryError)
-          }
-        }
-
-        const { data: publicUrlData } = supabaseAdmin.storage
-          .from('media')
-          .getPublicUrl(storagePath)
-        const renderedVideoUrl = publicUrlData?.publicUrl || blobUrl
-
-        // ── Update overlay record ──
+      if (!videoResponse.ok) {
+        // Download failed — still save with Cloud Run URL directly
+        console.error(`[RenderVideo] Cloud Run download failed: ${videoResponse.status} from ${cloudRunUrl}`)
         await supabaseAdmin
           .from('video_overlays')
-          .update({
-            render_status: 'complete',
-            rendered_video_url: renderedVideoUrl,
-          })
+          .update({ render_status: 'complete', rendered_video_url: cloudRunUrl })
           .eq('id', overlayId)
-
-        await send({ type: 'done', url: renderedVideoUrl, size })
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
-        console.error('[RenderVideo] Render failed:', errDetail)
-        if (overlayId) {
-          if (body.overlayId) {
-            // Existing version — mark as failed, don't delete
-            await supabaseAdmin
-              .from('video_overlays')
-              .update({ render_status: 'failed' })
-              .eq('id', overlayId)
-          } else {
-            // Newly created version — delete the orphaned row
-            await supabaseAdmin
-              .from('video_overlays')
-              .delete()
-              .eq('id', overlayId)
-          }
-        }
-        await send({ type: 'error', message: errMsg })
-      } finally {
-        await sandbox?.stop().catch(() => {})
-        await writer.close()
+        await send({ type: 'done', url: cloudRunUrl, size: fileSize })
+        return
       }
+
+      const videoBuffer = Buffer.from(await videoResponse.arrayBuffer())
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('media')
+        .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
+
+      if (uploadError) {
+        // Retry once
+        const { error: retryError } = await supabaseAdmin.storage
+          .from('media')
+          .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
+        if (retryError) {
+          console.error('[RenderVideo] Supabase upload retry failed:', retryError)
+        }
+      }
+
+      const { data: publicUrlData } = supabaseAdmin.storage
+        .from('media')
+        .getPublicUrl(storagePath)
+      const renderedVideoUrl = publicUrlData?.publicUrl || cloudRunUrl
+
+      // ── Update overlay record ──
+      await supabaseAdmin
+        .from('video_overlays')
+        .update({
+          render_status: 'complete',
+          rendered_video_url: renderedVideoUrl,
+        })
+        .eq('id', overlayId)
+
+      await send({ type: 'done', url: renderedVideoUrl, size: fileSize })
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       const errDetail = JSON.stringify(err, Object.getOwnPropertyNames(err as object))
-      console.error('[RenderVideo] Setup failed:', errDetail)
+      console.error('[RenderVideo] Render failed:', errDetail)
       if (overlayId) {
         if (body.overlayId) {
           // Existing version — mark as failed, don't delete
@@ -441,7 +348,8 @@ export async function POST(req: Request) {
         }
       }
       await send({ type: 'error', message: errMsg })
-      await writer.close().catch(() => {})
+    } finally {
+      await writer.close()
     }
   }
 

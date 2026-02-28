@@ -310,7 +310,7 @@ export function overlayConfigToRVEOverlays(
   // 4. Graphics → ImageOverlay
   if (config.graphics) {
     config.graphics.forEach(g => {
-      const gPos = GRAPHIC_POSITION_MAP[g.position] || GRAPHIC_POSITION_MAP.center
+      const gPos = g.rvePosition || { ...GRAPHIC_POSITION_MAP[g.position] || GRAPHIC_POSITION_MAP.center, width: 160, height: 160 }
       const gTiming = clampTiming(secToFrames(g.startSec, fps), secToFrames(g.endSec - g.startSec, fps), totalFrames)
       if (!gTiming) return
 
@@ -323,12 +323,14 @@ export function overlayConfigToRVEOverlays(
         durationInFrames: gTiming.durationInFrames,
         left: gPos.left,
         top: gPos.top,
-        width: 160,
-        height: 160,
+        width: gPos.width,
+        height: gPos.height,
         row: graphicsRow,
         isDragging: false,
-        rotation: 0,
-        styles: {
+        rotation: g.rotation || 0,
+        styles: g.rveStyles ? {
+          ...g.rveStyles,
+        } : {
           opacity: g.opacity ?? 1,
           objectFit: 'contain',
         },
@@ -363,7 +365,7 @@ export function overlayConfigToRVEOverlays(
   // 5b. Music tracks → SoundOverlay (no voiceover tag)
   if (config.musicTracks) {
     for (const track of config.musicTracks) {
-      overlays.push({
+      const soundOverlay: SoundOverlay = {
         id: genId(),
         type: OverlayType.SOUND,
         content: track.title,
@@ -377,12 +379,20 @@ export function overlayConfigToRVEOverlays(
         row: musicRow,
         isDragging: false,
         rotation: 0,
-        styles: {
-          volume: track.volume ?? 1,
-          // @ts-expect-error — custom metadata property
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        styles: track.rveStyles ? {
+          ...track.rveStyles,
           __ksTag: META_TAG_MUSIC,
-        },
-      } satisfies SoundOverlay)
+        } as any : {
+          volume: track.volume ?? 1,
+          fadeIn: track.fadeIn,
+          fadeOut: track.fadeOut,
+          __ksTag: META_TAG_MUSIC,
+        } as any,
+      }
+      if (track.startFromSound != null) soundOverlay.startFromSound = track.startFromSound
+      if (track.mediaSrcDuration != null) soundOverlay.mediaSrcDuration = track.mediaSrcDuration
+      overlays.push(soundOverlay)
     }
   }
 
@@ -404,7 +414,9 @@ export function overlayConfigToRVEOverlays(
         row: videoRow,
         isDragging: false,
         rotation: 0,
-        styles: {
+        styles: vc.rveStyles ? {
+          ...vc.rveStyles,
+        } : {
           objectFit: 'cover',
           volume: vc.volume ?? (hasVoiceover ? 0 : 1),
           animation: vc.animation,
@@ -414,6 +426,7 @@ export function overlayConfigToRVEOverlays(
       if (vc.speed != null) clip.speed = vc.speed
       if (vc.segments) clip.segments = vc.segments
       if (vc.mediaSrcDuration != null) clip.mediaSrcDuration = vc.mediaSrcDuration
+      if (vc.greenscreen) clip.greenscreen = vc.greenscreen
       overlays.push(clip)
     }
   } else {
@@ -755,6 +768,10 @@ export function rveOverlaysToOverlayConfig(
         startSec: framesToSec(img.from, fps),
         endSec: framesToSec(img.from + img.durationInFrames, fps),
         opacity: img.styles?.opacity ?? 1,
+        animation: img.styles?.animation,
+        rveStyles: img.styles ? { ...img.styles } : undefined,
+        rvePosition: { left: img.left, top: img.top, width: img.width, height: img.height },
+        rotation: img.rotation,
       })
     }
 
@@ -813,6 +830,8 @@ export function rveOverlaysToOverlayConfig(
       fromFrame: v.from,
       durationFrames: v.durationInFrames,
       volume: v.styles?.volume,
+      rveStyles: v.styles ? { ...v.styles } : undefined,
+      greenscreen: v.greenscreen,
     }
     if (v.videoStartTime != null) vc.videoStartTime = v.videoStartTime
     if (v.speed != null) vc.speed = v.speed
@@ -866,6 +885,11 @@ export function rveOverlaysToOverlayConfig(
           fromFrame: sound.from,
           durationFrames: sound.durationInFrames,
           volume: sound.styles?.volume,
+          fadeIn: sound.styles?.fadeIn,
+          fadeOut: sound.styles?.fadeOut,
+          startFromSound: sound.startFromSound,
+          mediaSrcDuration: sound.mediaSrcDuration,
+          rveStyles: sound.styles ? { ...sound.styles } : undefined,
         })
       }
     }
