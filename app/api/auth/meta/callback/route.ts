@@ -194,7 +194,7 @@ export async function GET(request: NextRequest) {
       console.error('Failed to auto-link accounts to workspace:', linkErr)
     }
 
-    const successUrl = returnTo ? `${returnTo}?meta=success` : '/dashboard'
+    const successUrl = returnTo ? `${returnTo}?meta=success` : '/dashboard/launchpad'
     return NextResponse.redirect(`${baseUrl}${successUrl}`)
     
   } catch (err) {

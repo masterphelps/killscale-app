@@ -16,12 +16,12 @@ export default function LoginPage() {
 
   // Determine redirect based on current subdomain
   const getRedirectPath = () => {
-    if (typeof window === 'undefined') return '/dashboard'
+    if (typeof window === 'undefined') return '/dashboard/launchpad'
     const subdomain = window.location.hostname.split('.')[0]
     // On client subdomain, redirect to client portal
     if (subdomain === 'client') return '/client'
-    // Default to dashboard for main app
-    return '/dashboard'
+    // Default to launchpad for main app
+    return '/dashboard/launchpad'
   }
 
   const handleLogin = async (e: React.FormEvent) => {

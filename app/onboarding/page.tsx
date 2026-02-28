@@ -81,7 +81,7 @@ function OnboardingContent() {
       .single()
 
     if (profile?.onboarding_completed) {
-      router.push('/dashboard')
+      router.push('/dashboard/launchpad')
       return
     }
 
@@ -319,7 +319,7 @@ function OnboardingContent() {
 
       // Full page reload so subscription context re-initializes with the new trial
       // router.push would keep the stale 'None' subscription in memory
-      window.location.href = '/dashboard'
+      window.location.href = '/dashboard/launchpad'
     } catch (err) {
       console.error('Error completing onboarding:', err)
       setError('Failed to complete setup. Please try again.')

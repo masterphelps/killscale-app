@@ -156,7 +156,7 @@ export function Sidebar() {
   const handleSelectWorkspace = async (workspaceId: string) => {
     setShowWorkspaceDropdown(false)
     await switchWorkspace(workspaceId)
-    router.push('/dashboard')
+    router.push('/dashboard/launchpad')
   }
 
   const openSettings = (panel: SettingsPanel = 'profile') => {
@@ -182,7 +182,7 @@ export function Sidebar() {
       {/* Logo + Collapse Toggle */}
       {!isCollapsed ? (
         <div className="flex items-center justify-between mb-6">
-          <Link href="/dashboard" className="flex items-center gap-2 px-2">
+          <Link href="/dashboard/launchpad" className="flex items-center gap-2 px-2">
             <img src="/logo-white.png" alt="KillScale" className="h-12 w-12 object-contain" />
           </Link>
           <button
@@ -195,7 +195,7 @@ export function Sidebar() {
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 mb-6">
-          <Link href="/dashboard" className="flex items-center justify-center">
+          <Link href="/dashboard/launchpad" className="flex items-center justify-center">
             <img src="/favicon.png" alt="KillScale" className="w-8 h-8" />
           </Link>
           <button
