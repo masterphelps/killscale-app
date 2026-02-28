@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     const { userId, canvasId, adAccountId, sourceJobIds, sourceLibraryIds, overlayConfig, title, name, thumbnailUrl, durationSeconds } = await request.json()
 
     if (!userId || !adAccountId || !overlayConfig) {
+      console.log('[video-composition POST] missing fields:', { userId: !!userId, adAccountId: !!adAccountId, overlayConfig: !!overlayConfig })
       return NextResponse.json(
         { error: 'Missing required fields: userId, adAccountId, overlayConfig' },
         { status: 400 }
@@ -90,6 +91,77 @@ export async function GET(request: NextRequest) {
           adAccountId: data.ad_account_id,
         },
       })
+    }
+
+    // List ALL compositions for a user+account (Projects tab)
+    const adAccountId = searchParams.get('adAccountId')
+    if (adAccountId && !canvasId) {
+      const { data, error } = await supabaseAdmin
+        .from('video_compositions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Failed to fetch compositions:', error)
+        return NextResponse.json({ error: 'Failed to fetch compositions' }, { status: 500 })
+      }
+
+      // Fetch thumbnails from source jobs for display
+      const allJobIds = (data || []).flatMap((c: any) => c.source_job_ids || []).filter(Boolean)
+      const jobThumbnails = new Map<string, string>()
+      if (allJobIds.length > 0) {
+        const { data: jobs } = await supabaseAdmin
+          .from('video_generation_jobs')
+          .select('id, thumbnail_url')
+          .in('id', Array.from(new Set(allJobIds)))
+        if (jobs) {
+          for (const j of jobs) {
+            if (j.thumbnail_url) jobThumbnails.set(j.id, j.thumbnail_url)
+          }
+        }
+      }
+
+      // Also fetch latest rendered video URL per composition
+      const compIds = (data || []).map((c: any) => c.id)
+      const latestRenders = new Map<string, string>()
+      if (compIds.length > 0) {
+        const { data: overlays } = await supabaseAdmin
+          .from('video_overlays')
+          .select('composition_id, rendered_video_url, version')
+          .in('composition_id', compIds)
+          .eq('render_status', 'complete')
+          .order('version', { ascending: false })
+        if (overlays) {
+          for (const o of overlays) {
+            if (o.composition_id && o.rendered_video_url && !latestRenders.has(o.composition_id)) {
+              latestRenders.set(o.composition_id, o.rendered_video_url)
+            }
+          }
+        }
+      }
+
+      const compositions = (data || []).map((c: any) => {
+        // Resolve thumbnail: composition's own → first source job's
+        const firstJobId = c.source_job_ids?.[0]
+        const thumbnailUrl = c.thumbnail_url || (firstJobId ? jobThumbnails.get(firstJobId) : null) || null
+        return {
+          id: c.id,
+          canvasId: c.canvas_id,
+          sourceJobIds: c.source_job_ids,
+          sourceLibraryIds: c.source_library_ids,
+          title: c.title,
+          name: c.name,
+          thumbnailUrl,
+          renderedVideoUrl: latestRenders.get(c.id) || null,
+          durationSeconds: c.duration_seconds,
+          createdAt: c.created_at,
+          adAccountId: c.ad_account_id,
+        }
+      })
+
+      return NextResponse.json({ compositions })
     }
 
     // List compositions for a canvas

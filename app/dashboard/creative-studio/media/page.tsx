@@ -101,6 +101,14 @@ export default function AllMediaPage() {
   const [isLoadingCollections, setIsLoadingCollections] = useState(false)
   const [addingToCollection, setAddingToCollection] = useState<string | null>(null)
 
+  // Projects tab state (from video_compositions directly)
+  const [projectCompositions, setProjectCompositions] = useState<Array<{
+    id: string; name: string | null; title: string | null; thumbnailUrl: string | null;
+    renderedVideoUrl: string | null; durationSeconds: number | null; createdAt: string;
+    sourceJobIds: string[];
+  }>>([])
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false)
+
   // Collections tab state
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
   const [selectedCollectionName, setSelectedCollectionName] = useState('')
@@ -171,6 +179,29 @@ export default function AllMediaPage() {
       setIsLoadingCollectionItems(false)
     }
   }, [user?.id])
+
+  // Load projects from video_compositions
+  const loadProjects = useCallback(async () => {
+    if (!user?.id || !currentAccountId) return
+    setIsLoadingProjects(true)
+    try {
+      const params = new URLSearchParams({ userId: user.id, adAccountId: currentAccountId })
+      const res = await fetch(`/api/creative-studio/video-composition?${params}`)
+      const data = await res.json()
+      if (data.compositions) setProjectCompositions(data.compositions)
+    } catch (err) {
+      console.error('Failed to load projects:', err)
+    } finally {
+      setIsLoadingProjects(false)
+    }
+  }, [user?.id, currentAccountId])
+
+  // Auto-load projects when switching to project tab
+  useEffect(() => {
+    if (mediaTab === 'project') {
+      loadProjects()
+    }
+  }, [mediaTab, loadProjects])
 
   // Auto-load collections when switching to collections tab
   useEffect(() => {
@@ -556,9 +587,8 @@ export default function AllMediaPage() {
     let items = [...assets]
 
     // Type filter (for Media tab)
-    if (typeFilter === 'video') items = items.filter(a => a.mediaType === 'video' && (a as any).sourceType !== 'project')
+    if (typeFilter === 'video') items = items.filter(a => a.mediaType === 'video')
     else if (typeFilter === 'image') items = items.filter(a => a.mediaType === 'image')
-    else items = items.filter(a => (a as any).sourceType !== 'project') // 'all' excludes projects (they have their own tab)
 
     // Sort
     items.sort((a, b) => {
@@ -578,11 +608,8 @@ export default function AllMediaPage() {
     }))
   }, [assets, typeFilter, sortBy, sortDesc, starredIds])
 
-  const projects = useMemo(() =>
-    assets.filter(a => (a as any).sourceType === 'project')
-      .map(item => ({ ...item, isStarred: starredIds.has(item.mediaHash) })),
-    [assets, starredIds]
-  )
+  // Projects count for tab badge
+  const projectCount = projectCompositions.length
 
   const collectionAssets = useMemo(() => {
     if (!selectedCollectionId) return []
@@ -696,7 +723,7 @@ export default function AllMediaPage() {
             )}
           >
             <FolderKanban className={cn('w-4 h-4', mediaTab === 'project' ? 'text-emerald-400' : '')} />
-            Projects ({projects.length})
+            Projects ({projectCount})
           </button>
         </div>
 
@@ -940,35 +967,35 @@ export default function AllMediaPage() {
               )
             )
           ) : mediaTab === 'project' ? (
-            isLoading ? (
+            isLoadingProjects ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="aspect-[4/3] bg-bg-card border border-border rounded-2xl animate-pulse" />
                 ))}
               </div>
-            ) : projects.length === 0 ? (
+            ) : projectCompositions.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-bg-card flex items-center justify-center mb-4">
                   <FolderKanban className="w-8 h-8 text-zinc-600" />
                 </div>
                 <h3 className="text-lg font-medium text-white mb-2">No projects yet</h3>
                 <p className="text-sm text-zinc-500 mb-4">
-                  Save a video composition from the Video Editor to see it here
+                  Open a video in the Video Editor and click Save to create a project
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {projects.map((project) => (
-                  <div
+                {projectCompositions.map((project) => (
+                  <Link
                     key={project.id}
+                    href={`/dashboard/creative-studio/video-editor?compositionId=${project.id}&from=media-projects`}
                     className="group bg-bg-card border border-border rounded-2xl overflow-hidden hover:border-zinc-600 transition-all cursor-pointer"
-                    onClick={() => handleSelect(project.id)}
                   >
                     <div className="aspect-video bg-zinc-800/50 relative">
-                      {project.thumbnailUrl || project.imageUrl || project.storageUrl ? (
+                      {project.thumbnailUrl ? (
                         <img
-                          src={project.thumbnailUrl || project.imageUrl || project.storageUrl || ''}
-                          alt={project.name || 'Project'}
+                          src={project.thumbnailUrl}
+                          alt={project.name || project.title || 'Project'}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -979,25 +1006,26 @@ export default function AllMediaPage() {
                       <div className="absolute top-2 left-2 px-2 py-0.5 bg-emerald-500/80 rounded text-xs text-white font-medium">
                         Project
                       </div>
+                      {project.renderedVideoUrl && (
+                        <div className="absolute top-2 right-2 px-2 py-0.5 bg-blue-500/80 rounded text-xs text-white font-medium">
+                          Rendered
+                        </div>
+                      )}
                     </div>
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-white truncate">{project.name || 'Untitled Project'}</h3>
+                      <h3 className="text-sm font-semibold text-white truncate">{project.name || project.title || 'Untitled Project'}</h3>
                       <div className="flex items-center gap-3 mt-2 text-xs text-zinc-500">
-                        {project.spend > 0 && <span>${project.spend.toFixed(0)} spent</span>}
-                        {project.roas > 0 && <span>{project.roas.toFixed(1)}x ROAS</span>}
+                        {project.durationSeconds && <span>{project.durationSeconds}s</span>}
+                        <span>{new Date(project.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Link
-                          href={`/dashboard/creative-studio/video-editor?compositionId=${(project as any).sourceCompositionId || ''}&from=media-projects`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
-                        >
+                        <span className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/20 text-accent">
                           <Pencil className="w-3 h-3" />
                           Edit
-                        </Link>
+                        </span>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )

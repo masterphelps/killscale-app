@@ -3,7 +3,7 @@
 import { useEffect, useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Star, Rocket, Pencil, DollarSign, TrendingUp, Eye, MousePointer, Users, Layers, Play, ChevronRight, ChevronDown, Image, Film, HardDrive, Calendar, Ruler, AlertTriangle } from 'lucide-react'
+import { X, Star, Rocket, Pencil, DollarSign, TrendingUp, Eye, MousePointer, Users, Layers, Play, ChevronRight, ChevronDown, Image, Film, HardDrive, Calendar, Ruler, AlertTriangle, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FatigueTrendChart } from './fatigue-trend-chart'
 import { PeriodComparison } from './period-comparison'
@@ -625,22 +625,44 @@ export function TheaterModal({
                     </>
                   )}
 
-                  {/* Footer actions - shown on all tabs */}
-                  <div className="pt-4 border-t border-border flex gap-3">
+                  {/* Footer actions */}
+                  <div className="pt-4 border-t border-border flex items-center justify-center gap-2 flex-wrap">
                     <button
                       onClick={handleToggleStar}
                       disabled={isTogglingStarred}
                       className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border',
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
                         isTogglingStarred && 'opacity-50 cursor-wait',
                         isStarred
-                          ? 'border-yellow-500/50 text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20'
-                          : 'border-zinc-600 text-zinc-400 hover:border-yellow-500/30 hover:text-yellow-500/70 hover:bg-yellow-500/10'
+                          ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/20'
+                          : 'bg-yellow-500/10 text-yellow-300/70 border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300'
                       )}
                     >
-                      <Star className={cn('w-5 h-5', isStarred && 'fill-yellow-500')} />
+                      <Star className={cn('w-3.5 h-3.5', isStarred && 'fill-yellow-400')} />
                       {isStarred ? 'Starred' : 'Star'}
                     </button>
+
+                    {displayUrl && (
+                      <button
+                        onClick={() => {
+                          const ext = isVideo ? 'mp4' : 'png'
+                          const fname = `${(item.name || 'media').replace(/[^a-zA-Z0-9-_ ]/g, '')}.${ext}`
+                          const downloadUrl = isVideo && videoSource
+                            ? `/api/creative-studio/download-video?url=${encodeURIComponent(videoSource)}&filename=${encodeURIComponent(fname)}`
+                            : `/api/creative-studio/download-video?url=${encodeURIComponent(displayUrl)}&filename=${encodeURIComponent(fname)}`
+                          const a = document.createElement('a')
+                          a.href = downloadUrl
+                          a.download = fname
+                          document.body.appendChild(a)
+                          a.click()
+                          document.body.removeChild(a)
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300/70 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download
+                      </button>
+                    )}
 
                     {!isVideo && displayUrl && (
                       <button
@@ -648,10 +670,10 @@ export function TheaterModal({
                           onClose()
                           router.push(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(displayUrl)}`)
                         }}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border border-purple-500/50 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
                       >
-                        <Pencil className="w-5 h-5" />
-                        Edit Image
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
                       </button>
                     )}
 
@@ -667,27 +689,23 @@ export function TheaterModal({
                             router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoSource)}&from=creative-studio`)
                           }
                         }}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all border border-purple-500/50 text-purple-400 bg-purple-500/10 hover:bg-purple-500/20"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/20 transition-colors"
                       >
-                        <Film className="w-5 h-5" />
-                        Edit Video
+                        <Film className="w-3.5 h-3.5" />
+                        Edit
                       </button>
                     )}
 
                     {onBuildNewAds && !isRawAiAsset && (
                       <button
                         onClick={onBuildNewAds}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition-all bg-accent hover:bg-accent-hover text-white"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border border-orange-500/20 transition-colors"
                       >
-                        <Rocket className="w-5 h-5" />
-                        Build New Ads
+                        <Rocket className="w-3.5 h-3.5" />
+                        Build Ads
                       </button>
                     )}
                   </div>
-
-                  <p className="text-xs text-zinc-600 text-center">
-                    Press Esc to close{isVideo ? ', Space to play/pause' : ''}
-                  </p>
                 </div>
               </div>
             </motion.div>

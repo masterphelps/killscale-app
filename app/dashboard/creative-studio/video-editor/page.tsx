@@ -1314,21 +1314,15 @@ export default function VideoEditorPage() {
           {/* Export (download rendered video) */}
           {isRendered && renderedVideoUrl ? (
             <button
-              onClick={async () => {
-                try {
-                  const res = await fetch(renderedVideoUrl)
-                  const blob = await res.blob()
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `${projectName || 'video'}-v${activeVersion || 0}.mp4`
-                  document.body.appendChild(a)
-                  a.click()
-                  document.body.removeChild(a)
-                  URL.revokeObjectURL(url)
-                } catch (err) {
-                  console.error('Export download failed:', err)
-                }
+              onClick={() => {
+                const fname = `${projectName || 'video'}-v${activeVersion || 0}.mp4`
+                const proxyUrl = `/api/creative-studio/download-video?url=${encodeURIComponent(renderedVideoUrl)}&filename=${encodeURIComponent(fname)}`
+                const a = document.createElement('a')
+                a.href = proxyUrl
+                a.download = fname
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-700/50 text-zinc-200 hover:bg-zinc-600/50 border border-zinc-600/30 transition-colors"
             >
