@@ -252,6 +252,11 @@ export async function POST(req: Request) {
             overlayConfig,
           },
           privacy: 'public',
+          updateRenderProgress: (progress: number) => {
+            // Map 0-1 Cloud Run progress to 10-90% band
+            const mapped = 0.1 + progress * 0.8
+            send({ type: 'phase', phase: 'Rendering video...', progress: mapped })
+          },
         })
       } catch (renderErr) {
         const msg = renderErr instanceof Error ? renderErr.message : String(renderErr)
