@@ -40,33 +40,8 @@ if (process.env.GCP_SERVICE_ACCOUNT_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY
 
 export async function POST(req: Request) {
   // Vercel stores PEM keys with literal \n text — OpenSSL needs real newlines
-  const pk = process.env.REMOTION_GCP_PRIVATE_KEY || ''
-  const hasRealNewlines = pk.includes('\n')
-  const hasLiteralBackslashN = pk.includes('\\n')
-  const startsWithBegin = pk.startsWith('-----BEGIN')
-  const endsWithEnd = pk.trimEnd().endsWith('-----')
-  console.log('[RenderVideo] GCP Auth Diagnostics:', JSON.stringify({
-    REMOTION_GCP_CLIENT_EMAIL: process.env.REMOTION_GCP_CLIENT_EMAIL ? `${process.env.REMOTION_GCP_CLIENT_EMAIL.slice(0, 10)}...` : 'MISSING',
-    REMOTION_GCP_PROJECT_ID: process.env.REMOTION_GCP_PROJECT_ID || 'MISSING',
-    REMOTION_GCP_PRIVATE_KEY_length: pk.length,
-    REMOTION_GCP_PRIVATE_KEY_first50: pk.slice(0, 50),
-    hasRealNewlines,
-    hasLiteralBackslashN,
-    startsWithBegin,
-    endsWithEnd,
-    REMOTION_GCP_REGION: process.env.REMOTION_GCP_REGION || 'MISSING',
-    REMOTION_CLOUDRUN_URL: process.env.REMOTION_CLOUDRUN_URL ? 'SET' : 'MISSING',
-    // Check bridging source vars
-    GCP_SERVICE_ACCOUNT_EMAIL: process.env.GCP_SERVICE_ACCOUNT_EMAIL ? 'SET' : 'MISSING',
-    GCP_SERVICE_ACCOUNT_KEY: process.env.GCP_SERVICE_ACCOUNT_KEY ? `len=${process.env.GCP_SERVICE_ACCOUNT_KEY.length}` : 'MISSING',
-    GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || 'MISSING',
-  }))
-
-  if (!hasRealNewlines && hasLiteralBackslashN) {
-    process.env.REMOTION_GCP_PRIVATE_KEY = pk.split('\\n').join('\n')
-    console.log('[RenderVideo] Converted literal \\n → real newlines in private key')
-  } else if (!hasRealNewlines && !hasLiteralBackslashN) {
-    console.log('[RenderVideo] WARNING: Private key has no newlines at all — likely malformed')
+  if (process.env.REMOTION_GCP_PRIVATE_KEY && !process.env.REMOTION_GCP_PRIVATE_KEY.includes('\n')) {
+    process.env.REMOTION_GCP_PRIVATE_KEY = process.env.REMOTION_GCP_PRIVATE_KEY.split('\\n').join('\n')
   }
 
   const encoder = new TextEncoder()
