@@ -311,7 +311,20 @@ export async function POST(req: Request) {
 
       console.log(`[RenderVideo] Cloud Run complete: size=${fileSize}`)
 
+      // ── IMMEDIATELY mark as complete with Cloud Run's GCS URL ──
+      // This ensures the DB record is updated even if the Vercel function
+      // times out during the subsequent download/upload to Supabase Storage.
+      await supabaseAdmin
+        .from('video_overlays')
+        .update({
+          render_status: 'complete',
+          rendered_video_url: renderedPublicUrl,
+        })
+        .eq('id', overlayId)
+
       // ── Download from Cloud Run → Upload to Supabase Storage ──
+      // This copies the video to our own storage for long-term persistence
+      // (Cloud Run GCS URLs may expire). If this fails, the GCS URL still works.
       await send({ type: 'phase', phase: 'Saving to storage...', progress: 0.9 })
 
       const cleanAccountId = adAccountId.replace(/^act_/, '')
@@ -322,20 +335,22 @@ export async function POST(req: Request) {
         videoResponse = await fetch(renderedPublicUrl)
       } catch (fetchErr) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
-        await send({ type: 'error', message: `[Download] Failed to download rendered video: ${msg}` })
+        console.warn(`[RenderVideo] Download failed but render is complete: ${msg}`)
+        await send({ type: 'done', url: renderedPublicUrl, size: fileSize })
         return
       }
 
       if (!videoResponse.ok) {
-        await send({ type: 'error', message: `[Download] Failed to download rendered video (HTTP ${videoResponse.status})` })
+        console.warn(`[RenderVideo] Download HTTP ${videoResponse.status} but render is complete`)
+        await send({ type: 'done', url: renderedPublicUrl, size: fileSize })
         return
       }
 
       const videoBuffer = Buffer.from(await videoResponse.arrayBuffer())
 
       if (videoBuffer.length < 10000) {
-        console.error(`[RenderVideo] Downloaded only ${videoBuffer.length} bytes (expected ${fileSize})`)
-        await send({ type: 'error', message: `[Download] Rendered file is corrupt (${videoBuffer.length} bytes). Please try rendering again.` })
+        console.warn(`[RenderVideo] Downloaded only ${videoBuffer.length} bytes, using GCS URL`)
+        await send({ type: 'done', url: renderedPublicUrl, size: fileSize })
         return
       }
 
@@ -348,22 +363,21 @@ export async function POST(req: Request) {
           .from('media')
           .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
         if (retryError) {
-          console.error('[RenderVideo] Supabase upload failed after retry:', retryError)
-          await send({ type: 'error', message: `[Upload] Failed to save rendered video to storage` })
+          console.warn('[RenderVideo] Supabase upload failed, using GCS URL:', retryError)
+          await send({ type: 'done', url: renderedPublicUrl, size: fileSize })
           return
         }
       }
 
+      // Update with Supabase Storage URL (more permanent than GCS)
       const { data: publicUrlData } = supabaseAdmin.storage
         .from('media')
         .getPublicUrl(storagePath)
       const renderedVideoUrl = publicUrlData.publicUrl
 
-      // ── Update overlay record ──
       await supabaseAdmin
         .from('video_overlays')
         .update({
-          render_status: 'complete',
           rendered_video_url: renderedVideoUrl,
         })
         .eq('id', overlayId)

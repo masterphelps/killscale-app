@@ -1724,11 +1724,16 @@ function SaveButton({
     return () => window.removeEventListener('ks-overlay-changed', handler)
   }, [overlayConfigRef])
 
+  // Use a ref so the handleSave closure always reads the latest projectName
+  // (programmatic clicks from the name prompt fire before React re-renders props)
+  const projectNameRef = useRef(projectName)
+  useEffect(() => { projectNameRef.current = projectName }, [projectName])
+
   const handleSave = async () => {
     if (!userId || isSaving) return
 
     // Require a project name before saving
-    if (!projectName) {
+    if (!projectNameRef.current) {
       onNameRequired()
       return
     }
@@ -1749,7 +1754,7 @@ function SaveButton({
             adAccountId: adAccountId || 'direct',
             sourceJobIds: jobId ? [jobId] : [],
             overlayConfig: config,
-            name: projectName,
+            name: projectNameRef.current,
             durationSeconds: durationSec,
           }),
         })
@@ -1831,6 +1836,7 @@ function VersionButton({
 }) {
   const isComplete = version.render_status === 'complete'
   const isFailed = version.render_status === 'failed'
+  const isStuckRendering = !isRendering && version.render_status === 'rendering'
 
   return (
     <button
@@ -1845,6 +1851,7 @@ function VersionButton({
       {isRendering && <Loader2 className="w-3 h-3 animate-spin text-blue-400 flex-shrink-0" />}
       {!isRendering && isComplete && <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" title="Rendered" />}
       {!isRendering && isFailed && <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" title="Render failed" />}
+      {isStuckRendering && <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Render in progress" />}
     </button>
   )
 }

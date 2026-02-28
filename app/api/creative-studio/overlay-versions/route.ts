@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
         .from('video_overlays')
         .select('id, version, overlay_config, render_status, rendered_video_url, created_at')
         .eq('composition_id', compositionId)
-        .in('render_status', ['saved', 'complete', 'failed'])
+        .in('render_status', ['saved', 'complete', 'failed', 'rendering'])
         .order('version', { ascending: false })
 
       if (versionsError) {
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       .from('video_overlays')
       .select('id, version, overlay_config, render_status, rendered_video_url, created_at')
       .eq('video_job_id', videoJobId!)
-      .in('render_status', ['saved', 'complete', 'failed'])
+      .in('render_status', ['saved', 'complete', 'failed', 'rendering'])
       .order('version', { ascending: false })
 
     if (versionsError) {

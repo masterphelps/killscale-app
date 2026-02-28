@@ -18,12 +18,8 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!sourceJobIds?.length && !sourceLibraryIds?.length) {
-      return NextResponse.json(
-        { error: 'Must provide sourceJobIds or sourceLibraryIds' },
-        { status: 400 }
-      )
-    }
+    // sourceJobIds or sourceLibraryIds are optional — compositions can be
+    // created from direct video URLs where the source is in the overlayConfig
 
     const { data, error } = await supabaseAdmin
       .from('video_compositions')
