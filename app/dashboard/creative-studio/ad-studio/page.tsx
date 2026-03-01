@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Link2, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, PlusCircle, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, UserCircle, Clapperboard, Pencil, Camera, Type, Image as ImageIcon } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Link2, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Film, Plus, Minus, Globe, Play, User, UserCircle, Clapperboard, Pencil, Image as ImageIcon } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import type { MediaImage } from '@/app/api/meta/media/route'
