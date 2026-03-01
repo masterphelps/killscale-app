@@ -37,6 +37,12 @@ export { InspirationGallery } from './inspiration-gallery'
 export { InspirationCard } from './inspiration-card'
 export { InspirationModal } from './inspiration-modal'
 
+// Oracle Components
+export { OracleBox } from './oracle-box'
+export type { OracleSubmission, OracleOutputType, OracleFormat } from './oracle-box'
+export { OracleChips } from './oracle-chips'
+export type { ChipDef } from './oracle-chips'
+
 // Types
 export type {
   MediaType,
