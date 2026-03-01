@@ -411,6 +411,62 @@ Per-asset composite scores computed in `app/api/creative-studio/media/route.ts` 
 
 **Badge Colors:** ≥75 green, ≥50 amber, ≥25 orange, <25 red
 
+### Media Resolution Architecture (CRITICAL — Read Before Touching Any Creative Display)
+
+Three surfaces display ad creatives. They share components but have fundamentally different data sources and join strategies. All media should come from **Supabase Storage only** — never fall back to Meta CDN URLs.
+
+**The Three Surfaces:**
+
+| Surface | Route | Data Source | Organized By |
+|---------|-------|-------------|-------------|
+| **Media Library** (Media tab) | `/api/creative-studio/media` | `media_library` table → join to `ad_data` for metrics | Media asset (one card per unique video/image) |
+| **Active Ads** (Ads tab) | `/api/creative-studio/active-ads` | `ad_data` table → join to `media_library` for display | Individual ad (one card per ad, may share media) |
+| **Performance Dashboard** | `components/performance-table.tsx` | `ad_data` → creative thumbnails loaded on adset expand | Ad row in hierarchy table |
+
+**The Derivative Hash Problem:**
+
+Meta assigns **different video IDs** from different API endpoints:
+- `/advideos` endpoint → returns video ID `A` (stored in `media_library.media_hash`)
+- Creative object in `/ads` → returns video ID `B` (stored in `ad_data.video_id` and `ad_data.media_hash`)
+- These are DIFFERENT IDs for the SAME video. There is no reliable hash-based join for videos.
+- Images don't have this problem — `media_hash` is consistent across endpoints.
+
+**How Each Surface Resolves Media:**
+
+1. **Media Library** — Starts from `media_library` (which has `storage_url`). Joins to `ad_data` for performance metrics using a multi-pass derivative resolution (creative_id linkage, title matching). Display always works because `storage_url` comes directly from the source table.
+
+2. **Active Ads** — Starts from `ad_data` (which has derivative hashes). Uses a **reverse lookup via `adIds`**: the media API returns which `ad_id`s use each asset, and the frontend builds an `ad_id → storage_url` map. This completely bypasses the hash mismatch.
+   - Server-side waterfall (defense-in-depth): direct hash → video_id as hash → creative_id → ad.storage_url → videoId fallback
+   - Frontend resolution order: direct hash match → **ad_id reverse lookup from media API** → server-side URLs → null (never Meta CDN)
+
+3. **Performance Dashboard** — Loads creative thumbnails on-demand when adsets expand. Uses `creative_id` from `ad_data` to fetch from Meta API (one call per creative, not bulk).
+
+**Key Data Flow:**
+```
+Meta /advideos → sync-media → media_library (original video ID as media_hash, storage_url from Supabase)
+Meta /ads sync → ad_data (derivative video ID as media_hash/video_id)
+download-media → downloads files to Supabase Storage → updates media_library.storage_url
+media API → resolves derivatives, returns adIds per asset
+active-ads frontend → uses adIds reverse lookup to get storage_url for each ad
+```
+
+**sync-media Derivative Resolution (Step C2):**
+During media sync, the system attempts to overwrite `ad_data.media_hash` from derivative IDs to original IDs using title matching (fetches derivative titles from Meta, matches to originals). This is a best-effort process — it may not resolve all derivatives, which is why the frontend `adIds` reverse lookup is the primary resolution strategy.
+
+**Files:**
+- `app/api/creative-studio/media/route.ts` — Media API (returns `adIds` per asset)
+- `app/api/creative-studio/active-ads/route.ts` — Active Ads API (server-side fallback chain)
+- `app/dashboard/creative-studio/active/page.tsx` — Frontend `resolveMedia()` with `adIdMap` reverse lookup
+- `app/api/meta/sync-media/route.ts` — Media sync with derivative resolution (Step C2)
+- `app/api/creative-studio/download-media/route.ts` — Downloads files to Supabase Storage
+- `components/creative-studio/media-gallery-card.tsx` — Shared card component (renders `<video src={storageUrl}#t=0.3>` for sharp poster frames)
+
+**If Videos Show Low-Res Thumbnails:**
+1. Check that `media_library` has `storage_url` for the video (it always should after download-media runs)
+2. Check that the media API returns `adIds` arrays — if empty, the derivative resolution in `media/route.ts` failed
+3. Check the frontend `adIdMap` is populated — if the media API loads after active-ads, the reverse lookup will be empty on first render
+4. The `adIds` reverse lookup is the PRIMARY resolution path for videos — don't try to fix hash matching, fix `adIds` instead
+
 ### Ad Studio (Competitor Research & AI Generation)
 Research competitor ads and generate new ad copy/images using AI.
 
