@@ -223,7 +223,7 @@ export default function DirectPage() {
   const [videoStyle, setVideoStyle] = useState<VideoStyle>('cinematic')
 
   // Direct-specific state (Step 2)
-  const [directConceptPrompt, setDirectConceptPrompt] = useState('')
+  const [directConceptPrompt, setDirectConceptPrompt] = useState(searchParams?.get('prompt') || '')
   const [directResult, setDirectResult] = useState<DirectConceptResult | null>(null)
   const [directWriting, setDirectWriting] = useState(false)
   const [directError, setDirectError] = useState<string | null>(null)
