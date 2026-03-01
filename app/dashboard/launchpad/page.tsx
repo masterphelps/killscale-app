@@ -35,7 +35,7 @@ const tiles: LaunchTile[] = [
     iconBg: 'bg-blue-500/20 text-blue-400',
   },
   {
-    label: 'Creative',
+    label: 'Ad Studio',
     description: 'Generate ads with AI',
     href: '/dashboard/creative-studio/ad-studio',
     icon: Wand2,

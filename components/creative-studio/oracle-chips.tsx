@@ -4,6 +4,7 @@ import {
   Target, RefreshCw, Sparkles, UserCircle, ImagePlus,
   Image as ImageIcon, Film, Video,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { OracleOutputType, OracleFormat } from './oracle-box'
 
 export interface ChipDef {
@@ -39,41 +40,57 @@ export function OracleChips({ onChipAction }: OracleChipsProps) {
   const contentChips = chips.filter(c => c.group === 'content')
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
-      {/* Make Ads column */}
+    <div className="space-y-6">
+      {/* Make Ads */}
       <div>
-        <h3 className="text-xs font-medium text-zinc-600 uppercase tracking-wider mb-3">Make Ads</h3>
-        <div className="space-y-1.5">
+        <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">Make Ads</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           {adChips.map((chip) => {
             const Icon = chip.icon
             return (
               <button
                 key={chip.label}
                 onClick={() => onChipAction(chip.action)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-all group"
+                className={cn(
+                  'group relative flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+                  'bg-white/[0.03] border border-white/[0.06]',
+                  'text-zinc-300 hover:text-white',
+                  'hover:bg-purple-500/[0.08] hover:border-purple-500/20',
+                  'hover:shadow-[0_0_20px_rgba(168,85,247,0.08)]',
+                )}
               >
-                <Icon className="w-4 h-4 text-purple-400/60 group-hover:text-purple-400 transition-colors" />
-                <span>{chip.label}</span>
+                <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 transition-colors">
+                  <Icon className="w-3.5 h-3.5 text-purple-400" />
+                </div>
+                <span className="truncate">{chip.label}</span>
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* Make Content column */}
+      {/* Make Content */}
       <div>
-        <h3 className="text-xs font-medium text-zinc-600 uppercase tracking-wider mb-3">Make Content</h3>
-        <div className="space-y-1.5">
+        <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">Make Content</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           {contentChips.map((chip) => {
             const Icon = chip.icon
             return (
               <button
                 key={chip.label}
                 onClick={() => onChipAction(chip.action)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-all group"
+                className={cn(
+                  'group relative flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+                  'bg-white/[0.03] border border-white/[0.06]',
+                  'text-zinc-300 hover:text-white',
+                  'hover:bg-cyan-500/[0.08] hover:border-cyan-500/20',
+                  'hover:shadow-[0_0_20px_rgba(6,182,212,0.08)]',
+                )}
               >
-                <Icon className="w-4 h-4 text-cyan-400/60 group-hover:text-cyan-400 transition-colors" />
-                <span>{chip.label}</span>
+                <div className="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0 group-hover:bg-cyan-500/20 transition-colors">
+                  <Icon className="w-3.5 h-3.5 text-cyan-400" />
+                </div>
+                <span className="truncate">{chip.label}</span>
               </button>
             )
           })}

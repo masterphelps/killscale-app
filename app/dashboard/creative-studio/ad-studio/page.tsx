@@ -3137,28 +3137,56 @@ export default function AdStudioPage() {
   // Oracle landing page
   if (!mode) {
     return (
-      <div className="min-h-screen pb-24">
-        <div className="px-4 lg:px-8 py-6">
+      <div className="relative min-h-screen pb-24 overflow-hidden">
+        {/* Ambient gradient background — purple-centric Oracle glow */}
+        <div
+          className="pointer-events-none fixed inset-0 opacity-50"
+          style={{
+            background: `
+              radial-gradient(ellipse 70% 50% at 50% 20%, rgba(139,92,246,0.18) 0%, transparent 60%),
+              radial-gradient(ellipse 50% 40% at 25% 50%, rgba(99,102,241,0.12) 0%, transparent 55%),
+              radial-gradient(ellipse 50% 40% at 75% 50%, rgba(168,85,247,0.10) 0%, transparent 55%),
+              radial-gradient(ellipse 80% 30% at 50% 80%, rgba(59,130,246,0.08) 0%, transparent 50%)
+            `,
+          }}
+        />
+
+        {/* Noise texture */}
+        <div
+          className="pointer-events-none fixed inset-0 opacity-[0.025]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+          }}
+        />
+
+        <div className="relative z-10 px-4 lg:px-8 py-6">
           <div className="max-w-3xl mx-auto space-y-10">
 
             {/* Header */}
-            <div className="text-center pt-4 lg:pt-8">
-              <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Ad Studio</h1>
-              <p className="text-zinc-500 text-sm mt-1">Create ads and content with AI</p>
+            <div className="text-center pt-6 lg:pt-12">
+              <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight text-white">Ad Studio</h1>
+              <p className="text-zinc-400 text-sm mt-1.5">Create ads and content with AI</p>
             </div>
 
-            {/* Oracle Box */}
-            <OracleBox
-              onSubmit={handleOracleSubmit}
-              onDirectWorkflow={(workflow) => {
-                if (workflow === 'clone') setMode('clone')
-                else if (workflow === 'inspiration') setMode('inspiration')
-                else if (workflow === 'ugc-video') setMode('ugc-video')
-                else if (workflow === 'image-to-video') setMode('image-to-video')
-              }}
-              isLoading={oracleLoading}
-              placeholder={oraclePlaceholder}
-            />
+            {/* Oracle Box with glow */}
+            <div className="relative">
+              {/* Glow behind the box */}
+              <div className="absolute -inset-4 rounded-3xl bg-purple-500/[0.06] blur-2xl pointer-events-none" />
+              <div className="relative">
+                <OracleBox
+                  onSubmit={handleOracleSubmit}
+                  onDirectWorkflow={(workflow) => {
+                    if (workflow === 'clone') setMode('clone')
+                    else if (workflow === 'inspiration') setMode('inspiration')
+                    else if (workflow === 'ugc-video') setMode('ugc-video')
+                    else if (workflow === 'image-to-video') setMode('image-to-video')
+                  }}
+                  onOpenLibrary={() => setOpenPromptShowLibrary(true)}
+                  isLoading={oracleLoading}
+                  placeholder={oraclePlaceholder}
+                />
+              </div>
+            </div>
 
             {/* Hidden file input for chip file actions */}
             <input
@@ -3182,6 +3210,13 @@ export default function AdStudioPage() {
                 reader.readAsDataURL(file)
               }}
             />
+
+            {/* Divider */}
+            <div className="flex items-center gap-4 px-1">
+              <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
+              <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-widest">or jump to</span>
+              <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
+            </div>
 
             {/* Suggestion Chips */}
             <OracleChips onChipAction={handleOracleChipAction} />

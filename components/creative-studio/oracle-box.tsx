@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { ArrowUp, Paperclip, Loader2, X, Image as ImageIcon } from 'lucide-react'
+import { ArrowUp, Paperclip, Loader2, X, Upload, Library } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Auto-suggest definitions — keyword patterns -> suggestion label + target workflow
@@ -25,17 +25,19 @@ export interface OracleSubmission {
 interface OracleBoxProps {
   onSubmit: (submission: OracleSubmission) => void
   onDirectWorkflow: (workflow: string) => void
+  onOpenLibrary: () => void
   isLoading: boolean
   placeholder?: string
 }
 
-export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }: OracleBoxProps) {
+export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder }: OracleBoxProps) {
   const [text, setText] = useState('')
   const [outputType, setOutputType] = useState<OracleOutputType>('ad')
   const [format, setFormat] = useState<OracleFormat>('image')
   const [image, setImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
   const [activeSuggestions, setActiveSuggestions] = useState<typeof SUGGESTIONS>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -99,10 +101,10 @@ export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }
       {/* Main input container */}
       <div
         className={cn(
-          'relative rounded-2xl border transition-all duration-200',
+          'relative rounded-2xl border transition-all duration-200 shadow-lg shadow-black/20',
           isDragOver
             ? 'border-purple-500/50 bg-purple-500/5'
-            : 'border-zinc-700/50 bg-white/[0.03] hover:border-zinc-600/50',
+            : 'border-zinc-600/40 bg-white/[0.05] hover:border-purple-500/20 focus-within:border-purple-500/30',
           isLoading && 'opacity-70 pointer-events-none'
         )}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
@@ -134,38 +136,61 @@ export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }
           onKeyDown={handleKeyDown}
           placeholder={defaultPlaceholder}
           rows={1}
-          className="w-full bg-transparent text-sm text-white placeholder:text-zinc-500 px-4 pt-4 pb-2 resize-none focus:outline-none"
+          className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 px-4 pt-4 pb-2 resize-none focus:outline-none"
         />
 
         {/* Bottom row: attach + toggles + submit */}
         <div className="flex items-center justify-between px-3 pb-3">
           {/* Left: attach image */}
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <input
               ref={fileRef}
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+              onChange={(e) => { e.target.files?.[0] && handleFileSelect(e.target.files[0]); setShowAttachMenu(false) }}
             />
             <button
-              onClick={() => fileRef.current?.click()}
-              className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05] transition-colors"
+              onClick={() => setShowAttachMenu(!showAttachMenu)}
+              className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition-colors"
               title="Attach image"
             >
               <Paperclip className="w-4 h-4" />
             </button>
+
+            {/* Attach menu dropdown */}
+            {showAttachMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowAttachMenu(false)} />
+                <div className="absolute left-0 bottom-full mb-2 bg-bg-card border border-zinc-700/50 rounded-xl overflow-hidden shadow-xl z-20 w-48">
+                  <button
+                    onClick={() => { fileRef.current?.click() }}
+                    className="w-full px-3 py-2.5 text-left text-sm text-zinc-300 hover:bg-white/[0.05] transition-colors flex items-center gap-2.5"
+                  >
+                    <Upload className="w-4 h-4 text-zinc-500" />
+                    Upload Image
+                  </button>
+                  <button
+                    onClick={() => { setShowAttachMenu(false); onOpenLibrary() }}
+                    className="w-full px-3 py-2.5 text-left text-sm text-zinc-300 hover:bg-white/[0.05] transition-colors flex items-center gap-2.5"
+                  >
+                    <Library className="w-4 h-4 text-zinc-500" />
+                    Media Library
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Right: toggles + submit */}
           <div className="flex items-center gap-2">
             {/* Output type toggle */}
-            <div className="flex items-center bg-white/[0.05] rounded-lg p-0.5">
+            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
               <button
                 onClick={() => setOutputType('ad')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  outputType === 'ad' ? 'bg-purple-500/20 text-purple-300' : 'text-zinc-500 hover:text-zinc-300'
+                  outputType === 'ad' ? 'bg-purple-500/25 text-purple-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
                 Ad
@@ -174,7 +199,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }
                 onClick={() => setOutputType('content')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  outputType === 'content' ? 'bg-cyan-500/20 text-cyan-300' : 'text-zinc-500 hover:text-zinc-300'
+                  outputType === 'content' ? 'bg-cyan-500/25 text-cyan-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
                 Content
@@ -182,12 +207,12 @@ export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }
             </div>
 
             {/* Format toggle */}
-            <div className="flex items-center bg-white/[0.05] rounded-lg p-0.5">
+            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
               <button
                 onClick={() => setFormat('image')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  format === 'image' ? 'bg-blue-500/20 text-blue-300' : 'text-zinc-500 hover:text-zinc-300'
+                  format === 'image' ? 'bg-blue-500/25 text-blue-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
                 Image
@@ -196,7 +221,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }
                 onClick={() => setFormat('video')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  format === 'video' ? 'bg-emerald-500/20 text-emerald-300' : 'text-zinc-500 hover:text-zinc-300'
+                  format === 'video' ? 'bg-emerald-500/25 text-emerald-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
                 Video
@@ -210,7 +235,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, isLoading, placeholder }
               className={cn(
                 'p-2 rounded-lg transition-all',
                 (!text.trim() && !image) || isLoading
-                  ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+                  ? 'bg-zinc-700/50 text-zinc-500 cursor-not-allowed'
                   : 'bg-purple-600 hover:bg-purple-500 text-white'
               )}
             >
