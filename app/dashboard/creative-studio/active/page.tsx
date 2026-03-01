@@ -52,36 +52,54 @@ export default function ActiveAdsPage() {
     setShowDatePicker,
   } = useCreativeStudio()
 
-  // Build media_hash → asset lookup from the SAME assets array the media page uses
-  const mediaMap = useMemo(() => {
-    const map = new Map<string, { storageUrl: string | null; imageUrl: string | null; thumbnailUrl: string | null }>()
+  // Build TWO lookups from the media page's assets array:
+  // 1. media_hash → asset (for ads where hashes match directly)
+  // 2. ad_id → asset (reverse lookup via adIds — handles derivative hash mismatch)
+  const { mediaMap, adIdMap } = useMemo(() => {
+    const mMap = new Map<string, { storageUrl: string | null; imageUrl: string | null; thumbnailUrl: string | null }>()
+    const aMap = new Map<string, { storageUrl: string | null; imageUrl: string | null; thumbnailUrl: string | null }>()
     for (const a of assets) {
+      const entry = {
+        storageUrl: a.storageUrl,
+        imageUrl: a.imageUrl,
+        thumbnailUrl: a.thumbnailUrl,
+      }
       if (a.mediaHash) {
-        map.set(a.mediaHash, {
-          storageUrl: a.storageUrl,
-          imageUrl: a.imageUrl,
-          thumbnailUrl: a.thumbnailUrl,
-        })
+        mMap.set(a.mediaHash, entry)
+      }
+      // Build reverse map: ad_id → asset media URLs
+      // The media API already resolved derivatives, so adIds contains all ads using this asset
+      if (a.adIds) {
+        for (const adId of a.adIds) {
+          aMap.set(adId, entry)
+        }
       }
     }
-    return map
+    return { mediaMap: mMap, adIdMap: aMap }
   }, [assets])
 
-  // Resolve media URLs for an ad — try media_library (via assets) first,
-  // then API-provided URLs, then ad_data fallbacks
+  // Resolve media URLs for an ad — try multiple strategies to find Supabase storage URL.
+  // The core problem: ad_data video_ids and media_library media_hashes are different Meta IDs.
+  // The media API resolves this correctly and tells us which ad_ids use which asset (via adIds).
   const resolveMedia = useCallback((ad: ActiveAd): ResolvedMedia => {
-    // 1. From assets context (same source as media page)
+    // 1. Direct media_hash match (works for images, rarely for videos due to derivative hashes)
     if (ad.media_hash) {
       const asset = mediaMap.get(ad.media_hash)
       if (asset && (asset.storageUrl || asset.imageUrl || asset.thumbnailUrl)) {
         return asset
       }
     }
-    // 2. From API enrichment (media_library lookup server-side)
+    // 2. Reverse lookup by ad_id — the media API knows which ads use which media asset
+    // This bypasses the derivative hash problem entirely
+    const byAdId = adIdMap.get(ad.ad_id)
+    if (byAdId && (byAdId.storageUrl || byAdId.imageUrl || byAdId.thumbnailUrl)) {
+      return byAdId
+    }
+    // 3. From API enrichment (active-ads server-side media_library lookup)
     if (ad.storageUrl || ad.imageUrl || ad.thumbnailUrl) {
       return { storageUrl: ad.storageUrl, imageUrl: ad.imageUrl, thumbnailUrl: ad.thumbnailUrl }
     }
-    // 3. Fallback to ad_data Meta CDN URLs (thumbnail_url / image_url with underscores)
+    // 4. Fallback to ad_data Meta CDN URLs (thumbnail_url / image_url with underscores)
     // For videos: DON'T use the low-res ad.thumbnail_url — let it be null so the card
     // can eagerly fetch the video source and use <video #t=0.3> for a sharp poster
     if (ad.thumbnail_url || ad.image_url) {
@@ -93,7 +111,7 @@ export default function ActiveAdsPage() {
       }
     }
     return { storageUrl: null, imageUrl: null, thumbnailUrl: null }
-  }, [mediaMap])
+  }, [mediaMap, adIdMap])
 
   const [sortBy, setSortBy] = useState<SortField>('spend')
   const [sortDesc, setSortDesc] = useState(true)

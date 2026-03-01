@@ -60,6 +60,7 @@ export interface StudioAsset {
   adCount: number
   adsetCount: number
   campaignCount: number
+  adIds?: string[]  // Ad IDs that use this media (for reverse lookup)
 
   // Source tracking (Library architecture)
   sourceType?: string | null         // meta, ai_generated, ai_video, ai_edited, project, open_prompt

@@ -100,14 +100,82 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build creative_id → original media_hash lookup (same pattern as dashboard)
-    // Handles derivative video IDs where Meta assigns different media_hash per placement
-    const creativeToOriginalHash = new Map<string, string>()
+    // Build creative_id → original media_hash lookup
+    // Meta assigns DERIVATIVE media_hash per ad placement. The original hash lives in
+    // media_library, but ad_data rows may only have derivatives. We must find the original.
+    //
+    // Strategy: collect ALL hashes per creative_id, then find which one is in media_library.
+    // This mirrors what the media API does (steps 4 + 5b in media/route.ts).
+    const creativeIdToHashes = new Map<string, Set<string>>()
     for (const row of rawData) {
-      if (row.media_hash && row.creative_id && mediaLookup.has(row.media_hash)) {
-        creativeToOriginalHash.set(row.creative_id, row.media_hash)
+      if (!row.creative_id || !row.media_hash) continue
+      if (!creativeIdToHashes.has(row.creative_id)) {
+        creativeIdToHashes.set(row.creative_id, new Set())
+      }
+      creativeIdToHashes.get(row.creative_id)!.add(row.media_hash)
+      // Also add video_id as a candidate — download-media stores videos with video_id as media_hash
+      if (row.video_id) {
+        creativeIdToHashes.get(row.creative_id)!.add(row.video_id)
       }
     }
+
+    const creativeToOriginalHash = new Map<string, string>()
+    for (const entry of Array.from(creativeIdToHashes.entries())) {
+      const [creativeId, hashes] = entry
+      // Find the hash that exists in media_library
+      const hashArray = Array.from(hashes)
+      for (const h of hashArray) {
+        if (mediaLookup.has(h)) {
+          creativeToOriginalHash.set(creativeId, h)
+          break
+        }
+      }
+    }
+
+    // Second pass: for creatives where NO hash matched media_library in the current dataset,
+    // query ad_data for ALL media_hash values those creatives have EVER had (across all dates).
+    // This catches the case where derivative-only rows exist in the current sync window but
+    // older rows (with the original hash) were from a previous sync.
+    const unmatchedCreativeIds = Array.from(creativeIdToHashes.keys())
+      .filter(cid => !creativeToOriginalHash.has(cid))
+
+    if (unmatchedCreativeIds.length > 0) {
+      const { data: fallbackRows } = await supabase
+        .from('ad_data')
+        .select('creative_id, media_hash, video_id')
+        .eq('user_id', userId)
+        .eq('ad_account_id', adAccountId)
+        .in('creative_id', unmatchedCreativeIds)
+        .not('media_hash', 'is', null)
+
+      if (fallbackRows) {
+        // Group all hashes by creative_id (including video_id as candidate)
+        const fallbackCreativeHashes = new Map<string, Set<string>>()
+        for (const row of fallbackRows) {
+          if (!row.creative_id || !row.media_hash) continue
+          if (!fallbackCreativeHashes.has(row.creative_id)) {
+            fallbackCreativeHashes.set(row.creative_id, new Set())
+          }
+          fallbackCreativeHashes.get(row.creative_id)!.add(row.media_hash)
+          if (row.video_id) {
+            fallbackCreativeHashes.get(row.creative_id)!.add(row.video_id)
+          }
+        }
+
+        for (const entry of Array.from(fallbackCreativeHashes.entries())) {
+          const [creativeId, hashes] = entry
+          const hashArr = Array.from(hashes)
+          for (const h of hashArr) {
+            if (mediaLookup.has(h)) {
+              creativeToOriginalHash.set(creativeId, h)
+              break
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[ActiveAds] media_library: ${mediaLookup.size}, creative→original: ${creativeToOriginalHash.size}/${creativeIdToHashes.size}`)
 
     interface AdAgg {
       ad_id: string

@@ -531,6 +531,8 @@ export async function GET(request: NextRequest) {
         adCount,
         adsetCount,
         campaignCount,
+        // Ad IDs that use this media (enables reverse lookup: ad_id → storageUrl)
+        adIds: perf ? Array.from(perf.adIds) : [],
         // AI Analysis status (videos only)
         analysisStatus: item.media_type === 'video'
           ? (analysisStatusMap.get(item.media_hash) || 'none')
