@@ -51,75 +51,6 @@ async function autoInsertToMediaLibrary(
   }
 }
 
-// ── Runway helpers ──────────────────────────────────────────────────────────
-function isRunwayJob(soraJobId: string | null): boolean {
-  return !!soraJobId?.startsWith('runway:')
-}
-
-function getRunwayTaskId(soraJobId: string): string {
-  return soraJobId.replace('runway:', '')
-}
-
-interface RunwayTask {
-  id: string
-  status: 'PENDING' | 'THROTTLED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
-  progress?: number
-  output?: string[]
-  failure?: string
-  failureReason?: string
-  createdAt?: string
-}
-
-/** Poll a Runway task by ID */
-async function pollRunwayTask(taskId: string): Promise<RunwayTask> {
-  const res = await fetch(`https://api.dev.runwayml.com/v1/tasks/${taskId}`, {
-    headers: {
-      'Authorization': `Bearer ${process.env.RUNWAY_API_KEY}`,
-      'X-Runway-Version': '2024-11-06',
-    },
-  })
-  if (!res.ok) {
-    throw new Error(`Runway poll ${res.status}: ${await res.text()}`)
-  }
-  return res.json()
-}
-
-/** Download a completed Runway video, upload to Supabase Storage, return public URL */
-async function downloadAndStoreRunwayVideo(
-  videoUrl: string,
-  jobId: string,
-  userId: string,
-  adAccountId: string
-): Promise<string | null> {
-  // Runway output URLs are pre-signed — just fetch directly
-  const res = await fetch(videoUrl)
-  if (!res.ok) {
-    console.error(`[VideoStatus] Runway video download failed: ${res.status}`)
-    return null
-  }
-
-  const videoBuffer = Buffer.from(await res.arrayBuffer())
-  const cleanAccountId = adAccountId.replace(/^act_/, '')
-  const storagePath = `${cleanAccountId}/videos/${jobId}.mp4`
-
-  const { error: uploadError } = await supabase.storage
-    .from('media')
-    .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-
-  if (uploadError) {
-    // Retry once
-    const { error: retryError } = await supabase.storage
-      .from('media')
-      .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-    if (retryError) {
-      console.error('[VideoStatus] Runway video upload retry failed:', retryError)
-    }
-  }
-
-  const { data: publicUrlData } = supabase.storage.from('media').getPublicUrl(storagePath)
-  return publicUrlData?.publicUrl || null
-}
-
 // ── Veo helpers ─────────────────────────────────────────────────────────────
 function isVeoJob(soraJobId: string | null): boolean {
   return !!soraJobId?.startsWith('veo:')
@@ -612,101 +543,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ── Runway Polling Path ──────────────────────────────────────────────────
-    if (isRunwayJob(job.sora_job_id)) {
-      if (!process.env.RUNWAY_API_KEY) {
-        return NextResponse.json({ jobId: job.id, status: job.status, progress_pct: job.progress_pct })
-      }
-
-      try {
-        const taskId = getRunwayTaskId(job.sora_job_id)
-        const task = await pollRunwayTask(taskId)
-
-        if (task.status === 'SUCCEEDED') {
-          const videoUrl = task.output?.[0]
-          if (!videoUrl) {
-            console.error(`[VideoStatus] Runway completed but no output URL for ${job.id}`)
-            await supabase.from('video_generation_jobs')
-              .update({ status: 'failed', error_message: 'No video returned from Runway', updated_at: new Date().toISOString() })
-              .eq('id', job.id)
-
-            await supabase.from('ai_generation_usage').insert({
-              user_id: userId,
-              generation_type: 'video',
-              credit_cost: -(job.credit_cost || 0),
-              generation_label: 'Refund: No video returned',
-            })
-
-            return NextResponse.json({ jobId: job.id, status: 'failed', error_message: 'No video returned', creditsRefunded: true })
-          }
-
-          const rawVideoUrl = await downloadAndStoreRunwayVideo(videoUrl, job.id, userId, job.ad_account_id)
-
-          await supabase.from('video_generation_jobs')
-            .update({ status: 'complete', progress_pct: 100, raw_video_url: rawVideoUrl, updated_at: new Date().toISOString() })
-            .eq('id', job.id)
-
-          console.log(`[VideoStatus] Runway video complete: ${job.id}, stored at ${rawVideoUrl}`)
-
-          if (rawVideoUrl) {
-            await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
-          }
-
-          return NextResponse.json({
-            jobId: job.id,
-            status: 'complete',
-            progress_pct: 100,
-            raw_video_url: rawVideoUrl,
-            overlay_config: job.overlay_config,
-            duration_seconds: job.duration_seconds,
-            prompt: job.prompt,
-            canvas_id: job.canvas_id,
-            ad_index: job.ad_index,
-            product_name: job.product_name,
-          })
-        }
-
-        if (task.status === 'FAILED') {
-          const errorMsg = task.failure || task.failureReason || 'Runway generation failed'
-          console.error(`[VideoStatus] Runway task failed for ${job.id}:`, errorMsg)
-
-          await supabase.from('video_generation_jobs')
-            .update({ status: 'failed', error_message: errorMsg, updated_at: new Date().toISOString() })
-            .eq('id', job.id)
-
-          await supabase.from('ai_generation_usage').insert({
-            user_id: userId,
-            generation_type: 'video',
-            credit_cost: -(job.credit_cost || 0),
-            generation_label: 'Refund: Runway generation failed',
-          })
-
-          return NextResponse.json({ jobId: job.id, status: 'failed', error_message: errorMsg, creditsRefunded: true })
-        }
-
-        // PENDING / THROTTLED / RUNNING — still generating
-        // Runway provides a progress field (0-1 ratio) on some statuses
-        const progress = typeof task.progress === 'number' ? Math.round(task.progress * 100) : 0
-
-        return NextResponse.json({
-          jobId: job.id,
-          status: 'generating',
-          progress_pct: progress,
-          canvas_id: job.canvas_id,
-          ad_index: job.ad_index,
-          product_name: job.product_name,
-        })
-      } catch (pollError: any) {
-        console.error('[VideoStatus] Runway poll error:', pollError)
-        return NextResponse.json({
-          jobId: job.id,
-          status: job.status,
-          progress_pct: job.progress_pct,
-          poll_error: pollError.message,
-        })
-      }
-    }
-
     // ── Veo Polling Path ─────────────────────────────────────────────────────
     if (isVeoJob(job.sora_job_id)) {
       if (!process.env.GOOGLE_GEMINI_API_KEY) {
@@ -825,141 +661,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ── Sora Polling Path ────────────────────────────────────────────────────
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ jobId: job.id, status: job.status, progress_pct: job.progress_pct })
-    }
-
-    try {
-      const soraRes = await fetch(`https://api.openai.com/v1/videos/${job.sora_job_id}`, {
-        headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-      })
-      if (!soraRes.ok) {
-        throw new Error(`Sora poll ${soraRes.status}: ${await soraRes.text()}`)
-      }
-      const soraJob = await soraRes.json()
-
-      if (soraJob.status === 'completed') {
-        const contentRes = await fetch(`https://api.openai.com/v1/videos/${job.sora_job_id}/content`, {
-          headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-        })
-
-        if (!contentRes.ok) {
-          console.error(`[VideoStatus] Video content expired/unavailable for ${job.id}: ${contentRes.status}`)
-          await supabase.from('video_generation_jobs')
-            .update({ status: 'failed', error_message: 'Video content expired — please re-generate', updated_at: new Date().toISOString() })
-            .eq('id', job.id)
-          await supabase.from('ai_generation_usage').insert({
-            user_id: userId,
-            generation_type: 'video',
-            credit_cost: -(job.credit_cost || 0),
-            generation_label: 'Refund: Video content expired',
-          })
-          return NextResponse.json({
-            jobId: job.id,
-            status: 'failed',
-            error_message: 'Video content expired — please re-generate',
-            creditsRefunded: true,
-          })
-        }
-
-        const videoBuffer = Buffer.from(await contentRes.arrayBuffer())
-        const cleanAccountId = job.ad_account_id.replace(/^act_/, '')
-        const storagePath = `${cleanAccountId}/videos/${job.id}.mp4`
-
-        const { error: uploadError } = await supabase.storage
-          .from('media')
-          .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-
-        if (uploadError) {
-          const { error: retryError } = await supabase.storage
-            .from('media')
-            .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-          if (retryError) {
-            console.error('[VideoStatus] Retry upload also failed:', retryError)
-          }
-        }
-
-        const { data: publicUrlData } = supabase.storage.from('media').getPublicUrl(storagePath)
-        const rawVideoUrl = publicUrlData?.publicUrl || null
-
-        await supabase.from('video_generation_jobs')
-          .update({ status: 'complete', progress_pct: 100, raw_video_url: rawVideoUrl, updated_at: new Date().toISOString() })
-          .eq('id', job.id)
-
-        console.log(`[VideoStatus] Video complete: ${job.id}, stored at ${rawVideoUrl}`)
-
-        if (rawVideoUrl) {
-          await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
-        }
-
-        return NextResponse.json({
-          jobId: job.id,
-          status: 'complete',
-          progress_pct: 100,
-          raw_video_url: rawVideoUrl,
-          overlay_config: job.overlay_config,
-          duration_seconds: job.duration_seconds,
-          prompt: job.prompt,
-          canvas_id: job.canvas_id,
-          ad_index: job.ad_index,
-          product_name: job.product_name,
-        })
-      }
-
-      if (soraJob.status === 'failed') {
-        const errorMsg = soraJob.error?.message || 'Video generation failed'
-        console.error(`[VideoStatus] Sora job failed:`, JSON.stringify(soraJob.error || soraJob, null, 2))
-        console.error(`[VideoStatus] Job prompt was:`, job.prompt?.substring(0, 500))
-
-        await supabase.from('video_generation_jobs')
-          .update({ status: 'failed', error_message: errorMsg, updated_at: new Date().toISOString() })
-          .eq('id', job.id)
-
-        await supabase.from('ai_generation_usage').insert({
-          user_id: userId,
-          generation_type: 'video',
-          credit_cost: -job.credit_cost,
-          generation_label: 'Refund: Video generation failed',
-        })
-
-        return NextResponse.json({
-          jobId: job.id,
-          status: 'failed',
-          error_message: errorMsg,
-          creditsRefunded: true,
-        })
-      }
-
-      // Still processing
-      const progress = typeof soraJob.progress === 'number' ? soraJob.progress : 0
-
-      if (progress > (job.progress_pct || 0)) {
-        await supabase.from('video_generation_jobs')
-          .update({ progress_pct: progress, updated_at: new Date().toISOString() })
-          .eq('id', job.id)
-      }
-
-      return NextResponse.json({
-        jobId: job.id,
-        status: 'generating',
-        progress_pct: progress,
-        canvas_id: job.canvas_id,
-        ad_index: job.ad_index,
-        product_name: job.product_name,
-      })
-    } catch (pollError: any) {
-      console.error('[VideoStatus] Sora poll error:', pollError)
-      return NextResponse.json({
-        jobId: job.id,
-        status: job.status,
-        progress_pct: job.progress_pct,
-        poll_error: pollError.message,
-        canvas_id: job.canvas_id,
-        ad_index: job.ad_index,
-        product_name: job.product_name,
-      })
-    }
+    // ── Legacy Sora/Runway jobs — return DB state (providers removed) ────────
+    return NextResponse.json({
+      jobId: job.id,
+      status: job.status,
+      progress_pct: job.progress_pct,
+      raw_video_url: job.raw_video_url,
+      overlay_config: job.overlay_config,
+      duration_seconds: job.duration_seconds,
+      prompt: job.prompt,
+      canvas_id: job.canvas_id,
+      ad_index: job.ad_index,
+      product_name: job.product_name,
+    })
   } catch (err) {
     console.error('[VideoStatus] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -1166,61 +880,6 @@ export async function POST(request: NextRequest) {
                 }
               }
               // If not done, nothing to update (Veo has no progress %)
-            } else if (isRunwayJob(job.sora_job_id)) {
-              // ── Runway Polling ────────────────────────────────────────────
-              if (!process.env.RUNWAY_API_KEY) return
-
-              const taskId = getRunwayTaskId(job.sora_job_id)
-              const task = await pollRunwayTask(taskId)
-
-              if (task.status === 'SUCCEEDED') {
-                const videoUrl = task.output?.[0]
-                if (!videoUrl) return
-
-                try {
-                  const rawVideoUrl = await downloadAndStoreRunwayVideo(videoUrl, job.id, job.user_id, job.ad_account_id)
-
-                  await supabase.from('video_generation_jobs')
-                    .update({ status: 'complete', progress_pct: 100, raw_video_url: rawVideoUrl, updated_at: new Date().toISOString() })
-                    .eq('id', job.id)
-
-                  job.status = 'complete'
-                  job.progress_pct = 100
-                  job.raw_video_url = rawVideoUrl
-                  console.log(`[VideoStatus/List] Runway video complete: ${job.id}, stored at ${rawVideoUrl}`)
-                  if (rawVideoUrl) {
-                    await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, rawVideoUrl, job.video_style)
-                  }
-                } catch (dlErr) {
-                  console.error(`[VideoStatus/List] Error finalizing Runway video ${job.id}:`, dlErr)
-                }
-              } else if (task.status === 'FAILED') {
-                const errorMsg = task.failure || task.failureReason || 'Runway generation failed'
-                console.error(`[VideoStatus/List] Runway task failed for ${job.id}:`, errorMsg)
-
-                await supabase.from('video_generation_jobs')
-                  .update({ status: 'failed', error_message: errorMsg, updated_at: new Date().toISOString() })
-                  .eq('id', job.id)
-
-                await supabase.from('ai_generation_usage').insert({
-                  user_id: job.user_id,
-                  generation_type: 'video',
-                  credit_cost: -(job.credit_cost || 0),
-                  generation_label: 'Refund: Runway generation failed',
-                })
-
-                job.status = 'failed'
-                job.error_message = errorMsg
-              } else {
-                // PENDING / THROTTLED / RUNNING — update progress if available
-                const progress = typeof task.progress === 'number' ? Math.round(task.progress * 100) : 0
-                job.progress_pct = progress
-                if (progress > 0) {
-                  await supabase.from('video_generation_jobs')
-                    .update({ progress_pct: progress, updated_at: new Date().toISOString() })
-                    .eq('id', job.id)
-                }
-              }
             } else if (isVeoJob(job.sora_job_id)) {
               // ── Veo Polling ──────────────────────────────────────────────
               if (!process.env.GOOGLE_GEMINI_API_KEY) return
@@ -1282,96 +941,8 @@ export async function POST(request: NextRequest) {
                 }
               }
               // If not done, nothing to update (Veo has no progress %)
-            } else {
-              // ── Sora Polling ─────────────────────────────────────────────
-              if (!process.env.OPENAI_API_KEY) return
-
-              const soraRes = await fetch(`https://api.openai.com/v1/videos/${job.sora_job_id}`, {
-                headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-              })
-              if (!soraRes.ok) return
-              const soraJob = await soraRes.json()
-
-              if (soraJob.status === 'completed') {
-                try {
-                  const contentRes = await fetch(`https://api.openai.com/v1/videos/${job.sora_job_id}/content`, {
-                    headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-                  })
-                  if (!contentRes.ok) {
-                    console.error(`[VideoStatus/List] Video content expired/unavailable for ${job.id}: ${contentRes.status}`)
-                    await supabase.from('video_generation_jobs')
-                      .update({ status: 'failed', error_message: 'Video content expired — please re-generate', updated_at: new Date().toISOString() })
-                      .eq('id', job.id)
-                    await supabase.from('ai_generation_usage').insert({
-                      user_id: job.user_id,
-                      generation_type: 'video',
-                      credit_cost: -(job.credit_cost || 0),
-                      generation_label: 'Refund: Video content expired',
-                    })
-                    job.status = 'failed'
-                    job.error_message = 'Video content expired — please re-generate'
-                    return
-                  }
-
-                  const videoBuffer = Buffer.from(await contentRes.arrayBuffer())
-                  const cleanAccountId = job.ad_account_id.replace(/^act_/, '')
-                  const storagePath = `${cleanAccountId}/videos/${job.id}.mp4`
-
-                  const { error: uploadError } = await supabase.storage
-                    .from('media')
-                    .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-
-                  if (uploadError) {
-                    await supabase.storage
-                      .from('media')
-                      .upload(storagePath, videoBuffer, { contentType: 'video/mp4', upsert: true })
-                  }
-
-                  const { data: publicUrlData } = supabase.storage.from('media').getPublicUrl(storagePath)
-                  const rawVideoUrl = publicUrlData?.publicUrl || null
-
-                  await supabase.from('video_generation_jobs')
-                    .update({ status: 'complete', progress_pct: 100, raw_video_url: rawVideoUrl, updated_at: new Date().toISOString() })
-                    .eq('id', job.id)
-
-                  job.status = 'complete'
-                  job.progress_pct = 100
-                  job.raw_video_url = rawVideoUrl
-                  console.log(`[VideoStatus/List] Video complete: ${job.id}, stored at ${rawVideoUrl}`)
-                  if (rawVideoUrl) {
-                    await autoInsertToMediaLibrary(job.id, job.user_id, job.ad_account_id, rawVideoUrl, job.video_style)
-                  }
-                } catch (dlErr) {
-                  console.error(`[VideoStatus/List] Error finalizing video ${job.id}:`, dlErr)
-                }
-              } else if (soraJob.status === 'failed') {
-                const errorMsg = soraJob.error?.message || 'Video generation failed'
-                console.error(`[VideoStatus/List] Sora job failed for ${job.id}:`, errorMsg)
-
-                await supabase.from('video_generation_jobs')
-                  .update({ status: 'failed', error_message: errorMsg, updated_at: new Date().toISOString() })
-                  .eq('id', job.id)
-
-                await supabase.from('ai_generation_usage').insert({
-                  user_id: job.user_id,
-                  generation_type: 'video',
-                  credit_cost: -(job.credit_cost || 0),
-                  generation_label: 'Refund: Video generation failed',
-                })
-
-                job.status = 'failed'
-                job.error_message = errorMsg
-              } else {
-                // Still processing — update progress
-                const progress = typeof soraJob.progress === 'number' ? soraJob.progress : 0
-                job.progress_pct = progress
-                if (progress > 0) {
-                  await supabase.from('video_generation_jobs')
-                    .update({ progress_pct: progress, updated_at: new Date().toISOString() })
-                    .eq('id', job.id)
-                }
-              }
             }
+            // Legacy Sora/Runway jobs: no polling (providers removed), return DB state as-is
           } catch { /* ignore poll errors for individual jobs */ }
         }))
       }

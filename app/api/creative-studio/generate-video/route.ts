@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
-import sharp from 'sharp'
 import { getGoogleAI, isVertexAI } from '@/lib/google-ai'
-import { condenseForRunway } from '@/lib/prompts/video-generation'
 
 const VEO_GCS_OUTPUT_URI = 'gs://killscaleapp/video/'
 // Extension model now uses VEO_MODELS[qualityTier]
-
-// ── Video Model Config ──────────────────────────────────────────────────────
-const VIDEO_MODEL = process.env.VIDEO_MODEL || 'sora-2-pro'
-const isVeo = VIDEO_MODEL.startsWith('veo')
-const isRunway = VIDEO_MODEL.startsWith('runway-')
 
 export const maxDuration = 60
 
@@ -45,6 +37,9 @@ export async function POST(request: NextRequest) {
       canvasId,
       productName,
       adIndex,
+      // Multi-image support (new)
+      productImages: productImagesParam,
+      // Legacy single-image params (backwards compat)
       productImageBase64,
       productImageMimeType,
       overlayConfig,
@@ -58,12 +53,9 @@ export async function POST(request: NextRequest) {
 
     const qualityTier: 'standard' | 'premium' = (quality === 'standard' || quality === 'premium') ? quality : 'premium'
 
-    // Determine provider: explicit param overrides env var detection
+    // Determine provider: explicit param overrides default
     const isVeoExt = requestedProvider === 'veo-ext'
-    // When a specific provider is requested from the frontend, override env var defaults
-    const effectiveIsVeo = isVeoExt || requestedProvider === 'veo' || (!requestedProvider && isVeo)
-    const effectiveIsRunway = !isVeoExt && (requestedProvider === 'runway' || (!requestedProvider && isRunway))
-    const effectiveIsSora = !isVeoExt && (requestedProvider === 'sora' || (!requestedProvider && !isVeo && !isRunway))
+    const effectiveIsVeo = isVeoExt || requestedProvider === 'veo' || !requestedProvider
 
     if (!userId || !adAccountId || !prompt || !videoStyle) {
       return NextResponse.json(
@@ -72,12 +64,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const requiredKey = isVeoExt ? 'GOOGLE_GEMINI_API_KEY' : effectiveIsRunway ? 'RUNWAY_API_KEY' : effectiveIsVeo ? 'GOOGLE_GEMINI_API_KEY' : 'OPENAI_API_KEY'
-    if (!process.env[requiredKey]) {
+    if (!process.env.GOOGLE_GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'Video generation not configured' },
         { status: 503 }
       )
+    }
+
+    // ── Normalize product images (multi-image or legacy single) ─────────────
+    let images: Array<{ base64: string; mimeType: string }> = []
+    if (Array.isArray(productImagesParam) && productImagesParam.length > 0) {
+      images = productImagesParam.slice(0, 3)  // Max 3
+    } else if (productImageBase64 && productImageMimeType) {
+      images = [{ base64: productImageBase64, mimeType: productImageMimeType }]
     }
 
     // ── Credit Check ──────────────────────────────────────────────────────────
@@ -133,45 +132,18 @@ export async function POST(request: NextRequest) {
       generation_label: isVeoExt ? `Video: ${videoStyle} (15s Veo 3.1)` : `Video: ${videoStyle}`,
     })
 
-    // ── Prepare Input Image ────────────────────────────────────────────────────
-    let imageBuffer: Buffer | null = null
-    let imageBase64ForVeo: string | null = null
-    let imageUrlForRunway: string | null = null
+    // ── Prepare Reference Images for Veo ──────────────────────────────────────
+    const veoReferenceImages: Array<{ image: { imageBytes: string; mimeType: string }; referenceType: string }> = []
 
-    if (productImageBase64 && productImageMimeType) {
-      const rawBuffer = Buffer.from(productImageBase64, 'base64')
-
-      if (isVeoExt) {
-        // Veo 3.1 Extended accepts image bytes directly — same as standard Veo
-        imageBase64ForVeo = rawBuffer.toString('base64')
-      } else if (effectiveIsRunway) {
-        // Runway requires an HTTPS URL — upload to Supabase Storage to get a public URL
-        const ext = productImageMimeType.includes('png') ? 'png' : 'jpg'
-        const storagePath = `${adAccountId.replace(/^act_/, '')}/runway-input/${Date.now()}.${ext}`
-        const { error: uploadErr } = await supabase.storage
-          .from('media')
-          .upload(storagePath, rawBuffer, { contentType: productImageMimeType, upsert: true })
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage.from('media').getPublicUrl(storagePath)
-          imageUrlForRunway = urlData?.publicUrl || null
-        }
-        if (imageUrlForRunway) {
-          console.log(`[GenerateVideo] Product image uploaded for Runway: ${imageUrlForRunway}`)
-        }
-      } else if (effectiveIsVeo) {
-        // Veo accepts image bytes directly — no resize needed
-        imageBase64ForVeo = rawBuffer.toString('base64')
-      } else {
-        // Sora requires input_reference to exactly match the requested size (1024x1792)
-        imageBuffer = await sharp(rawBuffer)
-          .resize(1024, 1792, {
-            fit: 'contain',
-            background: { r: 0, g: 0, b: 0, alpha: 1 },
-          })
-          .png()
-          .toBuffer()
-        console.log(`[GenerateVideo] Product image resized to 1024x1792`)
-      }
+    for (const img of images) {
+      const rawBuffer = Buffer.from(img.base64, 'base64')
+      veoReferenceImages.push({
+        image: {
+          imageBytes: rawBuffer.toString('base64'),
+          mimeType: img.mimeType || 'image/png',
+        },
+        referenceType: 'ASSET',
+      })
     }
 
     // ── Validate duration ────────────────────────────────────────────────────
@@ -179,20 +151,12 @@ export async function POST(request: NextRequest) {
     if (isVeoExt) {
       // Veo 3.1 extension: always start with 8s initial generation
       finalDuration = 8
-    } else if (effectiveIsRunway) {
-      // Runway supports 2-10 seconds (integer)
-      finalDuration = Math.max(2, Math.min(10, Math.round(Number(durationSeconds))))
-    } else if (effectiveIsVeo) {
+    } else {
       // Veo supports 4, 6, 8 — clamp 12→8
       const veoValid = [4, 6, 8]
       const requested = Number(durationSeconds)
       finalDuration = veoValid.includes(requested) ? requested : Math.min(requested, 8)
       if (!veoValid.includes(finalDuration)) finalDuration = 8
-    } else {
-      // Sora accepts '4', '8', '12'
-      const validSeconds = ['4', '8', '12']
-      const secondsStr = String(durationSeconds)
-      finalDuration = validSeconds.includes(secondsStr) ? Number(secondsStr) : 8
     }
 
     // ── Compute extension plan for veo-ext ─────────────────────────────────
@@ -208,7 +172,7 @@ export async function POST(request: NextRequest) {
         session_id: sessionId || null,
         canvas_id: canvasId || null,
         product_name: productName || null,
-        input_image_url: (imageBuffer || imageBase64ForVeo || imageUrlForRunway) ? 'sdk-direct-upload' : null,
+        input_image_url: images.length > 0 ? 'sdk-direct-upload' : null,
         prompt,
         video_style: videoStyle,
         duration_seconds: finalDuration,
@@ -216,7 +180,7 @@ export async function POST(request: NextRequest) {
         status: 'queued',
         ad_index: adIndex ?? null,
         credit_cost: creditCost,
-        provider: isVeoExt ? 'veo-ext' : effectiveIsRunway ? 'runway' : effectiveIsVeo ? 'veo' : 'sora',
+        provider: isVeoExt ? 'veo-ext' : 'veo',
         target_duration_seconds: isVeoExt ? targetDuration : null,
         extension_step: 0,
         extension_total: extensionTotal,
@@ -234,11 +198,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create video job' }, { status: 500 })
     }
 
-    // ── Submit to Video Provider ────────────────────────────────────────────
+    // ── Submit to Veo ──────────────────────────────────────────────────────────
     try {
       if (isVeoExt) {
         // ── Veo 3.1 Extended Path ──────────────────────────────────────────
-        console.log(`[GenerateVideo] Sending to Veo 3.1 Extended: initialDuration=8s, targetDuration=${targetDuration}s, extensions=${extensionTotal}, hasImage=${!!imageBase64ForVeo}`)
+        console.log(`[GenerateVideo] Sending to Veo 3.1 Extended: initialDuration=8s, targetDuration=${targetDuration}s, extensions=${extensionTotal}, images=${images.length}`)
         console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
 
         const ai = getGoogleAI()
@@ -262,11 +226,13 @@ export async function POST(request: NextRequest) {
           config: veoExtConfig,
         }
 
-        if (imageBase64ForVeo) {
-          veoExtParams.image = {
-            imageBytes: imageBase64ForVeo,
-            mimeType: productImageMimeType || 'image/png',
-          }
+        // Pass reference images
+        if (veoReferenceImages.length === 1) {
+          // Single image: use legacy `image` param (proven to work)
+          veoExtParams.image = veoReferenceImages[0].image
+        } else if (veoReferenceImages.length > 1) {
+          // Multiple images: use referenceImages array
+          veoExtParams.referenceImages = veoReferenceImages
         }
 
         const operation = await (ai.models as any).generateVideos(veoExtParams)
@@ -292,69 +258,10 @@ export async function POST(request: NextRequest) {
           targetDurationSeconds: targetDuration,
           extensionTotal,
         })
-      } else if (effectiveIsRunway) {
-        // ── Runway Path ────────────────────────────────────────────────────
-        const runwayModel = VIDEO_MODEL.startsWith('runway-') ? VIDEO_MODEL.replace('runway-', '') : 'gen4.5'
-        const hasImage = !!imageUrlForRunway
-        const endpoint = hasImage
-          ? 'https://api.dev.runwayml.com/v1/image_to_video'
-          : 'https://api.dev.runwayml.com/v1/text_to_video'
-
-        console.log(`[GenerateVideo] Sending to Runway: model=${runwayModel}, duration=${finalDuration}s, hasImage=${hasImage}, endpoint=${endpoint}`)
-        console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
-
-        // Runway has a 1000 character limit on promptText — condense structured prompts
-        const runwayPrompt = condenseForRunway(prompt)
-
-        const runwayBody: Record<string, unknown> = {
-          model: runwayModel,
-          promptText: runwayPrompt,
-          ratio: '720:1280',  // 9:16 portrait for ads
-          duration: finalDuration,
-        }
-        if (hasImage) {
-          runwayBody.promptImage = imageUrlForRunway
-        }
-
-        const runwayRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.RUNWAY_API_KEY}`,
-            'Content-Type': 'application/json',
-            'X-Runway-Version': '2024-11-06',
-          },
-          body: JSON.stringify(runwayBody),
-        })
-
-        if (!runwayRes.ok) {
-          const errText = await runwayRes.text()
-          throw new Error(`Runway API ${runwayRes.status}: ${errText}`)
-        }
-
-        const runwayTask = await runwayRes.json()
-        const taskId = `runway:${runwayTask.id}`
-
-        await supabase
-          .from('video_generation_jobs')
-          .update({
-            sora_job_id: taskId,
-            status: 'generating',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', job.id)
-
-        console.log(`[GenerateVideo] Runway task created: ${runwayTask.id} for user ${userId}`)
-
-        return NextResponse.json({
-          jobId: job.id,
-          soraJobId: taskId,
-          status: 'generating',
-          creditCost,
-        })
-      } else if (effectiveIsVeo) {
-        // ── Veo Path (Google GenAI) ──────────────────────────────────────────
+      } else {
+        // ── Veo Standard Path ──────────────────────────────────────────────
         const veoModel = VEO_MODELS[qualityTier]
-        console.log(`[GenerateVideo] Sending to Veo: model=${veoModel}, duration=${finalDuration}s, hasImage=${!!imageBase64ForVeo}`)
+        console.log(`[GenerateVideo] Sending to Veo: model=${veoModel}, duration=${finalDuration}s, images=${images.length}`)
         console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
 
         const ai = getGoogleAI()
@@ -378,12 +285,13 @@ export async function POST(request: NextRequest) {
           config: veoConfig,
         }
 
-        // If product image provided, pass as image input
-        if (imageBase64ForVeo) {
-          veoParams.image = {
-            imageBytes: imageBase64ForVeo,
-            mimeType: productImageMimeType || 'image/png',
-          }
+        // Pass reference images
+        if (veoReferenceImages.length === 1) {
+          // Single image: use legacy `image` param (proven to work)
+          veoParams.image = veoReferenceImages[0].image
+        } else if (veoReferenceImages.length > 1) {
+          // Multiple images: use referenceImages array
+          veoParams.referenceImages = veoReferenceImages
         }
 
         const operation = await (ai.models as any).generateVideos(veoParams)
@@ -408,47 +316,9 @@ export async function POST(request: NextRequest) {
           status: 'generating',
           creditCost,
         })
-      } else {
-        // ── Sora Path (OpenAI) ───────────────────────────────────────────────
-        const soraDuration = String(finalDuration) as '4' | '8' | '12'
-        console.log(`[GenerateVideo] Sending to Sora: model=sora-2-pro, seconds=${soraDuration}, size=1024x1792, hasImage=${!!imageBuffer}`)
-        console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
-
-        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
-        const videoParams: any = {
-          model: 'sora-2-pro',
-          prompt,
-          seconds: soraDuration,
-          size: '1024x1792' as const,
-        }
-
-        if (imageBuffer) {
-          videoParams.input_reference = await OpenAI.toFile(imageBuffer, 'product.png', { type: 'image/png' })
-        }
-
-        const videoJob = await openai.videos.create(videoParams)
-
-        await supabase
-          .from('video_generation_jobs')
-          .update({
-            sora_job_id: videoJob.id,
-            status: 'generating',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', job.id)
-
-        console.log(`[GenerateVideo] Sora job created: ${videoJob.id} for user ${userId}`)
-
-        return NextResponse.json({
-          jobId: job.id,
-          soraJobId: videoJob.id,
-          status: 'generating',
-          creditCost,
-        })
       }
     } catch (apiError: any) {
-      const providerName = isVeoExt ? 'Veo 3.1 Ext' : effectiveIsRunway ? 'Runway' : effectiveIsVeo ? 'Veo' : 'Sora'
+      const providerName = isVeoExt ? 'Veo 3.1 Ext' : 'Veo'
       console.error(`[GenerateVideo] ${providerName} API error:`, apiError)
 
       await supabase

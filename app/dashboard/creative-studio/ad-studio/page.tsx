@@ -299,6 +299,7 @@ export default function AdStudioPage() {
   const [productError, setProductError] = useState<string | null>(null)
   const [productImageOptions, setProductImageOptions] = useState<ProductImageOption[]>([])
   const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
+  const [selectedProductImageIndices, setSelectedProductImageIndices] = useState<number[]>([0])
 
   // Manual product entry (alternative to URL)
   const [useManualEntry, setUseManualEntry] = useState(false)
@@ -2688,8 +2689,7 @@ export default function AdStudioPage() {
           videoStyle: 'image_to_video',
           durationSeconds: effectiveDuration,
           productName: productInfo.name,
-          productImageBase64: i2vSelectedImage.base64,
-          productImageMimeType: i2vSelectedImage.mimeType,
+          productImages: [{ base64: i2vSelectedImage.base64, mimeType: i2vSelectedImage.mimeType }],
           provider: effectiveProvider,
           quality: i2vQuality,
           canvasId: canvasId || null,
@@ -3024,8 +3024,7 @@ export default function AdStudioPage() {
         overlayConfig,
       }
       if (openPromptSourceImage) {
-        videoBody.productImageBase64 = openPromptSourceImage.base64
-        videoBody.productImageMimeType = openPromptSourceImage.mimeType
+        ;(videoBody as any).productImages = [{ base64: openPromptSourceImage.base64, mimeType: openPromptSourceImage.mimeType }]
       }
 
       const res = await fetch('/api/creative-studio/generate-video', {
@@ -3362,8 +3361,7 @@ export default function AdStudioPage() {
           videoStyle: 'ugc',
           durationSeconds: scriptDuration,
           productName: productInfo.name,
-          productImageBase64: i2vSelectedImage.base64,
-          productImageMimeType: i2vSelectedImage.mimeType,
+          productImages: [{ base64: i2vSelectedImage.base64, mimeType: i2vSelectedImage.mimeType }],
           provider: apiProvider,
           canvasId: canvasId || null,
           adIndex,
@@ -3530,8 +3528,7 @@ export default function AdStudioPage() {
           videoStyle: 'image_to_video',
           durationSeconds: effectiveDuration,
           productName: productInfo.name,
-          productImageBase64: i2vSelectedImage.base64,
-          productImageMimeType: i2vSelectedImage.mimeType,
+          productImages: [{ base64: i2vSelectedImage.base64, mimeType: i2vSelectedImage.mimeType }],
           provider: effectiveProvider,
           quality: i2vQuality,
           canvasId: canvasId || null,

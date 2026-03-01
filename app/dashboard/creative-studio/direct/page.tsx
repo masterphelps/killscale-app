@@ -219,7 +219,7 @@ export default function DirectPage() {
 
   const [productKnowledge, setProductKnowledge] = useState<ProductKnowledge>({ name: '' })
   const [productImages, setProductImages] = useState<ProductImage[]>([])
-  const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
+  const [selectedProductImageIndices, setSelectedProductImageIndices] = useState<number[]>([0])
   const [videoStyle, setVideoStyle] = useState<VideoStyle>('cinematic')
 
   // Direct-specific state (Step 2)
@@ -566,8 +566,9 @@ export default function DirectPage() {
           canvasId: activeCanvasId || null,
           productName: productKnowledge.name || null,
           adIndex: conceptIndex,
-          productImageBase64: productImages[selectedProductImageIdx]?.base64 || null,
-          productImageMimeType: productImages[selectedProductImageIdx]?.mimeType || null,
+          productImages: selectedProductImageIndices
+            .map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType }))
+            .filter(img => img.base64),
           provider: apiProvider,
           quality: q,
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
@@ -787,8 +788,9 @@ export default function DirectPage() {
           canvasId: canvasId || null,
           productName: productKnowledge.name || null,
           adIndex: conceptIndex,
-          productImageBase64: productImages[selectedProductImageIdx]?.base64 || null,
-          productImageMimeType: productImages[selectedProductImageIdx]?.mimeType || null,
+          productImages: selectedProductImageIndices
+            .map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType }))
+            .filter(img => img.base64),
           provider: apiProvider,
           quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
@@ -988,34 +990,49 @@ export default function DirectPage() {
               </div>
             )}
 
-            {/* Product image picker */}
+            {/* Product image picker (multi-select up to 3) */}
             {productImages.length > 1 && (
               <div className="mt-4">
-                <label className="text-xs font-medium text-zinc-400 mb-2 block">Product image for video generation — click to change</label>
+                <label className="text-xs font-medium text-zinc-400 mb-2 block">
+                  Product images for video generation — select up to 3
+                </label>
                 <div className="flex flex-wrap gap-2">
-                  {productImages.map((img, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedProductImageIdx(i)}
-                      className={cn(
-                        'relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-all',
-                        selectedProductImageIdx === i
-                          ? 'border-amber-500 ring-2 ring-amber-500/30'
-                          : 'border-border hover:border-zinc-500'
-                      )}
-                    >
-                      <img
-                        src={`data:${img.mimeType};base64,${img.base64}`}
-                        alt={img.description || `Image ${i + 1}`}
-                        className="w-full h-full object-contain bg-zinc-900"
-                      />
-                      {selectedProductImageIdx === i && (
-                        <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                  {productImages.map((img, i) => {
+                    const isSelected = selectedProductImageIndices.includes(i)
+                    const selectionOrder = isSelected ? selectedProductImageIndices.indexOf(i) + 1 : 0
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setSelectedProductImageIndices(prev => {
+                            if (prev.includes(i)) {
+                              if (prev.length <= 1) return prev
+                              return prev.filter(idx => idx !== i)
+                            }
+                            if (prev.length >= 3) return prev
+                            return [...prev, i]
+                          })
+                        }}
+                        className={cn(
+                          'relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-all',
+                          isSelected
+                            ? 'border-amber-500 ring-2 ring-amber-500/30'
+                            : 'border-border hover:border-zinc-500'
+                        )}
+                      >
+                        <img
+                          src={`data:${img.mimeType};base64,${img.base64}`}
+                          alt={img.description || `Image ${i + 1}`}
+                          className="w-full h-full object-contain bg-zinc-900"
+                        />
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
+                            <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">{selectionOrder}</span>
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}

@@ -117,9 +117,7 @@ export function VideoJobCard({ job, onEdit, onSaveToLibrary, compact }: VideoJob
               </div>
             ) : (
               <p className="text-xs text-zinc-500 mt-1">
-                {job.provider?.startsWith('sora') ? 'Usually takes 5-10 minutes'
-                  : job.provider?.startsWith('runway') ? 'Usually takes 1-2 minutes'
-                  : 'Usually takes 2-5 minutes'}
+                Usually takes 2-5 minutes
               </p>
             )}
           </div>
