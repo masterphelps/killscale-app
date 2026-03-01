@@ -37,6 +37,8 @@ import {
   type InspirationExample,
   type OwnAd,
 } from '@/components/creative-studio'
+import { OracleBox, type OracleSubmission } from '@/components/creative-studio/oracle-box'
+import { OracleChips, type ChipDef } from '@/components/creative-studio/oracle-chips'
 
 interface AdLibraryAd {
   id: string
@@ -445,6 +447,11 @@ export default function AdStudioPage() {
   const [openPromptScenePlan, setOpenPromptScenePlan] = useState<ScenePlan | null>(null)
   const [openPromptPlanningScene, setOpenPromptPlanningScene] = useState(false)
   const [openPromptOverlaysEnabled, setOpenPromptOverlaysEnabled] = useState(true)
+
+  // Oracle state
+  const [oracleLoading, setOracleLoading] = useState(false)
+  const [oraclePlaceholder, setOraclePlaceholder] = useState<string | undefined>(undefined)
+  const oracleFileRef = useRef<HTMLInputElement>(null)
 
   // Image-to-Video component media library integration
   const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
@@ -1735,6 +1742,135 @@ export default function AdStudioPage() {
     setCurrentStep(step)
   }
 
+  // Oracle submit — send to Claude Haiku for intent classification, then route to workflow
+  const handleOracleSubmit = useCallback(async (submission: OracleSubmission) => {
+    setOracleLoading(true)
+    try {
+      const res = await fetch('/api/creative-studio/oracle-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: submission.text,
+          outputType: submission.outputType,
+          format: submission.format,
+          hasImage: !!submission.image,
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Failed to classify intent')
+
+      // Pre-populate data based on what Oracle extracted
+      const { workflow, productUrl: extractedUrl, prompt } = result
+
+      // Store attached image for flows that need it
+      if (submission.image) {
+        setOpenPromptSourceImage({
+          base64: submission.image.base64,
+          mimeType: submission.image.mimeType,
+          preview: submission.image.preview,
+        })
+      }
+
+      // Route to the appropriate workflow
+      switch (workflow) {
+        case 'create':
+          if (extractedUrl) setProductUrl(extractedUrl)
+          setMode('create')
+          break
+
+        case 'clone':
+          if (extractedUrl) setProductUrl(extractedUrl)
+          setMode('clone')
+          break
+
+        case 'inspiration':
+          setMode('inspiration')
+          break
+
+        case 'upload':
+          // If we have an attached image, go straight to upload mode with it
+          if (submission.image) {
+            setUploadedImage({
+              base64: submission.image.base64,
+              mimeType: submission.image.mimeType,
+              preview: submission.image.preview,
+            })
+            if (prompt) setUploadPrompt(prompt)
+          }
+          setMode('upload')
+          break
+
+        case 'url-to-video':
+          if (extractedUrl) setProductUrl(extractedUrl)
+          setMode('url-to-video')
+          break
+
+        case 'ugc-video':
+          if (extractedUrl) setProductUrl(extractedUrl)
+          setMode('ugc-video')
+          break
+
+        case 'text-to-video':
+          // Direct page — pass prompt as query param
+          router.push(
+            `/dashboard/creative-studio/direct${prompt ? `?prompt=${encodeURIComponent(prompt)}` : ''}`
+          )
+          break
+
+        case 'image-to-video':
+          setMode('image-to-video')
+          // ImageToVideo component will pick up openPromptSourceImage
+          break
+
+        case 'open-prompt':
+          if (prompt) setOpenPromptText(prompt)
+          setOpenPromptMediaType(submission.format)
+          setMode('open-prompt')
+          break
+
+        default:
+          // Fallback: treat as create
+          if (extractedUrl) setProductUrl(extractedUrl)
+          setMode('create')
+      }
+    } catch (err) {
+      console.error('Oracle routing error:', err)
+      // Fallback: go to create mode
+      setMode('create')
+    } finally {
+      setOracleLoading(false)
+    }
+  }, [router])
+
+  // Oracle chip action — handle different chip types
+  const handleOracleChipAction = useCallback((action: ChipDef['action']) => {
+    switch (action.type) {
+      case 'focus':
+        setOraclePlaceholder(action.placeholder)
+        // Focus the Oracle textarea
+        setTimeout(() => {
+          const textarea = document.querySelector<HTMLTextAreaElement>('[data-oracle-input]')
+          textarea?.focus()
+        }, 50)
+        break
+
+      case 'workflow':
+        // Jump directly to the workflow
+        if (action.workflow === 'clone') {
+          setMode('clone')
+        } else if (action.workflow === 'inspiration') {
+          setMode('inspiration')
+        }
+        break
+
+      case 'file':
+        setOraclePlaceholder(action.placeholder)
+        // Open file picker
+        oracleFileRef.current?.click()
+        break
+    }
+  }, [])
+
   const resetToModeSelection = () => {
     setMode(null)
     setCurrentStep(1)
@@ -2998,374 +3134,62 @@ export default function AdStudioPage() {
     )
   }
 
-  // Mode selection landing page
+  // Oracle landing page
   if (!mode) {
     return (
       <div className="min-h-screen pb-24">
         <div className="px-4 lg:px-8 py-6">
-          <div className="max-w-5xl mx-auto space-y-8">
+          <div className="max-w-3xl mx-auto space-y-10">
+
             {/* Header */}
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <h1 className="text-2xl lg:text-3xl font-bold text-white">Ad Studio</h1>
-              </div>
-              <p className="text-zinc-500">
-                Create high-converting ads with AI assistance
-              </p>
+            <div className="text-center pt-4 lg:pt-8">
+              <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Ad Studio</h1>
+              <p className="text-zinc-500 text-sm mt-1">Create ads and content with AI</p>
             </div>
 
-            {/* ── Open Prompt Section ── */}
-            <div id="open-prompt-section" className="space-y-3">
-              <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
-                {/* Textarea */}
-                <textarea
-                  value={openPromptText}
-                  onChange={(e) => setOpenPromptText(e.target.value)}
-                  placeholder="Describe what you want to create..."
-                  rows={3}
-                  className="w-full bg-transparent text-white placeholder:text-zinc-600 px-5 pt-5 pb-2 text-sm resize-none focus:outline-none"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && openPromptText.trim()) {
-                      handleOpenPromptGenerate()
-                    }
-                  }}
-                />
+            {/* Oracle Box */}
+            <OracleBox
+              onSubmit={handleOracleSubmit}
+              onDirectWorkflow={(workflow) => {
+                if (workflow === 'clone') setMode('clone')
+                else if (workflow === 'inspiration') setMode('inspiration')
+                else if (workflow === 'ugc-video') setMode('ugc-video')
+                else if (workflow === 'image-to-video') setMode('image-to-video')
+              }}
+              isLoading={oracleLoading}
+              placeholder={oraclePlaceholder}
+            />
 
-                {/* Bottom toolbar */}
-                <div className="flex items-center gap-2 px-4 pb-4 pt-1 flex-wrap">
-                  {/* Image / Video toggle */}
-                  <div className="flex items-center bg-zinc-800/80 rounded-full p-0.5">
-                    <button
-                      onClick={() => setOpenPromptMediaType('image')}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                        openPromptMediaType === 'image'
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      )}
-                    >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      Image
-                    </button>
-                    <button
-                      onClick={() => setOpenPromptMediaType('video')}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                        openPromptMediaType === 'video'
-                          ? 'bg-orange-500/20 text-orange-400'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      )}
-                    >
-                      <Film className="w-3.5 h-3.5" />
-                      Video
-                    </button>
-                  </div>
+            {/* Hidden file input for chip file actions */}
+            <input
+              ref={oracleFileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = () => {
+                  const base64 = (reader.result as string).split(',')[1]
+                  setOpenPromptSourceImage({
+                    base64,
+                    mimeType: file.type,
+                    preview: URL.createObjectURL(file),
+                  })
+                  setMode('upload')
+                }
+                reader.readAsDataURL(file)
+              }}
+            />
 
-                  {/* Source image */}
-                  <input
-                    ref={openPromptFileRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleOpenPromptImageUpload(file)
-                      e.target.value = ''
-                    }}
-                  />
-                  {openPromptSourceImage ? (
-                    <button
-                      onClick={() => setOpenPromptSourceImage(null)}
-                      className="relative group"
-                      title="Remove source image"
-                    >
-                      <img
-                        src={openPromptSourceImage.preview}
-                        alt="Source"
-                        className="w-8 h-8 rounded-lg object-cover border border-zinc-600"
-                      />
-                      <div className="absolute inset-0 bg-black/60 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <X className="w-3.5 h-3.5 text-white" />
-                      </div>
-                    </button>
-                  ) : (
-                    <div className="relative">
-                      <button
-                        data-image-menu-anchor
-                        onClick={() => setOpenPromptShowImageMenu(!openPromptShowImageMenu)}
-                        className={cn(
-                          'flex items-center justify-center w-8 h-8 rounded-full text-zinc-500 hover:text-zinc-300 bg-zinc-800/80 transition-colors',
-                          openPromptDownloadingLibrary && 'opacity-50 pointer-events-none'
-                        )}
-                        title="Add reference image"
-                      >
-                        {openPromptDownloadingLibrary ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Camera className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                      {openPromptShowImageMenu && (() => {
-                        const btnEl = document.querySelector('[data-image-menu-anchor]')
-                        const rect = btnEl?.getBoundingClientRect()
-                        return (
-                          <>
-                            <div className="fixed inset-0 z-[9999]" onClick={() => setOpenPromptShowImageMenu(false)} />
-                            <div
-                              className="fixed z-[10000] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden min-w-[160px]"
-                              style={rect ? { top: rect.bottom + 4, left: rect.left } : { top: 0, left: 0 }}
-                            >
-                              <button
-                                onClick={() => { setOpenPromptShowImageMenu(false); openPromptFileRef.current?.click() }}
-                                className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
-                              >
-                                <Upload className="w-3.5 h-3.5" />
-                                Upload Image
-                              </button>
-                              <button
-                                onClick={() => { setOpenPromptShowImageMenu(false); setOpenPromptShowLibrary(true) }}
-                                className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
-                              >
-                                <Layers className="w-3.5 h-3.5" />
-                                Media Library
-                              </button>
-                            </div>
-                          </>
-                        )
-                      })()}
-                    </div>
-                  )}
-
-                  {/* Aspect ratio */}
-                  <select
-                    value={openPromptAspectRatio}
-                    onChange={(e) => setOpenPromptAspectRatio(e.target.value)}
-                    className="bg-zinc-800/80 text-zinc-400 text-xs rounded-full px-3 py-1.5 border-0 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer"
-                  >
-                    <option value="9:16">9:16</option>
-                    <option value="16:9">16:9</option>
-                    <option value="1:1">1:1</option>
-                    <option value="4:5">4:5</option>
-                  </select>
-
-                  {/* Spacer */}
-                  <div className="flex-1" />
-
-                  {/* Generate / Write Script button */}
-                  <button
-                    onClick={handleOpenPromptGenerate}
-                    disabled={!openPromptText.trim() || openPromptGenerating || (openPromptMediaType === 'image' && aiUsage ? aiUsage.remaining < openPromptCreditCost : false)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
-                      openPromptText.trim() && !openPromptGenerating
-                        ? openPromptMediaType === 'video'
-                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-black hover:from-amber-400 hover:to-orange-400 shadow-lg shadow-amber-500/20'
-                          : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 shadow-lg shadow-blue-500/20'
-                        : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-                    )}
-                  >
-                    {openPromptGenerating ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : openPromptMediaType === 'video' ? (
-                      <Pencil className="w-4 h-4" />
-                    ) : (
-                      <Sparkles className="w-4 h-4" />
-                    )}
-                    {openPromptGenerating
-                      ? (openPromptMediaType === 'video' ? 'Planning...' : 'Generating...')
-                      : openPromptMediaType === 'video'
-                        ? 'Write Script'
-                        : `Generate (${openPromptCreditCost} cr)`
-                    }
-                  </button>
-                </div>
-
-                {/* Error */}
-                {openPromptError && (
-                  <div className="px-5 pb-4">
-                    <div className="flex items-center gap-2 text-red-400 text-xs">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      {openPromptError}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ── Guided Images Section ── */}
-            <div className="space-y-4">
-              <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
-                {/* Gradient glow */}
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-blue-500" />
-                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-purple-500/10 to-transparent" />
-                <div className="flex items-center gap-3 relative">
-                  <ImagePlus className="w-8 h-8 text-purple-400" />
-                  <div>
-                    <h2 className="text-xl font-bold text-white">Image Ads</h2>
-                    <p className="text-sm text-zinc-400">AI-powered workflows that turn your product into scroll-stopping ad creatives.</p>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* Create Mode */}
-                <button
-                  onClick={() => setMode('create')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-accent/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-accent/20 flex items-center justify-center mb-4 group-hover:bg-accent/30 transition-colors">
-                    <PlusCircle className="w-7 h-7 text-accent" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Create</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Generate original ads from your product page.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-accent text-sm font-medium">
-                    Get started <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* Clone Mode */}
-                <button
-                  onClick={() => setMode('clone')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-purple-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors">
-                    <Layers className="w-7 h-7 text-purple-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Clone</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Match the style of a winning ad.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-purple-400 text-sm font-medium">
-                    Browse ads <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* Browse Inspiration Mode */}
-                <button
-                  onClick={() => setMode('inspiration')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
-                    <Lightbulb className="w-7 h-7 text-amber-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Inspiration</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Explore curated examples of winning ads.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
-                    View gallery <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* Upload Mode */}
-                <button
-                  onClick={() => setMode('upload')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-cyan-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-cyan-500/20 flex items-center justify-center mb-4 group-hover:bg-cyan-500/30 transition-colors">
-                    <Upload className="w-7 h-7 text-cyan-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Upload</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Upload your own photo and describe your ad.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-cyan-400 text-sm font-medium">
-                    Upload image <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* ── Video Ads ─────────────────────────────── */}
-            <div className="space-y-4">
-              <div className="relative overflow-hidden bg-bg-card border border-border rounded-2xl p-6">
-                {/* Gradient glow */}
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-green-500 to-emerald-500" />
-                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-green-500/10 to-transparent" />
-                <div className="flex items-center gap-3 relative">
-                  <Video className="w-8 h-8 text-green-400" />
-                  <div>
-                    <h2 className="text-xl font-bold text-white">Video Ads</h2>
-                    <p className="text-sm text-zinc-400">AI-powered video generation from product URLs, text prompts, images, or UGC scripts.</p>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* URL to Video */}
-                <button
-                  onClick={() => setMode('url-to-video')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-blue-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-blue-500/20 flex items-center justify-center mb-4 group-hover:bg-blue-500/30 transition-colors">
-                    <Link2 className="w-7 h-7 text-blue-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">URL to Video</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Product URL to AI concepts or your own vision.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-blue-400 text-sm font-medium">
-                    Get started <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* Text to Video */}
-                <button
-                  onClick={() => router.push('/dashboard/creative-studio/direct')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-purple-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors">
-                    <Type className="w-7 h-7 text-purple-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Text to Video</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Describe any scene and AI directs and generates.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-purple-400 text-sm font-medium">
-                    Write a prompt <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* Image to Video */}
-                <button
-                  onClick={() => setMode('image-to-video')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-emerald-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-emerald-500/20 flex items-center justify-center mb-4 group-hover:bg-emerald-500/30 transition-colors">
-                    <ImagePlus className="w-7 h-7 text-emerald-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Image to Video</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    Upload or pick an image and animate it with AI.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-emerald-400 text-sm font-medium">
-                    Choose image <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {/* UGC Video */}
-                <button
-                  onClick={() => setMode('ugc-video')}
-                  className="group p-6 bg-bg-card border border-border rounded-2xl text-left hover:border-amber-500/50 hover:bg-bg-card/80 transition-all"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4 group-hover:bg-amber-500/30 transition-colors">
-                    <UserCircle className="w-7 h-7 text-amber-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">UGC Video</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed">
-                    AI presenter delivers your product testimonial.
-                  </p>
-                  <div className="mt-4 flex items-center gap-2 text-amber-400 text-sm font-medium">
-                    Create UGC <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
-              </div>
-            </div>
+            {/* Suggestion Chips */}
+            <OracleChips onChipAction={handleOracleChipAction} />
 
           </div>
         </div>
 
-        {/* Media Library Modal for Open Prompt source image (landing page) */}
+        {/* Media Library Modal for flows that need it */}
         {openPromptShowLibrary && user?.id && currentAccountId && (
           <MediaLibraryModal
             isOpen={openPromptShowLibrary}
