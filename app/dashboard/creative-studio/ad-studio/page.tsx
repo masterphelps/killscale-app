@@ -451,7 +451,11 @@ export default function AdStudioPage() {
   // Oracle state
   const [oracleLoading, setOracleLoading] = useState(false)
   const [oraclePlaceholder, setOraclePlaceholder] = useState<string | undefined>(undefined)
+  const [oraclePreloadImage, setOraclePreloadImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
+  const [oraclePreloadOutputType, setOraclePreloadOutputType] = useState<'ad' | 'content' | undefined>(undefined)
+  const [oraclePreloadFormat, setOraclePreloadFormat] = useState<'image' | 'video' | undefined>(undefined)
   const oracleFileRef = useRef<HTMLInputElement>(null)
+  const oracleAutoGenRef = useRef(false) // tracks if Oracle routed to open-prompt and needs auto-gen
 
   // Image-to-Video component media library integration
   const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
@@ -1753,7 +1757,7 @@ export default function AdStudioPage() {
           text: submission.text,
           outputType: submission.outputType,
           format: submission.format,
-          hasImage: !!submission.image,
+          hasImage: submission.images.length > 0,
         }),
       })
       const result = await res.json()
@@ -1762,12 +1766,13 @@ export default function AdStudioPage() {
       // Pre-populate data based on what Oracle extracted
       const { workflow, productUrl: extractedUrl, prompt } = result
 
-      // Store attached image for flows that need it
-      if (submission.image) {
+      // Store attached image(s) for flows that need it
+      const primaryImage = submission.images[0] ?? null
+      if (primaryImage) {
         setOpenPromptSourceImage({
-          base64: submission.image.base64,
-          mimeType: submission.image.mimeType,
-          preview: submission.image.preview,
+          base64: primaryImage.base64,
+          mimeType: primaryImage.mimeType,
+          preview: primaryImage.preview,
         })
       }
 
@@ -1789,11 +1794,11 @@ export default function AdStudioPage() {
 
         case 'upload':
           // If we have an attached image, go straight to upload mode with it
-          if (submission.image) {
+          if (primaryImage) {
             setUploadedImage({
-              base64: submission.image.base64,
-              mimeType: submission.image.mimeType,
-              preview: submission.image.preview,
+              base64: primaryImage.base64,
+              mimeType: primaryImage.mimeType,
+              preview: primaryImage.preview,
             })
             if (prompt) setUploadPrompt(prompt)
           }
@@ -1818,6 +1823,7 @@ export default function AdStudioPage() {
           break
 
         case 'image-to-video':
+          if (prompt) setI2vPrompt(prompt)
           setMode('image-to-video')
           // ImageToVideo component will pick up openPromptSourceImage
           break
@@ -1825,6 +1831,7 @@ export default function AdStudioPage() {
         case 'open-prompt':
           if (prompt) setOpenPromptText(prompt)
           setOpenPromptMediaType(submission.format)
+          oracleAutoGenRef.current = true
           setMode('open-prompt')
           break
 
@@ -1843,10 +1850,15 @@ export default function AdStudioPage() {
   }, [router])
 
   // Oracle chip action — handle different chip types
+  // Track which chip triggered file picker so we route to the correct mode
+  const pendingFileChipRef = useRef<{ outputType: string; format: string } | null>(null)
+
   const handleOracleChipAction = useCallback((action: ChipDef['action']) => {
     switch (action.type) {
       case 'focus':
         setOraclePlaceholder(action.placeholder)
+        setOraclePreloadOutputType(action.outputType)
+        setOraclePreloadFormat(action.format)
         // Focus the Oracle textarea
         setTimeout(() => {
           const textarea = document.querySelector<HTMLTextAreaElement>('[data-oracle-input]')
@@ -1856,15 +1868,18 @@ export default function AdStudioPage() {
 
       case 'workflow':
         // Jump directly to the workflow
-        if (action.workflow === 'clone') {
-          setMode('clone')
-        } else if (action.workflow === 'inspiration') {
-          setMode('inspiration')
-        }
+        if (action.workflow === 'clone') setMode('clone')
+        else if (action.workflow === 'inspiration') setMode('inspiration')
+        else if (action.workflow === 'create') setMode('create')
+        else if (action.workflow === 'url-to-video') setMode('url-to-video')
+        else if (action.workflow === 'ugc-video') setMode('ugc-video')
         break
 
       case 'file':
         setOraclePlaceholder(action.placeholder)
+        setOraclePreloadOutputType(action.outputType)
+        setOraclePreloadFormat(action.format)
+        pendingFileChipRef.current = { outputType: action.outputType, format: action.format }
         // Open file picker
         oracleFileRef.current?.click()
         break
@@ -2477,6 +2492,14 @@ export default function AdStudioPage() {
       setOpenPromptGenerating(false)
     }
   }, [openPromptText, openPromptMediaType, openPromptSourceImage, openPromptAspectRatio, openPromptQuality, openPromptCreditCost, user?.id, currentAccountId])
+
+  // Auto-trigger generation when Oracle routes to open-prompt
+  useEffect(() => {
+    if (mode === 'open-prompt' && oracleAutoGenRef.current && openPromptText.trim() && !openPromptGenerating && !openPromptResult && !openPromptPlanningScene) {
+      oracleAutoGenRef.current = false
+      handleOpenPromptGenerate()
+    }
+  }, [mode, openPromptText, openPromptGenerating, openPromptResult, openPromptPlanningScene, handleOpenPromptGenerate])
 
   // Open Prompt: Stage 2 — Director approved, generate video with structured prompts
   const handleOpenPromptVideoGenerate = useCallback(async () => {
@@ -3184,6 +3207,9 @@ export default function AdStudioPage() {
                   onOpenLibrary={() => setOpenPromptShowLibrary(true)}
                   isLoading={oracleLoading}
                   placeholder={oraclePlaceholder}
+                  initialImage={oraclePreloadImage}
+                  initialOutputType={oraclePreloadOutputType}
+                  initialFormat={oraclePreloadFormat}
                 />
               </div>
             </div>
@@ -3200,12 +3226,21 @@ export default function AdStudioPage() {
                 const reader = new FileReader()
                 reader.onload = () => {
                   const base64 = (reader.result as string).split(',')[1]
-                  setOpenPromptSourceImage({
+                  const imageData = {
                     base64,
                     mimeType: file.type,
                     preview: URL.createObjectURL(file),
-                  })
-                  setMode('upload')
+                  }
+                  setOpenPromptSourceImage(imageData)
+                  // Route to correct mode based on which chip triggered the file picker
+                  const pending = pendingFileChipRef.current
+                  if (pending?.format === 'video') {
+                    setMode('image-to-video')
+                  } else {
+                    setUploadedImage(imageData)
+                    setMode('upload')
+                  }
+                  pendingFileChipRef.current = null
                 }
                 reader.readAsDataURL(file)
               }}
@@ -3301,6 +3336,15 @@ export default function AdStudioPage() {
               <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 {openPromptError}
+              </div>
+            )}
+
+            {/* Image: Generating spinner */}
+            {openPromptGenerating && openPromptMediaType === 'image' && (
+              <div className="flex flex-col items-center py-16">
+                <Loader2 className="w-10 h-10 text-blue-400 animate-spin mb-4" />
+                <p className="text-white font-medium">Generating your image...</p>
+                <p className="text-zinc-500 text-sm mt-1">This usually takes 10-15 seconds</p>
               </div>
             )}
 
@@ -3624,6 +3668,29 @@ export default function AdStudioPage() {
                         <Megaphone className="w-4 h-4" />
                       )}
                       Create Ad
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Pre-load this image into the Oracle with Content + Video
+                        const img = openPromptResult?.type === 'image' ? openPromptResult.image : null
+                        if (!img) return
+                        setOraclePreloadImage({
+                          base64: img.base64,
+                          mimeType: img.mimeType,
+                          preview: img.storageUrl || `data:${img.mimeType};base64,${img.base64}`,
+                        })
+                        setOraclePreloadOutputType('content')
+                        setOraclePreloadFormat('video')
+                        setOraclePlaceholder('Describe the animation or motion you want...')
+                        // Reset open-prompt state and go back to Oracle
+                        setOpenPromptResult(null)
+                        setOpenPromptText('')
+                        setMode(null)
+                      }}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm hover:bg-emerald-500/30 transition-colors"
+                    >
+                      <Video className="w-4 h-4" />
+                      Make Video
                     </button>
                   </div>
                 </div>

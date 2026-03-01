@@ -19,8 +19,8 @@ export interface ChipDef {
 
 const chips: ChipDef[] = [
   // Make Ads
-  { label: 'Product \u2192 Ad', icon: Target, group: 'ads', action: { type: 'focus', outputType: 'ad', format: 'image', placeholder: 'Paste your product URL...' } },
-  { label: 'Product \u2192 Video Ad', icon: Target, group: 'ads', action: { type: 'focus', outputType: 'ad', format: 'video', placeholder: 'Paste your product URL...' } },
+  { label: 'Product \u2192 Ad', icon: Target, group: 'ads', action: { type: 'workflow', workflow: 'create' } },
+  { label: 'Product \u2192 Video Ad', icon: Target, group: 'ads', action: { type: 'workflow', workflow: 'url-to-video' } },
   { label: 'Clone Ad', icon: RefreshCw, group: 'ads', action: { type: 'workflow', workflow: 'clone' } },
   { label: 'Inspiration', icon: Sparkles, group: 'ads', action: { type: 'workflow', workflow: 'inspiration' } },
   { label: 'UGC Video Ad', icon: UserCircle, group: 'ads', action: { type: 'focus', outputType: 'ad', format: 'video', placeholder: 'Paste your product URL for a UGC video...' } },

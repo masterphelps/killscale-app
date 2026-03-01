@@ -14,13 +14,16 @@ const SUGGESTIONS = [
 
 export type OracleOutputType = 'ad' | 'content'
 export type OracleFormat = 'image' | 'video'
+export type OracleImage = { base64: string; mimeType: string; preview: string }
 
 export interface OracleSubmission {
   text: string
   outputType: OracleOutputType
   format: OracleFormat
-  image?: { base64: string; mimeType: string; preview: string } | null
+  images: OracleImage[]
 }
+
+const MAX_IMAGES = 2
 
 interface OracleBoxProps {
   onSubmit: (submission: OracleSubmission) => void
@@ -28,18 +31,32 @@ interface OracleBoxProps {
   onOpenLibrary: () => void
   isLoading: boolean
   placeholder?: string
+  initialImage?: OracleImage | null
+  initialOutputType?: OracleOutputType
+  initialFormat?: OracleFormat
 }
 
-export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder }: OracleBoxProps) {
+export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder, initialImage, initialOutputType, initialFormat }: OracleBoxProps) {
   const [text, setText] = useState('')
-  const [outputType, setOutputType] = useState<OracleOutputType>('ad')
-  const [format, setFormat] = useState<OracleFormat>('image')
-  const [image, setImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
+  const [outputType, setOutputType] = useState<OracleOutputType>(initialOutputType || 'ad')
+  const [format, setFormat] = useState<OracleFormat>(initialFormat || 'image')
+  const [images, setImages] = useState<OracleImage[]>(initialImage ? [initialImage] : [])
   const [activeSuggestions, setActiveSuggestions] = useState<typeof SUGGESTIONS>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Sync state when initial props change (e.g. returning from open-prompt with image)
+  useEffect(() => {
+    if (initialImage) setImages(prev => {
+      // Don't duplicate if already there
+      if (prev.some(p => p.preview === initialImage.preview)) return prev
+      return prev.length >= MAX_IMAGES ? [prev[0], initialImage] : [...prev, initialImage]
+    })
+    if (initialOutputType) setOutputType(initialOutputType)
+    if (initialFormat) setFormat(initialFormat)
+  }, [initialImage, initialOutputType, initialFormat])
 
   // Auto-suggest based on keywords
   useEffect(() => {
@@ -61,9 +78,9 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
   }, [text])
 
   const handleSubmit = useCallback(() => {
-    if ((!text.trim() && !image) || isLoading) return
-    onSubmit({ text: text.trim(), outputType, format, image })
-  }, [text, outputType, format, image, isLoading, onSubmit])
+    if ((!text.trim() && images.length === 0) || isLoading) return
+    onSubmit({ text: text.trim(), outputType, format, images })
+  }, [text, outputType, format, images, isLoading, onSubmit])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -77,9 +94,14 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
     const reader = new FileReader()
     reader.onload = () => {
       const base64 = (reader.result as string).split(',')[1]
-      setImage({ base64, mimeType: file.type, preview: URL.createObjectURL(file) })
+      const newImage: OracleImage = { base64, mimeType: file.type, preview: URL.createObjectURL(file) }
+      setImages(prev => prev.length >= MAX_IMAGES ? [...prev.slice(1), newImage] : [...prev, newImage])
     }
     reader.readAsDataURL(file)
+  }, [])
+
+  const removeImage = useCallback((index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index))
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -111,19 +133,24 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
       >
-        {/* Image preview */}
-        {image && (
+        {/* Image previews */}
+        {images.length > 0 && (
           <div className="px-4 pt-3 flex items-center gap-2">
-            <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-zinc-700/50">
-              <img src={image.preview} alt="Attached" className="w-full h-full object-cover" />
-              <button
-                onClick={() => setImage(null)}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-black/80 rounded-full flex items-center justify-center"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-            <span className="text-xs text-zinc-500">Image attached</span>
+            {images.map((img, i) => (
+              <div key={img.preview} className="relative w-12 h-12 rounded-lg overflow-hidden border border-zinc-700/50 shrink-0">
+                <img src={img.preview} alt={`Attached ${i + 1}`} className="w-full h-full object-cover" />
+                <button
+                  onClick={() => removeImage(i)}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-black/80 rounded-full flex items-center justify-center"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+            <span className="text-xs text-zinc-500">
+              {images.length === 1 ? '1 image' : `${images.length} images`}
+              {images.length < MAX_IMAGES && ' · drop or attach another'}
+            </span>
           </div>
         )}
 
@@ -135,7 +162,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={defaultPlaceholder}
-          rows={1}
+          rows={2}
           className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 px-4 pt-4 pb-2 resize-none focus:outline-none"
         />
 
@@ -152,14 +179,20 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
             />
             <button
               onClick={() => setShowAttachMenu(!showAttachMenu)}
-              className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition-colors"
-              title="Attach image"
+              className={cn(
+                'p-2 rounded-lg transition-colors',
+                images.length >= MAX_IMAGES
+                  ? 'text-zinc-600 cursor-not-allowed'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]'
+              )}
+              title={images.length >= MAX_IMAGES ? `Max ${MAX_IMAGES} images` : 'Attach image'}
+              disabled={images.length >= MAX_IMAGES}
             >
               <Paperclip className="w-4 h-4" />
             </button>
 
             {/* Attach menu dropdown */}
-            {showAttachMenu && (
+            {showAttachMenu && images.length < MAX_IMAGES && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowAttachMenu(false)} />
                 <div className="absolute left-0 bottom-full mb-2 bg-bg-card border border-zinc-700/50 rounded-xl overflow-hidden shadow-xl z-20 w-48">
@@ -231,10 +264,10 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
             {/* Submit */}
             <button
               onClick={handleSubmit}
-              disabled={(!text.trim() && !image) || isLoading}
+              disabled={(!text.trim() && images.length === 0) || isLoading}
               className={cn(
                 'p-2 rounded-lg transition-all',
-                (!text.trim() && !image) || isLoading
+                (!text.trim() && images.length === 0) || isLoading
                   ? 'bg-zinc-700/50 text-zinc-500 cursor-not-allowed'
                   : 'bg-purple-600 hover:bg-purple-500 text-white'
               )}
