@@ -32,6 +32,11 @@ RULES:
 - When you have enough info to route, include "action" with the workflow and any prefilled data
 - Max 5 turns before routing — don't loop forever. Make your best guess and route.
 - Never ask for information the workflow will collect itself (e.g., don't ask for style if url-to-video has a style picker)
+- NEVER craft generation prompts yourself. Your job is to ROUTE to the right workflow. The workflows handle all prompt crafting:
+  * Ad workflows (create, url-to-video, ugc-video) have their own AI pipelines for ad copy + visuals
+  * Content workflows (open-prompt, text-to-video) let the user write or refine their own prompt
+  * If the user wants creative brainstorming, escalate to "creative" mode (Opus) — Opus CAN craft content prompts
+- Just pass the user's own words in prefilledData.prompt, don't embellish or rewrite them
 
 RESPONSE FORMAT — return ONLY valid JSON:
 {
@@ -68,14 +73,27 @@ export async function POST(req: NextRequest) {
       ? `${SYSTEM_PROMPT}\n\nCONTEXT:\n${contextParts.join('\n')}`
       : SYSTEM_PROMPT
 
+    // Filter empty messages and ensure alternating roles for Anthropic API
+    const cleanMessages: { role: 'user' | 'assistant'; content: string }[] = []
+    for (const m of messages) {
+      if (!m.content || !m.content.trim()) continue
+      const role = m.role as 'user' | 'assistant'
+      if (cleanMessages.length > 0 && cleanMessages[cleanMessages.length - 1].role === role) {
+        cleanMessages[cleanMessages.length - 1].content += '\n' + m.content
+      } else {
+        cleanMessages.push({ role, content: m.content })
+      }
+    }
+    // Ensure first message is from user
+    if (cleanMessages.length === 0 || cleanMessages[0].role !== 'user') {
+      return NextResponse.json({ error: 'Conversation must start with a user message' }, { status: 400 })
+    }
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
       system: fullSystem,
-      messages: messages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      messages: cleanMessages,
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''

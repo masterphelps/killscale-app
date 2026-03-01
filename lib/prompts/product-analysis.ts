@@ -17,7 +17,14 @@ export function buildProductAnalysisPrompt(
   truncatedText: string,
   imageContext: string,
 ): string {
-  return `Analyze this product/service page and extract comprehensive information. Read the ENTIRE page content carefully — features, benefits, and details may appear throughout.
+  return `Analyze this product/service page and extract ONLY information that is explicitly stated on the page. DO NOT guess, infer, or fabricate any details.
+
+CRITICAL RULES:
+- ONLY include information you can directly find in the page content below
+- If a field's information is not on the page, set it to null or an empty array
+- DO NOT invent features, benefits, prices, or descriptions based on the URL or product name
+- If the page content is very short or mostly empty (JavaScript-rendered sites often return minimal HTML), say so — set "pageQuality" to "minimal" and only fill in what you can actually see
+- Quote or closely paraphrase actual text from the page — do not embellish
 
 URL: ${url}
 
@@ -28,24 +35,25 @@ PAGE CONTENT:
 ${truncatedText}${imageContext}
 
 Extract and return a JSON object with these fields:
-- name: Product/service name
-- description: Brief product description (2-3 sentences covering what it does and who it's for)
-- price: Price if visible (or null)
-- currency: Currency code (USD, EUR, etc.) or null
-- features: Array of up to 10 key features/benefits found anywhere on the page
-- brand: Brand name if different from product name
-- category: Product category (e.g., "fitness equipment", "SaaS", "skincare", "clothing")
-- uniqueSellingPoint: The main thing that makes this product special
-- targetAudience: Who this product is for (1 sentence)
+- pageQuality: "rich" if the page has substantial readable content, "minimal" if mostly empty/JS-rendered, "moderate" if some content but sparse
+- name: Product/service name (from page title, og:title, or heading — NOT guessed from URL)
+- description: Brief product description ONLY using text found on the page (2-3 sentences, or null if not found)
+- price: Price if explicitly shown on the page (or null)
+- currency: Currency code if price found (or null)
+- features: Array of up to 10 features/benefits ACTUALLY LISTED on the page (empty array if none found)
+- brand: Brand name if stated on the page
+- category: Product category based on what the page says (not guessed from URL)
+- uniqueSellingPoint: The main differentiator IF stated on the page (or null)
+- targetAudience: Who this product is for IF the page says so (or null)
 - imageUrl: The main product image URL (from og:image meta tag or primary product image)
-- images: Array of up to 8 product-relevant image objects. Each: { "url": "full URL", "description": "what the image shows", "type": "product|screenshot|lifestyle|hero|packaging" }. Pick the HIGHEST RESOLUTION version of each product image — look for URLs without size suffixes like "_100x", "-150x150", or "?width=200". Prefer: product photos on white/clean background, lifestyle shots showing the product in use, detail/macro shots. SKIP: thumbnails, icons under 200px, logos, decorative backgrounds, tiny UI elements, SVGs. From the IMAGES FOUND ON PAGE list, identify which ones are product-relevant and highest quality.
-- benefits: Array of up to 5 customer-facing benefits (phrased as outcomes the customer gets, e.g., "Launch campaigns in under 60 seconds")
-- painPoints: Array of up to 3 problems this product solves (phrased as frustrations, e.g., "Hours wasted in Ads Manager")
-- testimonialPoints: Array of 3 lines that a satisfied customer would say about this product (authentic UGC style, first person, e.g., "I used to spend hours in Ads Manager. KillScale cut that to under a minute.")
-- keyMessages: Array of 3 short punchy hook lines for ads (scroll-stopping, e.g., "Make ads like a pro, scale them like a boss")
-- motionOpportunities: Array of up to 5 ways this product could be shown in motion or physical interaction (e.g., "Pouring creates a satisfying cascade", "Snapping the lid shut with a confident click", "Fabric draping and flowing over surfaces"). Think about what's physically INTERESTING about this product — what movements, textures, transformations, or interactions would look satisfying on camera.
-- sensoryDetails: Array of up to 5 tactile/visual/sensory qualities (e.g., "Matte black finish with brushed metal accents", "Thick, creamy texture that holds its shape", "Translucent amber color that catches light"). Focus on textures, materials, colors, weight, sound.
-- visualHooks: Array of up to 3 visual concepts that would stop someone scrolling (e.g., "Before/after transformation", "Satisfying pour in slow motion", "Macro shot revealing hidden detail"). Think about what would make someone pause their thumb.
+- images: Array of up to 8 product-relevant image objects from the IMAGES FOUND ON PAGE list. Each: { "url": "full URL", "description": "what the image shows", "type": "product|screenshot|lifestyle|hero|packaging" }. Pick the HIGHEST RESOLUTION version — look for URLs without size suffixes like "_100x", "-150x150", or "?width=200". Prefer: product photos on white/clean background, lifestyle shots, detail shots. SKIP: thumbnails, icons, logos, decorative backgrounds, SVGs.
+- benefits: Array of up to 5 customer-facing benefits FOUND ON THE PAGE (empty array if none stated)
+- painPoints: Array of up to 3 problems mentioned on the page (empty array if none stated)
+- testimonialPoints: Array of up to 3 actual testimonial quotes from the page (empty array if no testimonials found — DO NOT make these up)
+- keyMessages: Array of up to 3 marketing headlines/taglines actually on the page (empty array if none found)
+- motionOpportunities: Array of up to 5 ways this product could be shown in motion, based on what you learned about the actual product (only if you have enough real info)
+- sensoryDetails: Array of up to 5 tactile/visual/sensory qualities based on actual product descriptions on the page (empty array if product details are too sparse)
+- visualHooks: Array of up to 3 visual ad concepts based on what the product actually is (only if you have enough real info)
 
 Respond ONLY with the JSON object, no other text.`
 }

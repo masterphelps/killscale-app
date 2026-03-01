@@ -101,6 +101,35 @@ interface ReferenceAdImage {
 }
 
 // Helper to convert CompetitorAd to AdLibraryAd format
+const ANALYZING_MESSAGES = [
+  'Visiting the site...',
+  'Reading the page...',
+  'Gathering product details...',
+  'Looking through photos...',
+  'Reading specifications...',
+  'Checking reviews...',
+  'Analyzing pricing...',
+  'Identifying key features...',
+  'Understanding the brand...',
+]
+
+function AnalyzingStatus() {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex(prev => (prev + 1) % ANALYZING_MESSAGES.length)
+    }, 2200)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-2 text-purple-400 text-sm animate-pulse">
+      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+      <span>{ANALYZING_MESSAGES[index]}</span>
+    </div>
+  )
+}
+
 function competitorAdToAdLibraryAd(ad: CompetitorAd): AdLibraryAd {
   return {
     id: ad.id,
@@ -456,7 +485,7 @@ export default function AdStudioPage() {
   const [oraclePreloadImage, setOraclePreloadImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
   const [oraclePreloadOutputType, setOraclePreloadOutputType] = useState<'ad' | 'content' | undefined>(undefined)
   const [oraclePreloadFormat, setOraclePreloadFormat] = useState<'image' | 'video' | undefined>(undefined)
-  const oracleFileRef = useRef<HTMLInputElement>(null)
+  const [oracleOpenAttach, setOracleOpenAttach] = useState(false)
   const oracleAutoGenRef = useRef(false) // tracks if Oracle routed to open-prompt and needs auto-gen
 
   // Oracle conversation state
@@ -464,6 +493,7 @@ export default function AdStudioPage() {
   const [oracleMessages, setOracleMessages] = useState<OracleMessage[]>([])
   const [oracleContext, setOracleContext] = useState<Record<string, unknown>>({})
   const [oracleSending, setOracleSending] = useState(false)
+  const [oracleResearching, setOracleResearching] = useState(false)
   const oracleMsgIdRef = useRef(0)
 
   // Image-to-Video component media library integration
@@ -815,6 +845,14 @@ export default function AdStudioPage() {
       setIsAnalyzingProduct(false)
     }
   }, [productUrl])
+
+  // Auto-trigger analysis when Oracle conversation routes with a URL
+  useEffect(() => {
+    if (oracleAutoAnalyzeRef.current && mode && productUrl.trim()) {
+      oracleAutoAnalyzeRef.current = false
+      handleAnalyzeProduct()
+    }
+  }, [mode, productUrl, handleAnalyzeProduct])
 
   // Handle selecting a different product image from the thumbnail strip
   const handleSelectProductImage = useCallback((idx: number) => {
@@ -1761,33 +1799,71 @@ export default function AdStudioPage() {
     return { id: `om-${oracleMsgIdRef.current}`, role, content, ...extra }
   }, [])
 
-  const handleOracleAction = useCallback((action: { workflow: string; prefilledData: Record<string, unknown> }) => {
-    const { workflow, prefilledData } = action
-    if (prefilledData.productUrl) setProductUrl(prefilledData.productUrl as string)
-    if (prefilledData.prompt) setOpenPromptText(prefilledData.prompt as string)
+  // Flag to auto-trigger product analysis after routing from Oracle conversation
+  const oracleAutoAnalyzeRef = useRef(false)
 
-    // Reset conversation state
+  // ── Single routing function used by ALL Oracle tiers (Haiku, Sonnet, Opus) ──
+  // This is the ONLY place workflow routing happens. No model should craft generation
+  // prompts — that's the job of the downstream workflows (generate-ad-concepts, etc.)
+  const handleOracleAction = useCallback((action: {
+    workflow: string
+    prefilledData: Record<string, unknown>
+    // Haiku-only extras: attached image from the submission
+    _image?: { base64: string; mimeType: string; preview: string }
+  }) => {
+    const { workflow, prefilledData, _image } = action
+
+    // Pre-populate shared state from extracted data
+    if (prefilledData.productUrl) setProductUrl(prefilledData.productUrl as string)
+
+    // If we have a product URL going to a URL-based workflow, auto-trigger analysis
+    if (prefilledData.productUrl && ['create', 'url-to-video', 'ugc-video'].includes(workflow)) {
+      oracleAutoAnalyzeRef.current = true
+    }
+
+    // Reset conversation state (no-op if already idle)
     setOracleMode('idle')
     setOracleMessages([])
     setOracleContext({})
 
-    // Route
+    // Route to the workflow
     switch (workflow) {
-      case 'create': setMode('create'); break
-      case 'clone': setMode('clone'); break
-      case 'inspiration': setMode('inspiration'); break
-      case 'upload': setMode('upload'); break
-      case 'url-to-video': setMode('url-to-video'); break
-      case 'ugc-video': setMode('ugc-video'); break
-      case 'image-to-video': setMode('image-to-video'); break
+      case 'create':
+        setMode('create')
+        break
+      case 'clone':
+        setMode('clone')
+        break
+      case 'inspiration':
+        setMode('inspiration')
+        break
+      case 'upload':
+        if (_image) {
+          setUploadedImage({ base64: _image.base64, mimeType: _image.mimeType, preview: _image.preview })
+          if (prefilledData.prompt) setUploadPrompt(prefilledData.prompt as string)
+        }
+        setMode('upload')
+        break
+      case 'url-to-video':
+        setMode('url-to-video')
+        break
+      case 'ugc-video':
+        setMode('ugc-video')
+        break
       case 'text-to-video':
         router.push(`/dashboard/creative-studio/direct${prefilledData.prompt ? `?prompt=${encodeURIComponent(prefilledData.prompt as string)}` : ''}`)
         break
+      case 'image-to-video':
+        if (prefilledData.prompt) setI2vPrompt(prefilledData.prompt as string)
+        setMode('image-to-video')
+        break
       case 'open-prompt':
+        if (prefilledData.prompt) setOpenPromptText(prefilledData.prompt as string)
         setOpenPromptMediaType((prefilledData.format as 'image' | 'video') || 'image')
         setMode('open-prompt')
         break
-      default: setMode('create')
+      default:
+        setMode('create')
     }
   }, [router])
 
@@ -1821,125 +1897,99 @@ export default function AdStudioPage() {
         })
       }
 
-      // Route to the appropriate workflow
-      switch (workflow) {
-        case 'create':
-          if (extractedUrl) setProductUrl(extractedUrl)
-          setMode('create')
-          break
+      // Route via the unified routing function (same path as Sonnet/Opus)
+      if (workflow !== 'conversation') {
+        const prefilledData: Record<string, unknown> = {}
+        if (extractedUrl) prefilledData.productUrl = extractedUrl
+        if (prompt) prefilledData.prompt = prompt
+        prefilledData.format = submission.format
+        prefilledData.outputType = submission.outputType
 
-        case 'clone':
-          if (extractedUrl) setProductUrl(extractedUrl)
-          setMode('clone')
-          break
-
-        case 'inspiration':
-          setMode('inspiration')
-          break
-
-        case 'upload':
-          // If we have an attached image, go straight to upload mode with it
-          if (primaryImage) {
-            setUploadedImage({
-              base64: primaryImage.base64,
-              mimeType: primaryImage.mimeType,
-              preview: primaryImage.preview,
-            })
-            if (prompt) setUploadPrompt(prompt)
-          }
-          setMode('upload')
-          break
-
-        case 'url-to-video':
-          if (extractedUrl) setProductUrl(extractedUrl)
-          setMode('url-to-video')
-          break
-
-        case 'ugc-video':
-          if (extractedUrl) setProductUrl(extractedUrl)
-          setMode('ugc-video')
-          break
-
-        case 'text-to-video':
-          // Direct page — pass prompt as query param
-          router.push(
-            `/dashboard/creative-studio/direct${prompt ? `?prompt=${encodeURIComponent(prompt)}` : ''}`
-          )
-          break
-
-        case 'image-to-video':
-          if (prompt) setI2vPrompt(prompt)
-          setMode('image-to-video')
-          // ImageToVideo component will pick up openPromptSourceImage
-          break
-
-        case 'open-prompt':
-          if (prompt) setOpenPromptText(prompt)
-          setOpenPromptMediaType(submission.format)
+        // Content mode + open-prompt = user explicitly wants to generate now
+        if (workflow === 'open-prompt' && prompt) {
           oracleAutoGenRef.current = true
-          setMode('open-prompt')
-          break
-
-        case 'conversation': {
-          // Haiku couldn't classify — start Sonnet conversation
-          const userMsg = makeOracleMsg('user', submission.text)
-          setOracleMessages([userMsg])
-          setOracleMode('chat')
-          setOracleSending(true)
-          try {
-            const chatRes = await fetch('/api/creative-studio/oracle-chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                messages: [{ role: 'user', content: submission.text }],
-                context: { format: submission.format, outputType: submission.outputType },
-              }),
-            })
-            const chatData: OracleChatResponse = await chatRes.json()
-            if (!chatRes.ok) throw new Error(chatData.message || 'Chat failed')
-
-            // If Sonnet detected a URL, analyze it
-            if (chatData.analyzeUrl) {
-              try {
-                const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ url: chatData.analyzeUrl }),
-                })
-                if (urlRes.ok) {
-                  const urlData = await urlRes.json()
-                  setOracleContext(prev => ({ ...prev, productInfo: urlData }))
-                  if (!chatData.contextCards) chatData.contextCards = []
-                  chatData.contextCards.push({ type: 'product', data: urlData })
-                }
-              } catch { /* product analysis is best-effort */ }
-            }
-
-            const oracleMsg = makeOracleMsg('oracle', chatData.message, {
-              options: chatData.options,
-              contextCards: chatData.contextCards,
-            })
-            setOracleMessages(prev => [...prev, oracleMsg])
-
-            // If Sonnet already has an action, route immediately
-            if (chatData.action) {
-              handleOracleAction(chatData.action)
-            }
-          } catch (err) {
-            console.error('Oracle chat error:', err)
-            const errMsg = makeOracleMsg('oracle', 'Sorry, something went wrong. Try again or pick a shortcut below.')
-            setOracleMessages(prev => [...prev, errMsg])
-            setOracleMode('idle')
-          } finally {
-            setOracleSending(false)
-          }
-          break
         }
 
-        default:
-          // Fallback: treat as create
-          if (extractedUrl) setProductUrl(extractedUrl)
-          setMode('create')
+        handleOracleAction({
+          workflow,
+          prefilledData,
+          _image: primaryImage ?? undefined,
+        })
+      } else {
+        // conversation workflow — start Sonnet chat
+        const userMsg = makeOracleMsg('user', submission.text)
+        setOracleMessages([userMsg])
+        setOracleMode('chat')
+        setOracleSending(true)
+        try {
+          const chatRes = await fetch('/api/creative-studio/oracle-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: submission.text }],
+              context: { format: submission.format, outputType: submission.outputType },
+            }),
+          })
+          const chatData: OracleChatResponse = await chatRes.json()
+          if (!chatRes.ok) throw new Error(chatData.message || 'Chat failed')
+
+          // If Sonnet detected a URL, analyze it — but skip if also routing to a workflow
+          // (the workflow's auto-analyze useEffect will handle it, avoiding double analysis)
+          if (chatData.analyzeUrl && !chatData.action) {
+            setOracleResearching(true)
+            try {
+              const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: chatData.analyzeUrl }),
+              })
+              if (urlRes.ok) {
+                const urlData = await urlRes.json()
+                setOracleContext(prev => ({ ...prev, productInfo: urlData }))
+                if (!chatData.contextCards) chatData.contextCards = []
+                chatData.contextCards.push({ type: 'product', data: urlData })
+              }
+            } catch { /* product analysis is best-effort */ } finally {
+              setOracleResearching(false)
+            }
+          }
+
+          // Tag options that would escalate to Opus
+          const taggedOptions = chatData.options?.map(opt => ({
+            ...opt,
+            escalates: chatData.escalate === 'creative' || /brainstorm|creative|explore.*idea|opus/i.test(opt.value),
+          }))
+
+          const oracleMsg = makeOracleMsg('oracle', chatData.message, {
+            tier: 'sonnet',
+            options: taggedOptions,
+            contextCards: chatData.contextCards,
+          })
+          setOracleMessages(prev => [...prev, oracleMsg])
+
+          // If Sonnet already has an action, route or show prompt preview
+          if (chatData.action) {
+            const { workflow: actionWorkflow, prefilledData } = chatData.action
+            // Generation workflows: show prompt preview card instead of auto-routing
+            if ((actionWorkflow === 'open-prompt' || actionWorkflow === 'text-to-video') && prefilledData?.prompt) {
+              const fmt = ((prefilledData.format as string) || submission.format || 'image') as 'image' | 'video'
+              const previewMsg = makeOracleMsg('oracle', 'Here\'s what I\'ve got ready for you. Review the prompt and hit Generate when you\'re happy with it.', {
+                tier: 'sonnet',
+                promptPreview: { prompt: prefilledData.prompt as string, format: fmt, style: 'cinematic', duration: 8 },
+              })
+              setOracleMessages(prev => [...prev, previewMsg])
+            } else {
+              handleOracleAction(chatData.action)
+            }
+          }
+        } catch (err) {
+          console.error('Oracle chat error:', err)
+          const errMsg = makeOracleMsg('oracle', 'Sorry, something went wrong. Try again or pick a shortcut below.', { tier: 'sonnet' })
+          setOracleMessages(prev => [...prev, errMsg])
+          setOracleMode('idle')
+        } finally {
+          setOracleSending(false)
+        }
       }
     } catch (err) {
       console.error('Oracle routing error:', err)
@@ -1957,9 +2007,19 @@ export default function AdStudioPage() {
     setOracleMessages(prev => [...prev, userMsg])
     setOracleSending(true)
 
-    // Build messages array from history
-    const allMessages = [...oracleMessages, userMsg]
+    // Build messages array from history — filter empty content and merge consecutive same-role msgs
+    const rawMapped = [...oracleMessages, userMsg]
+      .filter(m => m.content && m.content.trim())
       .map(m => ({ role: m.role === 'oracle' ? 'assistant' as const : 'user' as const, content: m.content }))
+    // Merge consecutive same-role messages (Anthropic API requires alternating roles)
+    const allMessages: { role: 'user' | 'assistant'; content: string }[] = []
+    for (const msg of rawMapped) {
+      if (allMessages.length > 0 && allMessages[allMessages.length - 1].role === msg.role) {
+        allMessages[allMessages.length - 1].content += '\n' + msg.content
+      } else {
+        allMessages.push({ ...msg })
+      }
+    }
 
     try {
       const endpoint = oracleMode === 'creative'
@@ -1981,8 +2041,9 @@ export default function AdStudioPage() {
       if (oracleMode === 'chat') {
         const chatData = data as OracleChatResponse
 
-        // URL analysis
-        if (chatData.analyzeUrl) {
+        // URL analysis — skip if also routing to a workflow (auto-analyze handles it)
+        if (chatData.analyzeUrl && !chatData.action) {
+          setOracleResearching(true)
           try {
             const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
               method: 'POST',
@@ -1995,11 +2056,20 @@ export default function AdStudioPage() {
               if (!chatData.contextCards) chatData.contextCards = []
               chatData.contextCards.push({ type: 'product', data: urlData })
             }
-          } catch { /* best-effort */ }
+          } catch { /* best-effort */ } finally {
+            setOracleResearching(false)
+          }
         }
 
+        // Tag options that would escalate to Opus
+        const taggedOptions = chatData.options?.map(opt => ({
+          ...opt,
+          escalates: chatData.escalate === 'creative' || /brainstorm|creative|explore.*idea|opus/i.test(opt.value),
+        }))
+
         const oracleMsg = makeOracleMsg('oracle', chatData.message, {
-          options: chatData.options,
+          tier: 'sonnet',
+          options: taggedOptions,
           contextCards: chatData.contextCards,
         })
         setOracleMessages(prev => [...prev, oracleMsg])
@@ -2025,32 +2095,148 @@ export default function AdStudioPage() {
             })
             const opusData: OracleCreativeResponse = await opusRes.json()
             if (opusRes.ok) {
-              const opusMsgObj = makeOracleMsg('oracle', opusData.message, {
-                options: opusData.options,
-                promptPreview: opusData.generatedPrompt || undefined,
-              })
-              setOracleMessages(prev => [...prev, opusMsgObj])
+              // If Opus wants URL analysis on first turn, suppress its response and re-call with real data
+              if (opusData.analyzeUrl) {
+                setOracleResearching(true)
+                try {
+                  const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: opusData.analyzeUrl }),
+                  })
+                  if (urlRes.ok) {
+                    const urlData = await urlRes.json()
+                    const escalationContext = { ...oracleContext, priorConversation: allMessages, productInfo: urlData }
+                    setOracleContext(escalationContext)
+
+                    // Show product card
+                    const productCardMsg = makeOracleMsg('oracle', '', {
+                      tier: 'opus',
+                      contextCards: [{ type: 'product', data: urlData }],
+                    })
+                    setOracleMessages(prev => [...prev, productCardMsg])
+
+                    // Re-call Opus with real product data
+                    const retryRes = await fetch('/api/creative-studio/oracle-creative', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        messages: [{ role: 'user', content: 'Start brainstorming based on the conversation so far and the product info.' }],
+                        context: escalationContext,
+                      }),
+                    })
+                    if (retryRes.ok) {
+                      const retryData: OracleCreativeResponse = await retryRes.json()
+                      const opusMsgObj = makeOracleMsg('oracle', retryData.message, {
+                        tier: 'opus',
+                        options: retryData.options,
+                        promptPreview: retryData.generatedPrompt || undefined,
+                      })
+                      setOracleMessages(prev => [...prev, opusMsgObj])
+                    }
+                  }
+                } catch { /* best-effort */ } finally {
+                  setOracleResearching(false)
+                }
+              } else {
+                const opusMsgObj = makeOracleMsg('oracle', opusData.message, {
+                  tier: 'opus',
+                  options: opusData.options,
+                  contextCards: opusData.contextCards,
+                  promptPreview: opusData.generatedPrompt || undefined,
+                })
+                setOracleMessages(prev => [...prev, opusMsgObj])
+              }
             }
           } catch { /* Opus escalation best-effort */ }
         }
 
-        // Route to workflow
+        // Route to workflow — but show prompt preview for generation workflows
         if (chatData.action) {
-          handleOracleAction(chatData.action)
+          const { workflow, prefilledData } = chatData.action
+          if ((workflow === 'open-prompt' || workflow === 'text-to-video') && prefilledData?.prompt) {
+            const fmt = ((prefilledData.format as string) || 'image') as 'image' | 'video'
+            const previewMsg = makeOracleMsg('oracle', 'Here\'s what I\'ve got ready for you. Review the prompt and hit Generate when you\'re happy with it.', {
+              tier: 'sonnet',
+              promptPreview: { prompt: prefilledData.prompt as string, format: fmt, style: 'cinematic', duration: 8 },
+            })
+            setOracleMessages(prev => [...prev, previewMsg])
+          } else {
+            handleOracleAction(chatData.action)
+          }
         }
       }
       // Handle Opus response
       else if (oracleMode === 'creative') {
         const creativeData = data as OracleCreativeResponse
-        const opusMsg = makeOracleMsg('oracle', creativeData.message, {
-          options: creativeData.options,
-          promptPreview: creativeData.generatedPrompt || undefined,
-        })
-        setOracleMessages(prev => [...prev, opusMsg])
+
+        // If Opus wants URL analysis, suppress its fabricated response — run the real
+        // analysis first (same endpoint as Step 1 Product→Ad), then re-call Opus with real data
+        if (creativeData.analyzeUrl) {
+          setOracleResearching(true)
+          try {
+            const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: creativeData.analyzeUrl }),
+            })
+            if (urlRes.ok) {
+              const urlData = await urlRes.json()
+              const updatedContext = { ...oracleContext, productInfo: urlData }
+              setOracleContext(updatedContext)
+
+              // Show product card immediately
+              const productCardMsg = makeOracleMsg('oracle', '', {
+                tier: 'opus',
+                contextCards: [{ type: 'product', data: urlData }],
+              })
+              setOracleMessages(prev => [...prev, productCardMsg])
+
+              // Re-call Opus with real product data — it will give an informed response
+              const retryMessages = [...allMessages, { role: 'assistant' as const, content: 'Let me look into this product first.' }]
+              // Merge consecutive same-role
+              const cleanRetry: { role: 'user' | 'assistant'; content: string }[] = []
+              for (const msg of retryMessages) {
+                if (cleanRetry.length > 0 && cleanRetry[cleanRetry.length - 1].role === msg.role) {
+                  cleanRetry[cleanRetry.length - 1].content += '\n' + msg.content
+                } else {
+                  cleanRetry.push({ ...msg })
+                }
+              }
+
+              const retryRes = await fetch('/api/creative-studio/oracle-creative', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages: cleanRetry, context: updatedContext }),
+              })
+              if (retryRes.ok) {
+                const retryData: OracleCreativeResponse = await retryRes.json()
+                const opusMsg = makeOracleMsg('oracle', retryData.message, {
+                  tier: 'opus',
+                  options: retryData.options,
+                  promptPreview: retryData.generatedPrompt || undefined,
+                })
+                setOracleMessages(prev => [...prev, opusMsg])
+              }
+            }
+          } catch { /* best-effort */ } finally {
+            setOracleResearching(false)
+          }
+        } else {
+          // No URL analysis needed — show Opus response directly
+          const opusMsg = makeOracleMsg('oracle', creativeData.message, {
+            tier: 'opus',
+            options: creativeData.options,
+            contextCards: creativeData.contextCards,
+            promptPreview: creativeData.generatedPrompt || undefined,
+          })
+          setOracleMessages(prev => [...prev, opusMsg])
+        }
       }
     } catch (err) {
       console.error('Oracle chat error:', err)
       const errMsg = makeOracleMsg('oracle', 'Something went wrong. Try again?', {
+        tier: oracleMode === 'creative' ? 'opus' : 'sonnet',
         options: [{ label: 'Try Again', value: '__retry' }, { label: 'Start Over', value: '__reset' }],
       })
       setOracleMessages(prev => [...prev, errMsg])
@@ -2095,8 +2281,6 @@ export default function AdStudioPage() {
 
   // Oracle chip action — handle different chip types
   // Track which chip triggered file picker so we route to the correct mode
-  const pendingFileChipRef = useRef<{ outputType: string; format: string } | null>(null)
-
   const handleOracleChipAction = useCallback((action: ChipDef['action']) => {
     switch (action.type) {
       case 'focus':
@@ -2119,13 +2303,11 @@ export default function AdStudioPage() {
         else if (action.workflow === 'ugc-video') setMode('ugc-video')
         break
 
-      case 'file':
-        setOraclePlaceholder(action.placeholder)
+      case 'attach':
         setOraclePreloadOutputType(action.outputType)
         setOraclePreloadFormat(action.format)
-        pendingFileChipRef.current = { outputType: action.outputType, format: action.format }
-        // Open file picker
-        oracleFileRef.current?.click()
+        // Open the OracleBox attach menu (Upload / Media Library)
+        setOracleOpenAttach(true)
         break
     }
   }, [])
@@ -3439,9 +3621,11 @@ export default function AdStudioPage() {
             {oracleMode !== 'idle' && (
               <OracleChatThread
                 messages={oracleMessages}
+                currentTier={oracleMode === 'creative' ? 'opus' : 'sonnet'}
                 onOptionClick={handleOracleOptionClick}
                 onPromptAction={handleOraclePromptAction}
                 isSending={oracleSending}
+                isResearching={oracleResearching}
               />
             )}
 
@@ -3464,6 +3648,8 @@ export default function AdStudioPage() {
                   initialImage={oraclePreloadImage}
                   initialOutputType={oraclePreloadOutputType}
                   initialFormat={oraclePreloadFormat}
+                  openAttachMenu={oracleOpenAttach}
+                  onAttachMenuOpened={() => setOracleOpenAttach(false)}
                 />
               </div>
             </div>
@@ -3471,38 +3657,6 @@ export default function AdStudioPage() {
             {/* Chips + divider — only in idle mode */}
             {oracleMode === 'idle' && (
               <>
-                {/* Hidden file input for chip file actions */}
-                <input
-                  ref={oracleFileRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (!file) return
-                    const reader = new FileReader()
-                    reader.onload = () => {
-                      const base64 = (reader.result as string).split(',')[1]
-                      const imageData = {
-                        base64,
-                        mimeType: file.type,
-                        preview: URL.createObjectURL(file),
-                      }
-                      setOpenPromptSourceImage(imageData)
-                      // Route to correct mode based on which chip triggered the file picker
-                      const pending = pendingFileChipRef.current
-                      if (pending?.format === 'video') {
-                        setMode('image-to-video')
-                      } else {
-                        setUploadedImage(imageData)
-                        setMode('upload')
-                      }
-                      pendingFileChipRef.current = null
-                    }
-                    reader.readAsDataURL(file)
-                  }}
-                />
-
                 {/* Divider */}
                 <div className="flex items-center gap-4 px-1">
                   <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
@@ -4544,6 +4698,10 @@ export default function AdStudioPage() {
                         Analyze
                       </button>
                     </div>
+
+                    {isAnalyzingProduct && (
+                      <AnalyzingStatus />
+                    )}
 
                     {hasAnalyzed && totalPillsFound > 0 && (
                       <div className="flex items-center gap-2 text-emerald-400 text-sm">

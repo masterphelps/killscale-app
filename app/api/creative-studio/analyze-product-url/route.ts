@@ -235,11 +235,16 @@ export async function POST(request: NextRequest) {
 
     const url = normalizeUrl(rawUrl)
 
-    // Fetch the product page
+    // Fetch the product page with realistic browser headers
     const pageRes = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'identity',
+        'Cache-Control': 'no-cache',
       },
+      redirect: 'follow',
     })
 
     if (!pageRes.ok) {
@@ -247,12 +252,19 @@ export async function POST(request: NextRequest) {
     }
 
     const html = await pageRes.text()
+    console.log(`[Analyze] Fetched ${url}: ${html.length} bytes of HTML`)
 
     // Extract image URLs from HTML before stripping tags
     const pageImageUrls = extractImageUrls(html)
 
     // Extract clean text content and meta tags from HTML
     const { metaTags, textContent } = extractCleanContent(html)
+
+    // Log content quality for debugging
+    const contentLength = textContent.length
+    const isMinimal = contentLength < 500
+    console.log(`[Analyze] Extracted content: ${contentLength} chars of text, ${metaTags.split('\n').length} meta tags, ${pageImageUrls.length} images${isMinimal ? ' — WARNING: minimal content (likely JS-rendered)' : ''}`)
+
     // 50K chars of clean text covers most full pages
     const truncatedText = textContent.slice(0, 50000)
 

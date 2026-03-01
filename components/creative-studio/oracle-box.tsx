@@ -34,9 +34,11 @@ interface OracleBoxProps {
   initialImage?: OracleImage | null
   initialOutputType?: OracleOutputType
   initialFormat?: OracleFormat
+  openAttachMenu?: boolean
+  onAttachMenuOpened?: () => void
 }
 
-export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder, initialImage, initialOutputType, initialFormat }: OracleBoxProps) {
+export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder, initialImage, initialOutputType, initialFormat, openAttachMenu: openAttachMenuProp, onAttachMenuOpened }: OracleBoxProps) {
   const [text, setText] = useState('')
   const [outputType, setOutputType] = useState<OracleOutputType>(initialOutputType || 'ad')
   const [format, setFormat] = useState<OracleFormat>(initialFormat || 'image')
@@ -57,6 +59,14 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
     if (initialOutputType) setOutputType(initialOutputType)
     if (initialFormat) setFormat(initialFormat)
   }, [initialImage, initialOutputType, initialFormat])
+
+  // Open attach menu when triggered externally (e.g. "Image → Ad" chip)
+  useEffect(() => {
+    if (openAttachMenuProp) {
+      setShowAttachMenu(true)
+      onAttachMenuOpened?.()
+    }
+  }, [openAttachMenuProp, onAttachMenuOpened])
 
   // Auto-suggest based on keywords
   useEffect(() => {
@@ -80,6 +90,8 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
   const handleSubmit = useCallback(() => {
     if ((!text.trim() && images.length === 0) || isLoading) return
     onSubmit({ text: text.trim(), outputType, format, images })
+    setText('')
+    setImages([])
   }, [text, outputType, format, images, isLoading, onSubmit])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

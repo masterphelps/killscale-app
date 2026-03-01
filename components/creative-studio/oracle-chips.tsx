@@ -2,7 +2,7 @@
 
 import {
   Target, RefreshCw, Sparkles, UserCircle, ImagePlus,
-  Image as ImageIcon, Film, Video,
+  Image as ImageIcon, Film,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OracleOutputType, OracleFormat } from './oracle-box'
@@ -14,7 +14,7 @@ export interface ChipDef {
   action:
     | { type: 'focus'; outputType: OracleOutputType; format: OracleFormat; placeholder: string }
     | { type: 'workflow'; workflow: string }
-    | { type: 'file'; outputType: OracleOutputType; format: OracleFormat; placeholder: string }
+    | { type: 'attach'; outputType: OracleOutputType; format: OracleFormat }
 }
 
 const chips: ChipDef[] = [
@@ -23,12 +23,11 @@ const chips: ChipDef[] = [
   { label: 'Product \u2192 Video Ad', icon: Target, group: 'ads', action: { type: 'workflow', workflow: 'url-to-video' } },
   { label: 'Clone Ad', icon: RefreshCw, group: 'ads', action: { type: 'workflow', workflow: 'clone' } },
   { label: 'Inspiration', icon: Sparkles, group: 'ads', action: { type: 'workflow', workflow: 'inspiration' } },
-  { label: 'UGC Video Ad', icon: UserCircle, group: 'ads', action: { type: 'focus', outputType: 'ad', format: 'video', placeholder: 'Paste your product URL for a UGC video...' } },
-  { label: 'Image \u2192 Ad', icon: ImagePlus, group: 'ads', action: { type: 'file', outputType: 'ad', format: 'image', placeholder: 'Drop an image or paste a URL...' } },
+  { label: 'UGC Video Ad', icon: UserCircle, group: 'ads', action: { type: 'workflow', workflow: 'ugc-video' } },
+  { label: 'Image \u2192 Ad', icon: ImagePlus, group: 'ads', action: { type: 'attach', outputType: 'ad', format: 'image' } },
   // Make Content
   { label: 'Generate Image', icon: ImageIcon, group: 'content', action: { type: 'focus', outputType: 'content', format: 'image', placeholder: 'Describe the image you want...' } },
   { label: 'Generate Video', icon: Film, group: 'content', action: { type: 'focus', outputType: 'content', format: 'video', placeholder: 'Describe the video you want...' } },
-  { label: 'Image \u2192 Video', icon: Video, group: 'content', action: { type: 'file', outputType: 'content', format: 'video', placeholder: 'Drop an image and describe the animation...' } },
 ]
 
 interface OracleChipsProps {
