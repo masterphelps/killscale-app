@@ -39,6 +39,8 @@ import {
 } from '@/components/creative-studio'
 import { OracleBox, type OracleSubmission } from '@/components/creative-studio/oracle-box'
 import { OracleChips, type ChipDef } from '@/components/creative-studio/oracle-chips'
+import { OracleChatThread } from '@/components/creative-studio/oracle-chat-thread'
+import type { OracleMode, OracleMessage, OracleOption, OracleChatResponse, OracleCreativeResponse } from '@/components/creative-studio/oracle-types'
 
 interface AdLibraryAd {
   id: string
@@ -456,6 +458,13 @@ export default function AdStudioPage() {
   const [oraclePreloadFormat, setOraclePreloadFormat] = useState<'image' | 'video' | undefined>(undefined)
   const oracleFileRef = useRef<HTMLInputElement>(null)
   const oracleAutoGenRef = useRef(false) // tracks if Oracle routed to open-prompt and needs auto-gen
+
+  // Oracle conversation state
+  const [oracleMode, setOracleMode] = useState<OracleMode>('idle')
+  const [oracleMessages, setOracleMessages] = useState<OracleMessage[]>([])
+  const [oracleContext, setOracleContext] = useState<Record<string, unknown>>({})
+  const [oracleSending, setOracleSending] = useState(false)
+  const oracleMsgIdRef = useRef(0)
 
   // Image-to-Video component media library integration
   const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
@@ -1746,6 +1755,42 @@ export default function AdStudioPage() {
     setCurrentStep(step)
   }
 
+  // Oracle conversation helpers
+  const makeOracleMsg = useCallback((role: 'user' | 'oracle', content: string, extra?: Partial<OracleMessage>): OracleMessage => {
+    oracleMsgIdRef.current += 1
+    return { id: `om-${oracleMsgIdRef.current}`, role, content, ...extra }
+  }, [])
+
+  const handleOracleAction = useCallback((action: { workflow: string; prefilledData: Record<string, unknown> }) => {
+    const { workflow, prefilledData } = action
+    if (prefilledData.productUrl) setProductUrl(prefilledData.productUrl as string)
+    if (prefilledData.prompt) setOpenPromptText(prefilledData.prompt as string)
+
+    // Reset conversation state
+    setOracleMode('idle')
+    setOracleMessages([])
+    setOracleContext({})
+
+    // Route
+    switch (workflow) {
+      case 'create': setMode('create'); break
+      case 'clone': setMode('clone'); break
+      case 'inspiration': setMode('inspiration'); break
+      case 'upload': setMode('upload'); break
+      case 'url-to-video': setMode('url-to-video'); break
+      case 'ugc-video': setMode('ugc-video'); break
+      case 'image-to-video': setMode('image-to-video'); break
+      case 'text-to-video':
+        router.push(`/dashboard/creative-studio/direct${prefilledData.prompt ? `?prompt=${encodeURIComponent(prefilledData.prompt as string)}` : ''}`)
+        break
+      case 'open-prompt':
+        setOpenPromptMediaType((prefilledData.format as 'image' | 'video') || 'image')
+        setMode('open-prompt')
+        break
+      default: setMode('create')
+    }
+  }, [router])
+
   // Oracle submit — send to Claude Haiku for intent classification, then route to workflow
   const handleOracleSubmit = useCallback(async (submission: OracleSubmission) => {
     setOracleLoading(true)
@@ -1835,6 +1880,62 @@ export default function AdStudioPage() {
           setMode('open-prompt')
           break
 
+        case 'conversation': {
+          // Haiku couldn't classify — start Sonnet conversation
+          const userMsg = makeOracleMsg('user', submission.text)
+          setOracleMessages([userMsg])
+          setOracleMode('chat')
+          setOracleSending(true)
+          try {
+            const chatRes = await fetch('/api/creative-studio/oracle-chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: submission.text }],
+                context: { format: submission.format, outputType: submission.outputType },
+              }),
+            })
+            const chatData: OracleChatResponse = await chatRes.json()
+            if (!chatRes.ok) throw new Error(chatData.message || 'Chat failed')
+
+            // If Sonnet detected a URL, analyze it
+            if (chatData.analyzeUrl) {
+              try {
+                const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: chatData.analyzeUrl }),
+                })
+                if (urlRes.ok) {
+                  const urlData = await urlRes.json()
+                  setOracleContext(prev => ({ ...prev, productInfo: urlData }))
+                  if (!chatData.contextCards) chatData.contextCards = []
+                  chatData.contextCards.push({ type: 'product', data: urlData })
+                }
+              } catch { /* product analysis is best-effort */ }
+            }
+
+            const oracleMsg = makeOracleMsg('oracle', chatData.message, {
+              options: chatData.options,
+              contextCards: chatData.contextCards,
+            })
+            setOracleMessages(prev => [...prev, oracleMsg])
+
+            // If Sonnet already has an action, route immediately
+            if (chatData.action) {
+              handleOracleAction(chatData.action)
+            }
+          } catch (err) {
+            console.error('Oracle chat error:', err)
+            const errMsg = makeOracleMsg('oracle', 'Sorry, something went wrong. Try again or pick a shortcut below.')
+            setOracleMessages(prev => [...prev, errMsg])
+            setOracleMode('idle')
+          } finally {
+            setOracleSending(false)
+          }
+          break
+        }
+
         default:
           // Fallback: treat as create
           if (extractedUrl) setProductUrl(extractedUrl)
@@ -1847,7 +1948,150 @@ export default function AdStudioPage() {
     } finally {
       setOracleLoading(false)
     }
-  }, [router])
+  }, [router, makeOracleMsg, handleOracleAction])
+
+  // Oracle conversation — subsequent turns (user types or clicks option)
+  const handleOracleChatSend = useCallback(async (userText: string) => {
+    if (!userText.trim()) return
+    const userMsg = makeOracleMsg('user', userText)
+    setOracleMessages(prev => [...prev, userMsg])
+    setOracleSending(true)
+
+    // Build messages array from history
+    const allMessages = [...oracleMessages, userMsg]
+      .map(m => ({ role: m.role === 'oracle' ? 'assistant' as const : 'user' as const, content: m.content }))
+
+    try {
+      const endpoint = oracleMode === 'creative'
+        ? '/api/creative-studio/oracle-creative'
+        : '/api/creative-studio/oracle-chat'
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: allMessages,
+          context: oracleContext,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Chat failed')
+
+      // Handle Sonnet response
+      if (oracleMode === 'chat') {
+        const chatData = data as OracleChatResponse
+
+        // URL analysis
+        if (chatData.analyzeUrl) {
+          try {
+            const urlRes = await fetch('/api/creative-studio/analyze-product-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: chatData.analyzeUrl }),
+            })
+            if (urlRes.ok) {
+              const urlData = await urlRes.json()
+              setOracleContext(prev => ({ ...prev, productInfo: urlData }))
+              if (!chatData.contextCards) chatData.contextCards = []
+              chatData.contextCards.push({ type: 'product', data: urlData })
+            }
+          } catch { /* best-effort */ }
+        }
+
+        const oracleMsg = makeOracleMsg('oracle', chatData.message, {
+          options: chatData.options,
+          contextCards: chatData.contextCards,
+        })
+        setOracleMessages(prev => [...prev, oracleMsg])
+
+        // Escalate to creative mode
+        if (chatData.escalate === 'creative') {
+          const escMsg = makeOracleMsg('oracle', '', { isEscalating: true })
+          setOracleMessages(prev => [...prev, escMsg])
+          setOracleContext(prev => ({
+            ...prev,
+            priorConversation: allMessages,
+          }))
+          setOracleMode('creative')
+          // Send opening turn to Opus
+          try {
+            const opusRes = await fetch('/api/creative-studio/oracle-creative', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: 'Start brainstorming based on the conversation so far.' }],
+                context: { ...oracleContext, priorConversation: allMessages },
+              }),
+            })
+            const opusData: OracleCreativeResponse = await opusRes.json()
+            if (opusRes.ok) {
+              const opusMsgObj = makeOracleMsg('oracle', opusData.message, {
+                options: opusData.options,
+                promptPreview: opusData.generatedPrompt || undefined,
+              })
+              setOracleMessages(prev => [...prev, opusMsgObj])
+            }
+          } catch { /* Opus escalation best-effort */ }
+        }
+
+        // Route to workflow
+        if (chatData.action) {
+          handleOracleAction(chatData.action)
+        }
+      }
+      // Handle Opus response
+      else if (oracleMode === 'creative') {
+        const creativeData = data as OracleCreativeResponse
+        const opusMsg = makeOracleMsg('oracle', creativeData.message, {
+          options: creativeData.options,
+          promptPreview: creativeData.generatedPrompt || undefined,
+        })
+        setOracleMessages(prev => [...prev, opusMsg])
+      }
+    } catch (err) {
+      console.error('Oracle chat error:', err)
+      const errMsg = makeOracleMsg('oracle', 'Something went wrong. Try again?', {
+        options: [{ label: 'Try Again', value: '__retry' }, { label: 'Start Over', value: '__reset' }],
+      })
+      setOracleMessages(prev => [...prev, errMsg])
+    } finally {
+      setOracleSending(false)
+    }
+  }, [oracleMessages, oracleMode, oracleContext, makeOracleMsg, handleOracleAction])
+
+  const handleOracleOptionClick = useCallback((option: OracleOption) => {
+    if (option.value === '__reset') {
+      setOracleMode('idle')
+      setOracleMessages([])
+      setOracleContext({})
+      return
+    }
+    if (option.value === '__retry') {
+      // Remove last oracle message and resend
+      setOracleMessages(prev => prev.slice(0, -1))
+      return
+    }
+    handleOracleChatSend(option.label)
+  }, [handleOracleChatSend])
+
+  const handleOraclePromptAction = useCallback((action: 'generate' | 'edit' | 'startOver', prompt?: string, format?: string) => {
+    if (action === 'startOver') {
+      setOracleMode('idle')
+      setOracleMessages([])
+      setOracleContext({})
+      return
+    }
+    if (!prompt) return
+    setOpenPromptText(prompt)
+    setOpenPromptMediaType((format as 'image' | 'video') || 'image')
+    setOracleMode('idle')
+    setOracleMessages([])
+    setOracleContext({})
+    if (action === 'generate') {
+      oracleAutoGenRef.current = true
+    }
+    setMode('open-prompt')
+  }, [])
 
   // Oracle chip action — handle different chip types
   // Track which chip triggered file picker so we route to the correct mode
@@ -3191,13 +3435,23 @@ export default function AdStudioPage() {
               <p className="text-zinc-400 text-sm mt-1.5">Create ads and content with AI</p>
             </div>
 
-            {/* Oracle Box with glow */}
+            {/* Chat thread (visible in chat/creative modes) */}
+            {oracleMode !== 'idle' && (
+              <OracleChatThread
+                messages={oracleMessages}
+                onOptionClick={handleOracleOptionClick}
+                onPromptAction={handleOraclePromptAction}
+                isSending={oracleSending}
+              />
+            )}
+
+            {/* Oracle Box with glow — always visible */}
             <div className="relative">
               {/* Glow behind the box */}
               <div className="absolute -inset-4 rounded-3xl bg-purple-500/[0.06] blur-2xl pointer-events-none" />
               <div className="relative">
                 <OracleBox
-                  onSubmit={handleOracleSubmit}
+                  onSubmit={oracleMode === 'idle' ? handleOracleSubmit : (s) => handleOracleChatSend(s.text)}
                   onDirectWorkflow={(workflow) => {
                     if (workflow === 'clone') setMode('clone')
                     else if (workflow === 'inspiration') setMode('inspiration')
@@ -3205,8 +3459,8 @@ export default function AdStudioPage() {
                     else if (workflow === 'image-to-video') setMode('image-to-video')
                   }}
                   onOpenLibrary={() => setOpenPromptShowLibrary(true)}
-                  isLoading={oracleLoading}
-                  placeholder={oraclePlaceholder}
+                  isLoading={oracleLoading || oracleSending}
+                  placeholder={oracleMode !== 'idle' ? 'Type or pick an option...' : oraclePlaceholder}
                   initialImage={oraclePreloadImage}
                   initialOutputType={oraclePreloadOutputType}
                   initialFormat={oraclePreloadFormat}
@@ -3214,47 +3468,62 @@ export default function AdStudioPage() {
               </div>
             </div>
 
-            {/* Hidden file input for chip file actions */}
-            <input
-              ref={oracleFileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (!file) return
-                const reader = new FileReader()
-                reader.onload = () => {
-                  const base64 = (reader.result as string).split(',')[1]
-                  const imageData = {
-                    base64,
-                    mimeType: file.type,
-                    preview: URL.createObjectURL(file),
-                  }
-                  setOpenPromptSourceImage(imageData)
-                  // Route to correct mode based on which chip triggered the file picker
-                  const pending = pendingFileChipRef.current
-                  if (pending?.format === 'video') {
-                    setMode('image-to-video')
-                  } else {
-                    setUploadedImage(imageData)
-                    setMode('upload')
-                  }
-                  pendingFileChipRef.current = null
-                }
-                reader.readAsDataURL(file)
-              }}
-            />
+            {/* Chips + divider — only in idle mode */}
+            {oracleMode === 'idle' && (
+              <>
+                {/* Hidden file input for chip file actions */}
+                <input
+                  ref={oracleFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = () => {
+                      const base64 = (reader.result as string).split(',')[1]
+                      const imageData = {
+                        base64,
+                        mimeType: file.type,
+                        preview: URL.createObjectURL(file),
+                      }
+                      setOpenPromptSourceImage(imageData)
+                      // Route to correct mode based on which chip triggered the file picker
+                      const pending = pendingFileChipRef.current
+                      if (pending?.format === 'video') {
+                        setMode('image-to-video')
+                      } else {
+                        setUploadedImage(imageData)
+                        setMode('upload')
+                      }
+                      pendingFileChipRef.current = null
+                    }
+                    reader.readAsDataURL(file)
+                  }}
+                />
 
-            {/* Divider */}
-            <div className="flex items-center gap-4 px-1">
-              <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
-              <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-widest">or jump to</span>
-              <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
-            </div>
+                {/* Divider */}
+                <div className="flex items-center gap-4 px-1">
+                  <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
+                  <span className="text-[11px] font-medium text-zinc-600 uppercase tracking-widest">or jump to</span>
+                  <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
+                </div>
 
-            {/* Suggestion Chips */}
-            <OracleChips onChipAction={handleOracleChipAction} />
+                {/* Suggestion Chips */}
+                <OracleChips onChipAction={handleOracleChipAction} />
+              </>
+            )}
+
+            {/* Start over button in chat/creative modes */}
+            {oracleMode !== 'idle' && (
+              <button
+                onClick={() => { setOracleMode('idle'); setOracleMessages([]); setOracleContext({}) }}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors mx-auto block"
+              >
+                Start over
+              </button>
+            )}
 
           </div>
         </div>

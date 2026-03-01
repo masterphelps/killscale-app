@@ -13,7 +13,7 @@ interface OracleRequest {
 interface OracleResponse {
   workflow: 'create' | 'clone' | 'inspiration' | 'upload'
     | 'url-to-video' | 'ugc-video' | 'image-to-video'
-    | 'open-prompt' | 'text-to-video'
+    | 'open-prompt' | 'text-to-video' | 'conversation'
   productUrl?: string
   competitorUrl?: string
   prompt?: string
@@ -33,6 +33,7 @@ Available workflows:
 - "image-to-video": User has an image and wants to animate it into a video
 - "text-to-video": User has a text description and wants a video ad with director's review
 - "open-prompt": User wants raw content (no ad copy structure). Used when outputType is "content"
+- "conversation": User input is vague, exploratory, or doesn't clearly match any workflow above
 
 Routing rules:
 1. If outputType is "content", always return "open-prompt" regardless of other signals
@@ -45,6 +46,7 @@ Routing rules:
 8. If text asks for inspiration/examples/browsing, return "inspiration"
 9. If text is a creative brief with NO URL and format is "image", return "create"
 10. If text is a creative brief with NO URL and format is "video", return "text-to-video"
+11. If the input is vague, exploratory, a greeting, or doesn't clearly match any workflow above, return "conversation". Examples: "I need new ads", "help me make something", "what can you do?", "I have a product", "not sure where to start"
 
 Extract any URLs found in the text. If there are two URLs, the first is likely the product URL and the second is the competitor URL.
 
@@ -135,7 +137,7 @@ export async function POST(req: NextRequest) {
     const validWorkflows = [
       'create', 'clone', 'inspiration', 'upload',
       'url-to-video', 'ugc-video', 'image-to-video',
-      'open-prompt', 'text-to-video',
+      'open-prompt', 'text-to-video', 'conversation',
     ]
     if (!validWorkflows.includes(result.workflow)) {
       result.workflow = format === 'video' ? 'text-to-video' : 'create'
