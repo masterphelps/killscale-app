@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
     }
 
     const prompt = `You are a video segmentation assistant for Google Veo. The user wrote a casual scene description. Your ONLY job is:
-1. Determine duration (8, 15, 22, or 29 seconds)
-2. Split their description into time segments — first 8 seconds as the main prompt, then 7-second extensions
+1. Determine duration (8 or 15 seconds — almost always 8)
+2. If 15s, split into first 8 seconds + one 7-second extension
 3. Generate overlay text and a one-line scene/mood summary
 
 CRITICAL RULE — PRESERVE THE USER'S WORDS:
@@ -38,35 +38,35 @@ Do NOT rewrite, embellish, or "improve" the user's prompt. Veo works best with d
 Your job is ONLY to split the prompt into time segments. Keep the user's exact words, tone, pacing, and style.
 
 If the prompt fits in 8 seconds, pass it through UNCHANGED as the videoPrompt.
-If it needs extensions, split it at natural breakpoints — each segment gets the portion of the user's description that belongs in that time chunk.
+If it truly needs an extension, split at the most natural breakpoint.
 
 USER'S SCENE DESCRIPTION:
 "${userPrompt.trim()}"
 
 ${hasSourceImage ? 'SOURCE IMAGE: A reference image will be provided as the starting frame. The first ~1 second shows the image as a still before motion begins.' : 'NO SOURCE IMAGE: The video will be generated from text only.'}
 
-DURATION ESTIMATION:
-- Single action or simple scene → 8 seconds
-- Two-part scene (scene A + scene B, setup + payoff) → 15 seconds
-- Three beats (setup + development + payoff) → 22 seconds
-- Four+ beats or complex narrative → 29 seconds
-Pick the SHORTEST duration. Respond with: 8, 15, 22, or 29.
+DURATION ESTIMATION — DEFAULT TO 8 SECONDS:
+8 seconds is a LOT of time for video. You can fit 4-5 distinct actions in 8 seconds. Most prompts fit in 8 seconds.
 
-SEGMENTATION RULES — THIS IS THE MOST IMPORTANT PART:
-Veo generates each segment as a SEPARATE video clip. The extension API takes the previous clip and continues from its final frame. This means:
-- Whatever is in videoPrompt gets rendered COMPLETELY in the first 8 seconds
-- Whatever is in an extension prompt gets rendered COMPLETELY in that 7-second extension
-- If you put too many actions in videoPrompt, they ALL happen in 8 seconds and the extension has nothing left to show
+ONLY use 15 seconds if the prompt has TWO CLEARLY SEPARATE SCENES that cannot happen simultaneously (e.g. "Scene A in location X, THEN cut to Scene B in location Y"). A single continuous scene with multiple actions is NOT a reason to extend — pack it into 8 seconds.
 
-SO: Distribute the user's actions EVENLY across segments. Each segment should have enough action to fill its time — not too much crammed in, not too little leaving dead air.
-- 8 seconds can fit 2-3 beats comfortably (e.g. "walks in + looks around + picks something up")
-- 7-second extensions can also fit 2-3 beats
-- Split at NATURAL SCENE BREAKS or transitions: "Scene A then Scene B" → A in videoPrompt, B in extension
+NEVER use 22 or 29 seconds. Max is 15.
 
-- "videoPrompt" = the first 8 seconds of action${hasSourceImage ? ' (first ~1s is source image still)' : ''} — should feel complete and engaging on its own
-- Extension prompts each continue the story for the NEXT 7 seconds — should also feel substantial
-- Each extension MUST start with "Continue from previous shot." — this tells Veo to use the previous video as context
-- Each extension MUST have enough content to fill 7 seconds — don't leave segments sparse
+How much fits in 8 seconds — more than you think:
+- "A woman walks into a café, orders coffee, sits down, opens her laptop, and starts typing" → 8 seconds. All one continuous scene.
+- "A dog runs across a field, catches a frisbee, brings it back, and gets a treat" → 8 seconds. Continuous action.
+- "Aerial shot of a city at dawn, camera descends through clouds, flies between buildings, and lands on a rooftop" → 8 seconds. One camera move.
+- "A chef slices vegetables, tosses them in a pan, flames shoot up, plates the dish beautifully" → 8 seconds. Continuous action.
+
+When to use 15 seconds (RARE — requires a genuine scene change):
+- "A woman walks through a rainy street... CUT TO: she's now sitting inside a warm café" → 15s. Two different locations.
+- "Paper llama gets its head cut off by scissors, camera zooms in. CUT TO: a new llama stands in a field of llamas" → 15s. Two distinct scenes.
+
+SEGMENTATION RULES (only if 15s):
+- "videoPrompt" = the first 8 seconds${hasSourceImage ? ' (first ~1s is source image still)' : ''} — should be DENSE with action, no dead air
+- Extension prompt continues the story for the NEXT 7 seconds — also dense
+- Each extension MUST start with "Continue from previous shot."
+- Do NOT pad segments with slow establishing shots or lingering moments
 - Do NOT add cinematic flourishes, lighting descriptions, or camera directions the user didn't ask for
 - Do NOT remove anything the user wrote
 - Only addition: "Vertical 9:16 portrait format." at the end of videoPrompt if not mentioned
@@ -81,8 +81,8 @@ If the scene implies someone speaking, suggest short dialogue (1-3 sentences). I
 
 OUTPUT FORMAT (respond with ONLY this JSON):
 {
-  "videoPrompt": "The user's description for the first 8 seconds — their words, their style. Minimal edits.",
-  "extensionPrompts": ["Continue from previous shot. [user's description for next 7s]"],
+  "videoPrompt": "The user's description — their words, their style. Pack ALL action into this.",
+  "extensionPrompts": [],
   "scene": "One-line setting summary",
   "mood": "One-line tone summary",
   "estimatedDuration": 8,
@@ -93,33 +93,28 @@ OUTPUT FORMAT (respond with ONLY this JSON):
   }
 }
 
-EXAMPLE 1 (15s = 8s + 7s extension):
-User writes: "Paper world with clouds on strings. A llama stands there blinking. Scissors cut the llama's head off. Camera zooms in. Cut to a new llama with head attached, zoom out to see a field of llamas."
+NOTE: extensionPrompts should be an EMPTY ARRAY [] for 8-second videos. Only populate it for 15-second videos.
 
-GOOD segmentation:
-- videoPrompt: "In a world made from paper with clouds hanging from strings, a llama stands there blinking innocently at the camera. A pair of scissors enters the frame and cuts the llama's head off. Camera zooms in on the headless llama. Vertical 9:16 portrait format."
-- extensionPrompts: ["Continue from previous shot. Cut to a brand new llama standing with its head fully attached, looking at the camera. Camera slowly zooms out to reveal a whole field of paper llamas stretching into the distance."]
-Why: First 8s has the setup AND the dramatic moment (scissors cutting). Extension has the reveal and payoff (new llama + field). Both segments feel full.
-
-BAD — too much in videoPrompt:
-- videoPrompt: "Paper world, llama blinking, scissors cut head off, zoom in, cut to new llama, zoom out to field of llamas."
-Why: ALL 5 beats crammed into 8 seconds — everything rushes by. Extension has nothing to show.
-
-BAD — too little in videoPrompt:
-- videoPrompt: "In a world made from paper with clouds hanging from strings, a llama stands there blinking."
-Why: Just a llama standing there for 8 seconds — boring. The scissors moment should be in the first segment.
-
-EXAMPLE 2 (22s = 8s + 7s + 7s):
+EXAMPLE 1 — 8 seconds (most prompts):
 User writes: "A woman walks through a garden, picks a flower, smells it, then the garden starts to bloom around her in bright colors."
+- estimatedDuration: 8
+- videoPrompt: "A woman walks through a quiet garden. She picks a flower and smells it deeply. As she opens her eyes, the entire garden erupts into bright vivid colors — flowers burst open, vines grow, everything comes alive with saturated color. Vertical 9:16 portrait format."
+- extensionPrompts: []
+Why: This is one continuous scene. All the action fits in 8 seconds easily.
 
-GOOD segmentation:
-- videoPrompt: "A woman walks through a quiet garden with muted, desaturated colors. She looks around at the plants, then reaches down and picks a single flower. Vertical 9:16 portrait format."
-- extensionPrompts: ["Continue from previous shot. She brings the flower up to her face and smells it deeply, closing her eyes. As she opens her eyes, a subtle warmth of color begins spreading from the flower outward.", "Continue from previous shot. The entire garden erupts into bright vivid colors blooming all around her. Flowers burst open, vines grow up the walls, everything comes alive with saturated color while she watches in awe."]
-Why: Each segment has 2-3 beats and fills its time. The story builds across segments.
+EXAMPLE 2 — 15 seconds (rare, requires scene change):
+User writes: "Paper world with clouds on strings. A llama stands there blinking. Scissors cut the llama's head off. Camera zooms in. Cut to a new llama with head attached, zoom out to see a field of llamas."
+- estimatedDuration: 15
+- videoPrompt: "In a world made from paper with clouds hanging from strings, a llama stands there blinking. A pair of scissors enters the frame and cuts the llama's head off. Camera zooms in on the headless llama. Vertical 9:16 portrait format."
+- extensionPrompts: ["Continue from previous shot. Cut to a brand new llama standing with its head fully attached. Camera zooms out to reveal a whole field of paper llamas stretching into the distance."]
+Why: "Cut to" signals a genuine scene change — new subject, new framing. That justifies an extension.
 
-BAD (DO NOT DO THIS — over-polished):
-- videoPrompt: "A graceful woman in flowing linen glides through an enchanted botanical paradise, dappled golden sunlight filtering through an ancient canopy of wisteria as butterflies dance around her silhouette..."
-That kills the energy. Don't do it.`
+BAD — extending when 8s is enough:
+User writes: "A chef prepares a beautiful pasta dish"
+- estimatedDuration: 15 ← WRONG
+- videoPrompt: "A chef stands in a kitchen, reaches for ingredients..."
+- extensionPrompts: ["Continue from previous shot. The chef plates the pasta beautifully..."]
+Why this is wrong: This is one continuous scene. Pack it all into 8 seconds. No extension needed.`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-5.2',
@@ -130,7 +125,7 @@ That kills the energy. Don't do it.`
         },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.85,
+      temperature: 0.4,
     })
 
     const content = completion.choices[0]?.message?.content
@@ -156,19 +151,18 @@ That kills the energy. Don't do it.`
       return NextResponse.json({ error: 'Invalid scene plan — missing videoPrompt' }, { status: 500 })
     }
 
-    // Snap AI's estimated duration to Veo increments
+    // Snap AI's estimated duration to Veo increments — hard cap at 15s (1 extension max)
     const rawDuration = typeof parsed.estimatedDuration === 'number' ? parsed.estimatedDuration : 8
-    const targetDuration = snapToVeoDuration(rawDuration)
-    const numExtensions = targetDuration > VEO_BASE_DURATION
-      ? Math.round((targetDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)
-      : 0
+    const cappedDuration = Math.min(rawDuration, 15) // never exceed 15s
+    const targetDuration = snapToVeoDuration(cappedDuration)
+    const numExtensions = targetDuration > VEO_BASE_DURATION ? 1 : 0 // max 1 extension
 
-    // Validate extension prompts
-    const extensionPrompts: string[] | undefined = numExtensions > 0 && Array.isArray(parsed.extensionPrompts)
-      ? parsed.extensionPrompts.filter((p: unknown): p is string => typeof p === 'string' && p.length > 0)
+    // Validate extension prompts — only take the first one
+    const extensionPrompts: string[] | undefined = numExtensions > 0 && Array.isArray(parsed.extensionPrompts) && parsed.extensionPrompts.length > 0
+      ? [parsed.extensionPrompts.filter((p: unknown): p is string => typeof p === 'string' && p.length > 0)[0]].filter(Boolean)
       : undefined
 
-    console.log(`[PlanScene] AI estimated ${rawDuration}s → snapped to ${targetDuration}s, ${extensionPrompts?.length || 0} extension(s), videoPrompt: ${parsed.videoPrompt.length} chars`)
+    console.log(`[PlanScene] AI estimated ${rawDuration}s → capped to ${targetDuration}s, ${extensionPrompts?.length || 0} extension(s), videoPrompt: ${parsed.videoPrompt.length} chars`)
 
     // Extract overlay
     const overlay = parsed.overlay && typeof parsed.overlay === 'object'
