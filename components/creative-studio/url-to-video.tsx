@@ -201,6 +201,7 @@ interface URLToVideoProps {
   onBack: () => void
   onOpenMediaLibrary: () => void
   onImageFromLibrary?: { base64: string; mimeType: string; preview: string } | null
+  initialUrl?: string
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -213,10 +214,11 @@ export default function URLToVideo({
   onBack,
   onOpenMediaLibrary,
   onImageFromLibrary,
+  initialUrl,
 }: URLToVideoProps) {
   // Product input
   // inputMode removed — URL-only input now
-  const [productUrl, setProductUrl] = useState('')
+  const [productUrl, setProductUrl] = useState(initialUrl || '')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [hasAnalyzed, setHasAnalyzed] = useState(false)
@@ -458,6 +460,15 @@ export default function URLToVideo({
       setIsAnalyzing(false)
     }
   }, [productUrl])
+
+  // Auto-analyze when Oracle pre-fills URL
+  const autoAnalyzedRef = useRef(false)
+  useEffect(() => {
+    if (initialUrl && !autoAnalyzedRef.current && !hasAnalyzed && !isAnalyzing) {
+      autoAnalyzedRef.current = true
+      handleAnalyzeUrl()
+    }
+  }, [initialUrl, hasAnalyzed, isAnalyzing, handleAnalyzeUrl])
 
   // ─── Assemble product knowledge from pills ─────────────────────────────────
 

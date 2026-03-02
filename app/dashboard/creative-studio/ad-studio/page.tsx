@@ -4284,6 +4284,7 @@ export default function AdStudioPage() {
           onBack={resetToModeSelection}
           onOpenMediaLibrary={() => setU2vMediaLibraryOpen(true)}
           onImageFromLibrary={u2vImageFromLibrary}
+          initialUrl={productUrl}
         />
         {u2vMediaLibraryOpen && user?.id && currentAccountId && (
           <MediaLibraryModal
