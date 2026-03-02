@@ -40,7 +40,9 @@ import {
 import { OracleBox, type OracleSubmission } from '@/components/creative-studio/oracle-box'
 import { OracleChips, type ChipDef } from '@/components/creative-studio/oracle-chips'
 import { OracleChatThread } from '@/components/creative-studio/oracle-chat-thread'
-import type { OracleMode, OracleMessage, OracleOption, OracleChatResponse, OracleCreativeResponse } from '@/components/creative-studio/oracle-types'
+import type { OracleMode, OracleMessage, OracleOption, OracleChatResponse, OracleCreativeResponse, OracleToolRequest, OracleMediaRequest } from '@/components/creative-studio/oracle-types'
+import { ORACLE_TOOL_CREDITS } from '@/components/creative-studio/oracle-types'
+import { executeOracleTool, type ToolExecutionResult } from '@/lib/oracle-tools'
 
 interface AdLibraryAd {
   id: string
@@ -496,6 +498,14 @@ export default function AdStudioPage() {
   const [oracleSending, setOracleSending] = useState(false)
   const [oracleResearching, setOracleResearching] = useState(false)
   const oracleMsgIdRef = useRef(0)
+  const [oracleSessionId, setOracleSessionId] = useState<string | null>(null)
+  const [oracleGeneratedAssets, setOracleGeneratedAssets] = useState<Array<{
+    type: string; url?: string; mediaHash?: string; toolUsed: string; creditCost: number
+  }>>([])
+  const [pendingToolRequest, setPendingToolRequest] = useState<OracleToolRequest | null>(null)
+  const [oracleMediaLibraryOpen, setOracleMediaLibraryOpen] = useState(false)
+  const [oracleMediaRequestType, setOracleMediaRequestType] = useState<'image' | 'video' | 'any'>('any')
+  const saveSessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Image-to-Video component media library integration
   const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
@@ -1812,6 +1822,222 @@ export default function AdStudioPage() {
     return rest
   }, [])
 
+  // Ref for handleOracleChatSendInternal — allows tool chaining without circular deps
+  const oracleChatSendRef = useRef<(text: string, isToolResult?: boolean) => Promise<void>>(async () => {})
+
+  // Core tool execution — called for free tools immediately, or after credit confirmation
+  const executeOracleToolAndChain = useCallback(async (
+    toolReq: OracleToolRequest,
+    tier: 'sonnet' | 'opus'
+  ) => {
+    // Show loading card
+    const loadingMsgId = `tool-loading-${Date.now()}`
+    setOracleMessages(prev => [...prev, {
+      id: loadingMsgId,
+      role: 'oracle' as const,
+      tier,
+      content: '',
+      contextCards: [{
+        type: 'tool-loading' as const,
+        data: { tool: toolReq.tool, reason: toolReq.reason },
+      }],
+    }])
+
+    try {
+      const toolContext = {
+        userId: user?.id || '',
+        adAccountId: currentAccountId || '',
+        productInfo: oracleContext.productInfo as Record<string, unknown> | undefined,
+        productImages: oracleContext.productImages as Array<{ base64: string; mimeType: string }> | undefined,
+        userMedia: oracleContext.userMedia as Array<{ url: string; mimeType: string; name: string; type: string }> | undefined,
+      }
+
+      const result = await executeOracleTool(toolReq.tool, toolReq.inputs, toolContext)
+
+      // Replace loading card with result card
+      setOracleMessages(prev => prev.map(m =>
+        m.id === loadingMsgId
+          ? { ...m, contextCards: [{ type: result.cardType, data: result.data }] }
+          : m
+      ))
+
+      // Update oracle context with tool results
+      if (result.success && toolReq.tool === 'analyze_product' && result.data.product) {
+        setOracleContext(prev => ({
+          ...prev,
+          productInfo: stripBase64ForContext(result.data.product as Record<string, unknown>),
+          productImages: result.data.productImages,
+        }))
+      }
+
+      // Track generated assets
+      if (result.generatedAsset) {
+        setOracleGeneratedAssets(prev => [...prev, {
+          ...result.generatedAsset!,
+          toolUsed: toolReq.tool,
+        }])
+      }
+
+      // Auto-send result back to model for chaining
+      // Use a slight delay so the user sees the result card first
+      setTimeout(async () => {
+        const toolResultText = `[Tool result for ${toolReq.tool}]: ${result.modelSummary}`
+        await oracleChatSendRef.current(toolResultText, true)
+      }, 500)
+
+    } catch (err) {
+      setOracleMessages(prev => prev.map(m =>
+        m.id === loadingMsgId
+          ? {
+              ...m,
+              contextCards: [{
+                type: 'tool-error' as const,
+                data: { error: err instanceof Error ? err.message : 'Tool execution failed' },
+              }],
+            }
+          : m
+      ))
+    }
+  }, [user?.id, currentAccountId, oracleContext, stripBase64ForContext])
+
+  // Handle tool execution with credit check
+  const handleToolExecution = useCallback(async (
+    toolReq: OracleToolRequest,
+    tier: 'sonnet' | 'opus'
+  ) => {
+    const toolCredits = ORACLE_TOOL_CREDITS[toolReq.tool]
+
+    if (toolCredits && toolCredits > 0) {
+      // Show credit confirm card
+      setOracleMessages(prev => [...prev, {
+        id: `tool-confirm-${Date.now()}`,
+        role: 'oracle' as const,
+        tier,
+        content: '',
+        contextCards: [{
+          type: 'credit-confirm' as const,
+          data: { tool: toolReq.tool, credits: toolCredits, reason: toolReq.reason },
+        }],
+      }])
+      setPendingToolRequest(toolReq)
+      return
+    }
+
+    await executeOracleToolAndChain(toolReq, tier)
+  }, [executeOracleToolAndChain])
+
+  // Credit confirm/cancel handlers
+  const handleOracleCreditConfirm = useCallback(async (messageId: string) => {
+    if (!pendingToolRequest) return
+    const toolReq = pendingToolRequest
+    setPendingToolRequest(null)
+    setOracleMessages(prev => prev.filter(m => m.id !== messageId))
+    const tier = oracleMode === 'creative' ? 'opus' : 'sonnet'
+    await executeOracleToolAndChain(toolReq, tier as 'sonnet' | 'opus')
+  }, [pendingToolRequest, oracleMode, executeOracleToolAndChain])
+
+  const handleOracleCreditCancel = useCallback((messageId: string) => {
+    setPendingToolRequest(null)
+    setOracleMessages(prev => [
+      ...prev.filter(m => m.id !== messageId),
+      {
+        id: `cancel-${Date.now()}`,
+        role: 'oracle' as const,
+        tier: oracleMode === 'creative' ? 'opus' as const : 'sonnet' as const,
+        content: 'No problem — what else would you like to do?',
+        options: [
+          { label: 'Try something else', value: 'try_else' },
+          { label: 'Start over', value: '__reset' },
+        ],
+      },
+    ])
+  }, [oracleMode])
+
+  // Media request handlers
+  const handleOracleMediaUpload = useCallback((_messageId: string, type: 'image' | 'video' | 'any') => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = type === 'image' ? 'image/*' : type === 'video' ? 'video/*' : 'image/*,video/*'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      const mediaType = file.type.startsWith('video') ? 'video' : 'image'
+      const preview = URL.createObjectURL(file)
+
+      // Add media-attached card as user message
+      setOracleMessages(prev => [...prev, {
+        id: `media-${Date.now()}`,
+        role: 'user' as const,
+        content: '',
+        mediaAttachments: [{
+          url: preview,
+          mimeType: file.type,
+          name: file.name,
+          type: mediaType,
+          preview,
+        }],
+      }])
+
+      // Send the file info back to the model
+      await oracleChatSendRef.current(
+        `User provided ${mediaType}: "${file.name}"`,
+        true
+      )
+    }
+    input.click()
+  }, [])
+
+  const handleOracleMediaLibrary = useCallback((_messageId: string, type: 'image' | 'video' | 'any') => {
+    setOracleMediaRequestType(type)
+    setOracleMediaLibraryOpen(true)
+  }, [])
+
+  const handleOracleMediaSelected = useCallback(async (items: Array<Record<string, unknown>>) => {
+    setOracleMediaLibraryOpen(false)
+    if (items.length === 0) return
+
+    const item = items[0]
+    const mediaType = (item.mediaType as 'image' | 'video') || 'image'
+    const url = mediaType === 'video'
+      ? ((item as Record<string, unknown>).source || (item as Record<string, unknown>).thumbnailUrl || '') as string
+      : ((item as Record<string, unknown>).url || '') as string
+    const name = mediaType === 'video'
+      ? ((item as Record<string, unknown>).title || 'Video') as string
+      : ((item as Record<string, unknown>).name || 'Image') as string
+
+    // Add media card
+    setOracleMessages(prev => [...prev, {
+      id: `media-${Date.now()}`,
+      role: 'user' as const,
+      content: '',
+      mediaAttachments: [{
+        url,
+        mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+        name,
+        type: mediaType,
+      }],
+    }])
+
+    // Update context
+    setOracleContext(prev => ({
+      ...prev,
+      userMedia: [...((prev.userMedia || []) as Array<Record<string, unknown>>), {
+        url,
+        mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+        name,
+        type: mediaType,
+        mediaHash: item.id || item.hash,
+      }],
+    }))
+
+    // Auto-send to model
+    await oracleChatSendRef.current(
+      `User provided ${mediaType}: "${name}" (id: ${item.id || item.hash}, url: ${url})`,
+      true
+    )
+  }, [])
+
   // Flag to auto-trigger product analysis after routing from Oracle conversation
   const oracleAutoAnalyzeRef = useRef(false)
 
@@ -1838,6 +2064,9 @@ export default function AdStudioPage() {
     setOracleMode('idle')
     setOracleMessages([])
     setOracleContext({})
+    setOracleSessionId(null)
+    setOracleGeneratedAssets([])
+    setPendingToolRequest(null)
 
     // Route to the workflow
     switch (workflow) {
@@ -1946,6 +2175,32 @@ export default function AdStudioPage() {
           const chatData: OracleChatResponse = await chatRes.json()
           if (!chatRes.ok) throw new Error(chatData.message || 'Chat failed')
 
+          // Handle toolRequest — execute tool (BEFORE action/escalate checks)
+          if (chatData.toolRequest) {
+            if (chatData.message) {
+              const toolMsgObj = makeOracleMsg('oracle', chatData.message, {
+                tier: 'sonnet',
+                options: chatData.options,
+              })
+              setOracleMessages(prev => [...prev, toolMsgObj])
+            }
+            await handleToolExecution(chatData.toolRequest, 'sonnet')
+            setOracleSending(false)
+            return
+          }
+
+          // Handle mediaRequest — show upload/library buttons
+          if (chatData.mediaRequest) {
+            const mediaMsgObj = makeOracleMsg('oracle', chatData.message, {
+              tier: 'sonnet',
+              options: chatData.options,
+              mediaRequest: chatData.mediaRequest,
+            })
+            setOracleMessages(prev => [...prev, mediaMsgObj])
+            setOracleSending(false)
+            return
+          }
+
           // If Sonnet detected a URL, analyze it — but skip if also routing to a workflow
           // (the workflow's auto-analyze useEffect will handle it, avoiding double analysis)
           if (chatData.analyzeUrl && !chatData.action) {
@@ -2011,17 +2266,21 @@ export default function AdStudioPage() {
     } finally {
       setOracleLoading(false)
     }
-  }, [router, makeOracleMsg, handleOracleAction])
+  }, [router, makeOracleMsg, handleOracleAction, handleToolExecution])
 
   // Oracle conversation — subsequent turns (user types or clicks option)
-  const handleOracleChatSend = useCallback(async (userText: string) => {
+  // Internal variant: isToolResult=true skips adding user message bubble and sending indicator
+  const handleOracleChatSendInternal = useCallback(async (userText: string, isToolResult?: boolean) => {
     if (!userText.trim()) return
     const userMsg = makeOracleMsg('user', userText)
-    setOracleMessages(prev => [...prev, userMsg])
-    setOracleSending(true)
+    if (!isToolResult) {
+      setOracleMessages(prev => [...prev, userMsg])
+      setOracleSending(true)
+    }
 
     // Build messages array from history — filter empty content and merge consecutive same-role msgs
-    const rawMapped = [...oracleMessages, userMsg]
+    const currentMessages = isToolResult ? oracleMessages : [...oracleMessages, userMsg]
+    const rawMapped = [...currentMessages, ...(isToolResult ? [userMsg] : [])]
       .filter(m => m.content && m.content.trim())
       .map(m => ({ role: m.role === 'oracle' ? 'assistant' as const : 'user' as const, content: m.content }))
     // Merge consecutive same-role messages (Anthropic API requires alternating roles)
@@ -2053,6 +2312,32 @@ export default function AdStudioPage() {
       // Handle Sonnet response
       if (oracleMode === 'chat') {
         const chatData = data as OracleChatResponse
+
+        // Handle toolRequest — execute tool (BEFORE action/escalate checks)
+        if (chatData.toolRequest) {
+          if (chatData.message) {
+            const toolMsgObj = makeOracleMsg('oracle', chatData.message, {
+              tier: 'sonnet',
+              options: chatData.options,
+            })
+            setOracleMessages(prev => [...prev, toolMsgObj])
+          }
+          await handleToolExecution(chatData.toolRequest, 'sonnet')
+          setOracleSending(false)
+          return
+        }
+
+        // Handle mediaRequest — show upload/library buttons
+        if (chatData.mediaRequest) {
+          const mediaMsgObj = makeOracleMsg('oracle', chatData.message, {
+            tier: 'sonnet',
+            options: chatData.options,
+            mediaRequest: chatData.mediaRequest,
+          })
+          setOracleMessages(prev => [...prev, mediaMsgObj])
+          setOracleSending(false)
+          return
+        }
 
         // URL analysis — skip if also routing to a workflow (auto-analyze handles it)
         if (chatData.analyzeUrl && !chatData.action) {
@@ -2183,6 +2468,32 @@ export default function AdStudioPage() {
       else if (oracleMode === 'creative') {
         const creativeData = data as OracleCreativeResponse
 
+        // Handle toolRequest — execute tool (BEFORE analyzeUrl/action checks)
+        if (creativeData.toolRequest) {
+          if (creativeData.message) {
+            const toolMsgObj = makeOracleMsg('oracle', creativeData.message, {
+              tier: 'opus',
+              options: creativeData.options,
+            })
+            setOracleMessages(prev => [...prev, toolMsgObj])
+          }
+          await handleToolExecution(creativeData.toolRequest, 'opus')
+          setOracleSending(false)
+          return
+        }
+
+        // Handle mediaRequest — show upload/library buttons
+        if (creativeData.mediaRequest) {
+          const mediaMsgObj = makeOracleMsg('oracle', creativeData.message, {
+            tier: 'opus',
+            options: creativeData.options,
+            mediaRequest: creativeData.mediaRequest,
+          })
+          setOracleMessages(prev => [...prev, mediaMsgObj])
+          setOracleSending(false)
+          return
+        }
+
         // If Opus wants URL analysis, suppress its fabricated response — run the real
         // analysis first (same endpoint as Step 1 Product→Ad), then re-call Opus with real data
         if (creativeData.analyzeUrl) {
@@ -2256,10 +2567,30 @@ export default function AdStudioPage() {
     } finally {
       setOracleSending(false)
     }
-  }, [oracleMessages, oracleMode, oracleContext, makeOracleMsg, handleOracleAction])
+  }, [oracleMessages, oracleMode, oracleContext, makeOracleMsg, handleOracleAction, handleToolExecution])
+
+  // Public wrapper — always shows user message bubble
+  const handleOracleChatSend = useCallback(async (userText: string) => {
+    return handleOracleChatSendInternal(userText, false)
+  }, [handleOracleChatSendInternal])
+
+  // Keep ref in sync so tool chaining can call back without circular deps
+  useEffect(() => {
+    oracleChatSendRef.current = handleOracleChatSendInternal
+  }, [handleOracleChatSendInternal])
 
   const handleOracleOptionClick = useCallback((option: OracleOption) => {
     if (option.value === '__reset') {
+      // Complete session before resetting
+      if (oracleSessionId && user?.id) {
+        fetch('/api/creative-studio/oracle-session', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: oracleSessionId, userId: user.id, status: 'complete' }),
+        })
+      }
+      setOracleSessionId(null)
+      setOracleGeneratedAssets([])
       setOracleMode('idle')
       setOracleMessages([])
       setOracleContext({})
@@ -2271,7 +2602,7 @@ export default function AdStudioPage() {
       return
     }
     handleOracleChatSend(option.label)
-  }, [handleOracleChatSend])
+  }, [handleOracleChatSend, oracleSessionId, user?.id])
 
   const handleOraclePromptAction = useCallback((action: 'generate' | 'edit' | 'startOver', prompt?: string, format?: string) => {
     if (action === 'startOver') {
@@ -2291,6 +2622,74 @@ export default function AdStudioPage() {
     }
     setMode('open-prompt')
   }, [])
+
+  // ── Oracle Session Persistence (debounced auto-save) ──
+  const saveOracleSession = useCallback(async () => {
+    if (!user?.id || !currentAccountId || oracleMessages.length < 2) return
+
+    // Strip large base64 data before persisting
+    const cleanMessages = oracleMessages.map(m => ({
+      ...m,
+      contextCards: m.contextCards?.map(c => {
+        if (c.type === 'image-result' && c.data.imageBase64) {
+          return { ...c, data: { ...c.data, imageBase64: undefined } }
+        }
+        return c
+      }),
+    }))
+
+    const title = (oracleContext.productInfo as Record<string, unknown>)?.name as string | undefined
+      || oracleMessages.find(m => m.role === 'user')?.content?.slice(0, 50)
+      || 'Chat'
+
+    const highestTier = oracleMode === 'creative' ? 'opus' : 'sonnet'
+
+    try {
+      if (oracleSessionId) {
+        await fetch('/api/creative-studio/oracle-session', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: oracleSessionId,
+            userId: user.id,
+            messages: cleanMessages,
+            context: oracleContext,
+            generatedAssets: oracleGeneratedAssets,
+            highestTier,
+          }),
+        })
+      } else {
+        const res = await fetch('/api/creative-studio/oracle-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            title,
+            messages: cleanMessages,
+            context: oracleContext,
+            highestTier,
+          }),
+        })
+        const data = await res.json()
+        if (data.sessionId) setOracleSessionId(data.sessionId)
+      }
+    } catch (err) {
+      console.error('Oracle session save error:', err)
+    }
+  }, [user?.id, currentAccountId, oracleMessages, oracleContext, oracleMode, oracleSessionId, oracleGeneratedAssets])
+
+  // Debounced save — triggers 2s after last message change
+  useEffect(() => {
+    if (oracleMessages.length < 2) return
+    if (saveSessionTimeoutRef.current) clearTimeout(saveSessionTimeoutRef.current)
+    saveSessionTimeoutRef.current = setTimeout(() => {
+      saveOracleSession()
+    }, 2000)
+    return () => {
+      if (saveSessionTimeoutRef.current) clearTimeout(saveSessionTimeoutRef.current)
+    }
+  }, [oracleMessages.length, saveOracleSession])
 
   // Oracle chip action — handle different chip types
   // Track which chip triggered file picker so we route to the correct mode
@@ -3635,6 +4034,10 @@ export default function AdStudioPage() {
                 onPromptAction={handleOraclePromptAction}
                 isSending={oracleSending}
                 isResearching={oracleResearching}
+                onMediaUpload={handleOracleMediaUpload}
+                onMediaLibrary={handleOracleMediaLibrary}
+                onCreditConfirm={handleOracleCreditConfirm}
+                onCreditCancel={handleOracleCreditCancel}
               />
             )}
 
@@ -3681,7 +4084,20 @@ export default function AdStudioPage() {
             {/* Start over button in chat/creative modes */}
             {oracleMode !== 'idle' && (
               <button
-                onClick={() => { setOracleMode('idle'); setOracleMessages([]); setOracleContext({}) }}
+                onClick={() => {
+                  if (oracleSessionId && user?.id) {
+                    fetch('/api/creative-studio/oracle-session', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ sessionId: oracleSessionId, userId: user.id, status: 'complete' }),
+                    })
+                  }
+                  setOracleSessionId(null)
+                  setOracleGeneratedAssets([])
+                  setOracleMode('idle')
+                  setOracleMessages([])
+                  setOracleContext({})
+                }}
                 className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors mx-auto block"
               >
                 Start over
@@ -3726,6 +4142,24 @@ export default function AdStudioPage() {
             }}
             maxSelection={1}
             allowedTypes={['image']}
+          />
+        )}
+
+        {/* Media Library Modal for Oracle media requests */}
+        {oracleMediaLibraryOpen && user?.id && currentAccountId && (
+          <MediaLibraryModal
+            isOpen={oracleMediaLibraryOpen}
+            onClose={() => setOracleMediaLibraryOpen(false)}
+            userId={user.id}
+            adAccountId={currentAccountId}
+            selectedItems={[]}
+            onSelectionChange={(items) => handleOracleMediaSelected(items as unknown as Array<Record<string, unknown>>)}
+            maxSelection={1}
+            allowedTypes={
+              oracleMediaRequestType === 'image' ? ['image'] :
+              oracleMediaRequestType === 'video' ? ['video'] :
+              ['image', 'video']
+            }
           />
         )}
       </div>
