@@ -1820,11 +1820,11 @@ export default function AdStudioPage() {
   // prompts — that's the job of the downstream workflows (generate-ad-concepts, etc.)
   const handleOracleAction = useCallback((action: {
     workflow: string
-    prefilledData: Record<string, unknown>
+    prefilledData?: Record<string, unknown>
     // Haiku-only extras: attached image from the submission
     _image?: { base64: string; mimeType: string; preview: string }
   }) => {
-    const { workflow, prefilledData, _image } = action
+    const { workflow, prefilledData = {}, _image } = action
 
     // Pre-populate shared state from extracted data
     if (prefilledData.productUrl) setProductUrl(prefilledData.productUrl as string)
