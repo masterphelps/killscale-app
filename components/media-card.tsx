@@ -21,10 +21,12 @@ export function MediaCard({ item, isSelected, isDisabled, onSelect, onPreview }:
   const [isHovered, setIsHovered] = useState(false)
 
   const isVideo = item.mediaType === 'video'
-  const thumbnailUrl = isVideo ? (item as MediaVideo & { mediaType: 'video' }).thumbnailUrl : (item as MediaImage & { mediaType: 'image' }).url
-  const name = isVideo ? (item as MediaVideo & { mediaType: 'video' }).title : (item as MediaImage & { mediaType: 'image' }).name
+  const videoItem = isVideo ? (item as MediaVideo & { mediaType: 'video' }) : null
+  const thumbnailUrl = isVideo ? videoItem!.thumbnailUrl : (item as MediaImage & { mediaType: 'image' }).url
+  const videoSourceUrl = isVideo ? videoItem!.source : ''
+  const name = isVideo ? videoItem!.title : (item as MediaImage & { mediaType: 'image' }).name
   const size = isVideo ? 0 : (item as MediaImage & { mediaType: 'image' }).bytes
-  const duration = isVideo ? (item as MediaVideo & { mediaType: 'video' }).length : 0
+  const duration = isVideo ? videoItem!.length : 0
 
   const handleClick = () => {
     if (isDisabled) return
@@ -51,7 +53,16 @@ export function MediaCard({ item, isSelected, isDisabled, onSelect, onPreview }:
     >
       {/* Thumbnail */}
       <div className="aspect-square bg-bg-hover relative overflow-hidden">
-        {thumbnailUrl && !imageError ? (
+        {isVideo && (videoSourceUrl || thumbnailUrl) ? (
+          /* Videos: always use <video> paused at 0.1s — never <img> with a .mp4 URL */
+          <video
+            src={`${videoSourceUrl || thumbnailUrl}#t=0.1`}
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full h-full object-cover pointer-events-none"
+          />
+        ) : thumbnailUrl && !imageError ? (
           <img
             src={thumbnailUrl}
             alt={name}

@@ -86,10 +86,11 @@ interface OracleChatThreadProps {
   onMediaLibrary?: (messageId: string, mediaType: 'image' | 'video' | 'any') => void
   onCreditConfirm?: (messageId: string) => void
   onCreditCancel?: (messageId: string) => void
-  onOpenInEditor?: (config: Record<string, unknown>) => void
+  onOpenInEditor?: (config: Record<string, unknown>, videoUrl?: string) => void
+  onSaveCopy?: (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => void
 }
 
-export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor }: OracleChatThreadProps) {
+export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy }: OracleChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages
@@ -172,6 +173,7 @@ export function OracleChatThread({ messages, currentTier, onOptionClick, onPromp
                       onCreditConfirm={onCreditConfirm}
                       onCreditCancel={onCreditCancel}
                       onOpenInEditor={onOpenInEditor}
+                      onSaveCopy={onSaveCopy}
                     />
                   ))}
                 </div>
@@ -302,12 +304,94 @@ function ProductDetailSection({ icon: Icon, label, children }: { icon: React.Ele
   )
 }
 
-function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, onOpenInEditor }: {
+function AdCopyCardGroup({ ads, onSaveCopy }: {
+  ads: Array<{ headline: string; primaryText: string; description?: string; angle: string; whyItWorks?: string }>
+  onSaveCopy?: (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => void
+}) {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [savedIdx, setSavedIdx] = useState<Set<number>>(new Set())
+
+  const handleCopy = (ad: typeof ads[0], idx: number) => {
+    const text = `${ad.headline}\n\n${ad.primaryText}${ad.description ? `\n\n${ad.description}` : ''}`
+    navigator.clipboard.writeText(text)
+    setCopiedIdx(idx)
+    setTimeout(() => setCopiedIdx(null), 2000)
+  }
+
+  const handleSave = (ad: typeof ads[0], idx: number) => {
+    onSaveCopy?.(ad)
+    setSavedIdx(prev => new Set(prev).add(idx))
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      {ads.map((ad, i) => {
+        const isExpanded = expandedIdx === i
+        return (
+          <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 overflow-hidden">
+            <button
+              onClick={() => setExpandedIdx(isExpanded ? null : i)}
+              className="w-full p-3 text-left hover:bg-zinc-700/20 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-white">{ad.headline}</div>
+                  {!isExpanded && <div className="text-xs text-zinc-400 line-clamp-2 mt-1">{ad.primaryText}</div>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded">{ad.angle}</span>
+                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />}
+                </div>
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="px-3 pb-3 space-y-3 border-t border-zinc-700/30 pt-3">
+                <div className="text-sm text-zinc-300 whitespace-pre-wrap">{ad.primaryText}</div>
+                {ad.description && (
+                  <div className="text-xs text-zinc-500">Link description: {ad.description}</div>
+                )}
+                {ad.whyItWorks && (
+                  <div className="text-xs text-zinc-500 italic">{ad.whyItWorks}</div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCopy(ad, i) }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-300 bg-zinc-700/50 hover:bg-zinc-700 rounded-lg transition-colors"
+                  >
+                    <Copy className="w-3 h-3" /> {copiedIdx === i ? 'Copied!' : 'Copy'}
+                  </button>
+                  {onSaveCopy && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleSave(ad, i) }}
+                      disabled={savedIdx.has(i)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors",
+                        savedIdx.has(i)
+                          ? "text-emerald-400 bg-emerald-500/10 cursor-default"
+                          : "text-zinc-300 bg-zinc-700/50 hover:bg-zinc-700"
+                      )}
+                    >
+                      <Star className="w-3 h-3" /> {savedIdx.has(i) ? 'Saved' : 'Save to Library'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy }: {
   card: OracleContextCard
   messageId: string
   onCreditConfirm?: (messageId: string) => void
   onCreditCancel?: (messageId: string) => void
-  onOpenInEditor?: (config: Record<string, unknown>) => void
+  onOpenInEditor?: (config: Record<string, unknown>, videoUrl?: string) => void
+  onSaveCopy?: (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -336,17 +420,19 @@ function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, 
 
   // --- video-analysis ---
   if (card.type === 'video-analysis') {
+    const analysis = card.data.analysis as Record<string, unknown> | undefined
+    const transcript = (analysis?.transcript as string) || (card.data.transcript as string) || ''
     return (
       <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3 space-y-2">
         <div className="text-xs font-medium text-zinc-400">Video Analysis</div>
-        {card.data.transcript ? (
-          <div className="text-xs text-zinc-500 italic line-clamp-3">&quot;{String(card.data.transcript)}&quot;</div>
+        {transcript ? (
+          <div className="text-xs text-zinc-500 italic line-clamp-3">&quot;{transcript}&quot;</div>
         ) : null}
-        {card.data.funnelScores ? (
+        {analysis ? (
           <div className="flex gap-2 flex-wrap">
             {(['hook', 'hold', 'click', 'convert'] as const).map(stage => {
-              const scores = card.data.funnelScores as Record<string, { score: number }>
-              const score = scores?.[stage]?.score
+              const stageData = analysis[stage] as { score?: number } | undefined
+              const score = stageData?.score
               if (score == null) return null
               const color = score >= 75 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : score >= 25 ? 'text-orange-400' : 'text-red-400'
               return (
@@ -363,55 +449,63 @@ function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, 
 
   // --- overlay-preview ---
   if (card.type === 'overlay-preview') {
+    const jobId = card.data.jobId as string | undefined
+    const videoUrl = card.data.videoUrl as string | undefined
+    const handleEditInEditor = () => {
+      if (jobId) {
+        // Standard pattern: navigate with ?jobId= (same as Video Studio, Direct Studio, etc.)
+        if (onOpenInEditor) {
+          onOpenInEditor({ jobId }, videoUrl)
+        } else {
+          window.location.href = `/dashboard/creative-studio/video-editor?jobId=${jobId}&from=oracle`
+        }
+      } else if (videoUrl) {
+        // Fallback if job creation failed
+        if (onOpenInEditor) {
+          onOpenInEditor({}, videoUrl)
+        } else {
+          window.location.href = `/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoUrl)}&from=oracle`
+        }
+      }
+    }
     return (
-      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3 space-y-2">
-        <div className="text-xs font-medium text-zinc-400">Overlay Preview</div>
-        {card.data.hookText ? (
-          <div className="text-sm text-purple-300 font-medium">&quot;{String(card.data.hookText)}&quot;</div>
-        ) : null}
-        <div className="flex gap-3 text-xs text-zinc-500">
-          {card.data.captionCount != null ? <span>{String(card.data.captionCount)} captions</span> : null}
-          {card.data.ctaText ? <span>CTA: {String(card.data.ctaText)}</span> : null}
-          {card.data.style ? <span className="px-1.5 py-0.5 bg-zinc-700/50 rounded">{String(card.data.style)}</span> : null}
+      <div className="mt-2 rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium text-purple-400">Overlay Ready</div>
+          {card.data.style ? <span className="text-[10px] font-medium px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded">{String(card.data.style)}</span> : null}
         </div>
-        {onOpenInEditor && (
+        {card.data.hookText ? (
+          <div className="text-sm text-white font-semibold">&quot;{String(card.data.hookText)}&quot;</div>
+        ) : null}
+        <div className="flex gap-3 text-xs text-zinc-400">
+          {card.data.captionCount != null ? <span>{String(card.data.captionCount)} captions</span> : null}
+          {card.data.ctaText ? <span>CTA: &quot;{String(card.data.ctaText)}&quot;</span> : null}
+        </div>
+        <div className="flex gap-2 pt-1">
           <button
-            onClick={() => onOpenInEditor(card.data.overlayConfig as Record<string, unknown>)}
-            className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 mt-1"
+            onClick={handleEditInEditor}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors"
           >
-            <ExternalLink className="w-3 h-3" /> Open in Editor
+            <Pencil className="w-3 h-3" /> Edit in Video Editor
           </button>
-        )}
+        </div>
       </div>
     )
   }
 
   // --- ad-copy ---
   if (card.type === 'ad-copy') {
-    return (
-      <div className="mt-2 space-y-2">
-        {(card.data.ads as Array<{ headline: string; primaryText: string; angle: string }> || []).map((ad, i) => (
-          <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-white">{ad.headline}</div>
-                <div className="text-xs text-zinc-400 line-clamp-2 mt-1">{ad.primaryText}</div>
-              </div>
-              <span className="text-[10px] font-medium px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded shrink-0">{ad.angle}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+    return <AdCopyCardGroup ads={card.data.ads as Array<{ headline: string; primaryText: string; description?: string; angle: string; whyItWorks?: string }> || []} onSaveCopy={onSaveCopy} />
   }
 
   // --- image-result ---
   if (card.type === 'image-result') {
+    const image = card.data.image as { base64?: string; mimeType?: string } | undefined
     return (
       <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 overflow-hidden">
-        {card.data.imageBase64 ? (
+        {image?.base64 ? (
           <img
-            src={`data:${card.data.imageMimeType || 'image/png'};base64,${card.data.imageBase64}`}
+            src={`data:${image.mimeType || 'image/png'};base64,${image.base64}`}
             alt="Generated"
             className="w-full max-h-80 object-contain bg-zinc-900"
           />

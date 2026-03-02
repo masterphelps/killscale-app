@@ -72,12 +72,16 @@ export function MediaLibraryModal({
       const fetchedVideos: MediaVideo[] = []
 
       for (const asset of (data.assets || [])) {
+        // Only show assets that have been downloaded to Supabase Storage
+        // Skip assets with only Meta CDN URLs (fbcdn) to avoid CORS errors
+        if (!asset.storageUrl) continue
+
         if (asset.mediaType === 'image') {
           fetchedImages.push({
             id: asset.mediaHash || asset.id,
             hash: asset.mediaHash || '',
             name: asset.name || 'Untitled',
-            url: asset.storageUrl || asset.imageUrl || '',
+            url: asset.storageUrl,
             width: asset.width || 0,
             height: asset.height || 0,
             createdTime: asset.syncedAt || new Date().toISOString(),
@@ -87,8 +91,8 @@ export function MediaLibraryModal({
           fetchedVideos.push({
             id: asset.mediaHash || asset.id,
             title: asset.name || 'Untitled Video',
-            thumbnailUrl: asset.storageUrl || asset.thumbnailUrl || '',
-            source: asset.storageUrl || '',
+            thumbnailUrl: '', // No Meta CDN — MediaCard uses <video #t=0.1> for poster
+            source: asset.storageUrl,
             length: 0,
             width: asset.width || 0,
             height: asset.height || 0,

@@ -94,6 +94,9 @@ export interface OracleChatRequest {
     format?: 'image' | 'video'
     outputType?: 'ad' | 'content'
     priorConversation?: { role: string; content: string }[]
+    videoAnalysis?: Record<string, unknown>
+    analyzedVideoUrl?: string
+    userMedia?: Array<{ url: string; mimeType: string; name: string; type: string }>
   }
 }
 

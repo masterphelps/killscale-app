@@ -346,9 +346,9 @@ export default function VideoEditorPage() {
         })
         setDurationSec(probedDuration)
 
-        // Create a base video clip overlay so the editor has something to display
+        // Convert default overlay config to RVE overlays (clean slate for theater mode)
         const rveOverlays = overlayConfigToRVEOverlays(
-          { style: 'clean' },
+          { style: 'clean' as const },
           videoUrlParam,
           probedDuration,
           FPS,

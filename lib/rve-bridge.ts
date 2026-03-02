@@ -36,10 +36,13 @@ const CANVAS_W = 1080
 const CANVAS_H = 1920
 
 // Position presets (1080×1920 canvas)
+// Layout: hook at 30%, cta at 50%, captions at 70% (0%=top, 100%=bottom)
 const POSITION_MAP: Record<string, { left: number; top: number; width: number; height: number }> = {
   top:    { left: 0, top: 80,   width: CANVAS_W, height: 300 },
+  hook:   { left: 0, top: 426,  width: CANVAS_W, height: 300 },  // 30% of 1920 ≈ 576, centered = 576-150=426
   center: { left: 0, top: 810,  width: CANVAS_W, height: 300 },
-  bottom: { left: 0, top: 1520, width: CANVAS_W, height: 300 },
+  cta:    { left: 200, top: 810, width: 680, height: 120 },       // 50% of 1920 = 960, centered = 960-60=900 → use center band
+  bottom: { left: 0, top: 1194, width: CANVAS_W, height: 300 },   // 70% of 1920 ≈ 1344, centered = 1344-150=1194
 }
 
 const GRAPHIC_POSITION_MAP: Record<string, { left: number; top: number }> = {
@@ -112,7 +115,7 @@ export function overlayConfigToRVEOverlays(
   // 1. Hook → TextOverlay (foreground)
   if (config.hook) {
     const h = config.hook
-    const pos = h.rvePosition || POSITION_MAP[h.position || 'top']
+    const pos = h.rvePosition || POSITION_MAP[h.position || 'hook'] || POSITION_MAP.hook
     const content = h.line2 ? `${h.line1}\n${h.line2}` : h.line1
     const hookTiming = clampTiming(secToFrames(h.startSec, fps), secToFrames(h.endSec - h.startSec, fps), totalFrames)
 
@@ -121,19 +124,22 @@ export function overlayConfigToRVEOverlays(
         ...h.rveStyles,
         __ksTag: META_TAG_HOOK,
       } : {
-        fontSize: `${h.fontSize || 52}px`,
-        fontWeight: String(h.fontWeight || 800),
+        // Bold/bright hook style (promopunch-inspired)
+        fontSize: `${h.fontSize || 64}px`,
+        fontWeight: String(h.fontWeight || 900),
         color: '#FFFFFF',
-        backgroundColor: 'transparent',
-        fontFamily: 'Outfit',
+        backgroundColor: 'rgba(239,68,68,0.9)',
+        fontFamily: '"Impact", "Arial Black", sans-serif',
         fontStyle: 'normal',
         textDecoration: 'none',
         textAlign: 'center' as const,
-        textShadow: '2px 2px 8px rgba(0,0,0,0.7)',
+        textShadow: '3px 3px 10px rgba(0,0,0,0.8)',
+        padding: '12px 24px',
+        borderRadius: '8px',
         animation: (h.animationEnter || h.animationExit) ? {
           enter: h.animationEnter || 'none',
           exit: h.animationExit || 'none',
-        } : undefined,
+        } : { enter: 'pop', exit: 'fade' },
         __ksTag: META_TAG_HOOK,
       }
       overlays.push({
@@ -183,7 +189,7 @@ export function overlayConfigToRVEOverlays(
       }
     })
 
-    const captionPos = config.captionPosition || POSITION_MAP[captions[0]?.position || 'bottom']
+    const captionPos = config.captionPosition || POSITION_MAP[captions[0]?.position || 'bottom'] || POSITION_MAP.bottom
     const capTiming = clampTiming(secToFrames(firstStart, fps), secToFrames(lastEnd - firstStart, fps), totalFrames)
 
     if (capTiming) overlays.push({
@@ -199,22 +205,22 @@ export function overlayConfigToRVEOverlays(
       row: captionRow,
       isDragging: false,
       rotation: 0,
-      // Use saved styles if available, otherwise default
+      // Use saved styles if available, otherwise default (yellow-based highlight)
       styles: (config.captionStyles as any) || {
-        fontFamily: 'Outfit',
-        fontSize: `${captions[0]?.fontSize || 36}px`,
+        fontFamily: '"Inter", "SF Pro Display", -apple-system, sans-serif',
+        fontSize: `${captions[0]?.fontSize || 40}px`,
         lineHeight: 1.3,
         textAlign: 'center',
         color: '#FFFFFF',
-        fontWeight: captions[0]?.fontWeight || 600,
-        textShadow: '1px 1px 4px rgba(0,0,0,0.5)',
+        fontWeight: captions[0]?.fontWeight || 700,
+        textShadow: '2px 2px 6px rgba(0,0,0,0.7)',
         highlightStyle: {
-          backgroundColor: config.brandColor || '#3b82f6',
-          color: '#FFFFFF',
-          scale: 1.1,
-          fontWeight: 800,
-          padding: '4px 8px',
-          borderRadius: '4px',
+          backgroundColor: config.brandColor || '#FFD700',
+          color: '#000000',
+          scale: 1.15,
+          fontWeight: 900,
+          padding: '4px 10px',
+          borderRadius: '6px',
         },
       },
       template: config.captionTemplate || 'default',
@@ -228,8 +234,8 @@ export function overlayConfigToRVEOverlays(
     const ctaTiming = clampTiming(secToFrames(c.startSec, fps), ctaDur, totalFrames)
 
     if (ctaTiming) {
-      // Use stored position if available, otherwise default
-      const pos = c.rvePosition || { left: POSITION_MAP.bottom.left + 200, top: POSITION_MAP.bottom.top, width: 680, height: 120 }
+      // Use stored position if available, otherwise CTA at 50% (center band)
+      const pos = c.rvePosition || POSITION_MAP.cta
 
       if (c.overlayType === 'cta' && c.rveStyles) {
         // Restore as native CTA overlay (sidebar-created) with full styles
@@ -270,7 +276,7 @@ export function overlayConfigToRVEOverlays(
           },
         } satisfies TextOverlay)
       } else {
-        // Fallback: default CTA styling (legacy configs without rveStyles)
+        // Fallback: default CTA styling — bright pink button
         overlays.push({
           id: genId(),
           type: OverlayType.TEXT,
@@ -285,20 +291,21 @@ export function overlayConfigToRVEOverlays(
           isDragging: false,
           rotation: 0,
           styles: {
-            fontSize: `${c.fontSize || 32}px`,
-            fontWeight: '700',
+            fontSize: `${c.fontSize || 36}px`,
+            fontWeight: '800',
             color: c.textColor || '#FFFFFF',
-            backgroundColor: c.buttonColor || config.brandColor || '#3b82f6',
-            fontFamily: 'Outfit',
+            backgroundColor: c.buttonColor || '#EC4899',
+            fontFamily: '"Inter", "SF Pro Display", -apple-system, sans-serif',
             fontStyle: 'normal',
             textDecoration: 'none',
             textAlign: 'center',
-            padding: '16px 32px',
-            borderRadius: '16px',
+            padding: '18px 40px',
+            borderRadius: '20px',
+            textShadow: '1px 1px 4px rgba(0,0,0,0.3)',
             animation: (c.animationEnter || c.animationExit) ? {
               enter: c.animationEnter || 'none',
               exit: c.animationExit || 'none',
-            } : undefined,
+            } : { enter: 'pop', exit: 'fade' },
             // @ts-expect-error — custom metadata property
             __ksTag: META_TAG_CTA,
           },
@@ -564,9 +571,11 @@ export function overlayConfigToRVEOverlays(
 // ─── RVE Overlay[] → OverlayConfig ───
 
 function nearestPosition(top: number): 'top' | 'center' | 'bottom' {
-  const distances = Object.entries(POSITION_MAP).map(([key, pos]) => ({
-    key: key as 'top' | 'center' | 'bottom',
-    distance: Math.abs(top - pos.top),
+  // Only match against the three canonical positions (not hook/cta aliases)
+  const canonical = ['top', 'center', 'bottom'] as const
+  const distances = canonical.map(key => ({
+    key,
+    distance: Math.abs(top - POSITION_MAP[key].top),
   }))
   distances.sort((a, b) => a.distance - b.distance)
   return distances[0].key

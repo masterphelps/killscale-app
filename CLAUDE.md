@@ -27,7 +27,7 @@ npm run lint    # Run Next.js linter
 - **Hosting:** Vercel (auto-deploy on git push)
 - **Charts:** Recharts
 - **CSV Parsing:** Papaparse
-- **AI:** Claude Sonnet 4 (AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), OpenAI (GPT 5.2 scene planning, Sora 2 Pro video gen, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen + extensions, Gemini 3 Pro image editing, Gemini 2.5 Flash image gen + text detection), Runway Gen-4.5 (video gen)
+- **AI:** Claude Sonnet 4 (AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), OpenAI (GPT 5.2 scene planning, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen + extensions, Gemini 3 Pro image editing, Gemini 2.5 Flash image gen + text detection)
 - **Video Editor:** Remotion 4.0 (@remotion/player for preview, server render needs Chromium)
 - **Prompts:** Centralized in `lib/prompts/` — versioned, auditable prompt engineering library
 
@@ -121,8 +121,20 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `app/api/creative-studio/download-media/route.ts` - Phase 2 sync: download files to Supabase Storage
 - `app/api/creative-studio/starred/route.ts` - CRUD for starred media
 
+**KS Oracle (AI-Powered Entry Point):**
+- `components/creative-studio/oracle-box.tsx` - Main input UI (textarea, image attach, output type/format toggles, auto-suggest)
+- `components/creative-studio/oracle-chips.tsx` - Two-column shortcut grid ("Make Ads" 6 chips + "Make Content" 2 chips)
+- `components/creative-studio/oracle-chat-thread.tsx` - Chat message renderer with 11 context card types
+- `components/creative-studio/oracle-types.ts` - Shared types: OracleMode, OracleTier, OracleMessage, OracleToolRequest, etc.
+- `lib/oracle-tools.ts` - Client-side tool executor (maps OracleToolName → API calls, returns ToolExecutionResult)
+- `app/api/creative-studio/oracle-route/route.ts` - Tier 1: Haiku fast intent classifier (~300-500ms)
+- `app/api/creative-studio/oracle-chat/route.ts` - Tier 2: Sonnet conversational guide
+- `app/api/creative-studio/oracle-creative/route.ts` - Tier 3: Opus creative director
+- `app/api/creative-studio/oracle-session/route.ts` - Session CRUD (GET/POST/PATCH/DELETE)
+- Database: `oracle_chat_sessions` (migration 068)
+
 **Ad Studio (Competitor Research):**
-- `app/dashboard/creative-studio/ad-studio/page.tsx` - 3-step wizard (Product URL → Competitor Ads → Generate)
+- `app/dashboard/creative-studio/ad-studio/page.tsx` - Oracle landing + multi-mode workflow wizard
 - `app/api/creative-studio/competitor-search/route.ts` - ScrapeCreators company search API
 - `app/api/creative-studio/competitor-ads/route.ts` - Fetch competitor ads with stats (media mix, landing pages)
 - `app/api/creative-studio/competitor-ad/route.ts` - Single ad detail endpoint
@@ -142,15 +154,15 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `app/dashboard/creative-studio/video-editor/page.tsx` - Remotion overlay editor
 - `app/api/creative-studio/generate-ad-concepts/route.ts` - Claude generates 4 visual metaphor concepts with angle diversity
 - `app/api/creative-studio/generate-video-script/route.ts` - Claude generates video scripts per style
-- `app/api/creative-studio/generate-video/route.ts` - Unified video generation (Sora/Veo/Runway)
-- `app/api/creative-studio/video-status/route.ts` - Provider-agnostic polling with auto-completion
+- `app/api/creative-studio/generate-video/route.ts` - Veo 3.1 video generation (two quality tiers)
+- `app/api/creative-studio/video-status/route.ts` - Veo job polling with auto-completion + extension chaining
 - `app/api/creative-studio/generate-overlay/route.ts` - Whisper transcription + Claude overlay generation
 - `app/api/creative-studio/render-overlay/route.ts` - Non-destructive overlay versioning
 - `app/api/creative-studio/overlay-versions/route.ts` - Version history management
 - `app/api/creative-studio/generate-voiceover/route.ts` - OpenAI TTS integration
 - `app/api/creative-studio/video-composition/route.ts` - Multi-clip timeline compositions
 - `app/api/creative-studio/video-canvas/route.ts` - Canvas (concept set) persistence
-- `lib/video-prompt-templates.ts` - AdConcept interface, ProductKnowledge type, buildSoraPrompt()
+- `lib/video-prompt-templates.ts` - AdConcept interface, ProductKnowledge type, video prompt builders
 - `lib/rve-bridge.ts` - Remotion Video Engine bridge (server render — NOT on Vercel)
 - `remotion/types.ts` - OverlayConfig, HookOverlay, CaptionOverlay, VideoComposition types
 - `remotion/AdOverlay.tsx` - Main Remotion composition
@@ -637,25 +649,91 @@ Save AI-generated ad copy from Ad Studio / AI Tasks to the Copy library for reus
 - `app/dashboard/creative-studio/ai-tasks/page.tsx` - Save Copy button per card
 - `app/dashboard/creative-studio/creative-studio-context.tsx` - CopyVariation type extended
 
+### KS Oracle (Ad Studio AI Entry Point)
+Intelligent input box that replaces the old 9-mode card grid. Classifies user intent, routes to the correct workflow, or engages in multi-turn conversation for ambiguous/creative requests.
+
+**Three-Tier Architecture:**
+
+| Tier | Model | Role | Latency |
+|------|-------|------|---------|
+| 1 — Router | Haiku (`claude-haiku-4-5-20251001`) | Fast intent classification → route directly or escalate | ~300-500ms |
+| 2 — Guide | Sonnet (`claude-sonnet-4-6`) | Conversational: asks clarifying questions with clickable options, calls tools | Multi-turn |
+| 3 — Creative Director | Opus (`claude-opus-4-20250514`) | Bold, opinionated creative direction; crafts rich generation prompts | Multi-turn |
+
+**Flow:**
+1. User types in Oracle Box → Haiku classifies intent
+2. Clear intent (e.g. "make an ad for my protein bar") → routes directly to workflow (no chat)
+3. Ambiguous input → Haiku returns `workflow: 'conversation'` → Sonnet takes over
+4. Sonnet asks 2-3 clarifying questions with clickable option pills
+5. Sonnet can call tools (analyze product, generate concepts, etc.) and escalate to Opus
+6. Opus crafts rich generation prompts → returns `generatedPrompt` for preview
+
+**Workflow Routes (from Haiku or chips):**
+`create`, `clone`, `inspiration`, `upload`, `url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`, `open-prompt`
+
+**Oracle Chips (visible in idle mode):**
+- "Make Ads" column (6 chips): Product→Ad, Product→Video Ad, Clone Ad, Inspiration, UGC Video Ad, Image→Ad
+- "Make Content" column (2 chips): Generate Image, Generate Video
+- Chip action types: `workflow` (bypasses Haiku), `focus` (pre-configures toggles), `attach` (opens attach menu)
+
+**Tool System (9 tools, called by Sonnet/Opus):**
+
+| Tool | Credits | What it does |
+|------|---------|-------------|
+| `analyze_product` | Free | Fetch + analyze product URL |
+| `analyze_video` | Free | Gemini video analysis |
+| `generate_overlay` | Free | Whisper + Claude overlay gen |
+| `generate_ad_copy` | Free | Claude ad copy from product |
+| `generate_concepts` | Free | 4 visual metaphor concepts |
+| `detect_text` | Free | Gemini Vision text extraction |
+| `request_media` | Free | Triggers Upload/Library picker in chat |
+| `generate_image` | 5cr | Gemini image generation |
+| `generate_video` | 50cr | Veo video generation |
+
+Credit-costing tools show a `credit-confirm` context card and wait for user confirmation before executing.
+
+**Context Cards (11 types rendered in chat thread):**
+`product`, `video-analysis`, `overlay-preview`, `ad-copy`, `image-result`, `video-result`, `concepts`, `media-attached`, `credit-confirm`, `tool-loading`, `tool-error`
+
+**Session Persistence:**
+- Sessions created when Sonnet conversation starts (2+ messages)
+- Auto-saved with 2s debounce to `oracle_chat_sessions` table
+- Haiku-only routing (clear intent) does NOT create sessions
+- Sessions appear in AI Tasks page "Chats" section with tier badge and conversation replay
+
+**Database (`oracle_chat_sessions`, migration 068):**
+- `messages` JSONB — full OracleMessage[] array
+- `context` JSONB — accumulated context (productInfo, userMedia, etc.)
+- `generated_assets` JSONB — [{type, url, mediaHash, toolUsed, creditCost}]
+- `highest_tier` — 'haiku' | 'sonnet' | 'opus'
+- `status` — 'active' | 'complete'
+
+**Key Files:**
+- `components/creative-studio/oracle-box.tsx` — Input UI with auto-suggest
+- `components/creative-studio/oracle-chips.tsx` — Shortcut chip grid
+- `components/creative-studio/oracle-chat-thread.tsx` — Chat renderer + 11 card types
+- `components/creative-studio/oracle-types.ts` — Complete type system
+- `lib/oracle-tools.ts` — Client-side tool executor
+- `app/api/creative-studio/oracle-route/route.ts` — Haiku router
+- `app/api/creative-studio/oracle-chat/route.ts` — Sonnet guide
+- `app/api/creative-studio/oracle-creative/route.ts` — Opus creative director
+- `app/api/creative-studio/oracle-session/route.ts` — Session CRUD
+- `app/dashboard/creative-studio/ad-studio/page.tsx` — Oracle state (lines 485-508), handlers (lines 1829-2570), UI (lines 3994-4082)
+
 ### AI Video Generation (Video Studio)
-Generate scroll-stopping short-form video ads using Sora 2 Pro, Veo 3.1, or Runway Gen-4.5.
+Generate scroll-stopping short-form video ads using Veo 3.1 (Google).
 
 **User Flow:**
 1. **Step 1: Product Input** — URL analysis → Claude extracts product knowledge → Pill selector (7 categories: name, description, features, benefits, key messages, testimonials, pain points)
 2. **Step 2: Concepts + Generate** — Claude creates 4 unique visual metaphor concepts, each with different angle (Problem→Solution, Feature Spotlight, Emotional Benefit, Social Proof, etc.) and visual world. Video generation happens inline per concept card (no step 3 navigation).
 
-**Triple Provider System:**
-- `VIDEO_MODEL` env var controls provider: `sora-*` → OpenAI, `veo-*` → Google, `runway-*` → Runway
-- Default: `sora-2-pro`. Current preferred: `runway-gen4.5`
-- Jobs stored with provider prefix on `sora_job_id`: `veo:operationName`, `runway:taskId`, or plain (Sora)
-
-**Provider Comparison:**
-| | Sora 2 Pro | Veo 3.1 | Runway Gen-4.5 |
-|---|---|---|---|
-| Duration | 4/8/12s | 8/15/22/29s (via extensions) | 2-10s |
-| Extensions | No | Yes (max 3 × 7s each) | No |
-| Image Input | Must match output dims (1024x1792) | Any size | HTTPS URL required (upload to Supabase first) |
-| Progress | Percentage available | No progress (0 until done) | 0-1 ratio |
+**Veo 3.1 (Sole Provider):**
+- Two quality tiers: Fast (720p, `veo-3.1-fast-generate-preview`) and Standard (1080p, `veo-3.1-generate-preview`)
+- Durations: 8/15/22/29 seconds (base 8s + up to 3 extensions × 7s each)
+- Image input: any size
+- No real-time progress (0% until done)
+- Jobs stored in `sora_job_id` column with `veo:` or `veoext:` prefix (legacy column name)
+- **Note:** Sora and Runway code was removed. The `sora_job_id` column name is a DB artifact — renaming would require migration + widespread code changes for no functional benefit.
 
 **Concept Generation (`generate-ad-concepts/route.ts`):**
 - Claude generates 4 concepts, each rooted in a different product attribute from selected pills
@@ -672,7 +750,7 @@ Generate scroll-stopping short-form video ads using Sora 2 Pro, Veo 3.1, or Runw
 - Combine sibling concept videos into single timeline
 - Each clip's overlay config preserved for round-trip editing
 
-**Credit Cost:** 50 credits per video (vs 5 for images)
+**Credit Cost:** Standard (Fast 720p) = 20cr base + 30cr/extension. Premium (1080p) = 50cr base + 75cr/extension. Images = 5cr.
 
 ### Unified Credit System
 Credits replace count-based limits for AI generation.
@@ -781,7 +859,7 @@ Videos longer than 8 seconds use Veo's extension API to chain segments.
 - Client submits main prompt first → get video → extend with each `extension_prompts[i]`
 
 **Database Columns (migration 059):**
-- `provider` - explicit: sora, veo, runway (backfilled from sora_job_id prefix)
+- `provider` - explicit: veo (legacy column, previously supported sora/runway)
 - `target_duration_seconds` - 8, 15, 22, or 29
 - `extension_step` - which extension number (starting at 0)
 - `extension_total` - total extensions for this job
@@ -804,10 +882,11 @@ Videos longer than 8 seconds use Veo's extension API to chain segments.
 **Component:** `VideoStylePicker` - Grid layout (2 cols mobile, 4 cols desktop), icon + label + description cards
 
 ### AI-Powered Features
+- **KS Oracle:** Three-tier AI entry point (Haiku router → Sonnet guide → Opus creative director) with tool use, context cards, and session persistence
 - **Andromeda AI Chat:** Follow-up questions about account structure audit
 - **Health Recommendations:** Claude-powered optimization suggestions with priority ranking
 - **Ad Studio Copy Generation:** Claude generates ad copy inspired by competitor ads
-- **Ad Studio Image Generation:** Gemini 2.5 Flash Image creates ad images using product reference
+- **Ad Studio Image Generation:** Gemini 3 Pro Image creates ad images using product reference
 - **AI Image Editor:** Gemini 3 Pro prompt-based image editing with text detection
 - **Open Prompt:** Direct user prompt → image or video without templates
 - **Scene Planning:** GPT 5.2 segments prompts into Veo time chunks
@@ -892,7 +971,7 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 - `saved_copy` - AI-generated ad copy saved from Ad Studio/AI Tasks
 
 **AI Generation:**
-- `video_generation_jobs` - Sora/Veo/Runway job tracking (`sora_job_id` stores provider-prefixed IDs). Includes `provider`, `target_duration_seconds`, `extension_step`, `extension_total`, `extension_video_uri`, `extension_prompts` JSONB, `ad_copy` JSONB
+- `video_generation_jobs` - Veo job tracking (`sora_job_id` is legacy column name, stores `veo:`/`veoext:` prefixed operation IDs). Includes `provider`, `target_duration_seconds`, `extension_step`, `extension_total`, `extension_video_uri`, `extension_prompts` JSONB, `ad_copy` JSONB
 - `video_overlays` - Non-destructive overlay versions (dual parent: job or composition)
 - `video_concept_canvases` - Persisted concept sets linking to all generated jobs
 - `video_compositions` - Multi-clip timelines with `source_job_ids` array
@@ -902,6 +981,7 @@ Meta and Shopify OAuth routes support a `returnTo` query param (validated as saf
 - `ad_studio_sessions` - Saved ad generation sessions for AI Tasks
 - `image_editor_sessions` - AI image editor sessions with version history (migration 060)
 - `media_sync_log` - Tracks media sync cooldowns per user+account (migration 066)
+- `oracle_chat_sessions` - KS Oracle conversation sessions with messages, context, generated assets (migration 068)
 
 **Views:**
 - `creative_star_counts` - Aggregates stars by creative (deduplication)
@@ -1325,34 +1405,24 @@ The API uses `cleanAccountId = adAccountId.replace(/^act_/, '')` for media_libra
 - `app/dashboard/creative-studio/active/page.tsx` — `resolveMedia()` function
 - `components/creative-studio/media-gallery-card.tsx` — renders video with storageUrl
 
-### 9. Video Generation Provider Detection (`app/api/creative-studio/generate-video/route.ts`)
-- Lines 7-10: Provider detection via `VIDEO_MODEL` env var prefix (`sora-*`, `veo-*`, `runway-*`)
-- Job IDs stored with provider prefix: `veo:operationName`, `runway:taskId`, plain = Sora
-- **Why fragile:** Changing prefix pattern breaks polling logic. All three providers have different APIs, auth, duration limits, image input formats.
-- **If you must modify:** Keep prefix pattern (`veo:`, `runway:`). Never remove provider-specific logic branches in generate-video or video-status.
+### 9. Veo 3.1 Video Generation (`app/api/creative-studio/generate-video/route.ts`)
+- Two quality tiers: `veo-3.1-fast-generate-preview` (standard/720p, 20cr) and `veo-3.1-generate-preview` (premium/1080p, 50cr)
+- Job IDs stored with `veo:` prefix in legacy `sora_job_id` column. Extensions use `veoext:` prefix.
+- **Why fragile:** The prefix pattern (`veo:`, `veoext:`) is used by video-status polling to identify job types. Changing it breaks all in-progress job polling.
+- **If you must modify:** Keep prefix patterns. Test both quality tiers and extension flows end-to-end.
 
-### 10. Runway Prompt Condensing (`generate-video/route.ts`)
-- `condenseForRunway()` strips structured Sora/Veo prompts to ≤1000 chars
-- **Why fragile:** Runway has hard 1000-char limit. Sora/Veo prompts are ~2000+ chars with block headers.
-- **If you must modify:** Never remove this function. Test that output stays under 1000 chars.
-
-### 11. Sora Image Dimensions (`generate-video/route.ts`)
-- Uses sharp to resize product image to exact output dimensions (1024x1792 for portrait)
-- **Why fragile:** Sora requires `input_reference` dimensions to EXACTLY match `size` param. Mismatch = generation fails silently.
-- **If you must modify:** Never skip resize step. Always use `OpenAI.toFile()` for image upload (not raw FormData).
-
-### 12. Veo Extension Chain (`generate-video/route.ts` + `video-status/route.ts`)
+### 10. Veo Extension Chain (`generate-video/route.ts` + `video-status/route.ts`)
 - Extensions must be submitted sequentially (each extends the previous segment's output)
 - Valid durations: 8, 15, 22, 29 only — `snapToVeoDuration()` enforces this
 - Each extension prompt gets "Continue from previous shot. " prepended
 - **Why fragile:** Submitting extensions in parallel or out of order produces corrupted video. Changing duration snapping breaks the segmentation math.
 - **If you must modify:** Never parallelize extension submissions. Never change the 8/15/22/29 snap values. Keep "Continue from previous shot" prefix.
 
-### 13. Prompts Library (`lib/prompts/`)
+### 11. Prompts Library (`lib/prompts/`)
 - All AI prompts centralized here with `INTEGRITY.sha256` hash file
 - Prompt changes affect ALL generation flows (image gen, video concepts, scripts, overlays, analysis)
 - **Why fragile:** A prompt change can subtly degrade output quality across multiple features. The integrity hash tracks unauthorized modifications.
-- **If you must modify:** Test the specific generation flow end-to-end. Check that Veo prompts stay under Runway's 1000-char limit if also used there. Never add block headers (`[Scene]`, `[Subject]`) back to video prompts — they confuse Veo.
+- **If you must modify:** Test the specific generation flow end-to-end. Never add block headers (`[Scene]`, `[Subject]`) back to video prompts — they confuse Veo.
 
 ### Signs You Broke Something
 - "Error code 17" or "Rate limit exceeded" from Meta
@@ -1407,10 +1477,8 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 SCRAPECREATORS_API_KEY=...          # ScrapeCreators Facebook Ad Library API
 GOOGLE_GEMINI_API_KEY=...           # Gemini 3 Pro (image editing) + Gemini 2.5 Flash (image gen + text detection) + Veo 3.1 (video gen + extensions)
 
-# Video Generation
-VIDEO_MODEL=sora-2-pro              # Provider: sora-2-pro | veo-3.1-generate-preview | runway-gen4.5
-OPENAI_API_KEY=...                  # GPT 5.2 (scene planning) + Sora video gen + Whisper transcription + TTS voiceover
-RUNWAY_API_KEY=...                  # Runway Gen-4.5 video generation
+# Video Generation + AI Tools
+OPENAI_API_KEY=...                  # GPT 5.2 (scene planning) + Whisper transcription + TTS voiceover
 ```
 
 ---
@@ -1446,7 +1514,7 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 | AI Image Editor | Gemini 3 Pro editing, text detection, version history | Feb 21 |
 | `silly-floating-cosmos.md` | AI Tasks: Remove Generation, Add Studio Navigation | Feb 22 |
 | `warm-petting-harbor.md` | Video Studio Inline Generation + Prompt Diversity | Feb 12 |
-| AI Video Generation | Triple provider (Sora/Veo/Runway), credits, overlays, compositions | Feb 10 |
+| AI Video Generation | Veo 3.1 video gen, credits, overlays, compositions | Feb 10 |
 | Launch Wizard Hydration Fix | Timezone, budget conversion, review status filtering | Feb 06 |
 | `prancy-moseying-pancake.md` | Ad Studio: ScrapeCreators + Gemini Image Generation | Feb 05 |
 | `nested-beaming-pearl.md` | Creative Studio Mobile View + Stability + Scroll-to-Play | Feb 01 |

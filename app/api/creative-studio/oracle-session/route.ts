@@ -74,19 +74,19 @@ export async function POST(request: NextRequest) {
       highestTier,
     } = body
 
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+    if (!userId || !adAccountId) {
+      return NextResponse.json({ error: 'Missing userId or adAccountId' }, { status: 400 })
     }
 
     const { data, error } = await supabase
       .from('oracle_chat_sessions')
       .insert({
         user_id: userId,
-        ad_account_id: adAccountId || null,
+        ad_account_id: adAccountId,
         title: title || 'New Chat',
         messages: messages || [],
         context: context || {},
-        highest_tier: highestTier || 1,
+        highest_tier: highestTier || 'sonnet',
         generated_assets: [],
         status: 'active',
       })

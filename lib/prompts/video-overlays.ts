@@ -38,7 +38,7 @@ interface HookOverlay {
   animation: 'pop' | 'fade' | 'slide'
   fontSize?: number         // default 52. Set higher (64-80) for bigger text, lower (32-40) for smaller
   fontWeight?: number       // default 800. Range 400 (normal) to 900 (black)
-  position?: 'top' | 'center' | 'bottom'  // default 'top'. Where the hook appears vertically
+  position?: 'top' | 'center' | 'bottom'  // default 'top'. Hook renders at 30% from top. ALWAYS use 'top' for hooks.
 }
 
 interface CaptionOverlay {
@@ -47,9 +47,9 @@ interface CaptionOverlay {
   endSec: number
   highlight?: boolean
   highlightWord?: string    // the single power/key word to highlight
-  fontSize?: number         // default 36. Set higher (48-64) for bigger captions, lower (24-32) for smaller
-  fontWeight?: number       // default 600. Range 400 (normal) to 900 (black)
-  position?: 'top' | 'center' | 'bottom'  // default 'bottom'. Where captions appear vertically
+  fontSize?: number         // default 40. Set higher (48-64) for bigger captions, lower (24-32) for smaller
+  fontWeight?: number       // default 700. Range 400 (normal) to 900 (black)
+  position?: 'top' | 'center' | 'bottom'  // default 'bottom'. Captions render at 70% from top. ALWAYS use 'bottom' for captions.
 }
 
 interface CTAOverlay {
@@ -72,7 +72,7 @@ interface GraphicOverlay {
   opacity?: number          // 0-1
 }
 
-type OverlayStyle = 'capcut' | 'minimal' | 'bold' | 'clean'
+type OverlayStyle = 'capcut' | 'minimal' | 'bold' | 'clean' | 'wordflash' | 'promopunch'
 
 interface OverlayConfig {
   hook?: HookOverlay
@@ -92,13 +92,25 @@ export const OVERLAY_SYSTEM_PROMPT = `You are a video ad overlay editor. Given t
 Here is the exact TypeScript schema you must match:
 ${OVERLAY_SCHEMA}
 
-Rules:
+## Positioning Rules (CRITICAL)
+Overlays are positioned on a 1080×1920 vertical video canvas using the "position" field:
+- Hook/headline: ALWAYS use position "top" (renders at 30% from top — bold and prominent)
+- CTA button: appears at 50% (center of screen)
+- Captions: ALWAYS use position "bottom" (renders at 70% — lower third area)
+Never place hook at "center" or "bottom". Never place captions at "top".
+
+## Style Rules
+- Default style to "bold" for maximum visual impact — use "capcut" only if user requests subtle/minimal
+- Hook text: Use large fontSize (64-80), heavy fontWeight (800-900), animation "pop"
+- CTA: Use animation "pop", bright colors
+- Captions: Always set highlight: true and pick the most impactful highlightWord
+
+## General Rules
 - Split subtitle/caption text into SHORT 2-4 word phrases for TikTok-style pacing (NOT long sentences)
 - Each caption should last ~1.5-2.5 seconds
 - Hook text should appear in the first 0-3 seconds
 - CTA should appear in the last 2-3 seconds of the video
 - ALWAYS set a highlightWord on each caption — pick the most impactful/power word
-- Default style to "capcut" unless the user specifies otherwise
 - Return ONLY valid JSON matching the OverlayConfig schema — no markdown, no explanation, no wrapping
 - All time values must be within [0, videoDuration]
 - If the user says "subtitles" or "captions", generate CaptionOverlay[] entries

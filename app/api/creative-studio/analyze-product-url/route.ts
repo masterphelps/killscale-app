@@ -28,8 +28,9 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
     const contentType = response.headers.get('content-type') || 'image/jpeg'
     const arrayBuffer = await response.arrayBuffer()
 
-    // Skip tiny images (likely icons/tracking pixels) - minimum 10KB
-    if (arrayBuffer.byteLength < 10240) return null
+    // Skip tiny images (likely tracking pixels) - minimum 2KB
+    // Logos and icons can be small but valuable
+    if (arrayBuffer.byteLength < 2048) return null
 
     const base64 = Buffer.from(arrayBuffer).toString('base64')
 
@@ -98,7 +99,6 @@ function extractImageUrls(html: string): string[] {
     if (u.startsWith('data:')) return
     if (u.includes('pixel') || u.includes('tracking') || u.includes('spacer')) return
     if (u.includes('.gif') && u.includes('1x1')) return
-    if (u.includes('.svg')) return // Skip SVG icons
     seen.add(u)
     urls.push(u)
   }
@@ -114,6 +114,9 @@ function extractImageUrls(html: string): string[] {
         if (typeof obj.image === 'string') addUrl(obj.image)
         if (Array.isArray(obj.image)) obj.image.forEach((img: unknown) => { if (typeof img === 'string') addUrl(img); if (typeof img === 'object' && img && 'url' in img) addUrl((img as { url: string }).url) })
         if (typeof obj.image === 'object' && obj.image && 'url' in obj.image) addUrl((obj.image as { url: string }).url)
+        // Extract logo from JSON-LD
+        if (typeof obj.logo === 'string') addUrl(obj.logo)
+        if (typeof obj.logo === 'object' && obj.logo && 'url' in obj.logo) addUrl((obj.logo as { url: string }).url)
       }
       if (Array.isArray(ld)) ld.forEach((item) => extractLdImages(item))
       else extractLdImages(ld)
@@ -126,7 +129,13 @@ function extractImageUrls(html: string): string[] {
   const ogRegex2 = /<meta\s+[^>]*content\s*=\s*["']([^"']+)["'][^>]*property\s*=\s*["']og:image["'][^>]*/gi
   while ((match = ogRegex2.exec(html)) !== null) addUrl(match[1])
 
-  // 3. <img> tags — src, data-src, data-lazy-src, data-zoom-image, data-large, srcset
+  // 3. Favicon, apple-touch-icon, and logo meta tags
+  const linkIconRegex = /<link\s+[^>]*rel\s*=\s*["'](?:icon|shortcut icon|apple-touch-icon|apple-touch-icon-precomposed)["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*/gi
+  while ((match = linkIconRegex.exec(html)) !== null) addUrl(match[1])
+  const linkIconRegex2 = /<link\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["'](?:icon|shortcut icon|apple-touch-icon|apple-touch-icon-precomposed)["'][^>]*/gi
+  while ((match = linkIconRegex2.exec(html)) !== null) addUrl(match[1])
+
+  // 4. <img> tags — src, data-src, data-lazy-src, data-zoom-image, data-large, srcset
   const imgTagRegex = /<img\s+[^>]*>/gi
   while ((match = imgTagRegex.exec(html)) !== null) {
     const tag = match[0]
@@ -158,6 +167,36 @@ function extractImageUrls(html: string): string[] {
     // Regular src
     const srcMatch = tag.match(/src\s*=\s*["']([^"']+)["']/i)
     if (srcMatch && !srcMatch[1].startsWith('data:')) addUrl(srcMatch[1])
+  }
+
+  // 5. <source> tags inside <picture> elements
+  const sourceRegex = /<source\s+[^>]*srcset\s*=\s*["']([^"']+)["'][^>]*/gi
+  while ((match = sourceRegex.exec(html)) !== null) {
+    const srcsetVal = match[1]
+    const candidates = srcsetVal.split(',').map(s => s.trim()).filter(Boolean)
+    let bestUrl = '', bestWidth = 0
+    for (const candidate of candidates) {
+      const parts = candidate.split(/\s+/)
+      const cUrl = parts[0]
+      const descriptor = parts[1] || ''
+      const w = parseInt(descriptor) || 0
+      if (w > bestWidth) { bestWidth = w; bestUrl = cUrl }
+    }
+    if (bestUrl) addUrl(bestUrl)
+    else if (candidates.length > 0) addUrl(candidates[0].split(/\s+/)[0])
+  }
+
+  // 6. CSS background-image URLs (inline styles)
+  const bgRegex = /background(?:-image)?\s*:\s*[^;]*url\(\s*["']?([^"')]+)["']?\s*\)/gi
+  while ((match = bgRegex.exec(html)) !== null) {
+    const bgUrl = match[1]
+    if (!bgUrl.startsWith('data:') && !bgUrl.includes('gradient')) addUrl(bgUrl)
+  }
+
+  // 7. SVG images separately (logos are often SVG)
+  const svgSrcRegex = /(?:src|href|data-src)\s*=\s*["']([^"']+\.svg(?:\?[^"']*)?)["']/gi
+  while ((match = svgSrcRegex.exec(html)) !== null) {
+    addUrl(match[1])
   }
 
   return urls
@@ -268,9 +307,9 @@ export async function POST(request: NextRequest) {
     // 50K chars of clean text covers most full pages
     const truncatedText = textContent.slice(0, 50000)
 
-    // Build image context for Claude
+    // Build image context for Claude — send up to 40 URLs for better coverage
     const imageContext = pageImageUrls.length > 0
-      ? `\n\nIMAGES FOUND ON PAGE (${pageImageUrls.length} total, showing first 20):\n${pageImageUrls.slice(0, 20).map((u, i) => `${i + 1}. ${u}`).join('\n')}`
+      ? `\n\nIMAGES FOUND ON PAGE (${pageImageUrls.length} total, showing first ${Math.min(pageImageUrls.length, 40)}):\n${pageImageUrls.slice(0, 40).map((u, i) => `${i + 1}. ${u}`).join('\n')}`
       : ''
 
     // Use Claude to extract product info AND image URL from the page content
@@ -343,7 +382,7 @@ export async function POST(request: NextRequest) {
     const productImages: Array<{ base64: string; mimeType: string; description: string; type: string; byteSize: number }> = []
 
     if (productInfo.images && Array.isArray(productInfo.images)) {
-      const imagesToDownload = productInfo.images.slice(0, 6)
+      const imagesToDownload = productInfo.images.slice(0, 12)
       console.log(`[Analyze] Downloading ${imagesToDownload.length} product images...`)
 
       const downloadPromises = imagesToDownload.map(async (img: { url: string; description: string; type: string }) => {

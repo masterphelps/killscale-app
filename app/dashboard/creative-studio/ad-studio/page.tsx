@@ -506,6 +506,7 @@ export default function AdStudioPage() {
   const [oracleMediaLibraryOpen, setOracleMediaLibraryOpen] = useState(false)
   const [oracleMediaRequestType, setOracleMediaRequestType] = useState<'image' | 'video' | 'any'>('any')
   const saveSessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const oracleHighestTierRef = useRef<'haiku' | 'sonnet' | 'opus'>('sonnet')
 
   // Image-to-Video component media library integration
   const [i2vMediaLibraryOpen, setI2vMediaLibraryOpen] = useState(false)
@@ -1850,6 +1851,8 @@ export default function AdStudioPage() {
         productInfo: oracleContext.productInfo as Record<string, unknown> | undefined,
         productImages: oracleContext.productImages as Array<{ base64: string; mimeType: string }> | undefined,
         userMedia: oracleContext.userMedia as Array<{ url: string; mimeType: string; name: string; type: string }> | undefined,
+        videoAnalysis: oracleContext.videoAnalysis as Record<string, unknown> | undefined,
+        analyzedVideoUrl: oracleContext.analyzedVideoUrl as string | undefined,
       }
 
       const result = await executeOracleTool(toolReq.tool, toolReq.inputs, toolContext)
@@ -1867,6 +1870,17 @@ export default function AdStudioPage() {
           ...prev,
           productInfo: stripBase64ForContext(result.data.product as Record<string, unknown>),
           productImages: result.data.productImages,
+        }))
+      }
+      if (result.success && toolReq.tool === 'analyze_video' && result.data.analysis) {
+        // Store analysis AND the video's storage URL so overlay tool can find it
+        const analyzedVideoUrl = (toolReq.inputs as Record<string, unknown>)?.storageUrl as string
+          || ((oracleContext.userMedia as Array<{ url: string; type: string }>) || [])
+              .filter(m => m.type === 'video').slice(-1)[0]?.url
+        setOracleContext(prev => ({
+          ...prev,
+          videoAnalysis: result.data.analysis,
+          ...(analyzedVideoUrl ? { analyzedVideoUrl } : {}),
         }))
       }
 
@@ -1952,6 +1966,40 @@ export default function AdStudioPage() {
       },
     ])
   }, [oracleMode])
+
+  // Save copy to library
+  const handleOracleSaveCopy = useCallback(async (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      await fetch('/api/creative-studio/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          headline: ad.headline,
+          primaryText: ad.primaryText,
+          description: ad.description || null,
+          angle: ad.angle || null,
+          source: 'oracle',
+        }),
+      })
+    } catch (err) {
+      console.error('Failed to save copy:', err)
+    }
+  }, [user?.id, currentAccountId])
+
+  // Open overlay config in Video Editor via ?jobId= (standard pattern used by all flows)
+  const handleOracleOpenInEditor = useCallback((config: Record<string, unknown>, videoUrl?: string) => {
+    const jobId = config.jobId as string | undefined
+    if (jobId) {
+      // Standard pattern: navigate with ?jobId= — video editor loads overlay_config from DB
+      router.push(`/dashboard/creative-studio/video-editor?jobId=${jobId}&from=oracle`)
+    } else if (videoUrl) {
+      // Fallback if job creation failed
+      router.push(`/dashboard/creative-studio/video-editor?videoUrl=${encodeURIComponent(videoUrl)}&from=oracle`)
+    }
+  }, [router])
 
   // Media request handlers
   const handleOracleMediaUpload = useCallback((_messageId: string, type: 'image' | 'video' | 'any') => {
@@ -2067,6 +2115,7 @@ export default function AdStudioPage() {
     setOracleSessionId(null)
     setOracleGeneratedAssets([])
     setPendingToolRequest(null)
+    oracleHighestTierRef.current = 'sonnet'
 
     // Route to the workflow
     switch (workflow) {
@@ -2172,8 +2221,21 @@ export default function AdStudioPage() {
               context: { format: submission.format, outputType: submission.outputType },
             }),
           })
-          const chatData: OracleChatResponse = await chatRes.json()
+          let chatData: OracleChatResponse = await chatRes.json()
           if (!chatRes.ok) throw new Error(chatData.message || 'Chat failed')
+
+          // Client-side rescue: re-parse message if it looks like full JSON response
+          if (!chatData.toolRequest && !chatData.action && !chatData.escalate && !chatData.mediaRequest && chatData.message) {
+            try {
+              const msgText = chatData.message.trim()
+              if (msgText.startsWith('{') && msgText.endsWith('}')) {
+                const reparsed = JSON.parse(msgText)
+                if (reparsed.toolRequest || reparsed.action || reparsed.escalate || reparsed.options) {
+                  chatData = { ...chatData, ...reparsed }
+                }
+              }
+            } catch { /* not JSON */ }
+          }
 
           // Handle toolRequest — execute tool (BEFORE action/escalate checks)
           if (chatData.toolRequest) {
@@ -2311,7 +2373,21 @@ export default function AdStudioPage() {
 
       // Handle Sonnet response
       if (oracleMode === 'chat') {
-        const chatData = data as OracleChatResponse
+        let chatData = data as OracleChatResponse
+
+        // Client-side rescue: if server parser failed and entire JSON ended up in message,
+        // try re-parsing the message to extract structured fields
+        if (!chatData.toolRequest && !chatData.action && !chatData.escalate && !chatData.mediaRequest && chatData.message) {
+          try {
+            const msgText = chatData.message.trim()
+            if (msgText.startsWith('{') && msgText.endsWith('}')) {
+              const reparsed = JSON.parse(msgText)
+              if (reparsed.toolRequest || reparsed.action || reparsed.escalate || reparsed.options) {
+                chatData = { ...chatData, ...reparsed }
+              }
+            }
+          } catch { /* not JSON, continue normally */ }
+        }
 
         // Handle toolRequest — execute tool (BEFORE action/escalate checks)
         if (chatData.toolRequest) {
@@ -2381,6 +2457,7 @@ export default function AdStudioPage() {
             priorConversation: allMessages,
           }))
           setOracleMode('creative')
+          oracleHighestTierRef.current = 'opus'
           // Send opening turn to Opus
           try {
             const opusRes = await fetch('/api/creative-studio/oracle-creative', {
@@ -2466,7 +2543,20 @@ export default function AdStudioPage() {
       }
       // Handle Opus response
       else if (oracleMode === 'creative') {
-        const creativeData = data as OracleCreativeResponse
+        let creativeData = data as OracleCreativeResponse
+
+        // Client-side rescue: re-parse message if it looks like full JSON response
+        if (!creativeData.toolRequest && !creativeData.analyzeUrl && creativeData.message) {
+          try {
+            const msgText = creativeData.message.trim()
+            if (msgText.startsWith('{') && msgText.endsWith('}')) {
+              const reparsed = JSON.parse(msgText)
+              if (reparsed.toolRequest || reparsed.action || reparsed.options) {
+                creativeData = { ...creativeData, ...reparsed }
+              }
+            }
+          } catch { /* not JSON */ }
+        }
 
         // Handle toolRequest — execute tool (BEFORE analyzeUrl/action checks)
         if (creativeData.toolRequest) {
@@ -2642,7 +2732,7 @@ export default function AdStudioPage() {
       || oracleMessages.find(m => m.role === 'user')?.content?.slice(0, 50)
       || 'Chat'
 
-    const highestTier = oracleMode === 'creative' ? 'opus' : 'sonnet'
+    const highestTier = oracleHighestTierRef.current
 
     try {
       if (oracleSessionId) {
@@ -4038,6 +4128,8 @@ export default function AdStudioPage() {
                 onMediaLibrary={handleOracleMediaLibrary}
                 onCreditConfirm={handleOracleCreditConfirm}
                 onCreditCancel={handleOracleCreditCancel}
+                onOpenInEditor={handleOracleOpenInEditor}
+                onSaveCopy={handleOracleSaveCopy}
               />
             )}
 

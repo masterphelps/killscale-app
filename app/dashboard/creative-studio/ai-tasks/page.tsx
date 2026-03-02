@@ -51,6 +51,7 @@ import type { VideoAnalysis, ScriptSuggestion } from '@/components/creative-stud
 import type { VideoJob, OverlayConfig, VideoComposition } from '@/remotion/types'
 import type { ProductKnowledge, AdConcept } from '@/lib/video-prompt-templates'
 import type { OracleChatSession } from '@/components/creative-studio/oracle-types'
+import { ContextCardDisplay } from '@/components/creative-studio/oracle-chat-thread'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -2679,6 +2680,28 @@ export default function AITasksPage() {
     }
   }, [user?.id])
 
+  // Save oracle-generated copy to library
+  const handleOracleSaveCopy = useCallback(async (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      await fetch('/api/creative-studio/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          headline: ad.headline,
+          primaryText: ad.primaryText,
+          description: ad.description || null,
+          angle: ad.angle || null,
+          source: 'oracle',
+        }),
+      })
+    } catch (err) {
+      console.error('Failed to save copy:', err)
+    }
+  }, [user?.id, currentAccountId])
+
   // Select an Oracle chat session
   const handleSelectOracleSession = useCallback(async (sessionId: string) => {
     hasUserSelectedRef.current = true
@@ -3192,12 +3215,12 @@ export default function AITasksPage() {
                         <div className="text-sm text-white whitespace-pre-wrap">{msg.content}</div>
                       )}
                       {msg.contextCards?.map((card: any, ci: number) => (
-                        <div key={ci} className="mt-2 text-xs text-zinc-400 bg-zinc-800/50 rounded p-2">
-                          <span className="text-zinc-500 capitalize">{String(card.type).replace(/-/g, ' ')}</span>
-                          {card.type === 'product' && card.data?.product && (
-                            <div className="mt-1 text-white">{(card.data.product as any)?.name || ''}</div>
-                          )}
-                        </div>
+                        <ContextCardDisplay
+                          key={ci}
+                          card={card}
+                          messageId={msg.id || `hist-${i}`}
+                          onSaveCopy={handleOracleSaveCopy}
+                        />
                       ))}
                     </div>
                   ))}
@@ -3306,6 +3329,14 @@ export default function AITasksPage() {
                           {msg.content && (
                             <div className="text-sm text-white whitespace-pre-wrap">{msg.content}</div>
                           )}
+                          {msg.contextCards?.map((card: any, ci: number) => (
+                            <ContextCardDisplay
+                              key={ci}
+                              card={card}
+                              messageId={msg.id || `mob-${i}`}
+                              onSaveCopy={handleOracleSaveCopy}
+                            />
+                          ))}
                         </div>
                       ))}
                     </div>

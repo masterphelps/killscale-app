@@ -33,6 +33,8 @@ export interface ToolContext {
   productInfo?: Record<string, unknown>
   productImages?: Array<{ base64: string; mimeType: string }>
   userMedia?: Array<{ url: string; mimeType: string; name: string; type: string }>
+  videoAnalysis?: Record<string, unknown>
+  analyzedVideoUrl?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +121,6 @@ async function executeAnalyzeVideo(
 
   const data = await res.json()
   const analysis = data.analysis || {}
-  const funnelScores = analysis.funnelScores || {}
   const transcript = truncate(analysis.transcript || data.transcript, 300)
 
   return {
@@ -133,7 +134,7 @@ async function executeAnalyzeVideo(
     modelSummary: [
       'Video analysis complete.',
       transcript ? `Transcript: "${transcript}"` : 'No speech detected.',
-      `Funnel scores — Hook: ${funnelScores.hook ?? 'N/A'}, Hold: ${funnelScores.hold ?? 'N/A'}, Click: ${funnelScores.click ?? 'N/A'}, Convert: ${funnelScores.convert ?? 'N/A'}.`,
+      `Funnel scores — Hook: ${analysis.hook?.score ?? 'N/A'}, Hold: ${analysis.hold?.score ?? 'N/A'}, Click: ${analysis.click?.score ?? 'N/A'}, Convert: ${analysis.convert?.score ?? 'N/A'}.`,
       data.scriptSuggestions?.length ? `${data.scriptSuggestions.length} script rewrite suggestion(s).` : null,
     ].filter(Boolean).join(' '),
   }
@@ -141,12 +142,24 @@ async function executeAnalyzeVideo(
 
 async function executeGenerateOverlay(
   inputs: Record<string, unknown>,
+  context: ToolContext,
 ): Promise<ToolExecutionResult> {
-  const videoUrl = inputs.videoUrl as string | undefined
+  let videoUrl = inputs.videoUrl as string | undefined
   const instruction = (inputs.instruction as string) || 'Generate captions'
   const durationSeconds = (inputs.durationSeconds as number) || 10
 
-  if (!videoUrl) return errorResult('Missing videoUrl for overlay generation')
+  // Fallback chain: context's analyzed video URL → most recent user-uploaded video
+  if (!videoUrl || !videoUrl.startsWith('http')) {
+    videoUrl = context.analyzedVideoUrl || undefined
+  }
+  if (!videoUrl || !videoUrl.startsWith('http')) {
+    const userVideos = (context.userMedia || []).filter(m => m.type === 'video')
+    if (userVideos.length > 0) {
+      videoUrl = userVideos[userVideos.length - 1].url
+    }
+  }
+
+  if (!videoUrl) return errorResult('Missing videoUrl for overlay generation. Please upload a video first.')
 
   const res = await fetch('/api/creative-studio/generate-overlay', {
     method: 'POST',
@@ -166,10 +179,31 @@ async function executeGenerateOverlay(
   const ctaText = overlayConfig.cta?.text || ''
   const style = overlayConfig.style || 'default'
 
+  // Create a video_generation_job record so the video editor can load via ?jobId=
+  // (the standard pattern used by all other flows — Video Studio, Direct Studio, etc.)
+  let jobId: string | null = null
+  try {
+    const jobRes = await fetch('/api/creative-studio/create-overlay-job', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: context.userId,
+        adAccountId: context.adAccountId,
+        videoUrl,
+        overlayConfig,
+        durationSeconds,
+      }),
+    })
+    if (jobRes.ok) {
+      const jobData = await jobRes.json()
+      jobId = jobData.jobId
+    }
+  } catch { /* non-fatal — editor will still work via videoUrl fallback */ }
+
   return {
     success: true,
     cardType: 'overlay-preview',
-    data: { overlayConfig, transcript: data.transcript },
+    data: { overlayConfig, transcript: data.transcript, hookText, captionCount, ctaText, style, videoUrl, jobId },
     modelSummary: [
       'Overlay generated.',
       hookText ? `Hook: "${truncate(hookText, 60)}"` : null,
@@ -191,15 +225,37 @@ async function executeGenerateAdCopy(
   const product = (inputs.product as Record<string, unknown>) || context.productInfo || {}
   if (!product.name) return errorResult('Missing product info for ad copy generation')
 
-  const competitorAd = (inputs.competitorAd as Record<string, unknown>) || {
-    pageName: product.name as string,
-  }
-  const isRefresh = !inputs.competitorAd
+  // Check if we have video analysis context — enriches the product for video-informed copy
+  const videoAnalysis = (inputs.videoAnalysis as Record<string, unknown>) || context.videoAnalysis
+  if (videoAnalysis) {
+    // Enrich the product description with video insights so the copy reflects the video
+    const videoContext = [
+      videoAnalysis.transcript ? `VIDEO TRANSCRIPT: "${truncate(videoAnalysis.transcript as string, 800)}"` : null,
+      videoAnalysis.speakerStyle ? `Speaker Style: ${videoAnalysis.speakerStyle}` : null,
+      videoAnalysis.visualStyle ? `Visual Style: ${videoAnalysis.visualStyle}` : null,
+      videoAnalysis.emotionalTone ? `Emotional Tone: ${videoAnalysis.emotionalTone}` : null,
+      Array.isArray(videoAnalysis.keyMessages) ? `Key Messages: ${(videoAnalysis.keyMessages as string[]).join(', ')}` : null,
+      videoAnalysis.topStrength ? `Top Strength: ${videoAnalysis.topStrength}` : null,
+      videoAnalysis.topWeakness ? `Top Weakness: ${videoAnalysis.topWeakness}` : null,
+      (videoAnalysis.hook as Record<string, unknown>)?.score != null
+        ? `Funnel Scores — Hook: ${(videoAnalysis.hook as Record<string, unknown>).score}, Hold: ${(videoAnalysis.hold as Record<string, unknown>)?.score ?? 'N/A'}, Click: ${(videoAnalysis.click as Record<string, unknown>)?.score ?? 'N/A'}, Convert: ${(videoAnalysis.convert as Record<string, unknown>)?.score ?? 'N/A'}`
+        : null,
+    ].filter(Boolean).join('\n')
 
-  const res = await fetch('/api/creative-studio/generate-from-competitor', {
+    product.description = [
+      product.description || '',
+      '\n\n--- VIDEO AD ANALYSIS (write copy that complements this video) ---',
+      'The user has a video ad they want ad copy for. The copy should work AS the ad text accompanying this video.',
+      'Reference the video\'s messaging, tone, and key hooks. Don\'t just write generic product copy.',
+      videoContext,
+    ].join('\n')
+  }
+
+  // Use generate-from-product (not competitor) — works with enriched product context
+  const res = await fetch('/api/creative-studio/generate-from-product', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ product, competitorAd, isRefresh }),
+    body: JSON.stringify({ product }),
   })
 
   if (!res.ok) {
@@ -217,9 +273,9 @@ async function executeGenerateAdCopy(
   return {
     success: true,
     cardType: 'ad-copy',
-    data: { ads },
+    data: { ads, hasVideoContext: !!videoAnalysis },
     modelSummary: [
-      `Generated ${ads.length} ad copy variation(s):`,
+      `Generated ${ads.length} ad copy variation(s)${videoAnalysis ? ' based on your video analysis' : ''}:`,
       ...summaryLines,
     ].join('\n'),
     generatedAsset: {
@@ -457,7 +513,7 @@ export async function executeOracleTool(
         return await executeAnalyzeVideo(inputs, context)
 
       case 'generate_overlay':
-        return await executeGenerateOverlay(inputs)
+        return await executeGenerateOverlay(inputs, context)
 
       case 'generate_ad_copy':
         return await executeGenerateAdCopy(inputs, context)

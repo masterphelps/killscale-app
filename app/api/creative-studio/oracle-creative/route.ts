@@ -46,7 +46,8 @@ Same tools as the standard assistant, but you use them differently:
 create, clone, inspiration, upload, url-to-video, ugc-video, image-to-video, text-to-video, open-prompt
 
 ## Response Format
-Return valid JSON:
+CRITICAL: Your ENTIRE response must be a single, valid JSON object. No markdown, no code fences, no text outside the JSON. Start with { and end with }.
+
 {
   "message": "Your creative response",
   "options": [{"label": "Option text", "value": "option_value"}],
@@ -55,7 +56,15 @@ Return valid JSON:
   "action": {"workflow": "name", "prefilledData": {...}},
   "generatedPrompt": {"prompt": "...", "format": "image|video", "style": "...", "duration": N}
 }
-Include ONLY the fields you need. "message" and "options" are always required.`
+Include ONLY the fields you need. "message" is always required.
+"options" is OPTIONAL — only include it when presenting genuinely distinct creative directions. Skip options when:
+- You're executing a tool (the action IS the next step)
+- You're sharing an opinion or creative direction ("Here's what I'd do...")
+- You're asking an open-ended question
+- The conversation flows naturally without buttons
+When you DO include options, keep them to 2-3 bold creative choices.
+NEVER include JSON code blocks inside "message" — the toolRequest field IS the tool call. Put a short friendly message in "message" and the tool call in "toolRequest".
+When a tool result arrives (message starting with "[Tool result"), respond conversationally about what you found and propose next steps. Do NOT echo tool result JSON.`
 
 export async function POST(req: NextRequest) {
   try {
@@ -111,23 +120,64 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-20250514',
+      model: 'claude-opus-4-6',
       max_tokens: 1024,
       system: fullSystem,
       messages: cleanMessages,
     })
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
 
+    // Parse JSON response — model is instructed to return pure JSON via system prompt
     let parsed: OracleCreativeResponse
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { message: text }
+      const cleaned = rawText.replace(/```json?\s*/gi, '').replace(/```/g, '').trim()
+      parsed = JSON.parse(cleaned)
     } catch {
-      parsed = { message: text }
+      try {
+        // Fallback: find first balanced JSON object using bracket counting
+        const start = rawText.indexOf('{')
+        if (start !== -1) {
+          let depth = 0
+          let inString = false
+          let escape = false
+          let end = -1
+          for (let i = start; i < rawText.length; i++) {
+            const ch = rawText[i]
+            if (escape) { escape = false; continue }
+            if (ch === '\\' && inString) { escape = true; continue }
+            if (ch === '"' && !escape) { inString = !inString; continue }
+            if (inString) continue
+            if (ch === '{') depth++
+            else if (ch === '}') { depth--; if (depth === 0) { end = i; break } }
+          }
+          if (end !== -1) {
+            parsed = JSON.parse(rawText.slice(start, end + 1))
+          } else {
+            parsed = { message: rawText }
+          }
+        } else {
+          parsed = { message: rawText }
+        }
+      } catch {
+        parsed = { message: rawText }
+      }
     }
 
-    if (!parsed.message) parsed.message = text
+    if (!parsed.message) parsed.message = rawText
+
+    // Safety net: double-encoded JSON
+    if (parsed.message && !parsed.toolRequest && !parsed.analyzeUrl) {
+      try {
+        const inner = parsed.message.trim()
+        if (inner.startsWith('{') && inner.endsWith('}')) {
+          const reparsed = JSON.parse(inner)
+          if (reparsed.message && (reparsed.toolRequest || reparsed.action || reparsed.options)) {
+            parsed = reparsed
+          }
+        }
+      } catch { /* not double-encoded */ }
+    }
 
     return NextResponse.json(parsed)
   } catch (err) {
