@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
-import { Sparkles, ArrowRight, Video, ImageIcon, Pencil, RotateCcw, Loader2, Zap, Star, Target, MessageCircle, Lightbulb, Users, Tag, ChevronDown, ChevronUp } from 'lucide-react'
+import { Sparkles, ArrowRight, Video, ImageIcon, Pencil, RotateCcw, Loader2, Zap, Star, Target, MessageCircle, Lightbulb, Users, Tag, ChevronDown, ChevronUp, Upload, FolderOpen, Copy, Download, ExternalLink, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OracleMessage, OracleOption, OracleContextCard, OracleTier } from './oracle-types'
 
@@ -82,9 +82,14 @@ interface OracleChatThreadProps {
   onPromptAction: (action: 'generate' | 'edit' | 'startOver', prompt?: string, format?: string) => void
   isSending: boolean
   isResearching?: boolean
+  onMediaUpload?: (messageId: string, mediaType: 'image' | 'video' | 'any') => void
+  onMediaLibrary?: (messageId: string, mediaType: 'image' | 'video' | 'any') => void
+  onCreditConfirm?: (messageId: string) => void
+  onCreditCancel?: (messageId: string) => void
+  onOpenInEditor?: (config: Record<string, unknown>) => void
 }
 
-export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching }: OracleChatThreadProps) {
+export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor }: OracleChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages
@@ -135,6 +140,22 @@ export function OracleChatThread({ messages, currentTier, onOptionClick, onPromp
                 </div>
               )}
 
+              {/* Media attachments on user messages */}
+              {msg.mediaAttachments?.map((media, i) => (
+                <div key={i} className="mb-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2 flex items-center gap-3 max-w-xs">
+                  <div className="w-10 h-10 rounded bg-zinc-700/50 flex items-center justify-center shrink-0">
+                    {media.type === 'video'
+                      ? <Video className="w-4 h-4 text-zinc-400" />
+                      : <ImageIcon className="w-4 h-4 text-zinc-400" />
+                    }
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm text-white truncate">{media.name}</div>
+                    <div className="text-xs text-zinc-500 capitalize">{media.type}</div>
+                  </div>
+                </div>
+              ))}
+
               {/* Message text */}
               {msg.content && (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
@@ -144,8 +165,35 @@ export function OracleChatThread({ messages, currentTier, onOptionClick, onPromp
               {msg.contextCards && msg.contextCards.length > 0 && (
                 <div className="mt-3 space-y-2">
                   {msg.contextCards.map((card, i) => (
-                    <ContextCardDisplay key={i} card={card} />
+                    <ContextCardDisplay
+                      key={i}
+                      card={card}
+                      messageId={msg.id}
+                      onCreditConfirm={onCreditConfirm}
+                      onCreditCancel={onCreditCancel}
+                      onOpenInEditor={onOpenInEditor}
+                    />
                   ))}
+                </div>
+              )}
+
+              {/* Media request buttons */}
+              {msg.mediaRequest && (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => onMediaUpload?.(msg.id, msg.mediaRequest!.type)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/30 text-sm font-medium transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload
+                  </button>
+                  <button
+                    onClick={() => onMediaLibrary?.(msg.id, msg.mediaRequest!.type)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-700/70 border border-zinc-600/50 text-sm font-medium transition-colors"
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    Media Library
+                  </button>
                 </div>
               )}
 
@@ -254,9 +302,226 @@ function ProductDetailSection({ icon: Icon, label, children }: { icon: React.Ele
   )
 }
 
-function ContextCardDisplay({ card }: { card: OracleContextCard }) {
+function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, onOpenInEditor }: {
+  card: OracleContextCard
+  messageId: string
+  onCreditConfirm?: (messageId: string) => void
+  onCreditCancel?: (messageId: string) => void
+  onOpenInEditor?: (config: Record<string, unknown>) => void
+}) {
   const [expanded, setExpanded] = useState(false)
 
+  // --- tool-loading ---
+  if (card.type === 'tool-loading') {
+    return (
+      <div className="mt-2 rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 flex items-center gap-3">
+        <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+        <div>
+          <div className="text-sm text-purple-300 font-medium capitalize">{String(card.data.tool || '').replace(/_/g, ' ')}...</div>
+          <div className="text-xs text-zinc-500">{String(card.data.reason || '')}</div>
+        </div>
+      </div>
+    )
+  }
+
+  // --- tool-error ---
+  if (card.type === 'tool-error') {
+    return (
+      <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-center gap-3">
+        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+        <div className="text-sm text-red-300">{String(card.data.error || 'Something went wrong')}</div>
+      </div>
+    )
+  }
+
+  // --- video-analysis ---
+  if (card.type === 'video-analysis') {
+    return (
+      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3 space-y-2">
+        <div className="text-xs font-medium text-zinc-400">Video Analysis</div>
+        {card.data.transcript ? (
+          <div className="text-xs text-zinc-500 italic line-clamp-3">&quot;{String(card.data.transcript)}&quot;</div>
+        ) : null}
+        {card.data.funnelScores ? (
+          <div className="flex gap-2 flex-wrap">
+            {(['hook', 'hold', 'click', 'convert'] as const).map(stage => {
+              const scores = card.data.funnelScores as Record<string, { score: number }>
+              const score = scores?.[stage]?.score
+              if (score == null) return null
+              const color = score >= 75 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : score >= 25 ? 'text-orange-400' : 'text-red-400'
+              return (
+                <span key={stage} className={`text-xs font-medium ${color} bg-zinc-700/50 px-2 py-0.5 rounded capitalize`}>
+                  {stage}: {score}
+                </span>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  // --- overlay-preview ---
+  if (card.type === 'overlay-preview') {
+    return (
+      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3 space-y-2">
+        <div className="text-xs font-medium text-zinc-400">Overlay Preview</div>
+        {card.data.hookText ? (
+          <div className="text-sm text-purple-300 font-medium">&quot;{String(card.data.hookText)}&quot;</div>
+        ) : null}
+        <div className="flex gap-3 text-xs text-zinc-500">
+          {card.data.captionCount != null ? <span>{String(card.data.captionCount)} captions</span> : null}
+          {card.data.ctaText ? <span>CTA: {String(card.data.ctaText)}</span> : null}
+          {card.data.style ? <span className="px-1.5 py-0.5 bg-zinc-700/50 rounded">{String(card.data.style)}</span> : null}
+        </div>
+        {onOpenInEditor && (
+          <button
+            onClick={() => onOpenInEditor(card.data.overlayConfig as Record<string, unknown>)}
+            className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 mt-1"
+          >
+            <ExternalLink className="w-3 h-3" /> Open in Editor
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // --- ad-copy ---
+  if (card.type === 'ad-copy') {
+    return (
+      <div className="mt-2 space-y-2">
+        {(card.data.ads as Array<{ headline: string; primaryText: string; angle: string }> || []).map((ad, i) => (
+          <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-white">{ad.headline}</div>
+                <div className="text-xs text-zinc-400 line-clamp-2 mt-1">{ad.primaryText}</div>
+              </div>
+              <span className="text-[10px] font-medium px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded shrink-0">{ad.angle}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // --- image-result ---
+  if (card.type === 'image-result') {
+    return (
+      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 overflow-hidden">
+        {card.data.imageBase64 ? (
+          <img
+            src={`data:${card.data.imageMimeType || 'image/png'};base64,${card.data.imageBase64}`}
+            alt="Generated"
+            className="w-full max-h-80 object-contain bg-zinc-900"
+          />
+        ) : null}
+        <div className="p-2 flex gap-2">
+          <button className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-700/50 rounded transition-colors">
+            <Download className="w-3 h-3" /> Save
+          </button>
+          <button className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-700/50 rounded transition-colors">
+            <ExternalLink className="w-3 h-3" /> Edit
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // --- video-result ---
+  if (card.type === 'video-result') {
+    return (
+      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
+        <div className="flex items-center gap-3">
+          {card.data.status === 'generating' ? (
+            <>
+              <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
+              <div>
+                <div className="text-sm text-white">Generating video...</div>
+                <div className="text-xs text-zinc-500">This usually takes 2-5 minutes</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              </div>
+              <div className="text-sm text-white">Video ready</div>
+            </>
+          )}
+        </div>
+        {card.data.creditCost ? (
+          <div className="text-xs text-amber-400 mt-2">{String(card.data.creditCost)} credits used</div>
+        ) : null}
+      </div>
+    )
+  }
+
+  // --- concepts ---
+  if (card.type === 'concepts') {
+    return (
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {(card.data.concepts as Array<{ title: string; angle: string; logline: string; visualWorld?: string }> || []).map((concept, i) => (
+          <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2.5">
+            <div className="text-sm font-medium text-white truncate">{concept.title}</div>
+            <div className="flex gap-1 mt-1">
+              <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded">{concept.angle}</span>
+              {concept.visualWorld && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-zinc-700/50 text-zinc-400 rounded">{concept.visualWorld}</span>
+              )}
+            </div>
+            <div className="text-xs text-zinc-500 line-clamp-2 mt-1">{concept.logline}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // --- media-attached ---
+  if (card.type === 'media-attached') {
+    return (
+      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2 flex items-center gap-3 max-w-xs">
+        <div className="w-10 h-10 rounded bg-zinc-700/50 flex items-center justify-center shrink-0">
+          {card.data.type === 'video'
+            ? <Video className="w-4 h-4 text-zinc-400" />
+            : <ImageIcon className="w-4 h-4 text-zinc-400" />
+          }
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm text-white truncate">{String(card.data.name || 'Media')}</div>
+          <div className="text-xs text-zinc-500 capitalize">{String(card.data.type || 'file')}</div>
+        </div>
+      </div>
+    )
+  }
+
+  // --- credit-confirm ---
+  if (card.type === 'credit-confirm') {
+    return (
+      <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-sm font-medium text-amber-300">Generate for {String(card.data.credits)} credits?</div>
+        </div>
+        <div className="text-xs text-zinc-400 mb-3">{String(card.data.reason || '')}</div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onCreditConfirm?.(messageId)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 transition-colors"
+          >
+            Confirm
+          </button>
+          <button
+            onClick={() => onCreditCancel?.(messageId)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white bg-zinc-700/50 hover:bg-zinc-700/70 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // --- product ---
   if (card.type === 'product') {
     // Data may be { product: {...}, productImages: [...] } or flat { name, price, ... }
     const raw = card.data as Record<string, unknown>
@@ -337,8 +602,8 @@ function ContextCardDisplay({ card }: { card: OracleContextCard }) {
                 {keyMessages.length > 0 && (
                   <ProductDetailSection icon={Tag} label="Key Messages">
                     <div className="flex flex-wrap gap-1.5">
-                      {keyMessages.map((msg, i) => (
-                        <span key={i} className="text-[11px] text-zinc-300 bg-white/[0.06] px-2 py-1 rounded-md italic">&ldquo;{msg}&rdquo;</span>
+                      {keyMessages.map((kmsg, i) => (
+                        <span key={i} className="text-[11px] text-zinc-300 bg-white/[0.06] px-2 py-1 rounded-md italic">&ldquo;{kmsg}&rdquo;</span>
                       ))}
                     </div>
                   </ProductDetailSection>
@@ -412,5 +677,6 @@ function ContextCardDisplay({ card }: { card: OracleContextCard }) {
       </div>
     )
   }
+
   return null
 }
