@@ -50,7 +50,7 @@ export function MediaLibraryModal({
     setLocalSelection(selectedItems)
   }, [selectedItems])
 
-  // Fetch media library
+  // Fetch media library from Supabase media_library (via Creative Studio media API)
   const fetchMedia = useCallback(async () => {
     if (!userId || !adAccountId) return
 
@@ -58,21 +58,47 @@ export function MediaLibraryModal({
     setError(null)
 
     try {
-      const params = new URLSearchParams({
-        userId,
-        adAccountId,
-        type: 'all'
-      })
+      const params = new URLSearchParams({ userId, adAccountId })
 
-      const response = await fetch(`/api/meta/media?${params}`)
+      const response = await fetch(`/api/creative-studio/media?${params}`)
       const data = await response.json()
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to fetch media')
       }
 
-      setImages(data.images || [])
-      setVideos(data.videos || [])
+      // Transform unified assets into separate images/videos arrays
+      const fetchedImages: MediaImage[] = []
+      const fetchedVideos: MediaVideo[] = []
+
+      for (const asset of (data.assets || [])) {
+        if (asset.mediaType === 'image') {
+          fetchedImages.push({
+            id: asset.mediaHash || asset.id,
+            hash: asset.mediaHash || '',
+            name: asset.name || 'Untitled',
+            url: asset.storageUrl || asset.imageUrl || '',
+            width: asset.width || 0,
+            height: asset.height || 0,
+            createdTime: asset.syncedAt || new Date().toISOString(),
+            bytes: asset.fileSize || 0,
+          })
+        } else if (asset.mediaType === 'video') {
+          fetchedVideos.push({
+            id: asset.mediaHash || asset.id,
+            title: asset.name || 'Untitled Video',
+            thumbnailUrl: asset.storageUrl || asset.thumbnailUrl || '',
+            source: asset.storageUrl || '',
+            length: 0,
+            width: asset.width || 0,
+            height: asset.height || 0,
+            createdTime: asset.syncedAt || new Date().toISOString(),
+          })
+        }
+      }
+
+      setImages(fetchedImages)
+      setVideos(fetchedVideos)
     } catch (err) {
       console.error('Media fetch error:', err)
       setError(err instanceof Error ? err.message : 'Failed to load media library')
