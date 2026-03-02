@@ -50,6 +50,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import type { VideoAnalysis, ScriptSuggestion } from '@/components/creative-studio/types'
 import type { VideoJob, OverlayConfig, VideoComposition } from '@/remotion/types'
 import type { ProductKnowledge, AdConcept } from '@/lib/video-prompt-templates'
+import type { OracleChatSession } from '@/components/creative-studio/oracle-types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -2323,7 +2324,7 @@ function ConceptCanvasDetailPanel({
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-type SelectedItemType = 'session' | 'analysis' | 'canvas' | null
+type SelectedItemType = 'session' | 'analysis' | 'canvas' | 'oracle' | null
 
 export default function AITasksPage() {
   const { user } = useAuth()
@@ -2364,6 +2365,13 @@ export default function AITasksPage() {
   const [selectedCanvas, setSelectedCanvas] = useState<ConceptCanvas | null>(null)
   const [isLoadingCanvas, setIsLoadingCanvas] = useState(false)
 
+  // Oracle chat sessions state
+  const [oracleSessions, setOracleSessions] = useState<OracleChatSession[]>([])
+  const [isLoadingOracle, setIsLoadingOracle] = useState(true)
+  const [oracleChatExpanded, setOracleChatExpanded] = useState(true)
+  const [selectedOracleSessionId, setSelectedOracleSessionId] = useState<string | null>(null)
+  const [selectedOracleSession, setSelectedOracleSession] = useState<OracleChatSession | null>(null)
+
   // Deep-link state: which concept to auto-expand when returning from video editor
   const [initialConceptIndex, setInitialConceptIndex] = useState<number | null>(null)
   const deepLinkHandledRef = useRef(false)
@@ -2378,7 +2386,7 @@ export default function AITasksPage() {
 
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{
-    type: 'session' | 'canvas' | 'analysis' | 'composition'
+    type: 'session' | 'canvas' | 'analysis' | 'composition' | 'oracle'
     id: string
     name: string
   } | null>(null)
@@ -2501,12 +2509,30 @@ export default function AITasksPage() {
     }
   }, [user?.id, currentAccountId])
 
+  // Load Oracle chat sessions
+  const loadOracleSessions = useCallback(async () => {
+    if (!user?.id || !currentAccountId) return
+    setIsLoadingOracle(true)
+    try {
+      const res = await fetch(
+        `/api/creative-studio/oracle-session?userId=${user.id}&adAccountId=${currentAccountId}`
+      )
+      const data = await res.json()
+      if (data.sessions) setOracleSessions(data.sessions)
+    } catch (err) {
+      console.error('Failed to load oracle sessions:', err)
+    } finally {
+      setIsLoadingOracle(false)
+    }
+  }, [user?.id, currentAccountId])
+
   useEffect(() => {
     loadAnalyses()
     loadSessions()
     loadVideoJobs(true) // skipPolling=true on initial load (fast DB-only read)
     loadCanvases()
-  }, [loadAnalyses, loadSessions, loadVideoJobs, loadCanvases])
+    loadOracleSessions()
+  }, [loadAnalyses, loadSessions, loadVideoJobs, loadCanvases, loadOracleSessions])
 
   // Immediately poll in-progress jobs after initial fast load
   // This catches jobs that completed while the user was on another page
@@ -2564,6 +2590,8 @@ export default function AITasksPage() {
     setSelectedAnalysisId(null)
     setSelectedCanvasId(null)
     setSelectedCanvas(null)
+    setSelectedOracleSessionId(null)
+    setSelectedOracleSession(null)
     setSelectedType('session')
     if (window.innerWidth < 1024) {
       setMobileExpandedItem({ type: 'session', id: sessionId })
@@ -2589,6 +2617,8 @@ export default function AITasksPage() {
     setSelectedSessionId(null)
     setSelectedCanvasId(null)
     setSelectedCanvas(null)
+    setSelectedOracleSessionId(null)
+    setSelectedOracleSession(null)
     setSelectedType('analysis')
     if (window.innerWidth < 1024) {
       setMobileExpandedItem({ type: 'analysis', id: analysisId })
@@ -2627,6 +2657,8 @@ export default function AITasksPage() {
     setSelectedCanvasId(canvasId)
     setSelectedSessionId(null)
     setSelectedAnalysisId(null)
+    setSelectedOracleSessionId(null)
+    setSelectedOracleSession(null)
     setSelectedType('canvas')
     if (window.innerWidth < 1024) {
       setMobileExpandedItem({ type: 'canvas', id: canvasId })
@@ -2644,6 +2676,32 @@ export default function AITasksPage() {
       console.error('[AI Tasks] Failed to load canvas detail:', err)
     } finally {
       setIsLoadingCanvas(false)
+    }
+  }, [user?.id])
+
+  // Select an Oracle chat session
+  const handleSelectOracleSession = useCallback(async (sessionId: string) => {
+    hasUserSelectedRef.current = true
+    setSelectedOracleSessionId(sessionId)
+    setSelectedSessionId(null)
+    setSelectedCanvasId(null)
+    setSelectedCanvas(null)
+    setSelectedAnalysisId(null)
+    setSelectedType('oracle')
+
+    // On mobile, set expanded item
+    if (window.innerWidth < 1024) {
+      setMobileExpandedItem({ type: 'oracle', id: sessionId })
+    }
+
+    try {
+      const res = await fetch(
+        `/api/creative-studio/oracle-session?userId=${user?.id}&sessionId=${sessionId}`
+      )
+      const data = await res.json()
+      if (data.session) setSelectedOracleSession(data.session)
+    } catch (err) {
+      console.error('Failed to load oracle session detail:', err)
     }
   }, [user?.id])
 
@@ -2670,6 +2728,9 @@ export default function AITasksPage() {
           break
         case 'composition':
           url = `/api/creative-studio/video-composition?compositionId=${deleteConfirm.id}&userId=${user.id}`
+          break
+        case 'oracle':
+          url = `/api/creative-studio/oracle-session?userId=${user.id}&sessionId=${deleteConfirm.id}`
           break
       }
       const res = await fetch(url, { method: 'DELETE' })
@@ -2703,6 +2764,14 @@ export default function AITasksPage() {
           case 'composition':
             setLastDeletedCompositionId(deleteConfirm.id)
             break
+          case 'oracle':
+            setOracleSessions(prev => prev.filter(s => s.id !== deleteConfirm.id))
+            if (selectedOracleSessionId === deleteConfirm.id) {
+              setSelectedOracleSessionId(null)
+              setSelectedOracleSession(null)
+              setSelectedType(null)
+            }
+            break
         }
       }
     } catch (err) {
@@ -2711,7 +2780,7 @@ export default function AITasksPage() {
       setIsDeleting(false)
       setDeleteConfirm(null)
     }
-  }, [deleteConfirm, user?.id, selectedSessionId, selectedCanvasId, selectedAnalysisId])
+  }, [deleteConfirm, user?.id, selectedSessionId, selectedCanvasId, selectedAnalysisId, selectedOracleSessionId])
 
   // Deep-link: auto-select canvas + concept when returning from video editor
   useEffect(() => {
@@ -2761,8 +2830,8 @@ export default function AITasksPage() {
     )
   }
 
-  const isLoading = isLoadingAnalyses || isLoadingSessions || isLoadingVideoJobs || isLoadingCanvases
-  const isEmpty = sessions.length === 0 && analyses.length === 0 && canvases.length === 0
+  const isLoading = isLoadingAnalyses || isLoadingSessions || isLoadingVideoJobs || isLoadingCanvases || isLoadingOracle
+  const isEmpty = sessions.length === 0 && analyses.length === 0 && canvases.length === 0 && oracleSessions.length === 0
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
@@ -2922,7 +2991,7 @@ export default function AITasksPage() {
               </div>
 
               {/* Analysis Section */}
-              <div>
+              <div className="border-b border-border">
                 <button
                   onClick={() => setVideoExpanded(!videoExpanded)}
                   className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/30 transition-colors"
@@ -2975,6 +3044,83 @@ export default function AITasksPage() {
                   </div>
                 )}
               </div>
+
+              {/* Oracle Chats Section */}
+              <div>
+                <button
+                  onClick={() => setOracleChatExpanded(!oracleChatExpanded)}
+                  className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/30 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-purple-400" />
+                    <span className="text-sm font-medium text-white">Chats</span>
+                    {oracleSessions.length > 0 && (
+                      <span className="text-xs text-zinc-500">({oracleSessions.length})</span>
+                    )}
+                  </div>
+                  {oracleChatExpanded ? (
+                    <ChevronUp className="w-4 h-4 text-zinc-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-zinc-500" />
+                  )}
+                </button>
+
+                {oracleChatExpanded && (
+                  <div className="pb-2">
+                    {isLoadingOracle && oracleSessions.length === 0 ? (
+                      <div className="px-2 space-y-1">
+                        {[1, 2].map((i) => (
+                          <div key={i} className="h-14 bg-zinc-800/50 rounded-lg animate-pulse" />
+                        ))}
+                      </div>
+                    ) : oracleSessions.length === 0 ? (
+                      <div className="px-3 py-4 text-center">
+                        <p className="text-xs text-zinc-500">No chats yet</p>
+                        <p className="text-xs text-zinc-600 mt-1">Start a conversation in Ad Studio</p>
+                      </div>
+                    ) : (
+                      <div className="px-2 space-y-1">
+                        {oracleSessions.map((session) => (
+                          <button
+                            key={session.id}
+                            onClick={() => handleSelectOracleSession(session.id)}
+                            className={cn(
+                              'w-full flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors group',
+                              selectedType === 'oracle' && session.id === selectedOracleSessionId
+                                ? 'bg-purple-500/15 ring-1 ring-purple-500/50'
+                                : 'hover:bg-zinc-800/50'
+                            )}
+                          >
+                            <MessageSquare className="w-4 h-4 text-purple-400 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm text-white truncate">{session.title || 'Chat'}</div>
+                              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                                <span className={cn(
+                                  'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                  session.highest_tier === 'opus'
+                                    ? 'bg-fuchsia-500/20 text-fuchsia-300'
+                                    : 'bg-purple-500/20 text-purple-300'
+                                )}>
+                                  {session.highest_tier === 'opus' ? 'Creative' : 'Guide'}
+                                </span>
+                                {Array.isArray(session.generated_assets) && session.generated_assets.length > 0 && (
+                                  <span>{session.generated_assets.length} assets</span>
+                                )}
+                              </div>
+                            </div>
+                            <div
+                              onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ type: 'oracle', id: session.id, name: session.title || 'Chat' }) }}
+                              className="flex-shrink-0 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2999,6 +3145,80 @@ export default function AITasksPage() {
             ) : selectedType === 'analysis' && selectedAnalysis ? (
               <div className="max-w-4xl mx-auto p-6">
                 <AnalysisDetailPanel item={selectedAnalysis} />
+              </div>
+            ) : selectedType === 'oracle' && selectedOracleSession ? (
+              <div className="max-w-4xl mx-auto p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-semibold text-white">{selectedOracleSession.title || 'Chat'}</h2>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={cn(
+                        'px-2 py-0.5 rounded text-xs font-medium',
+                        selectedOracleSession.highest_tier === 'opus'
+                          ? 'bg-fuchsia-500/20 text-fuchsia-300'
+                          : 'bg-purple-500/20 text-purple-300'
+                      )}>
+                        {selectedOracleSession.highest_tier === 'opus' ? 'Creative Director' : 'Guide'}
+                      </span>
+                      <span className="text-xs text-zinc-500">
+                        {new Date(selectedOracleSession.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    href="/dashboard/creative-studio/ad-studio"
+                    className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/30 text-sm font-medium transition-colors"
+                  >
+                    New Chat
+                  </a>
+                </div>
+
+                {/* Conversation replay */}
+                <div className="space-y-3 mb-8">
+                  {(Array.isArray(selectedOracleSession.messages) ? selectedOracleSession.messages : []).map((msg: any, i: number) => (
+                    <div
+                      key={msg.id || i}
+                      className={cn(
+                        'rounded-lg p-3',
+                        msg.role === 'user'
+                          ? 'bg-blue-500/10 border border-blue-500/20 ml-8'
+                          : 'bg-zinc-800/50 border border-zinc-700/50 mr-8'
+                      )}
+                    >
+                      <div className="text-xs text-zinc-500 mb-1">
+                        {msg.role === 'user' ? 'You' : msg.tier === 'opus' ? 'KS Creative' : 'KS'}
+                      </div>
+                      {msg.content && (
+                        <div className="text-sm text-white whitespace-pre-wrap">{msg.content}</div>
+                      )}
+                      {msg.contextCards?.map((card: any, ci: number) => (
+                        <div key={ci} className="mt-2 text-xs text-zinc-400 bg-zinc-800/50 rounded p-2">
+                          <span className="text-zinc-500 capitalize">{String(card.type).replace(/-/g, ' ')}</span>
+                          {card.type === 'product' && card.data?.product && (
+                            <div className="mt-1 text-white">{(card.data.product as any)?.name || ''}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Generated assets gallery */}
+                {Array.isArray(selectedOracleSession.generated_assets) && selectedOracleSession.generated_assets.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-zinc-400 mb-3">Generated Assets</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedOracleSession.generated_assets.map((asset: any, i: number) => (
+                        <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
+                          <div className="text-xs text-zinc-500 capitalize">{asset.type}</div>
+                          {asset.creditCost > 0 && (
+                            <div className="text-xs text-amber-400 mt-1">{asset.creditCost} credits</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center">
@@ -3049,6 +3269,63 @@ export default function AITasksPage() {
                     onClose={() => setMobileExpandedItem(null)}
                   />
                 )}
+                {mobileExpandedItem.type === 'oracle' && selectedOracleSession && selectedOracleSession.id === mobileExpandedItem.id && (
+                  <div>
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h2 className="text-xl font-semibold text-white">{selectedOracleSession.title || 'Chat'}</h2>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={cn(
+                            'px-2 py-0.5 rounded text-xs font-medium',
+                            selectedOracleSession.highest_tier === 'opus'
+                              ? 'bg-fuchsia-500/20 text-fuchsia-300'
+                              : 'bg-purple-500/20 text-purple-300'
+                          )}>
+                            {selectedOracleSession.highest_tier === 'opus' ? 'Creative Director' : 'Guide'}
+                          </span>
+                          <span className="text-xs text-zinc-500">
+                            {new Date(selectedOracleSession.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-3 mb-8">
+                      {(Array.isArray(selectedOracleSession.messages) ? selectedOracleSession.messages : []).map((msg: any, i: number) => (
+                        <div
+                          key={msg.id || i}
+                          className={cn(
+                            'rounded-lg p-3',
+                            msg.role === 'user'
+                              ? 'bg-blue-500/10 border border-blue-500/20 ml-8'
+                              : 'bg-zinc-800/50 border border-zinc-700/50 mr-8'
+                          )}
+                        >
+                          <div className="text-xs text-zinc-500 mb-1">
+                            {msg.role === 'user' ? 'You' : msg.tier === 'opus' ? 'KS Creative' : 'KS'}
+                          </div>
+                          {msg.content && (
+                            <div className="text-sm text-white whitespace-pre-wrap">{msg.content}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {Array.isArray(selectedOracleSession.generated_assets) && selectedOracleSession.generated_assets.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-zinc-400 mb-3">Generated Assets</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          {selectedOracleSession.generated_assets.map((asset: any, i: number) => (
+                            <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
+                              <div className="text-xs text-zinc-500 capitalize">{asset.type}</div>
+                              {asset.creditCost > 0 && (
+                                <div className="text-xs text-amber-400 mt-1">{asset.creditCost} credits</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -3060,7 +3337,7 @@ export default function AITasksPage() {
         isOpen={!!deleteConfirm}
         onClose={() => setDeleteConfirm(null)}
         onConfirm={handleDeleteConfirm}
-        title={`Delete ${deleteConfirm?.type === 'session' ? 'session' : deleteConfirm?.type === 'canvas' ? 'canvas' : deleteConfirm?.type === 'analysis' ? 'analysis' : 'composition'}?`}
+        title={`Delete ${deleteConfirm?.type === 'session' ? 'session' : deleteConfirm?.type === 'canvas' ? 'canvas' : deleteConfirm?.type === 'analysis' ? 'analysis' : deleteConfirm?.type === 'oracle' ? 'chat' : 'composition'}?`}
         message={
           deleteConfirm?.type === 'session'
             ? 'Generated ads and images will be permanently removed.'
@@ -3068,6 +3345,8 @@ export default function AITasksPage() {
             ? 'All generated videos in this canvas will be permanently removed.'
             : deleteConfirm?.type === 'analysis'
             ? 'The analysis results will be permanently removed.'
+            : deleteConfirm?.type === 'oracle'
+            ? 'This chat conversation will be permanently removed.'
             : 'This multi-clip timeline will be permanently removed.'
         }
         confirmText="Delete"
