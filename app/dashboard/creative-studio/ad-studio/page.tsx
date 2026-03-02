@@ -1800,6 +1800,18 @@ export default function AdStudioPage() {
     return { id: `om-${oracleMsgIdRef.current}`, role, content, ...extra }
   }, [])
 
+  // Strip base64 image data from product info before storing in Oracle context.
+  // The analyze-product-url response includes full base64 images (can be 10+ MB)
+  // which would exceed API body limits when sent back to oracle-chat/oracle-creative.
+  const stripBase64ForContext = useCallback((data: Record<string, unknown>) => {
+    const { imageBase64: _ib, imageMimeType: _im, productImages: _pi, ...rest } = data as Record<string, unknown> & { product?: Record<string, unknown> }
+    if (rest.product && typeof rest.product === 'object') {
+      const { imageBase64: _pib, imageMimeType: _pim, ...cleanProduct } = rest.product as Record<string, unknown>
+      return { ...rest, product: cleanProduct }
+    }
+    return rest
+  }, [])
+
   // Flag to auto-trigger product analysis after routing from Oracle conversation
   const oracleAutoAnalyzeRef = useRef(false)
 
@@ -1946,7 +1958,7 @@ export default function AdStudioPage() {
               })
               if (urlRes.ok) {
                 const urlData = await urlRes.json()
-                setOracleContext(prev => ({ ...prev, productInfo: urlData }))
+                setOracleContext(prev => ({ ...prev, productInfo: stripBase64ForContext(urlData) }))
                 if (!chatData.contextCards) chatData.contextCards = []
                 chatData.contextCards.push({ type: 'product', data: urlData })
               }
@@ -2053,7 +2065,7 @@ export default function AdStudioPage() {
             })
             if (urlRes.ok) {
               const urlData = await urlRes.json()
-              setOracleContext(prev => ({ ...prev, productInfo: urlData }))
+              setOracleContext(prev => ({ ...prev, productInfo: stripBase64ForContext(urlData) }))
               if (!chatData.contextCards) chatData.contextCards = []
               chatData.contextCards.push({ type: 'product', data: urlData })
             }
@@ -2107,7 +2119,7 @@ export default function AdStudioPage() {
                   })
                   if (urlRes.ok) {
                     const urlData = await urlRes.json()
-                    const escalationContext = { ...oracleContext, priorConversation: allMessages, productInfo: urlData }
+                    const escalationContext = { ...oracleContext, priorConversation: allMessages, productInfo: stripBase64ForContext(urlData) }
                     setOracleContext(escalationContext)
 
                     // Show product card
@@ -2183,7 +2195,7 @@ export default function AdStudioPage() {
             })
             if (urlRes.ok) {
               const urlData = await urlRes.json()
-              const updatedContext = { ...oracleContext, productInfo: urlData }
+              const updatedContext = { ...oracleContext, productInfo: stripBase64ForContext(urlData) }
               setOracleContext(updatedContext)
 
               // Show product card immediately
