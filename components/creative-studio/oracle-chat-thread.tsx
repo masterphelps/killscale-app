@@ -19,6 +19,7 @@ const RESEARCH_MESSAGES = [
 ]
 
 const THINKING_MESSAGES = {
+  haiku: ['KS is thinking...'],
   sonnet: ['KS is thinking...'],
   opus: [
     'KS Creative is thinking...',
@@ -41,6 +42,15 @@ function useRotatingStatus(isActive: boolean, messages: string[], intervalMs = 2
 
 // Tier color config
 const TIER_COLORS = {
+  haiku: {
+    label: 'text-purple-400',
+    icon: 'text-purple-400',
+    bubble: 'border-white/[0.06]',
+    optionBg: 'bg-purple-500/15 border-purple-500/25',
+    optionText: 'text-purple-300',
+    optionHover: 'hover:bg-purple-500/25 hover:text-purple-200',
+    tag: 'KS',
+  },
   sonnet: {
     label: 'text-purple-400',
     icon: 'text-purple-400',
