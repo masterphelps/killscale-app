@@ -21,14 +21,14 @@ export const CONCEPT_STYLE_GUIDES: Record<
   },
   product: {
     description:
-      'Premium product hero shots with dramatic studio lighting. Single product on a surface, slow orbits, push-ins to detail, controlled light reveals. The product IS the star \u2014 no people, no distractions.',
-    examples: `Examples of GOOD product visual worlds:
-   - Luxury watch on a dark surface, single dramatic spotlight from upper-right, camera slowly orbiting 180 degrees (premium/craft)
-   - Skincare bottle emerging from darkness as a light beam sweeps across it, revealing the label and texture (discovery/reveal)
-   - Perfume bottle on a reflective black surface, golden highlights catching the glass edges, slow dolly-in (desire/luxury)
-   - Product sitting in complete darkness, light slowly reveals it from left to right, macro push-in to surface texture (precision/quality)
-   - Coffee bag on a wooden surface, steam rising from a cup beside it, camera slowly pushing in (ritual/warmth)`,
-    tone: 'Dark, premium, high-contrast. Studio lighting with deliberate shadows. The product should look like it belongs in a luxury advertisement. One subject, one surface, maximum visual impact.',
+      'The product in its natural habitat \u2014 being used by a real person in a real environment. Morning routines, workspaces, kitchens, gyms, commutes. The product is the star but it\u2019s shown IN USE, not on a pedestal. Think Apple\u2019s "Shot on iPhone" energy \u2014 real life, beautifully captured.',
+    examples: `Examples of GOOD product-in-use visual worlds:
+   - Person running a beard brush through their beard in a warm bathroom mirror, morning light from a window, steam from a shower in the background (routine/ease)
+   - Hands squeezing skincare serum onto fingertips at a vanity, applying to face, satisfied expression in the mirror (ritual/self-care)
+   - Someone sliding wireless earbuds in while walking out the door, camera follows them into the street, city morning energy (seamless/lifestyle)
+   - Close-up of someone pouring from a premium coffee bag into a pour-over, steam rising, kitchen counter, morning light (ritual/warmth)
+   - Person pulling a cordless tool from a travel bag in a hotel room, using it confidently, checking the result in a mirror (convenience/confidence)`,
+    tone: 'Warm, natural, aspirational but attainable. Real environments with beautiful natural or practical lighting. The product looks like it belongs in this person\u2019s life \u2014 not a prop, not a studio hero shot. Cinematic quality but documentary feel.',
   },
   macro: {
     description:

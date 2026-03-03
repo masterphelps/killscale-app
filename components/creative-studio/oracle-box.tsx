@@ -3,24 +3,50 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { ArrowUp, Paperclip, Loader2, X, Upload, Library } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { OracleInputMode } from './oracle-types'
+
+const KS_ROTATING_PROMPTS = [
+  'I want to make an ad for a product...',
+  'Let\'s make a new video ad...',
+  'I need new ad copy for a video in my library...',
+  'I have a rough idea for an ad and need to brainstorm...',
+  'Help me come up with creative angles for my product...',
+  'I want to clone a competitor\'s ad style...',
+  'Turn this product page into a scroll-stopping ad...',
+  'I need a UGC-style testimonial video...',
+  'Generate some fresh ad concepts for my best seller...',
+  'Help me refresh a fatigued ad with a new angle...',
+]
 
 // Auto-suggest definitions — keyword patterns -> suggestion label + target workflow
 const SUGGESTIONS = [
-  { keywords: ['clone', 'copy', 'like', 'similar', 'remix', 'competitor'], label: 'Clone a competitor\'s ad', workflow: 'clone' as const },
-  { keywords: ['ugc', 'testimonial', 'talking head', 'influencer', 'creator', 'review'], label: 'Create a UGC video ad', workflow: 'ugc-video' as const },
-  { keywords: ['inspir', 'browse', 'example', 'gallery', 'idea'], label: 'Browse inspiration gallery', workflow: 'inspiration' as const },
-  { keywords: ['animate', 'motion', 'bring to life'], label: 'Animate an image into video', workflow: 'image-to-video' as const },
+  // Ad creation (KS mode)
+  { keywords: ['product', 'ad for', 'make an ad', 'create ad', 'new ad'], label: 'Product → Ad', workflow: 'create' as const, modes: ['ks'] as OracleInputMode[] },
+  { keywords: ['video ad', 'product video', 'video from'], label: 'Product → Video Ad', workflow: 'url-to-video' as const, modes: ['ks'] as OracleInputMode[] },
+  { keywords: ['clone', 'copy', 'like', 'similar', 'remix', 'competitor'], label: 'Clone a competitor\'s ad', workflow: 'clone' as const, modes: ['ks'] as OracleInputMode[] },
+  { keywords: ['inspir', 'browse', 'example', 'gallery', 'idea'], label: 'Browse inspiration gallery', workflow: 'inspiration' as const, modes: ['ks'] as OracleInputMode[] },
+  { keywords: ['ugc', 'testimonial', 'talking head', 'influencer', 'creator', 'review'], label: 'UGC Video Ad', workflow: 'ugc-video' as const, modes: ['ks'] as OracleInputMode[] },
+  { keywords: ['animate', 'motion', 'bring to life', 'image to video'], label: 'Animate image → video', workflow: 'image-to-video' as const, modes: ['ks'] as OracleInputMode[] },
+  // Image mode
+  { keywords: ['product shot', 'product photo', 'packshot'], label: 'Product Shot', workflow: 'open-prompt-image' as const, modes: ['image'] as OracleInputMode[] },
+  { keywords: ['lifestyle', 'scene', 'setting'], label: 'Lifestyle Scene', workflow: 'open-prompt-image' as const, modes: ['image'] as OracleInputMode[] },
+  // Video mode
+  { keywords: ['demo', 'showcase', 'product demo'], label: 'Product Demo', workflow: 'text-to-video' as const, modes: ['video'] as OracleInputMode[] },
+  { keywords: ['cinematic', 'epic', 'dramatic'], label: 'Cinematic Video', workflow: 'text-to-video' as const, modes: ['video'] as OracleInputMode[] },
 ]
 
+// Keep deprecated type exports for backwards compat (re-exported from index.ts)
 export type OracleOutputType = 'ad' | 'content'
 export type OracleFormat = 'image' | 'video'
 export type OracleImage = { base64: string; mimeType: string; preview: string }
 
 export interface OracleSubmission {
   text: string
+  mode: OracleInputMode
+  images: OracleImage[]
+  // Deprecated fields kept for transition — derived from mode
   outputType: OracleOutputType
   format: OracleFormat
-  images: OracleImage[]
 }
 
 const MAX_IMAGES = 2
@@ -32,16 +58,34 @@ interface OracleBoxProps {
   isLoading: boolean
   placeholder?: string
   initialImage?: OracleImage | null
-  initialOutputType?: OracleOutputType
-  initialFormat?: OracleFormat
+  initialMode?: OracleInputMode
+  onModeChange?: (mode: OracleInputMode) => void
   openAttachMenu?: boolean
   onAttachMenuOpened?: () => void
+  // Deprecated — kept for session restoration compat
+  initialOutputType?: OracleOutputType
+  initialFormat?: OracleFormat
 }
 
-export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder, initialImage, initialOutputType, initialFormat, openAttachMenu: openAttachMenuProp, onAttachMenuOpened }: OracleBoxProps) {
+function modeToLegacy(mode: OracleInputMode): { outputType: OracleOutputType; format: OracleFormat } {
+  switch (mode) {
+    case 'image': return { outputType: 'content', format: 'image' }
+    case 'video': return { outputType: 'content', format: 'video' }
+    default: return { outputType: 'ad', format: 'image' }
+  }
+}
+
+function legacyToMode(outputType?: OracleOutputType, format?: OracleFormat): OracleInputMode | undefined {
+  if (!outputType && !format) return undefined
+  if (outputType === 'content' && format === 'video') return 'video'
+  if (outputType === 'content') return 'image'
+  return 'ks'
+}
+
+export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder, initialImage, initialMode, onModeChange, initialOutputType, initialFormat, openAttachMenu: openAttachMenuProp, onAttachMenuOpened }: OracleBoxProps) {
+  const resolvedInitialMode = initialMode || legacyToMode(initialOutputType, initialFormat) || 'ks'
   const [text, setText] = useState('')
-  const [outputType, setOutputType] = useState<OracleOutputType>(initialOutputType || 'ad')
-  const [format, setFormat] = useState<OracleFormat>(initialFormat || 'image')
+  const [mode, setMode] = useState<OracleInputMode>(resolvedInitialMode)
   const [images, setImages] = useState<OracleImage[]>(initialImage ? [initialImage] : [])
   const [activeSuggestions, setActiveSuggestions] = useState<typeof SUGGESTIONS>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -49,18 +93,17 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Sync state when initial props change (e.g. returning from open-prompt with image)
+  // Sync state when initial props change
   useEffect(() => {
     if (initialImage) setImages(prev => {
-      // Don't duplicate if already there
       if (prev.some(p => p.preview === initialImage.preview)) return prev
       return prev.length >= MAX_IMAGES ? [prev[0], initialImage] : [...prev, initialImage]
     })
-    if (initialOutputType) setOutputType(initialOutputType)
-    if (initialFormat) setFormat(initialFormat)
-  }, [initialImage, initialOutputType, initialFormat])
+    const newMode = initialMode || legacyToMode(initialOutputType, initialFormat)
+    if (newMode) setMode(newMode)
+  }, [initialImage, initialMode, initialOutputType, initialFormat])
 
-  // Open attach menu when triggered externally (e.g. "Image → Ad" chip)
+  // Open attach menu when triggered externally
   useEffect(() => {
     if (openAttachMenuProp) {
       setShowAttachMenu(true)
@@ -68,16 +111,18 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
     }
   }, [openAttachMenuProp, onAttachMenuOpened])
 
-  // Auto-suggest based on keywords
+  // Auto-suggest based on keywords, filtered by mode
   useEffect(() => {
     if (!text.trim()) {
       setActiveSuggestions([])
       return
     }
     const lower = text.toLowerCase()
-    const matches = SUGGESTIONS.filter(s => s.keywords.some(k => lower.includes(k)))
+    const matches = SUGGESTIONS.filter(s =>
+      s.modes.includes(mode) && s.keywords.some(k => lower.includes(k))
+    )
     setActiveSuggestions(matches)
-  }, [text])
+  }, [text, mode])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -87,12 +132,18 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
     el.style.height = Math.min(el.scrollHeight, 160) + 'px'
   }, [text])
 
+  const handleModeChange = useCallback((newMode: OracleInputMode) => {
+    setMode(newMode)
+    onModeChange?.(newMode)
+  }, [onModeChange])
+
   const handleSubmit = useCallback(() => {
     if ((!text.trim() && images.length === 0) || isLoading) return
-    onSubmit({ text: text.trim(), outputType, format, images })
+    const legacy = modeToLegacy(mode)
+    onSubmit({ text: text.trim(), mode, images, outputType: legacy.outputType, format: legacy.format })
     setText('')
     setImages([])
-  }, [text, outputType, format, images, isLoading, onSubmit])
+  }, [text, mode, images, isLoading, onSubmit])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -128,7 +179,27 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
     setActiveSuggestions([])
   }
 
-  const defaultPlaceholder = placeholder || 'Describe what you want to create, paste a product URL, or drop an image...'
+  // Rotating placeholder for KS mode
+  const [rotatingIndex, setRotatingIndex] = useState(0)
+  const [rotatingVisible, setRotatingVisible] = useState(true)
+  const useRotating = mode === 'ks' && !text && !placeholder && images.length === 0
+  useEffect(() => {
+    if (!useRotating) return
+    const cycle = setInterval(() => {
+      setRotatingVisible(false)
+      setTimeout(() => {
+        setRotatingIndex(prev => (prev + 1) % KS_ROTATING_PROMPTS.length)
+        setRotatingVisible(true)
+      }, 200)
+    }, 2000)
+    return () => clearInterval(cycle)
+  }, [useRotating])
+
+  const defaultPlaceholder = placeholder || (
+    mode === 'image' ? 'Describe the image you want to create...' :
+    mode === 'video' ? 'Describe the video scene you want...' :
+    ''
+  )
 
   return (
     <div className="relative w-full">
@@ -166,19 +237,29 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
           </div>
         )}
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          data-oracle-input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={defaultPlaceholder}
-          rows={2}
-          className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 px-4 pt-4 pb-2 resize-none focus:outline-none"
-        />
+        {/* Textarea with rotating placeholder */}
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            data-oracle-input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={useRotating ? '' : defaultPlaceholder}
+            rows={2}
+            className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 px-4 pt-4 pb-2 resize-none focus:outline-none"
+          />
+          {useRotating && (
+            <div
+              className="absolute left-4 top-4 text-sm text-zinc-400 pointer-events-none transition-opacity duration-200"
+              style={{ opacity: rotatingVisible ? 1 : 0 }}
+            >
+              {KS_ROTATING_PROMPTS[rotatingIndex]}
+            </div>
+          )}
+        </div>
 
-        {/* Bottom row: attach + toggles + submit */}
+        {/* Bottom row: attach + mode selector + submit */}
         <div className="flex items-center justify-between px-3 pb-3">
           {/* Left: attach image */}
           <div className="relative flex items-center gap-2">
@@ -227,46 +308,33 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
             )}
           </div>
 
-          {/* Right: toggles + submit */}
+          {/* Right: three-state mode selector + submit */}
           <div className="flex items-center gap-2">
-            {/* Output type toggle */}
+            {/* Mode selector: KS / Image / Video */}
             <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
               <button
-                onClick={() => setOutputType('ad')}
+                onClick={() => handleModeChange('ks')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  outputType === 'ad' ? 'bg-purple-500/25 text-purple-300' : 'text-zinc-400 hover:text-zinc-200'
+                  mode === 'ks' ? 'bg-purple-500/25 text-purple-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
-                Ad
+                <span className="mr-1">&#10022;</span>KS
               </button>
               <button
-                onClick={() => setOutputType('content')}
+                onClick={() => handleModeChange('image')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  outputType === 'content' ? 'bg-cyan-500/25 text-cyan-300' : 'text-zinc-400 hover:text-zinc-200'
-                )}
-              >
-                Content
-              </button>
-            </div>
-
-            {/* Format toggle */}
-            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
-              <button
-                onClick={() => setFormat('image')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  format === 'image' ? 'bg-blue-500/25 text-blue-300' : 'text-zinc-400 hover:text-zinc-200'
+                  mode === 'image' ? 'bg-blue-500/25 text-blue-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
                 Image
               </button>
               <button
-                onClick={() => setFormat('video')}
+                onClick={() => handleModeChange('video')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  format === 'video' ? 'bg-emerald-500/25 text-emerald-300' : 'text-zinc-400 hover:text-zinc-200'
+                  mode === 'video' ? 'bg-emerald-500/25 text-emerald-300' : 'text-zinc-400 hover:text-zinc-200'
                 )}
               >
                 Video
@@ -302,7 +370,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
         <div className="absolute left-0 right-0 top-full mt-2 bg-bg-card border border-zinc-700/50 rounded-xl overflow-hidden shadow-xl z-20">
           {activeSuggestions.map((s) => (
             <button
-              key={s.workflow}
+              key={s.workflow + s.label}
               onClick={() => handleSuggestionClick(s)}
               className="w-full px-4 py-3 text-left text-sm text-zinc-300 hover:bg-white/[0.05] transition-colors flex items-center gap-3"
             >

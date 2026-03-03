@@ -38,11 +38,11 @@ const CANVAS_H = 1920
 // Position presets (1080×1920 canvas)
 // Layout: hook at 30%, cta at 50%, captions at 70% (0%=top, 100%=bottom)
 const POSITION_MAP: Record<string, { left: number; top: number; width: number; height: number }> = {
-  top:    { left: 0, top: 80,   width: CANVAS_W, height: 300 },
-  hook:   { left: 0, top: 426,  width: CANVAS_W, height: 300 },  // 30% of 1920 ≈ 576, centered = 576-150=426
-  center: { left: 0, top: 810,  width: CANVAS_W, height: 300 },
-  cta:    { left: 200, top: 810, width: 680, height: 120 },       // 50% of 1920 = 960, centered = 960-60=900 → use center band
-  bottom: { left: 0, top: 1194, width: CANVAS_W, height: 300 },   // 70% of 1920 ≈ 1344, centered = 1344-150=1194
+  top:    { left: 0, top: 426,  width: CANVAS_W, height: 300 },   // 30% from top — hook/headline position
+  hook:   { left: 0, top: 426,  width: CANVAS_W, height: 300 },   // alias for 'top'
+  center: { left: 0, top: 810,  width: CANVAS_W, height: 300 },   // 50% — CTA band
+  cta:    { left: 200, top: 810, width: 680, height: 120 },        // 50% centered, 680px wide button
+  bottom: { left: 0, top: 1194, width: CANVAS_W, height: 300 },   // 70% — captions area
 }
 
 const GRAPHIC_POSITION_MAP: Record<string, { left: number; top: number }> = {

@@ -55,6 +55,27 @@ function truncate(str: string | undefined | null, max: number): string {
   return str.length > max ? str.slice(0, max) + '...' : str
 }
 
+/** Convert a URL to base64 via download-image endpoint, or return as-is if already base64 */
+async function resolveToBase64(value: string): Promise<{ base64: string; mimeType: string } | null> {
+  // Already base64 (no protocol prefix)
+  if (!value.startsWith('http://') && !value.startsWith('https://') && !value.startsWith('blob:')) {
+    return { base64: value, mimeType: 'image/png' }
+  }
+  // URL — download and convert
+  try {
+    const res = await fetch('/api/creative-studio/download-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: value }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      return { base64: data.base64, mimeType: data.mimeType || 'image/png' }
+    }
+  } catch { /* download failed */ }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Individual executors
 // ---------------------------------------------------------------------------
@@ -356,13 +377,17 @@ async function executeGenerateVideo(
   // Collect product images from context (max 3)
   const productImages = context.productImages?.slice(0, 3) || []
 
+  // Append image-matching language when product images are present
+  const imageMatchText = ' The product matches the reference image precisely — same colors, shape, branding, and proportions.'
+  const enrichedPrompt = productImages.length > 0 ? prompt + imageMatchText : prompt
+
   const res = await fetch('/api/creative-studio/generate-video', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: context.userId,
       adAccountId: context.adAccountId,
-      prompt,
+      prompt: enrichedPrompt,
       videoStyle,
       durationSeconds,
       productImages,
@@ -396,53 +421,31 @@ async function executeGenerateVideo(
   }
 }
 
-async function executeGenerateConcepts(
+async function executeDetectText(
   inputs: Record<string, unknown>,
   context: ToolContext,
 ): Promise<ToolExecutionResult> {
-  const product = (inputs.product as Record<string, unknown>) || context.productInfo || {}
-  const count = (inputs.count as number) || 4
-  const style = (inputs.style as string) || 'cinematic'
-  const directionPrompt = inputs.directionPrompt as string | undefined
+  let imageBase64 = inputs.imageBase64 as string | undefined
+  let imageMimeType = (inputs.imageMimeType as string) || 'image/png'
 
-  if (!product.name) return errorResult('Missing product info for concept generation')
-
-  const res = await fetch('/api/creative-studio/generate-ad-concepts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ product, count, style, directionPrompt }),
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    return errorResult((err as Record<string, string>).error || `Concept generation failed (${res.status})`)
+  // If no base64 provided (or it's a URL), try to resolve it
+  if (!imageBase64) {
+    // Fall back to first user media image from context
+    const userImage = (context.userMedia || []).find(m => m.type === 'image')
+    if (userImage?.url) {
+      imageBase64 = userImage.url
+    }
   }
 
-  const data = await res.json()
-  const concepts: Array<Record<string, unknown>> = data.concepts || []
+  if (!imageBase64) return errorResult('Missing image for text detection')
 
-  const summaryLines = concepts.map(
-    (c, i) => `${i + 1}. "${truncate(c.title as string, 50)}" — ${c.angle || 'general'} (${c.estimatedDuration || 8}s)`,
-  )
-
-  return {
-    success: true,
-    cardType: 'concepts',
-    data: { concepts },
-    modelSummary: [
-      `Generated ${concepts.length} video concept(s):`,
-      ...summaryLines,
-    ].join('\n'),
+  // If the value is a URL, convert to base64
+  if (imageBase64.startsWith('http://') || imageBase64.startsWith('https://')) {
+    const resolved = await resolveToBase64(imageBase64)
+    if (!resolved) return errorResult('Failed to download image for text detection')
+    imageBase64 = resolved.base64
+    imageMimeType = resolved.mimeType
   }
-}
-
-async function executeDetectText(
-  inputs: Record<string, unknown>,
-): Promise<ToolExecutionResult> {
-  const imageBase64 = inputs.imageBase64 as string | undefined
-  const imageMimeType = (inputs.imageMimeType as string) || 'image/png'
-
-  if (!imageBase64) return errorResult('Missing imageBase64 for text detection')
 
   const res = await fetch('/api/creative-studio/detect-text', {
     method: 'POST',
@@ -524,11 +527,8 @@ export async function executeOracleTool(
       case 'generate_video':
         return await executeGenerateVideo(inputs, context)
 
-      case 'generate_concepts':
-        return await executeGenerateConcepts(inputs, context)
-
       case 'detect_text':
-        return await executeDetectText(inputs)
+        return await executeDetectText(inputs, context)
 
       case 'request_media':
         return handleRequestMedia(inputs)

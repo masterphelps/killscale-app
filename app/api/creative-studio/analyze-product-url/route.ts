@@ -26,6 +26,10 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
     }
 
     const contentType = response.headers.get('content-type') || 'image/jpeg'
+
+    // Skip non-image responses (e.g. video files, HTML pages)
+    if (!contentType.startsWith('image/')) return null
+
     const arrayBuffer = await response.arrayBuffer()
 
     // Skip tiny images (likely tracking pixels) - minimum 2KB
@@ -99,6 +103,11 @@ function extractImageUrls(html: string): string[] {
     if (u.startsWith('data:')) return
     if (u.includes('pixel') || u.includes('tracking') || u.includes('spacer')) return
     if (u.includes('.gif') && u.includes('1x1')) return
+    // Skip video files
+    const lower = u.toLowerCase().split('?')[0]
+    if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.mov') || lower.endsWith('.avi') || lower.endsWith('.m3u8')) return
+    // Skip YouTube / video platform thumbnails
+    if (/\/vi\/|\/vi_webp\/|hqdefault|maxresdefault|sddefault|mqdefault/.test(u.toLowerCase())) return
     seen.add(u)
     urls.push(u)
   }
@@ -382,8 +391,14 @@ export async function POST(request: NextRequest) {
     const productImages: Array<{ base64: string; mimeType: string; description: string; type: string; byteSize: number }> = []
 
     if (productInfo.images && Array.isArray(productInfo.images)) {
-      const imagesToDownload = productInfo.images.slice(0, 12)
-      console.log(`[Analyze] Downloading ${imagesToDownload.length} product images...`)
+      // Filter out URLs that look like video thumbnails/poster frames
+      const videoThumbPatterns = [/\/vi\//, /\/vi_webp\//, /hqdefault/, /maxresdefault/, /sddefault/, /mqdefault/, /poster/, /video.*thumb/i, /thumb.*video/i, /\.mp4\.jpg/i, /frame\d+/i]
+      const filteredImages = productInfo.images.filter((img: { url: string }) => {
+        const u = img.url.toLowerCase()
+        return !videoThumbPatterns.some(pat => pat.test(u))
+      })
+      const imagesToDownload = filteredImages.slice(0, 12)
+      console.log(`[Analyze] Downloading ${imagesToDownload.length} product images (filtered ${productInfo.images.length - filteredImages.length} video thumbnails)...`)
 
       const downloadPromises = imagesToDownload.map(async (img: { url: string; description: string; type: string }) => {
         const resolvedUrl = resolveImageUrl(img.url, url)

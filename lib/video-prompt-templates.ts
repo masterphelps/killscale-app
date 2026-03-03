@@ -305,6 +305,7 @@ export function buildSoraPrompt(sections: PromptSections, hasImage = false, dura
 export function buildConceptSoraPrompt(
   concept: AdConcept,
   durationSeconds: number = 10,
+  hasImage: boolean = false,
 ): string {
   const { script } = concept
 
@@ -345,6 +346,10 @@ export function buildConceptSoraPrompt(
 
   if (script.mood) {
     parts.push(script.mood)
+  }
+
+  if (hasImage) {
+    parts.push('The product matches the reference image precisely — same colors, shape, branding, and proportions.')
   }
 
   parts.push('Vertical 9:16 portrait format. Cinematic lighting. No text or logos.')

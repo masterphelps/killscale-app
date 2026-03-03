@@ -57,8 +57,10 @@ export default function AllMediaPage() {
   // Modal state
   const [selectedItem, setSelectedItem] = useState<StudioAsset | null>(null)
 
-  // Launch Wizard state
+  // Launch Wizard state — wizardAccountId captures the account at open time
+  // so a context re-render (e.g. Supabase token refresh) can't unmount the wizard
   const [showLaunchWizard, setShowLaunchWizard] = useState(false)
+  const [wizardAccountId, setWizardAccountId] = useState<string | null>(null)
   const [wizardCreatives, setWizardCreatives] = useState<Creative[]>([])
   const [showClearStarsPrompt, setShowClearStarsPrompt] = useState(false)
 
@@ -482,16 +484,22 @@ export default function AllMediaPage() {
     if (starredAssets.length === 0) return
 
     const creatives = starredAssets.map(a => ({
-      preview: a.mediaType === 'video' ? (a.thumbnailUrl || '') : (a.imageUrl || a.storageUrl || ''),
+      preview: a.mediaType === 'video'
+        ? (a.thumbnailUrl || a.storageUrl || '')
+        : (a.imageUrl || a.storageUrl || ''),
       type: a.mediaType as 'image' | 'video',
       uploaded: true,
       isFromLibrary: true,
-      ...(a.mediaType === 'image' ? { imageHash: a.mediaHash } : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || undefined }),
+      ...(a.mediaType === 'image'
+        ? { imageHash: a.mediaHash }
+        : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || a.storageUrl || undefined }),
+      name: a.name || undefined,
     }))
 
     setWizardCreatives(creatives)
+    setWizardAccountId(currentAccountId)
     setShowLaunchWizard(true)
-  }, [starredIds, assets])
+  }, [starredIds, assets, currentAccountId])
 
   // Handle file upload — Supabase Storage via API (service role). Meta upload deferred to Launch Wizard.
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1011,11 +1019,11 @@ export default function AllMediaPage() {
         onClear={clearStarred}
       />
 
-      {/* Launch Wizard */}
-      {showLaunchWizard && currentAccountId && (
+      {/* Launch Wizard — uses captured wizardAccountId so token refreshes can't unmount it */}
+      {showLaunchWizard && wizardAccountId && (
         <div className="fixed inset-0 bg-bg-dark z-50 overflow-y-auto">
           <LaunchWizard
-            adAccountId={currentAccountId}
+            adAccountId={wizardAccountId}
             onComplete={async (result) => {
               setShowLaunchWizard(false)
 
@@ -1101,14 +1109,20 @@ export default function AllMediaPage() {
           if (!selectedItem) return
           const a = selectedItem
           const creative = {
-            preview: a.mediaType === 'video' ? (a.thumbnailUrl || '') : (a.imageUrl || a.storageUrl || ''),
+            preview: a.mediaType === 'video'
+              ? (a.thumbnailUrl || a.storageUrl || '')
+              : (a.imageUrl || a.storageUrl || ''),
             type: a.mediaType as 'image' | 'video',
             uploaded: true,
             isFromLibrary: true,
-            ...(a.mediaType === 'image' ? { imageHash: a.mediaHash } : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || undefined }),
+            ...(a.mediaType === 'image'
+              ? { imageHash: a.mediaHash }
+              : { videoId: a.mediaHash, thumbnailUrl: a.thumbnailUrl || a.storageUrl || undefined }),
+            name: a.name || undefined,
           }
           setWizardCreatives([creative])
           setSelectedItem(null)
+          setWizardAccountId(currentAccountId)
           setShowLaunchWizard(true)
         }}
         onDelete={selectedItem ? () => {

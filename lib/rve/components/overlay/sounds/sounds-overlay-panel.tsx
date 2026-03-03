@@ -98,15 +98,9 @@ const SoundsOverlayPanel: React.FC = () => {
   };
 
   /**
-   * Initialize audio elements for each sound and handle cleanup
+   * Cleanup audio elements on unmount
    */
   useEffect(() => {
-    audioTracks.forEach((sound: AudioWithSource) => {
-      if (sound.file) {
-        audioRefs.current[sound.id] = new Audio(sound.file);
-      }
-    });
-
     const currentAudioRefs = audioRefs.current;
     return () => {
       Object.values(currentAudioRefs).forEach((audio) => {
@@ -114,29 +108,30 @@ const SoundsOverlayPanel: React.FC = () => {
         audio.currentTime = 0;
       });
     };
-  }, [audioTracks]);
+  }, []);
 
   /**
    * Toggles play/pause state for a sound track
    * Ensures only one track plays at a time
+   * Audio elements are created lazily on first play (not on mount)
    *
    * @param soundId - Unique identifier of the sound to toggle
    */
   const togglePlay = (soundId: string) => {
-    const audio = audioRefs.current[soundId];
-    if (!audio) {
-      console.error('Audio element not found for sound:', soundId);
-      return;
-    }
-    
     if (playingTrack === soundId) {
-      audio.pause();
+      audioRefs.current[soundId]?.pause();
       setPlayingTrack(null);
     } else {
       if (playingTrack && audioRefs.current[playingTrack]) {
         audioRefs.current[playingTrack].pause();
       }
-      audio
+      // Lazy-create Audio element on first play
+      if (!audioRefs.current[soundId]) {
+        const track = audioTracks.find(t => t.id === soundId);
+        if (!track?.file) return;
+        audioRefs.current[soundId] = new Audio(track.file);
+      }
+      audioRefs.current[soundId]
         .play()
         .catch((error) => console.error("Error playing audio:", error));
       setPlayingTrack(soundId);

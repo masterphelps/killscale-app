@@ -397,6 +397,8 @@ export default function VideoStudioPage() {
         })
         if (data.productImages?.length > 0) {
           setProductImages(data.productImages)
+          // Select first 3 product images by default (API max is 3)
+          setSelectedProductImageIndices(data.productImages.slice(0, 3).map((_: unknown, i: number) => i))
         }
         setHasAnalyzed(true)
       }
@@ -556,7 +558,16 @@ export default function VideoStudioPage() {
     setGenerateError(null)
 
     try {
-      const fullPrompt = concept.videoPrompt || buildConceptSoraPrompt(concept, conceptDuration)
+      const hasImage = includeProductImage && selectedProductImageIndices.some(idx => productImages[idx]?.base64)
+      const imageMatchText = ' The product matches the reference image precisely — same colors, shape, branding, and proportions.'
+
+      const fullPrompt = concept.videoPrompt
+        ? (hasImage ? concept.videoPrompt + imageMatchText : concept.videoPrompt)
+        : buildConceptSoraPrompt(concept, conceptDuration, hasImage)
+
+      const enrichedExtensionPrompts = (concept.extensionPrompts || []).map(p =>
+        hasImage ? p + imageMatchText : p
+      )
 
       const res = await fetch('/api/creative-studio/generate-video', {
         method: 'POST',
@@ -579,7 +590,7 @@ export default function VideoStudioPage() {
           provider: apiProvider,
           quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
-          extensionPrompts: concept.extensionPrompts || undefined,
+          extensionPrompts: enrichedExtensionPrompts.length > 0 ? enrichedExtensionPrompts : undefined,
           adCopy: concept.adCopy || null,
           overlayConfig: {
             style: 'bold' as const,
@@ -590,7 +601,7 @@ export default function VideoStudioPage() {
               animation: 'pop' as const,
               fontSize: 56,
               fontWeight: 800,
-              position: 'center' as const,
+              position: 'top' as const,
             },
             captions: (() => {
               const caps = concept.overlay?.captions || []

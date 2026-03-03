@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
       adCopy,
       dialogue,
       quality = 'premium',
+      // Per-segment image assignment (optional)
+      segmentImages: segmentImagesParam,
     } = body
 
     const qualityTier: 'standard' | 'premium' = (quality === 'standard' || quality === 'premium') ? quality : 'premium'
@@ -72,8 +74,13 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Normalize product images (multi-image or legacy single) ─────────────
+    // Per-segment images override flat array when provided
+    const hasSegmentImages = Array.isArray(segmentImagesParam) && segmentImagesParam.length > 0
     let images: Array<{ base64: string; mimeType: string }> = []
-    if (Array.isArray(productImagesParam) && productImagesParam.length > 0) {
+    if (hasSegmentImages) {
+      // Use base segment images for the initial generation
+      images = (segmentImagesParam[0] || []).slice(0, 3)
+    } else if (Array.isArray(productImagesParam) && productImagesParam.length > 0) {
       images = productImagesParam.slice(0, 3)  // Max 3
     } else if (productImageBase64 && productImageMimeType) {
       images = [{ base64: productImageBase64, mimeType: productImageMimeType }]
@@ -189,6 +196,9 @@ export async function POST(request: NextRequest) {
           : null,
         ad_copy: adCopy || null,
         dialogue: dialogue || null,
+        reference_images: hasSegmentImages
+          ? { segments: segmentImagesParam.map((seg: Array<{ base64: string; mimeType: string }>) => (seg || []).slice(0, 3)) }
+          : images.length > 0 ? images : null,
       })
       .select()
       .single()

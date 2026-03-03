@@ -27,7 +27,7 @@ npm run lint    # Run Next.js linter
 - **Hosting:** Vercel (auto-deploy on git push)
 - **Charts:** Recharts
 - **CSV Parsing:** Papaparse
-- **AI:** Claude Sonnet 4 (AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), OpenAI (GPT 5.2 scene planning, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen + extensions, Gemini 3 Pro image editing, Gemini 2.5 Flash image gen + text detection)
+- **AI:** Claude Opus 4.6 (Oracle Creative Director), Claude Sonnet 4.6 (Oracle Guide, AI chat, Health Recs, Video Concepts, Ad Copy, Overlays), Claude Haiku 4.5 (Oracle Router), OpenAI (GPT 5.2 scene planning, Whisper transcription, TTS voiceover), Google (Veo 3.1 video gen + extensions, Gemini 3 Pro image editing, Gemini 2.5 Flash image gen + text detection) — SDK: `@anthropic-ai/sdk` v0.78.0
 - **Video Editor:** Remotion 4.0 (@remotion/player for preview, server render needs Chromium)
 - **Prompts:** Centralized in `lib/prompts/` — versioned, auditable prompt engineering library
 
@@ -131,6 +131,7 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `app/api/creative-studio/oracle-chat/route.ts` - Tier 2: Sonnet conversational guide
 - `app/api/creative-studio/oracle-creative/route.ts` - Tier 3: Opus creative director
 - `app/api/creative-studio/oracle-session/route.ts` - Session CRUD (GET/POST/PATCH/DELETE)
+- `app/api/creative-studio/create-overlay-job/route.ts` - Creates video_generation_job for Oracle overlays (uses `?jobId=` pattern for editor nav)
 - Database: `oracle_chat_sessions` (migration 068)
 
 **Ad Studio (Competitor Research):**
@@ -656,27 +657,33 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 
 | Tier | Model | Role | Latency |
 |------|-------|------|---------|
-| 1 — Router | Haiku (`claude-haiku-4-5-20251001`) | Fast intent classification → route directly or escalate | ~300-500ms |
+| 1 — Router | Haiku (`claude-haiku-4-5-20251001`) | Fast intent classification → route directly to workflow or `conversation` for Sonnet | ~300-500ms |
 | 2 — Guide | Sonnet (`claude-sonnet-4-6`) | Conversational: asks clarifying questions with clickable options, calls tools | Multi-turn |
-| 3 — Creative Director | Opus (`claude-opus-4-20250514`) | Bold, opinionated creative direction; crafts rich generation prompts | Multi-turn |
+| 3 — Creative Director | Opus (`claude-opus-4-6`) | Bold, opinionated creative direction; crafts rich prompts, hands off video concepts to Direct Studio | Multi-turn |
 
 **Flow:**
 1. User types in Oracle Box → Haiku classifies intent
-2. Clear intent (e.g. "make an ad for my protein bar") → routes directly to workflow (no chat)
-3. Ambiguous input → Haiku returns `workflow: 'conversation'` → Sonnet takes over
-4. Sonnet asks 2-3 clarifying questions with clickable option pills
-5. Sonnet can call tools (analyze product, generate concepts, etc.) and escalate to Opus
-6. Opus crafts rich generation prompts → returns `generatedPrompt` for preview
+2. Clear intent (e.g. "make an ad for my protein bar", "make a video ad") → routes directly to workflow (no chat). Default: `create` for images, `url-to-video` for videos (workflow asks for URL)
+3. Only truly vague input ("help me", "what can you do?") → Haiku returns `conversation` → Sonnet
+4. Sonnet asks clarifying questions with clickable option pills (e.g. "Do you have a product URL?" with "I have a URL" / "I'll describe it")
+5. Sonnet can call tools (analyze product, generate ad copy, etc.) and escalate to Opus when product context is available
+6. Opus crafts rich generation prompts → returns `generatedPrompt` for image preview OR `action: { workflow: 'text-to-video' }` for video handoff to Direct Studio
+
+**Haiku Routing Defaults:**
+- Image format → `create` (Product→Ad workflow, asks for URL)
+- Video format → `url-to-video` (Product→Video Ad workflow, asks for URL)
+- `conversation` is a LAST RESORT — only for truly vague/greeting inputs with no actionable intent
+- Haiku should match at least all chip intents: any mention of ads/video/product → direct route, not conversation
 
 **Workflow Routes (from Haiku or chips):**
 `create`, `clone`, `inspiration`, `upload`, `url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`, `open-prompt`
 
-**Oracle Chips (visible in idle mode):**
-- "Make Ads" column (6 chips): Product→Ad, Product→Video Ad, Clone Ad, Inspiration, UGC Video Ad, Image→Ad
-- "Make Content" column (2 chips): Generate Image, Generate Video
+**Oracle Chips (visible in idle mode, bypass Haiku):**
+- "Make Ads" column (6 chips): Product→Ad (`create`), Product→Video Ad (`url-to-video`), Clone Ad (`clone`), Inspiration (`inspiration`), UGC Video Ad (`ugc-video`), Image→Ad (`attach`)
+- "Make Content" column (2 chips): Generate Image (`focus` → `open-prompt`), Generate Video (`focus` → `open-prompt`)
 - Chip action types: `workflow` (bypasses Haiku), `focus` (pre-configures toggles), `attach` (opens attach menu)
 
-**Tool System (9 tools, called by Sonnet/Opus):**
+**Tool System (8 tools, called by Sonnet/Opus):**
 
 | Tool | Credits | What it does |
 |------|---------|-------------|
@@ -684,16 +691,18 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 | `analyze_video` | Free | Gemini video analysis |
 | `generate_overlay` | Free | Whisper + Claude overlay gen |
 | `generate_ad_copy` | Free | Claude ad copy from product |
-| `generate_concepts` | Free | 4 visual metaphor concepts |
 | `detect_text` | Free | Gemini Vision text extraction |
 | `request_media` | Free | Triggers Upload/Library picker in chat |
 | `generate_image` | 5cr | Gemini image generation |
 | `generate_video` | 50cr | Veo video generation |
 
+**Note:** `generate_concepts` was removed. Video concept ideation now flows through Opus conversation → `action: { workflow: 'text-to-video' }` → Direct Studio's Director's Review. The 4-concept exploration pipeline lives exclusively in Video Studio.
+
 Credit-costing tools show a `credit-confirm` context card and wait for user confirmation before executing.
 
-**Context Cards (11 types rendered in chat thread):**
-`product`, `video-analysis`, `overlay-preview`, `ad-copy`, `image-result`, `video-result`, `concepts`, `media-attached`, `credit-confirm`, `tool-loading`, `tool-error`
+**Context Cards (10 types rendered in chat thread):**
+`product`, `video-analysis`, `overlay-preview`, `ad-copy`, `image-result`, `video-result`, `media-attached`, `credit-confirm`, `tool-loading`, `tool-error`
+Note: `concepts` type still exists in `OracleContextCardType` for backwards compat with saved sessions, but is no longer rendered.
 
 **Session Persistence:**
 - Sessions created when Sonnet conversation starts (2+ messages)
@@ -708,20 +717,81 @@ Credit-costing tools show a `credit-confirm` context card and wait for user conf
 - `highest_tier` — 'haiku' | 'sonnet' | 'opus'
 - `status` — 'active' | 'complete'
 
+**JSON Output Parsing (CRITICAL):**
+- Claude 4.6 models do NOT support assistant message prefill (returns 400 error)
+- `output_config` with `json_schema` requires `additionalProperties: false` on all objects, which is incompatible with Oracle's flexible response shape (optional fields like `toolRequest`, `mediaRequest`, `action`, `escalate`)
+- Solution: System prompt instructs pure JSON output + bracket-counting parser as fallback
+- Parser chain: (1) strip markdown fences → `JSON.parse`, (2) bracket-counting to find balanced `{}`, (3) raw text fallback `{ message: rawText }`
+- Safety net: double-encoded JSON detection (message field contains a stringified JSON object)
+- SDK: `@anthropic-ai/sdk` v0.78.0
+
+**Behavioral Rules (in system prompts):**
+- **ACT, DON'T ANNOUNCE:** When Oracle has enough info to use a tool, it must include `toolRequest` in the SAME response as its message. Never say "I'll analyze that" without the tool call — forces unnecessary user confirmation.
+- **Optional options:** The `options` array is OPTIONAL. Skip it when executing a tool, sharing an opinion, asking open-ended questions, or when the next step is obvious. Only include 2-3 genuinely distinct creative choices.
+- **Escalation:** Sonnet escalates to Opus for rich prompt engineering and creative brainstorming. Sonnet NEVER crafts image/video prompts — always escalates.
+- **Opus video handoff:** When Opus crafts a video concept, it returns `action: { workflow: 'text-to-video', prefilledData: { prompt, style } }` to route to Direct Studio's Director's Review. Opus does NOT call `generate_video` for concept exploration — that's for quick direct requests only.
+
+**Opus Response Types (handled in ad-studio/page.tsx):**
+Opus can return these fields (mutually exclusive, checked in this priority order):
+1. `toolRequest` → execute tool immediately
+2. `mediaRequest` → show upload/library buttons
+3. `action` → route to workflow (e.g. `text-to-video` → Direct Studio with `?prompt=&style=`)
+4. `analyzeUrl` → fetch product data, re-call Opus with real data, then check retry response for `action`/`generatedPrompt`
+5. `generatedPrompt` → show prompt preview card (image generation)
+6. Plain message → display with options
+
+**CRITICAL:** `OracleCreativeResponse` has `action` field (added to type). All 4 Opus response rendering paths (main handler, escalation first turn, analyzeUrl retry, escalation retry) must check `action` before falling through to `generatedPrompt` display.
+
+**Oracle → Direct Studio Flow (`text-to-video` action):**
+- When Opus crafts a video concept, it returns `action: { workflow: 'text-to-video', prefilledData: { prompt: '...', style: 'cinematic' } }`
+- `handleOracleAction` builds URL: `/dashboard/creative-studio/direct?prompt=...&style=cinematic`
+- Direct Studio reads `?prompt=` and `?style=` from URL params to pre-fill the script and video style
+- User lands in Director's Review where GPT segments the prompt into Veo time chunks
+
+**Oracle → Video Editor Flow (`?jobId=` pattern):**
+- When Oracle generates an overlay via `generate_overlay` tool, it creates a `video_generation_job` record via `create-overlay-job` endpoint
+- The overlay context card includes an "Open in Video Editor" button linking to `/dashboard/creative-studio/video-editor?jobId={id}`
+- This avoids fragile client-side data transfer (localStorage/window globals)
+
+**Overlay Positioning (1080×1920 canvas):**
+
+| Element | Position | Pixel Offset | Notes |
+|---------|----------|-------------|-------|
+| Hook/headline | 30% from top | `top: 426px` | ALWAYS position 'top' in config |
+| CTA button | 50% (center) | `top: 810px` | Centered, 680px wide |
+| Captions | 70% from top | `top: 1194px` | ALWAYS position 'bottom' in config |
+
+**Overlay Default Styles (promopunch-inspired):**
+- Hook: Impact font, red bg `rgba(239,68,68,0.9)`, 64px, weight 900, pop animation
+- Captions: Inter font, 40px, weight 700, yellow highlight `#FFD700` with black text
+- CTA: Pink `#EC4899`, 36px, weight 800, rounded 20px, pop animation
+
+**6 Style Presets (in `remotion/AdOverlay.tsx`):**
+`capcut` (gold highlight, green CTA), `minimal` (blue highlight, white CTA), `bold` (amber highlight, red CTA), `clean` (green highlight, indigo CTA), `wordflash` (white highlight, purple CTA), `promopunch` (red bg, red highlight/CTA)
+
 **Key Files:**
 - `components/creative-studio/oracle-box.tsx` — Input UI with auto-suggest
 - `components/creative-studio/oracle-chips.tsx` — Shortcut chip grid
-- `components/creative-studio/oracle-chat-thread.tsx` — Chat renderer + 11 card types
+- `components/creative-studio/oracle-chat-thread.tsx` — Chat renderer + 10 card types (concepts card removed)
 - `components/creative-studio/oracle-types.ts` — Complete type system
 - `lib/oracle-tools.ts` — Client-side tool executor
 - `app/api/creative-studio/oracle-route/route.ts` — Haiku router
 - `app/api/creative-studio/oracle-chat/route.ts` — Sonnet guide
 - `app/api/creative-studio/oracle-creative/route.ts` — Opus creative director
 - `app/api/creative-studio/oracle-session/route.ts` — Session CRUD
+- `app/api/creative-studio/create-overlay-job/route.ts` — Creates job record for Oracle overlays
+- `lib/prompts/video-overlays.ts` — Overlay schema, system prompt, caption builder
+- `lib/rve-bridge.ts` — OverlayConfig ↔ RVE Overlay[] conversion with positioning
+- `remotion/AdOverlay.tsx` — Remotion composition with 6 style presets
 - `app/dashboard/creative-studio/ad-studio/page.tsx` — Oracle state (lines 485-508), handlers (lines 1829-2570), UI (lines 3994-4082)
 
 ### AI Video Generation (Video Studio)
 Generate scroll-stopping short-form video ads using Veo 3.1 (Google).
+
+**Role Separation (Video Studio vs Oracle/Direct Studio):**
+- **Video Studio** = "show me options" — structured 4-concept pipeline with pill selection, style picker, concept comparison
+- **Oracle → Direct Studio** = "help me figure out what I want" — conversation → single tailored vision → Director's Review
+- Oracle keeps `generate_video` tool for quick direct requests ("make me a video of X") but does NOT generate concepts inline
 
 **User Flow:**
 1. **Step 1: Product Input** — URL analysis → Claude extracts product knowledge → Pill selector (7 categories: name, description, features, benefits, key messages, testimonials, pain points)
@@ -891,7 +961,7 @@ Videos longer than 8 seconds use Veo's extension API to chain segments.
 - **Open Prompt:** Direct user prompt → image or video without templates
 - **Scene Planning:** GPT 5.2 segments prompts into Veo time chunks
 - **Video Analysis:** Gemini 2.0 Flash multimodal video analysis with funnel stage scoring
-- **Video Concept Generation:** Claude generates 4 visual metaphor concepts with angle diversity
+- **Video Concept Generation:** Claude generates 4 visual metaphor concepts with angle diversity (Video Studio only — Oracle routes video concepts to Direct Studio via `action`)
 - **Video Overlay Generation:** Whisper transcription + Claude generates time-synced captions
 - **Voiceover:** OpenAI TTS with 6 voice options
 

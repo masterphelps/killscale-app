@@ -167,6 +167,7 @@ function getVeoExtOperationName(soraJobId: string): string {
 async function triggerVeoExtension(
   videoUri: string,
   prompt: string,
+  referenceImages?: Array<{ base64: string; mimeType: string }> | null,
 ): Promise<string> {
   const ai = getGoogleAI()
   if (!ai) throw new Error('Google AI not configured')
@@ -182,12 +183,24 @@ async function triggerVeoExtension(
     extConfig.outputGcsUri = VEO_GCS_OUTPUT_URI
   }
 
-  const operation = await (ai.models as any).generateVideos({
+  const extParams: Record<string, unknown> = {
     model: VEO_EXTENSION_MODEL,
     video: { uri: videoUri, mimeType: 'video/mp4' },
     prompt,
     config: extConfig,
-  })
+  }
+
+  // Pass ONE reference image to extension (extensions only support single image)
+  if (referenceImages && referenceImages.length > 0) {
+    const first = referenceImages[0]
+    extParams.image = {
+      imageBytes: Buffer.from(first.base64, 'base64').toString('base64'),
+      mimeType: first.mimeType || 'image/png',
+    }
+    console.log(`[VideoStatus] Passing 1 reference image to extension (${referenceImages.length} available, using first)`)
+  }
+
+  const operation = await (ai.models as any).generateVideos(extParams)
   console.log(`[VideoStatus] Veo extension triggered: ${operation.name}`)
   return operation.name
 }
@@ -203,6 +216,38 @@ function getExtensionPrompt(job: any, extensionStep: number): string {
   // Fallback: use original prompt (legacy behavior)
   console.log(`[VideoStatus] No per-segment prompt for step ${extensionStep}, using original prompt`)
   return job.prompt
+}
+
+/** Get images for a specific extension step.
+ *  If reference_images has per-segment format { segments: [...] }, uses the segment for this step.
+ *  Falls back to all images (legacy flat array) or base segment images. */
+function getExtensionImages(job: any, extensionStep: number): Array<{ base64: string; mimeType: string }> | null {
+  const refImages = job.reference_images
+  if (!refImages) return null
+
+  // Per-segment format: { segments: [ [base_images], [ext1_images], ... ] }
+  if (refImages.segments && Array.isArray(refImages.segments)) {
+    // extensionStep 0 = first extension = segments[1], step 1 = segments[2], etc.
+    const segmentImages = refImages.segments[extensionStep + 1]
+    if (segmentImages && Array.isArray(segmentImages) && segmentImages.length > 0) {
+      console.log(`[VideoStatus] Using per-segment images for extension step ${extensionStep} (${segmentImages.length} images)`)
+      return segmentImages
+    }
+    // Fallback to base segment images
+    const baseImages = refImages.segments[0]
+    if (baseImages && Array.isArray(baseImages) && baseImages.length > 0) {
+      console.log(`[VideoStatus] Falling back to base segment images for extension step ${extensionStep}`)
+      return baseImages
+    }
+    return null
+  }
+
+  // Legacy flat array format
+  if (Array.isArray(refImages) && refImages.length > 0) {
+    return refImages
+  }
+
+  return null
 }
 
 export async function GET(request: NextRequest) {
@@ -384,7 +429,7 @@ export async function GET(request: NextRequest) {
             // Trigger next extension — optimistic concurrency to prevent duplicates
             try {
               const extensionPrompt = getExtensionPrompt(job, currentStep)
-              const newOpName = await triggerVeoExtension(videoUri, extensionPrompt)
+              const newOpName = await triggerVeoExtension(videoUri, extensionPrompt, getExtensionImages(job, currentStep))
 
               const { data: updated } = await supabase
                 .from('video_generation_jobs')
@@ -691,7 +736,7 @@ export async function POST(request: NextRequest) {
 
     // List view: only fetch columns needed for job cards (NOT full overlay_config JSONB)
     // When filtering by canvasId, include overlay_config since we need it for sibling append
-    const extensionCols = ', provider, target_duration_seconds, extension_step, extension_total, extension_video_uri, extension_prompts'
+    const extensionCols = ', provider, target_duration_seconds, extension_step, extension_total, extension_video_uri, extension_prompts, reference_images'
     const selectCols = canvasId
       ? `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, overlay_config, prompt, ad_copy, created_at, updated_at${extensionCols}`
       : `id, user_id, ad_account_id, session_id, canvas_id, product_name, sora_job_id, video_style, duration_seconds, status, progress_pct, error_message, raw_video_url, final_video_url, thumbnail_url, ad_index, credit_cost, prompt, ad_copy, created_at, updated_at${extensionCols}`
@@ -803,7 +848,7 @@ export async function POST(request: NextRequest) {
                 if (currentStep < totalExtensions) {
                   try {
                     const extensionPrompt = getExtensionPrompt(job, currentStep)
-                    const newOpName = await triggerVeoExtension(videoUri, extensionPrompt)
+                    const newOpName = await triggerVeoExtension(videoUri, extensionPrompt, getExtensionImages(job, currentStep))
 
                     const { data: updated } = await supabase
                       .from('video_generation_jobs')
@@ -993,7 +1038,7 @@ export async function PATCH(request: NextRequest) {
 
     // Trigger the extension — use per-segment prompt if available
     const extensionPrompt = getExtensionPrompt(job, job.extension_step || 0)
-    const newOpName = await triggerVeoExtension(job.extension_video_uri, extensionPrompt)
+    const newOpName = await triggerVeoExtension(job.extension_video_uri, extensionPrompt, getExtensionImages(job, job.extension_step || 0))
 
     const currentStep = job.extension_step || 0
     const currentTotal = job.extension_total || 0

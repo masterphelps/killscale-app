@@ -202,8 +202,8 @@ const HookText: React.FC<{ config: HookOverlay; style: OverlayStyle; brandColor?
   const positionStyle: React.CSSProperties = (() => {
     switch (config.position || 'top') {
       case 'center': return { top: '50%', transform: 'translateY(-50%)' }
-      case 'bottom': return { bottom: '18%' }
-      default: return { top: '12%' }
+      case 'bottom': return { top: '70%' }
+      default: return { top: '30%' }  // Hook at 30% from top
     }
   })()
 
@@ -363,9 +363,9 @@ const Caption: React.FC<{
   // ── Fallback: preset-based positioning ──
   const captionPositionStyle: React.CSSProperties = (() => {
     switch (config.position || 'bottom') {
-      case 'top': return { top: '12%' }
+      case 'top': return { top: '30%' }
       case 'center': return { top: '50%', transform: 'translateY(-50%)' }
-      default: return { bottom: '18%' }
+      default: return { top: '70%' }  // Captions at 70% from top
     }
   })()
 
@@ -454,7 +454,7 @@ const CTASection: React.FC<{ config: CTAOverlay; style: OverlayStyle; brandColor
     <div
       style={{
         position: 'absolute',
-        bottom: '8%',
+        top: '50%',   // CTA at 50% from top
         left: 0,
         right: 0,
         display: 'flex',

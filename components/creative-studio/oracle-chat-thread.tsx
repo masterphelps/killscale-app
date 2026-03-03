@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
-import { Sparkles, ArrowRight, Video, ImageIcon, Pencil, RotateCcw, Loader2, Zap, Star, Target, MessageCircle, Lightbulb, Users, Tag, ChevronDown, ChevronUp, Upload, FolderOpen, Copy, Download, ExternalLink, AlertCircle } from 'lucide-react'
+import { Sparkles, ArrowRight, Video, ImageIcon, Pencil, RotateCcw, Loader2, Zap, Star, Target, MessageCircle, Lightbulb, Users, Tag, ChevronDown, ChevronUp, Upload, FolderOpen, Copy, Download, ExternalLink, AlertCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OracleMessage, OracleOption, OracleContextCard, OracleTier } from './oracle-types'
 
@@ -92,6 +92,7 @@ interface OracleChatThreadProps {
 
 export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy }: OracleChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [previewMedia, setPreviewMedia] = useState<{ url: string; preview?: string; type: string; name: string } | null>(null)
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -142,20 +143,38 @@ export function OracleChatThread({ messages, currentTier, onOptionClick, onPromp
               )}
 
               {/* Media attachments on user messages */}
-              {msg.mediaAttachments?.map((media, i) => (
-                <div key={i} className="mb-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2 flex items-center gap-3 max-w-xs">
-                  <div className="w-10 h-10 rounded bg-zinc-700/50 flex items-center justify-center shrink-0">
-                    {media.type === 'video'
-                      ? <Video className="w-4 h-4 text-zinc-400" />
-                      : <ImageIcon className="w-4 h-4 text-zinc-400" />
-                    }
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm text-white truncate">{media.name}</div>
-                    <div className="text-xs text-zinc-500 capitalize">{media.type}</div>
-                  </div>
+              {msg.mediaAttachments && msg.mediaAttachments.length > 0 && (
+                <div className="mb-2 flex items-center gap-2 flex-wrap">
+                  {msg.mediaAttachments.map((media, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPreviewMedia(media)}
+                      className="relative w-20 h-20 rounded-lg overflow-hidden border border-zinc-700/50 bg-zinc-800/50 shrink-0 group cursor-pointer hover:border-purple-500/40 transition-colors"
+                    >
+                      {media.type === 'video' ? (
+                        <video
+                          src={`${media.url || media.preview}#t=0.3`}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img
+                          src={media.preview || media.url}
+                          alt={media.name}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                      {media.type === 'video' && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                          <Video className="w-5 h-5 text-white/80" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
                 </div>
-              ))}
+              )}
 
               {/* Message text */}
               {msg.content && (
@@ -547,26 +566,6 @@ export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditC
         {card.data.creditCost ? (
           <div className="text-xs text-amber-400 mt-2">{String(card.data.creditCost)} credits used</div>
         ) : null}
-      </div>
-    )
-  }
-
-  // --- concepts ---
-  if (card.type === 'concepts') {
-    return (
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {(card.data.concepts as Array<{ title: string; angle: string; logline: string; visualWorld?: string }> || []).map((concept, i) => (
-          <div key={i} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2.5">
-            <div className="text-sm font-medium text-white truncate">{concept.title}</div>
-            <div className="flex gap-1 mt-1">
-              <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded">{concept.angle}</span>
-              {concept.visualWorld && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-zinc-700/50 text-zinc-400 rounded">{concept.visualWorld}</span>
-              )}
-            </div>
-            <div className="text-xs text-zinc-500 line-clamp-2 mt-1">{concept.logline}</div>
-          </div>
-        ))}
       </div>
     )
   }

@@ -3002,21 +3002,33 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                   {state.creatives.map((creative, index) => {
                     // Determine the preview source
                     // - Images: use preview (blob URL or library URL)
-                    // - Videos: use thumbnailUrl if available, else preview (generated thumbnail or library thumbnail)
+                    // - Videos: use thumbnailUrl if available, else preview (generated thumbnail or storageUrl)
                     const previewSrc = creative.type === 'image'
                       ? creative.preview
                       : (creative.thumbnailUrl || creative.preview)
-                    // All creatives should have valid previews now (images use blob, videos use generated thumbnails)
                     const hasValidPreview = !!previewSrc
+                    // Detect if the preview is a video file URL (not a thumbnail image)
+                    const isVideoPreview = creative.type === 'video' && hasValidPreview
+                      && /\.(mp4|mov|webm|avi)/i.test(previewSrc)
 
                     return (
                     <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-bg-hover group">
                       {hasValidPreview ? (
-                        <img
-                          src={previewSrc}
-                          alt={creative.name || `Creative ${index + 1}`}
-                          className="w-full h-full object-cover pointer-events-none"
-                        />
+                        isVideoPreview ? (
+                          <video
+                            src={`${previewSrc}#t=0.3`}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-cover pointer-events-none"
+                          />
+                        ) : (
+                          <img
+                            src={previewSrc}
+                            alt={creative.name || `Creative ${index + 1}`}
+                            className="w-full h-full object-cover pointer-events-none"
+                          />
+                        )
                       ) : (
                         // Placeholder for local videos before upload completes
                         <div className="w-full h-full flex items-center justify-center bg-zinc-800">

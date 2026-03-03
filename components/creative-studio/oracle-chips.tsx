@@ -5,95 +5,94 @@ import {
   Image as ImageIcon, Film,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { OracleOutputType, OracleFormat } from './oracle-box'
+import type { OracleInputMode } from './oracle-types'
 
 export interface ChipDef {
   label: string
   icon: React.ElementType
-  group: 'ads' | 'content'
   action:
-    | { type: 'focus'; outputType: OracleOutputType; format: OracleFormat; placeholder: string }
+    | { type: 'focus'; mode: OracleInputMode; placeholder: string }
     | { type: 'workflow'; workflow: string }
-    | { type: 'attach'; outputType: OracleOutputType; format: OracleFormat }
+    | { type: 'attach'; mode: OracleInputMode }
+    | { type: 'switch-mode'; mode: OracleInputMode }
 }
 
-const chips: ChipDef[] = [
-  // Make Ads
-  { label: 'Product \u2192 Ad', icon: Target, group: 'ads', action: { type: 'workflow', workflow: 'create' } },
-  { label: 'Product \u2192 Video Ad', icon: Target, group: 'ads', action: { type: 'workflow', workflow: 'url-to-video' } },
-  { label: 'Clone Ad', icon: RefreshCw, group: 'ads', action: { type: 'workflow', workflow: 'clone' } },
-  { label: 'Inspiration', icon: Sparkles, group: 'ads', action: { type: 'workflow', workflow: 'inspiration' } },
-  { label: 'UGC Video Ad', icon: UserCircle, group: 'ads', action: { type: 'workflow', workflow: 'ugc-video' } },
-  { label: 'Image \u2192 Ad', icon: ImagePlus, group: 'ads', action: { type: 'attach', outputType: 'ad', format: 'image' } },
-  // Make Content
-  { label: 'Generate Image', icon: ImageIcon, group: 'content', action: { type: 'focus', outputType: 'content', format: 'image', placeholder: 'Describe the image you want...' } },
-  { label: 'Generate Video', icon: Film, group: 'content', action: { type: 'focus', outputType: 'content', format: 'video', placeholder: 'Describe the video you want...' } },
+// KS mode chips (8) — full Oracle pipeline
+const ksChips: ChipDef[] = [
+  { label: 'Product \u2192 Ad', icon: Target, action: { type: 'workflow', workflow: 'create' } },
+  { label: 'Product \u2192 Video Ad', icon: Target, action: { type: 'workflow', workflow: 'url-to-video' } },
+  { label: 'Clone Ad', icon: RefreshCw, action: { type: 'workflow', workflow: 'clone' } },
+  { label: 'Inspiration', icon: Sparkles, action: { type: 'workflow', workflow: 'inspiration' } },
+  { label: 'UGC Video Ad', icon: UserCircle, action: { type: 'workflow', workflow: 'ugc-video' } },
+  { label: 'Image \u2192 Ad', icon: ImagePlus, action: { type: 'workflow', workflow: 'upload' } },
+  { label: 'Generate Image', icon: ImageIcon, action: { type: 'switch-mode', mode: 'image' } },
+  { label: 'Generate Video', icon: Film, action: { type: 'switch-mode', mode: 'video' } },
 ]
 
+// Image mode chips — filtered subset of KS chips relevant to image workflows
+const imageChips: ChipDef[] = [
+  { label: 'Product \u2192 Ad', icon: Target, action: { type: 'workflow', workflow: 'create' } },
+  { label: 'Clone Ad', icon: RefreshCw, action: { type: 'workflow', workflow: 'clone' } },
+  { label: 'Inspiration', icon: Sparkles, action: { type: 'workflow', workflow: 'inspiration' } },
+  { label: 'Image \u2192 Ad', icon: ImagePlus, action: { type: 'workflow', workflow: 'upload' } },
+]
+
+// Video mode chips — filtered subset of KS chips relevant to video workflows
+const videoChips: ChipDef[] = [
+  { label: 'Product \u2192 Video Ad', icon: Target, action: { type: 'workflow', workflow: 'url-to-video' } },
+  { label: 'UGC Video Ad', icon: UserCircle, action: { type: 'workflow', workflow: 'ugc-video' } },
+]
+
+const chipSets: Record<OracleInputMode, { chips: ChipDef[]; heading: string; accentColor: string }> = {
+  ks: { chips: ksChips, heading: 'Quick Start', accentColor: 'purple' },
+  image: { chips: imageChips, heading: 'Quick Start', accentColor: 'blue' },
+  video: { chips: videoChips, heading: 'Quick Start', accentColor: 'emerald' },
+}
+
 interface OracleChipsProps {
+  mode: OracleInputMode
   onChipAction: (action: ChipDef['action']) => void
 }
 
-export function OracleChips({ onChipAction }: OracleChipsProps) {
-  const adChips = chips.filter(c => c.group === 'ads')
-  const contentChips = chips.filter(c => c.group === 'content')
+export function OracleChips({ mode, onChipAction }: OracleChipsProps) {
+  const { chips, heading, accentColor } = chipSets[mode]
+
+  const hoverBg = accentColor === 'purple' ? 'hover:bg-purple-500/[0.08] hover:border-purple-500/20 hover:shadow-[0_0_20px_rgba(168,85,247,0.08)]'
+    : accentColor === 'blue' ? 'hover:bg-blue-500/[0.08] hover:border-blue-500/20 hover:shadow-[0_0_20px_rgba(59,130,246,0.08)]'
+    : 'hover:bg-emerald-500/[0.08] hover:border-emerald-500/20 hover:shadow-[0_0_20px_rgba(16,185,129,0.08)]'
+
+  const iconBg = accentColor === 'purple' ? 'bg-purple-500/10 group-hover:bg-purple-500/20'
+    : accentColor === 'blue' ? 'bg-blue-500/10 group-hover:bg-blue-500/20'
+    : 'bg-emerald-500/10 group-hover:bg-emerald-500/20'
+
+  const iconColor = accentColor === 'purple' ? 'text-purple-400'
+    : accentColor === 'blue' ? 'text-blue-400'
+    : 'text-emerald-400'
 
   return (
-    <div className="space-y-6">
-      {/* Make Ads */}
-      <div>
-        <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">Make Ads</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-          {adChips.map((chip) => {
-            const Icon = chip.icon
-            return (
-              <button
-                key={chip.label}
-                onClick={() => onChipAction(chip.action)}
-                className={cn(
-                  'group relative flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
-                  'bg-white/[0.03] border border-white/[0.06]',
-                  'text-zinc-300 hover:text-white',
-                  'hover:bg-purple-500/[0.08] hover:border-purple-500/20',
-                  'hover:shadow-[0_0_20px_rgba(168,85,247,0.08)]',
-                )}
-              >
-                <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 transition-colors">
-                  <Icon className="w-3.5 h-3.5 text-purple-400" />
-                </div>
-                <span className="truncate">{chip.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Make Content */}
-      <div>
-        <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">Make Content</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-          {contentChips.map((chip) => {
-            const Icon = chip.icon
-            return (
-              <button
-                key={chip.label}
-                onClick={() => onChipAction(chip.action)}
-                className={cn(
-                  'group relative flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
-                  'bg-white/[0.03] border border-white/[0.06]',
-                  'text-zinc-300 hover:text-white',
-                  'hover:bg-cyan-500/[0.08] hover:border-cyan-500/20',
-                  'hover:shadow-[0_0_20px_rgba(6,182,212,0.08)]',
-                )}
-              >
-                <div className="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0 group-hover:bg-cyan-500/20 transition-colors">
-                  <Icon className="w-3.5 h-3.5 text-cyan-400" />
-                </div>
-                <span className="truncate">{chip.label}</span>
-              </button>
-            )
-          })}
-        </div>
+    <div>
+      <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">{heading}</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {chips.map((chip) => {
+          const Icon = chip.icon
+          return (
+            <button
+              key={chip.label}
+              onClick={() => onChipAction(chip.action)}
+              className={cn(
+                'group relative flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+                'bg-white/[0.03] border border-white/[0.06]',
+                'text-zinc-300 hover:text-white',
+                hoverBg,
+              )}
+            >
+              <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors', iconBg)}>
+                <Icon className={cn('w-3.5 h-3.5', iconColor)} />
+              </div>
+              <span className="truncate">{chip.label}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )

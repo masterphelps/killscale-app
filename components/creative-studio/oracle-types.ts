@@ -4,6 +4,17 @@ export type OracleMode = 'idle' | 'chat' | 'creative'
 
 export type OracleTier = 'haiku' | 'sonnet' | 'opus'
 
+// Three-state input mode — replaces the old outputType + format toggles
+export type OracleInputMode = 'ks' | 'image' | 'video'
+
+// Backwards compat: resolve mode from old session context
+export function resolveMode(context: Record<string, unknown>): OracleInputMode {
+  if (context.mode) return context.mode as OracleInputMode
+  if (context.outputType === 'content' && context.format === 'video') return 'video'
+  if (context.outputType === 'content') return 'image'
+  return 'ks'
+}
+
 export interface OracleOption {
   label: string
   value: string
@@ -39,7 +50,6 @@ export type OracleToolName =
   | 'generate_ad_copy'
   | 'generate_image'
   | 'generate_video'
-  | 'generate_concepts'
   | 'detect_text'
   | 'request_media'
 
@@ -89,10 +99,11 @@ export interface OracleMessage {
 export interface OracleChatRequest {
   messages: { role: 'user' | 'assistant'; content: string }[]
   context: {
+    mode?: OracleInputMode
     productInfo?: Record<string, unknown>
     selectedOptions?: Record<string, string>
-    format?: 'image' | 'video'
-    outputType?: 'ad' | 'content'
+    format?: 'image' | 'video'       // deprecated — use mode
+    outputType?: 'ad' | 'content'    // deprecated — use mode
     priorConversation?: { role: string; content: string }[]
     videoAnalysis?: Record<string, unknown>
     analyzedVideoUrl?: string
@@ -125,6 +136,10 @@ export interface OracleCreativeResponse {
     format: 'image' | 'video'
     style?: string
     duration?: number
+  }
+  action?: {
+    workflow: string
+    prefilledData: Record<string, unknown>
   }
   // New: tool system
   toolRequest?: OracleToolRequest

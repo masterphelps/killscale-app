@@ -34,6 +34,7 @@ import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
 import type { ProductKnowledge, ProductImage, AdConcept, DirectConceptResult } from '@/lib/video-prompt-templates'
 import type { VideoJob } from '@/remotion/types'
 import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
+import DirectorsReview from '@/components/creative-studio/directors-review'
 
 // ─── Pill categories ──────────────────────────────────────────────────────────
 
@@ -226,7 +227,7 @@ export default function URLToVideo({
   // Product knowledge from analyze-product-url API
   const [productKnowledge, setProductKnowledge] = useState<ProductKnowledge | null>(null)
   const [productImages, setProductImages] = useState<ProductImage[]>([])
-  const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
+  const [selectedProductImageIndices, setSelectedProductImageIndices] = useState<number[]>([])
   const [includeProductImage, setIncludeProductImage] = useState(true)
 
   // Pill pools (7 categories)
@@ -298,12 +299,14 @@ export default function URLToVideo({
   const [editCta, setEditCta] = useState('')
   const [directOverlaysEnabled, setDirectOverlaysEnabled] = useState(true)
   const [directQuality, setDirectQuality] = useState<'standard' | 'premium'>('standard')
-  const [showVeoPrompt, setShowVeoPrompt] = useState(true)
-  const [showExtensions, setShowExtensions] = useState(false)
 
   // Direct video generation
   const [directGenerating, setDirectGenerating] = useState(false)
   const [directVideoJob, setDirectVideoJob] = useState<VideoJob | null>(null)
+
+  // ─── Director's Review for concepts ──────────────────────────────────────────
+  const [reviewingConceptIndex, setReviewingConceptIndex] = useState<number | null>(null)
+  const [segmentImageIndices, setSegmentImageIndices] = useState<number[][]>([])
 
   // ─── Quality + cost helpers ────────────────────────────────────────────────
 
@@ -374,7 +377,10 @@ export default function URLToVideo({
       }
       setProductImages(prev => {
         const updated = [...prev, newImage]
-        setSelectedProductImageIdx(updated.length - 1)
+        // Auto-select if under the 3-image limit
+        setSelectedProductImageIndices(prevSel =>
+          prevSel.length >= 3 ? prevSel : [...prevSel, updated.length - 1]
+        )
         return updated
       })
       setIncludeProductImage(true)
@@ -396,7 +402,10 @@ export default function URLToVideo({
       }
       setProductImages(prev => {
         const updated = [...prev, newImage]
-        setSelectedProductImageIdx(updated.length - 1)
+        // Auto-select if under the 3-image limit
+        setSelectedProductImageIndices(prevSel =>
+          prevSel.length >= 3 ? prevSel : [...prevSel, updated.length - 1]
+        )
         return updated
       })
       setIncludeProductImage(true)
@@ -451,6 +460,8 @@ export default function URLToVideo({
         })
         if (data.productImages?.length > 0) {
           setProductImages(data.productImages)
+          // Select first 3 product images by default (API max is 3)
+          setSelectedProductImageIndices(data.productImages.slice(0, 3).map((_: unknown, i: number) => i))
         }
         setHasAnalyzed(true)
       }
@@ -634,8 +645,17 @@ export default function URLToVideo({
           canvasId: canvasId || null,
           productName: (productKnowledge || assembleProductKnowledge()).name || null,
           adIndex: conceptIndex,
-          productImageBase64: includeProductImage ? (productImages[selectedProductImageIdx]?.base64 || null) : null,
-          productImageMimeType: includeProductImage ? (productImages[selectedProductImageIdx]?.mimeType || null) : null,
+          productImages: includeProductImage
+            ? selectedProductImageIndices
+                .map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType }))
+                .filter(img => img.base64)
+            : [],
+          // Per-segment image assignment (from Director's Review)
+          segmentImages: segmentImageIndices.length > 0 && includeProductImage
+            ? segmentImageIndices.map(indices =>
+                indices.map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType })).filter(img => img.base64)
+              )
+            : undefined,
           provider: apiProvider,
           quality: getConceptQuality(conceptIndex),
           targetDurationSeconds: apiProvider === 'veo-ext' ? conceptDuration : undefined,
@@ -650,7 +670,7 @@ export default function URLToVideo({
               animation: 'pop' as const,
               fontSize: 56,
               fontWeight: 800,
-              position: 'center' as const,
+              position: 'top' as const,
             },
             captions: (() => {
               const caps = concept.overlay?.captions || []
@@ -707,7 +727,76 @@ export default function URLToVideo({
       setGeneratingIndex(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, adAccountId, concepts, canvasId, productKnowledge, refreshJobs, includeProductImage, productImages, selectedProductImageIdx, onCreditsChanged, assembleProductKnowledge])
+  }, [userId, adAccountId, concepts, canvasId, productKnowledge, refreshJobs, includeProductImage, productImages, selectedProductImageIndices, onCreditsChanged, assembleProductKnowledge])
+
+  // ─── Director's Review for Concepts ───────────────────────────────────────
+
+  const enterDirectorsReview = useCallback((conceptIndex: number) => {
+    const concept = concepts[conceptIndex]
+    if (!concept) return
+
+    // Populate editable fields from concept
+    setEditScene(concept.script?.scene || '')
+    setEditSubject(concept.script?.subject || '')
+    setEditAction(concept.script?.action || concept.visualMetaphor || '')
+    setEditMood(concept.script?.mood || '')
+    setEditVideoPrompt(concept.videoPrompt || buildConceptSoraPrompt(concept, concept.estimatedDuration || VEO_BASE_DURATION))
+    setEditExtensionPrompts(concept.extensionPrompts || [])
+    setEditHook(concept.overlay?.hook || '')
+    setEditCta(concept.overlay?.cta || '')
+    setDirectOverlaysEnabled(true)
+
+    // Set quality from concept's stored quality
+    setDirectQuality(getConceptQuality(conceptIndex))
+
+    // Initialize per-segment image indices: all segments start with selected product image indices
+    const extensionCount = concept.extensionPrompts?.length || 0
+    const segCount = 1 + extensionCount // base + extensions
+    const baseIndices = [...selectedProductImageIndices]
+    setSegmentImageIndices(Array.from({ length: segCount }, () => [...baseIndices]))
+
+    setReviewingConceptIndex(conceptIndex)
+  }, [concepts, selectedProductImageIndices, getConceptQuality])
+
+  const handleGenerateFromReview = useCallback(async () => {
+    if (reviewingConceptIndex === null) return
+    const i = reviewingConceptIndex
+
+    // Update the concept with edited fields before generating
+    const updatedConcept: AdConcept = {
+      ...concepts[i],
+      script: {
+        scene: editScene,
+        subject: editSubject,
+        action: editAction,
+        mood: editMood,
+      },
+      videoPrompt: editVideoPrompt,
+      extensionPrompts: editExtensionPrompts.length > 0 ? editExtensionPrompts : undefined,
+      estimatedDuration: VEO_BASE_DURATION + editExtensionPrompts.length * VEO_EXTENSION_STEP,
+      overlay: {
+        hook: editHook,
+        captions: concepts[i].overlay?.captions || [],
+        cta: editCta,
+      },
+    }
+
+    // Update concept in state
+    setConcepts(prev => {
+      const updated = [...prev]
+      updated[i] = updatedConcept
+      return updated
+    })
+
+    // Update quality
+    setConceptQuality(prev => ({ ...prev, [i]: directQuality }))
+
+    // Return to concept grid view, then trigger generation
+    setReviewingConceptIndex(null)
+
+    // Wait for state to settle, then generate
+    setTimeout(() => handleGenerate(i), 50)
+  }, [reviewingConceptIndex, concepts, editScene, editSubject, editAction, editMood, editVideoPrompt, editExtensionPrompts, editHook, editCta, directQuality, handleGenerate])
 
   // ─── Extend Video ─────────────────────────────────────────────────────────
 
@@ -875,7 +964,11 @@ export default function URLToVideo({
       setEditExtensionPrompts(result.extensionPrompts || [])
       setEditHook(result.overlay?.hook || '')
       setEditCta(result.overlay?.cta || 'Shop Now')
-      setShowExtensions(!!(result.extensionPrompts?.length))
+      // Initialize per-segment image indices
+      const extCount = result.extensionPrompts?.length || 0
+      const segCount = 1 + extCount
+      const baseIndices = [...selectedProductImageIndices]
+      setSegmentImageIndices(Array.from({ length: segCount }, () => [...baseIndices]))
     } catch {
       setDirectError('Failed to write concept. Please try again.')
     } finally {
@@ -936,20 +1029,25 @@ export default function URLToVideo({
         }
       }
 
-      // Build overlay config if enabled
+      // Build overlay config if enabled (must match handleGenerate structure)
       const overlayConfig = directOverlaysEnabled ? {
+        style: 'bold' as const,
         hook: editHook ? {
           line1: editHook,
           startSec: 0,
-          endSec: 2,
+          endSec: 3,
           animation: 'pop' as const,
+          fontSize: 56,
+          fontWeight: 800,
+          position: 'top' as const,
         } : undefined,
+        captions: [] as Array<{ text: string; startSec: number; endSec: number; highlight: boolean; fontSize: number; fontWeight: number; position: 'bottom' }>,
         cta: editCta ? {
           buttonText: editCta,
-          startSec: Math.max(duration - 3, 0),
-          animation: 'pop' as const,
+          startSec: Math.max(duration - 3, duration * 0.7),
+          animation: 'slide' as const,
+          fontSize: 32,
         } : undefined,
-        style: 'clean' as const,
       } : undefined
 
       const res = await fetch('/api/creative-studio/generate-video', {
@@ -969,8 +1067,16 @@ export default function URLToVideo({
           targetDurationSeconds: isExtended ? duration : undefined,
           extensionPrompts: isExtended ? editExtensionPrompts : undefined,
           overlayConfig,
-          productImageBase64: includeProductImage ? (productImages[selectedProductImageIdx]?.base64 || null) : null,
-          productImageMimeType: includeProductImage ? (productImages[selectedProductImageIdx]?.mimeType || null) : null,
+          productImages: includeProductImage
+            ? selectedProductImageIndices
+                .map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType }))
+                .filter(img => img.base64)
+            : [],
+          segmentImages: segmentImageIndices.length > 0 && includeProductImage
+            ? segmentImageIndices.map(indices =>
+                indices.map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType })).filter(img => img.base64)
+              )
+            : undefined,
         }),
       })
 
@@ -1001,7 +1107,7 @@ export default function URLToVideo({
     } finally {
       setDirectGenerating(false)
     }
-  }, [userId, adAccountId, productKnowledge, assembleProductKnowledge, canvasId, productUrl, directPrompt, editScene, editAction, editVideoPrompt, editExtensionPrompts, editHook, editCta, directOverlaysEnabled, directQuality, directExtensionCount, directCreditCost, includeProductImage, productImages, selectedProductImageIdx, onCreditsChanged])
+  }, [userId, adAccountId, productKnowledge, assembleProductKnowledge, canvasId, productUrl, directPrompt, editScene, editAction, editVideoPrompt, editExtensionPrompts, editHook, editCta, directOverlaysEnabled, directQuality, directExtensionCount, directCreditCost, includeProductImage, productImages, selectedProductImageIndices, onCreditsChanged])
 
   // ─── Direct: Video polling ─────────────────────────────────────────────────
 
@@ -1131,104 +1237,93 @@ export default function URLToVideo({
               </div>
             )}
 
-            {/* Product image selection — same pattern as UGC in ad-studio */}
+            {/* Product image selection — multi-select grid */}
             {hasAnalyzed && (
             <div className="mt-4 space-y-4">
-              <label className="text-sm font-medium text-zinc-300 block">Product image for video</label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-300 block">
+                  Product images for video — select up to 3
+                  {productImages.length > 0 && (
+                    <span className="text-xs text-zinc-500 ml-2">
+                      ({selectedProductImageIndices.length}/{Math.min(productImages.length, 3)})
+                    </span>
+                  )}
+                </label>
+                {selectedProductImageIndices.length > 0 && (
+                  <button
+                    onClick={() => { setSelectedProductImageIndices([]); setIncludeProductImage(false) }}
+                    className="text-xs text-zinc-500 hover:text-white transition-colors"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
 
-              {/* Selected image preview */}
-              {productImages.length > 0 && includeProductImage && (
-                <div className="flex items-start gap-4 p-4 bg-bg-dark rounded-xl border border-blue-500/30">
-                  <div className="relative w-24 h-24 rounded-lg overflow-hidden bg-zinc-900 flex-shrink-0 border-2 border-blue-500/40">
-                    <img
-                      src={`data:${productImages[selectedProductImageIdx]?.mimeType};base64,${productImages[selectedProductImageIdx]?.base64}`}
-                      alt={productImages[selectedProductImageIdx]?.description || 'Product'}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-emerald-400">
-                      <Check className="w-3 h-3" />
-                      Image selected
-                    </div>
-                    <button
-                      onClick={() => setIncludeProductImage(false)}
-                      className="text-sm text-zinc-500 hover:text-white transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </div>
+              {/* Multi-select image grid */}
+              {productImages.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {productImages.map((img, i) => {
+                    const isSelected = selectedProductImageIndices.includes(i)
+                    const selectionOrder = isSelected ? selectedProductImageIndices.indexOf(i) + 1 : 0
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setSelectedProductImageIndices(prev => {
+                            if (prev.includes(i)) {
+                              const next = prev.filter(idx => idx !== i)
+                              if (next.length === 0) setIncludeProductImage(false)
+                              return next
+                            }
+                            if (prev.length >= 3) return prev
+                            setIncludeProductImage(true)
+                            return [...prev, i]
+                          })
+                        }}
+                        className={cn(
+                          'relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-all',
+                          isSelected
+                            ? 'border-blue-500 ring-2 ring-blue-500/30'
+                            : 'border-zinc-700 hover:border-zinc-500'
+                        )}
+                      >
+                        <img
+                          src={`data:${img.mimeType};base64,${img.base64}`}
+                          alt={img.description || `Image ${i + 1}`}
+                          className="w-full h-full object-contain bg-zinc-900"
+                        />
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                            <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">{selectionOrder}</span>
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
 
-              {/* Image source options — show when no image selected */}
-              {(!includeProductImage || productImages.length === 0) && (
-                <div className="space-y-4">
-                  {/* URL Photos — from product analysis */}
-                  {productImages.length > 0 && (
-                    <div>
-                      <label className="text-sm font-medium text-zinc-300 mb-2 block">From product URL</label>
-                      <div className="flex flex-wrap gap-3">
-                        {productImages.map((img, i) => (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              setSelectedProductImageIdx(i)
-                              setIncludeProductImage(true)
-                            }}
-                            className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-zinc-700 hover:border-blue-500/60 transition-all group"
-                          >
-                            <img
-                              src={`data:${img.mimeType};base64,${img.base64}`}
-                              alt={img.description || `Image ${i + 1}`}
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/20 transition-colors flex items-center justify-center">
-                              <Check className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Divider if URL photos exist */}
-                  {productImages.length > 0 && (
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 h-px bg-border" />
-                      <span className="text-xs text-zinc-500">or choose from</span>
-                      <div className="flex-1 h-px bg-border" />
-                    </div>
-                  )}
-
-                  {/* Media Library + Upload buttons */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Media Library */}
-                    <button
-                      onClick={onOpenMediaLibrary}
-                      className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors"
-                    >
-                      <Layers className="w-8 h-8 text-blue-400 mb-2" />
-                      <p className="text-white font-medium text-sm">Media Library</p>
-                      <p className="text-zinc-500 text-xs mt-1">Browse your ad account images</p>
-                    </button>
-
-                    {/* Upload */}
-                    <label className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-zinc-700 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors cursor-pointer">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                      />
-                      <Upload className="w-8 h-8 text-blue-400 mb-2" />
-                      <p className="text-white font-medium text-sm">Upload Image</p>
-                      <p className="text-zinc-500 text-xs mt-1">PNG, JPG, WEBP up to 10MB</p>
-                    </label>
-                  </div>
-                </div>
-              )}
+              {/* Media Library + Upload — always available */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={onOpenMediaLibrary}
+                  className="flex flex-col items-center justify-center py-6 border-2 border-dashed border-zinc-700 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors"
+                >
+                  <Layers className="w-6 h-6 text-blue-400 mb-1" />
+                  <p className="text-white font-medium text-sm">Media Library</p>
+                </button>
+                <label className="flex flex-col items-center justify-center py-6 border-2 border-dashed border-zinc-700 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors cursor-pointer">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                  <Upload className="w-6 h-6 text-blue-400 mb-1" />
+                  <p className="text-white font-medium text-sm">Upload Image</p>
+                </label>
+              </div>
             </div>
             )}
           </div>
@@ -1370,9 +1465,56 @@ export default function URLToVideo({
                     </div>
                   )}
 
-                  {/* Concept cards */}
+                  {/* Concept cards / Director's Review */}
                   {!generatingConcepts && hasConcepts && (
                     <>
+                      {/* Director's Review for a specific concept */}
+                      {reviewingConceptIndex !== null && (() => {
+                        const reviewConcept = concepts[reviewingConceptIndex]
+                        if (!reviewConcept) return null
+                        const reviewJob = getActiveJob(reviewingConceptIndex)
+                        const reviewJobActive = reviewJob && ['queued', 'generating', 'extending', 'rendering'].includes(reviewJob.status)
+                        return (
+                          <div className="space-y-4">
+                            <button
+                              onClick={() => setReviewingConceptIndex(null)}
+                              className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                              Back to concepts
+                            </button>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                                Reviewing: {reviewConcept.title}
+                              </span>
+                            </div>
+                            <DirectorsReview
+                              scene={editScene} onSceneChange={setEditScene}
+                              subject={editSubject} onSubjectChange={setEditSubject}
+                              action={editAction} onActionChange={setEditAction}
+                              mood={editMood} onMoodChange={setEditMood}
+                              videoPrompt={editVideoPrompt} onVideoPromptChange={setEditVideoPrompt}
+                              extensionPrompts={editExtensionPrompts} onExtensionPromptsChange={setEditExtensionPrompts}
+                              overlaysEnabled={directOverlaysEnabled} onOverlaysEnabledChange={setDirectOverlaysEnabled}
+                              hook={editHook} onHookChange={setEditHook}
+                              cta={editCta} onCtaChange={setEditCta}
+                              quality={directQuality} onQualityChange={setDirectQuality}
+                              productImages={includeProductImage ? productImages : undefined}
+                              segmentImageIndices={segmentImageIndices}
+                              onSegmentImageIndicesChange={setSegmentImageIndices}
+                              onGenerate={handleGenerateFromReview}
+                              generating={generatingIndex === reviewingConceptIndex}
+                              creditsRemaining={credits?.remaining ?? null}
+                              error={generateError}
+                              hasActiveJob={!!reviewJobActive}
+                              hasCompletedVideo={reviewJob?.status === 'complete'}
+                            />
+                          </div>
+                        )
+                      })()}
+
+                      {/* Concept grid (hidden when Director's Review is open) */}
+                      {reviewingConceptIndex === null && <>
                       <div className="flex items-center justify-between mb-4">
                         <div>
                           <h3 className="text-base font-semibold text-white">{concepts.length} Creative Concept{concepts.length !== 1 ? 's' : ''}</h3>
@@ -1854,23 +1996,33 @@ export default function URLToVideo({
                                           )}
                                         </div>
 
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
-                                          disabled={generatingIndex !== null || (credits !== null && credits.remaining < cCost)}
-                                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                                        >
-                                          {generatingIndex === i ? (
-                                            <>
-                                              <Loader2 className="w-4 h-4 animate-spin" />
-                                              Starting generation...
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Video className="w-4 h-4" />
-                                              Generate {cDuration}s Video · {cCost} credits
-                                            </>
-                                          )}
-                                        </button>
+                                        <div className="flex gap-2">
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); enterDirectorsReview(i) }}
+                                            disabled={generatingIndex !== null}
+                                            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 font-medium hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                                          >
+                                            <Clapperboard className="w-4 h-4" />
+                                            Director&apos;s Review
+                                          </button>
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); handleGenerate(i) }}
+                                            disabled={generatingIndex !== null || (credits !== null && credits.remaining < cCost)}
+                                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                                          >
+                                            {generatingIndex === i ? (
+                                              <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Starting generation...
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Video className="w-4 h-4" />
+                                                Generate {cDuration}s · {cCost} credits
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
                                       </>
                                     )
                                   })()}
@@ -1955,6 +2107,7 @@ export default function URLToVideo({
                           </div>
                         )}
                       </div>
+                      </>}
                     </>
                   )}
                 </>
@@ -1966,273 +2119,28 @@ export default function URLToVideo({
                   {/* ── Phase 2: Director's Review (always visible when script exists) ── */}
                   {directScript && (
                     <div className="space-y-4">
-                      {/* Amber Director's Review panel */}
-                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-                        {/* Header */}
-                        <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
-                          <Clapperboard className="w-4 h-4 text-amber-400" />
-                          <span className="text-sm font-semibold text-amber-300">Director&apos;s Review</span>
-                          <span className="ml-auto text-xs text-amber-400/60">Edit before generating</span>
-                        </div>
-
-                        <div className="p-4 space-y-4">
-                          {/* Scene + Subject */}
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-xs font-medium text-zinc-400 mb-1 block">Scene</label>
-                              <input
-                                type="text"
-                                value={editScene}
-                                onChange={(e) => setEditScene(e.target.value)}
-                                className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-zinc-400 mb-1 block">Subject</label>
-                              <input
-                                type="text"
-                                value={editSubject}
-                                onChange={(e) => setEditSubject(e.target.value)}
-                                className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Action */}
-                          <div>
-                            <label className="text-xs font-medium text-zinc-400 mb-1 block">Action</label>
-                            <textarea
-                              value={editAction}
-                              onChange={(e) => setEditAction(e.target.value)}
-                              rows={3}
-                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 resize-none"
-                            />
-                          </div>
-
-                          {/* Mood */}
-                          <div>
-                            <label className="text-xs font-medium text-zinc-400 mb-1 block">Mood</label>
-                            <input
-                              type="text"
-                              value={editMood}
-                              onChange={(e) => setEditMood(e.target.value)}
-                              className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                            />
-                          </div>
-
-                          {/* Veo Prompt (collapsible) */}
-                          <details className="group" open={showVeoPrompt}>
-                            <summary
-                              className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                              onClick={(e) => { e.preventDefault(); setShowVeoPrompt(!showVeoPrompt) }}
-                            >
-                              <ChevronRight className={cn('w-3 h-3 transition-transform', showVeoPrompt && 'rotate-90')} />
-                              Veo Prompt (first 8s)
-                            </summary>
-                            {showVeoPrompt && (
-                              <textarea
-                                value={editVideoPrompt}
-                                onChange={(e) => setEditVideoPrompt(e.target.value)}
-                                className="w-full mt-2 bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                                rows={8}
-                              />
-                            )}
-                          </details>
-
-                          {/* Extension Prompts (collapsible) */}
-                          <details className="group" open={showExtensions}>
-                            <summary
-                              className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                              onClick={(e) => { e.preventDefault(); setShowExtensions(!showExtensions) }}
-                            >
-                              <ChevronRight className={cn('w-3 h-3 transition-transform', showExtensions && 'rotate-90')} />
-                              Extension Prompts ({directExtensionCount})
-                            </summary>
-                            {showExtensions && (
-                              <div className="mt-2 space-y-2">
-                                {editExtensionPrompts.map((ep, idx) => (
-                                  <div key={idx}>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <label className="text-xs text-zinc-500">Segment {idx + 2} ({8 + (idx + 1) * VEO_EXTENSION_STEP - 6}s - {8 + (idx + 1) * VEO_EXTENSION_STEP}s)</label>
-                                      <button
-                                        onClick={() => setEditExtensionPrompts(editExtensionPrompts.filter((_, i) => i !== idx))}
-                                        className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
-                                      >
-                                        Remove
-                                      </button>
-                                    </div>
-                                    <textarea
-                                      value={ep}
-                                      onChange={(e) => {
-                                        const updated = [...editExtensionPrompts]
-                                        updated[idx] = e.target.value
-                                        setEditExtensionPrompts(updated)
-                                      }}
-                                      className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                                      rows={4}
-                                    />
-                                  </div>
-                                ))}
-                                {directExtensionCount < 3 && (
-                                  <button
-                                    onClick={() => {
-                                      setEditExtensionPrompts([...editExtensionPrompts, 'Continue from previous shot. '])
-                                      setShowExtensions(true)
-                                    }}
-                                    className="flex items-center gap-1.5 text-xs text-amber-400/70 hover:text-amber-300 transition-colors py-1"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                    Add extension (+7s)
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </details>
-
-                          {/* Overlays toggle */}
-                          <div className="flex items-center justify-between py-2 border-t border-amber-500/10">
-                            <span className="text-xs font-medium text-amber-300/80">Text Overlays</span>
-                            <button
-                              onClick={() => setDirectOverlaysEnabled(!directOverlaysEnabled)}
-                              className={cn(
-                                'relative w-9 h-5 rounded-full transition-colors',
-                                directOverlaysEnabled ? 'bg-amber-500' : 'bg-zinc-700'
-                              )}
-                            >
-                              <div className={cn(
-                                'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-                                directOverlaysEnabled ? 'left-[18px]' : 'left-0.5'
-                              )} />
-                            </button>
-                          </div>
-
-                          {/* Hook + CTA (shown when overlays enabled) */}
-                          {directOverlaysEnabled && (
-                            <div className="space-y-3">
-                              <div>
-                                <label className="text-xs font-medium text-zinc-400 mb-1 block">Hook Text <span className="text-zinc-600 font-normal">(first 2s)</span></label>
-                                <input
-                                  type="text"
-                                  value={editHook}
-                                  onChange={(e) => setEditHook(e.target.value)}
-                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                                  placeholder="e.g. See the Difference"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs font-medium text-zinc-400 mb-1 block">CTA Button</label>
-                                <input
-                                  type="text"
-                                  value={editCta}
-                                  onChange={(e) => setEditCta(e.target.value)}
-                                  className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                                  placeholder="e.g. Shop Now"
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Quality Selector */}
-                          <div>
-                            <label className="text-xs font-medium text-zinc-400 mb-2 block">Quality</label>
-                            <div className="flex gap-2">
-                              {(['standard', 'premium'] as const).map(q => {
-                                const isActive = directQuality === q
-                                const qCosts = QUALITY_COSTS[q]
-                                const totalCost = qCosts.base + directExtensionCount * qCosts.extension
-                                return (
-                                  <button
-                                    key={q}
-                                    onClick={() => setDirectQuality(q)}
-                                    className={cn(
-                                      'flex-1 px-3 py-2 rounded-lg border transition-all text-left',
-                                      isActive
-                                        ? 'bg-amber-500/10 border-amber-500/40'
-                                        : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
-                                    )}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className={cn('text-xs font-medium', isActive ? 'text-amber-300' : 'text-zinc-400')}>
-                                        {q === 'standard' ? 'Standard' : 'Premium'}
-                                      </span>
-                                      <span className="text-[10px] text-zinc-500">{q === 'standard' ? '720p' : '1080p'}</span>
-                                    </div>
-                                    <p className="text-[10px] text-zinc-500 mt-0.5">{totalCost} credits</p>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Budget line */}
-                          <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
-                            <div className="space-y-0.5">
-                              <p className="text-sm font-semibold text-white tabular-nums">{directEstimatedDuration}s video</p>
-                              <p className="text-xs text-zinc-500">
-                                Veo 3.1 {directQuality === 'premium' ? 'Standard' : 'Fast'}{' '}
-                                {directExtensionCount === 0 ? 'Single clip' : `8s base + ${directExtensionCount} extension${directExtensionCount > 1 ? 's' : ''}`}
-                                {' · '}{directQuality === 'premium' ? '1080p' : '720p'}
-                              </p>
-                            </div>
-                            <div className="text-right space-y-0.5">
-                              <p className={cn('text-sm font-bold tabular-nums', directCanAfford ? 'text-amber-400' : 'text-red-400')}>
-                                {directCreditCost} credits
-                              </p>
-                              {credits && (
-                                <p className="text-xs text-zinc-500">{credits.remaining} remaining</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Error */}
-                          {generateError && (
-                            <div className="flex items-center gap-2 text-red-400 text-sm">
-                              <AlertCircle className="w-4 h-4" />
-                              {generateError}
-                            </div>
-                          )}
-
-                          {/* Action buttons */}
-                          <div className="flex gap-2 pt-1">
-                            {(() => {
-                              const isJobActive = directVideoJob && directVideoJob.status !== 'complete' && directVideoJob.status !== 'failed'
-                              const hasCompletedVideo = directVideoJob?.status === 'complete'
-                              return (
-                                <button
-                                  onClick={() => { setDirectVideoJob(null); handleDirectGenerate() }}
-                                  disabled={directGenerating || !directCanAfford || !!isJobActive}
-                                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                                >
-                                  {directGenerating || isJobActive ? (
-                                    <>
-                                      <Loader2 className="w-4 h-4 animate-spin" />
-                                      Generating {directEstimatedDuration}s video...
-                                    </>
-                                  ) : hasCompletedVideo ? (
-                                    <>
-                                      <RefreshCw className="w-4 h-4" />
-                                      Re-generate ({directCreditCost} credits)
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Clapperboard className="w-4 h-4" />
-                                      Action! ({directCreditCost} credits)
-                                    </>
-                                  )}
-                                </button>
-                              )
-                            })()}
-                            <button
-                              onClick={() => { setDirectScript(null); handleWriteDirectConcept() }}
-                              disabled={directWriting || directGenerating || !!(directVideoJob && directVideoJob.status !== 'complete' && directVideoJob.status !== 'failed')}
-                              className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                              title="Rewrite script"
-                            >
-                              <RefreshCw className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                      <DirectorsReview
+                        scene={editScene} onSceneChange={setEditScene}
+                        subject={editSubject} onSubjectChange={setEditSubject}
+                        action={editAction} onActionChange={setEditAction}
+                        mood={editMood} onMoodChange={setEditMood}
+                        videoPrompt={editVideoPrompt} onVideoPromptChange={setEditVideoPrompt}
+                        extensionPrompts={editExtensionPrompts} onExtensionPromptsChange={setEditExtensionPrompts}
+                        overlaysEnabled={directOverlaysEnabled} onOverlaysEnabledChange={setDirectOverlaysEnabled}
+                        hook={editHook} onHookChange={setEditHook}
+                        cta={editCta} onCtaChange={setEditCta}
+                        quality={directQuality} onQualityChange={setDirectQuality}
+                        productImages={includeProductImage ? productImages : undefined}
+                        segmentImageIndices={segmentImageIndices}
+                        onSegmentImageIndicesChange={setSegmentImageIndices}
+                        onGenerate={() => { setDirectVideoJob(null); handleDirectGenerate() }}
+                        onRewrite={() => { setDirectScript(null); handleWriteDirectConcept() }}
+                        generating={directGenerating}
+                        creditsRemaining={credits?.remaining ?? null}
+                        error={generateError}
+                        hasActiveJob={!!(directVideoJob && directVideoJob.status !== 'complete' && directVideoJob.status !== 'failed')}
+                        hasCompletedVideo={directVideoJob?.status === 'complete'}
+                      />
 
                       {/* Rewrite link */}
                       {!directVideoJob && (
