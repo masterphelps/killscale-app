@@ -123,7 +123,7 @@ If any function in this chain fails or is missing, signup breaks entirely.
 
 **KS Oracle (AI-Powered Entry Point):**
 - `components/creative-studio/oracle-box.tsx` - Main input UI (textarea, image attach, output type/format toggles, auto-suggest)
-- `components/creative-studio/oracle-chips.tsx` - Two-column shortcut grid ("Make Ads" 6 chips + "Make Content" 2 chips)
+- `components/creative-studio/oracle-chips.tsx` - Shortcut grid (5 chips: Create Image Ad, Create Video Ad, Clone Ad, Inspiration, UGC Video Ad)
 - `components/creative-studio/oracle-chat-thread.tsx` - Chat message renderer with 11 context card types
 - `components/creative-studio/oracle-types.ts` - Shared types: OracleMode, OracleTier, OracleMessage, OracleToolRequest, etc.
 - `lib/oracle-tools.ts` - Client-side tool executor (maps OracleToolName → API calls, returns ToolExecutionResult)
@@ -150,9 +150,10 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `components/creative-studio/competitor-landing-pages.tsx` - Top landing pages with percentage bars
 - `components/creative-studio/competitor-filters.tsx` - Media type, days active, status filters
 
-**Video Studio (AI Video Generation):**
-- `app/dashboard/creative-studio/video-studio/page.tsx` - Product → Concepts pipeline with pill selector, inline video generation
+**Video Studio (AI Video Generation — Unified Explore + Direct):**
+- `app/dashboard/creative-studio/video-studio/page.tsx` - Unified page with two sub-modes: "Explore" (4 concepts from Claude) and "Direct" (single script from user). Three accordion steps: Product Input → Choose Path → Director's Review. Handles Oracle handoff URL params (?prompt=, ?style=, ?mode=, ?productName=, ?productDescription=, ?productUrl=, ?canvasId=, ?tab=image)
 - `app/dashboard/creative-studio/video-editor/page.tsx` - Remotion overlay editor
+- `components/creative-studio/product-input.tsx` - Shared product input component (URL analysis, image upload/library, 7 pill categories). Used by Ad Studio (create mode) and Video Studio
 - `app/api/creative-studio/generate-ad-concepts/route.ts` - Claude generates 4 visual metaphor concepts with angle diversity
 - `app/api/creative-studio/generate-video-script/route.ts` - Claude generates video scripts per style
 - `app/api/creative-studio/generate-video/route.ts` - Veo 3.1 video generation (two quality tiers)
@@ -163,6 +164,9 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `app/api/creative-studio/generate-voiceover/route.ts` - OpenAI TTS integration
 - `app/api/creative-studio/video-composition/route.ts` - Multi-clip timeline compositions
 - `app/api/creative-studio/video-canvas/route.ts` - Canvas (concept set) persistence
+- `app/api/creative-studio/plan-scene/route.ts` - GPT 5.2 scene segmentation for Veo time chunks (used by Direct sub-mode)
+- `app/api/creative-studio/generate-direct-concept/route.ts` - Direct concept generation from user prompt
+- `app/api/creative-studio/generate-ugc-prompt/route.ts` - UGC prompt generation
 - `lib/video-prompt-templates.ts` - AdConcept interface, ProductKnowledge type, video prompt builders
 - `lib/rve-bridge.ts` - Remotion Video Engine bridge (server render — NOT on Vercel)
 - `remotion/types.ts` - OverlayConfig, HookOverlay, CaptionOverlay, VideoComposition types
@@ -178,11 +182,9 @@ If any function in this chain fails or is missing, signup breaks entirely.
 - `app/api/creative-studio/image-editor-session/route.ts` - Session CRUD (GET/POST/PATCH/DELETE)
 - Database: `image_editor_sessions` (migration 060)
 
-**Open Prompt / Direct Studio:**
-- `app/dashboard/creative-studio/direct/page.tsx` - Direct prompt → video generation (Write Script → Director's Review → Action)
-- `app/api/creative-studio/plan-scene/route.ts` - GPT 5.2 scene segmentation for Veo time chunks
-- `app/api/creative-studio/generate-direct-concept/route.ts` - Direct concept generation from user prompt
-- `app/api/creative-studio/generate-ugc-prompt/route.ts` - UGC prompt generation
+**Open Prompt / Direct Studio (CONSOLIDATED into Video Studio — Mar 2026):**
+- `app/dashboard/creative-studio/direct/page.tsx` - DELETED. Direct/open-prompt video flow now lives in Video Studio's "Direct" sub-mode
+- Scene planning, direct concept, and UGC prompt APIs listed under Video Studio above
 
 **Prompts Library:**
 - `lib/prompts/index.ts` - Barrel export with CODEOWNERS protection
@@ -659,7 +661,7 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 |------|-------|------|---------|
 | 1 — Router | Haiku (`claude-haiku-4-5-20251001`) | Fast intent classification → route directly to workflow or `conversation` for Sonnet | ~300-500ms |
 | 2 — Guide | Sonnet (`claude-sonnet-4-6`) | Conversational: asks clarifying questions with clickable options, calls tools | Multi-turn |
-| 3 — Creative Director | Opus (`claude-opus-4-6`) | Bold, opinionated creative direction; crafts rich prompts, hands off video concepts to Direct Studio | Multi-turn |
+| 3 — Creative Director | Opus (`claude-opus-4-6`) | Bold, opinionated creative direction; crafts rich prompts, hands off video concepts to Video Studio | Multi-turn |
 
 **Flow:**
 1. User types in Oracle Box → Haiku classifies intent
@@ -667,21 +669,21 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 3. Only truly vague input ("help me", "what can you do?") → Haiku returns `conversation` → Sonnet
 4. Sonnet asks clarifying questions with clickable option pills (e.g. "Do you have a product URL?" with "I have a URL" / "I'll describe it")
 5. Sonnet can call tools (analyze product, generate ad copy, etc.) and escalate to Opus when product context is available
-6. Opus crafts rich generation prompts → returns `generatedPrompt` for image preview OR `action: { workflow: 'text-to-video' }` for video handoff to Direct Studio
+6. Opus crafts rich generation prompts → returns `generatedPrompt` for image preview OR `action: { workflow: 'text-to-video' }` for video handoff to Video Studio
 
 **Haiku Routing Defaults:**
 - Image format → `create` (Product→Ad workflow, asks for URL)
-- Video format → `url-to-video` (Product→Video Ad workflow, asks for URL)
+- Video format → `url-to-video` (navigates to Video Studio)
 - `conversation` is a LAST RESORT — only for truly vague/greeting inputs with no actionable intent
 - Haiku should match at least all chip intents: any mention of ads/video/product → direct route, not conversation
+- All video workflows (`url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`) navigate to `/video-studio` with appropriate URL params
 
 **Workflow Routes (from Haiku or chips):**
 `create`, `clone`, `inspiration`, `upload`, `url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`, `open-prompt`
 
-**Oracle Chips (visible in idle mode, bypass Haiku):**
-- "Make Ads" column (6 chips): Product→Ad (`create`), Product→Video Ad (`url-to-video`), Clone Ad (`clone`), Inspiration (`inspiration`), UGC Video Ad (`ugc-video`), Image→Ad (`attach`)
-- "Make Content" column (2 chips): Generate Image (`focus` → `open-prompt`), Generate Video (`focus` → `open-prompt`)
-- Chip action types: `workflow` (bypasses Haiku), `focus` (pre-configures toggles), `attach` (opens attach menu)
+**Oracle Chips (5 chips visible in idle mode, bypass Haiku):**
+- Create Image Ad (`create`), Create Video Ad (`url-to-video`), Clone Ad (`clone`), Inspiration (`inspiration`), UGC Video Ad (`ugc-video`)
+- Chip action type: `workflow` (bypasses Haiku, navigates directly)
 
 **Tool System (8 tools, called by Sonnet/Opus):**
 
@@ -696,7 +698,7 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 | `generate_image` | 5cr | Gemini image generation |
 | `generate_video` | 50cr | Veo video generation |
 
-**Note:** `generate_concepts` was removed. Video concept ideation now flows through Opus conversation → `action: { workflow: 'text-to-video' }` → Direct Studio's Director's Review. The 4-concept exploration pipeline lives exclusively in Video Studio.
+**Note:** `generate_concepts` was removed. Video concept ideation now flows through Opus conversation → `action: { workflow: 'text-to-video' }` → Video Studio's Director's Review. The 4-concept exploration pipeline lives in Video Studio's Explore sub-mode.
 
 Credit-costing tools show a `credit-confirm` context card and wait for user confirmation before executing.
 
@@ -729,24 +731,25 @@ Note: `concepts` type still exists in `OracleContextCardType` for backwards comp
 - **ACT, DON'T ANNOUNCE:** When Oracle has enough info to use a tool, it must include `toolRequest` in the SAME response as its message. Never say "I'll analyze that" without the tool call — forces unnecessary user confirmation.
 - **Optional options:** The `options` array is OPTIONAL. Skip it when executing a tool, sharing an opinion, asking open-ended questions, or when the next step is obvious. Only include 2-3 genuinely distinct creative choices.
 - **Escalation:** Sonnet escalates to Opus for rich prompt engineering and creative brainstorming. Sonnet NEVER crafts image/video prompts — always escalates.
-- **Opus video handoff:** When Opus crafts a video concept, it returns `action: { workflow: 'text-to-video', prefilledData: { prompt, style } }` to route to Direct Studio's Director's Review. Opus does NOT call `generate_video` for concept exploration — that's for quick direct requests only.
+- **Opus video handoff:** When Opus crafts a video concept, it returns `action: { workflow: 'text-to-video', prefilledData: { prompt, style } }` to route to Video Studio's Director's Review (Direct sub-mode). Opus does NOT call `generate_video` for concept exploration — that's for quick direct requests only.
 
 **Opus Response Types (handled in ad-studio/page.tsx):**
 Opus can return these fields (mutually exclusive, checked in this priority order):
 1. `toolRequest` → execute tool immediately
 2. `mediaRequest` → show upload/library buttons
-3. `action` → route to workflow (e.g. `text-to-video` → Direct Studio with `?prompt=&style=`)
+3. `action` → route to workflow (e.g. `text-to-video` → Video Studio with `?prompt=&style=&mode=direct`)
 4. `analyzeUrl` → fetch product data, re-call Opus with real data, then check retry response for `action`/`generatedPrompt`
 5. `generatedPrompt` → show prompt preview card (image generation)
 6. Plain message → display with options
 
 **CRITICAL:** `OracleCreativeResponse` has `action` field (added to type). All 4 Opus response rendering paths (main handler, escalation first turn, analyzeUrl retry, escalation retry) must check `action` before falling through to `generatedPrompt` display.
 
-**Oracle → Direct Studio Flow (`text-to-video` action):**
+**Oracle → Video Studio Flow (`text-to-video` action):**
 - When Opus crafts a video concept, it returns `action: { workflow: 'text-to-video', prefilledData: { prompt: '...', style: 'cinematic' } }`
-- `handleOracleAction` builds URL: `/dashboard/creative-studio/direct?prompt=...&style=cinematic`
-- Direct Studio reads `?prompt=` and `?style=` from URL params to pre-fill the script and video style
-- User lands in Director's Review where GPT segments the prompt into Veo time chunks
+- `handleOracleAction` builds URL: `/dashboard/creative-studio/video-studio?prompt=...&style=cinematic&mode=direct`
+- Video Studio reads `?prompt=`, `?style=`, and `?mode=` from URL params to pre-fill the script and video style
+- User lands in Director's Review (Direct sub-mode) where GPT segments the prompt into Veo time chunks
+- All video workflow routes (`url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`) now navigate to Video Studio with appropriate URL params instead of the old Direct Studio page
 
 **Oracle → Video Editor Flow (`?jobId=` pattern):**
 - When Oracle generates an overlay via `generate_overlay` tool, it creates a `video_generation_job` record via `create-overlay-job` endpoint
@@ -788,14 +791,17 @@ Opus can return these fields (mutually exclusive, checked in this priority order
 ### AI Video Generation (Video Studio)
 Generate scroll-stopping short-form video ads using Veo 3.1 (Google).
 
-**Role Separation (Video Studio vs Oracle/Direct Studio):**
-- **Video Studio** = "show me options" — structured 4-concept pipeline with pill selection, style picker, concept comparison
-- **Oracle → Direct Studio** = "help me figure out what I want" — conversation → single tailored vision → Director's Review
+**Unified Video Studio (Mar 2026 Consolidation):**
+Video Studio is now a single unified page with two sub-modes:
+- **Explore** = "show me options" — structured 4-concept pipeline with pill selection, style picker, concept comparison
+- **Direct** = "I know what I want" — single script from user → Director's Review → Veo generation (formerly the standalone Direct Studio page)
+- Oracle video workflows (`url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`) all navigate to Video Studio with URL params
 - Oracle keeps `generate_video` tool for quick direct requests ("make me a video of X") but does NOT generate concepts inline
 
-**User Flow:**
-1. **Step 1: Product Input** — URL analysis → Claude extracts product knowledge → Pill selector (7 categories: name, description, features, benefits, key messages, testimonials, pain points)
-2. **Step 2: Concepts + Generate** — Claude creates 4 unique visual metaphor concepts, each with different angle (Problem→Solution, Feature Spotlight, Emotional Benefit, Social Proof, etc.) and visual world. Video generation happens inline per concept card (no step 3 navigation).
+**User Flow (3 accordion steps):**
+1. **Step 1: Product Input** — Shared `ProductInput` component: URL analysis → Claude extracts product knowledge → Pill selector (7 categories: name, description, features, benefits, key messages, testimonials, pain points). Also supports image upload/library
+2. **Step 2: Choose Path** — Select "Explore" (4 concepts from Claude) or "Direct" (write your own script). Style picker for both paths
+3. **Step 3: Director's Review** — For Explore: 4 concept cards with inline video generation. For Direct: Write Script → GPT scene segmentation → editable per-segment prompts → Veo generation
 
 **Veo 3.1 (Sole Provider):**
 - Two quality tiers: Fast (720p, `veo-3.1-fast-generate-preview`) and Standard (1080p, `veo-3.1-generate-preview`)
@@ -891,19 +897,17 @@ Full prompt-based image editing with intelligent text detection and replacement.
 
 **Files:** `app/dashboard/creative-studio/image-editor/page.tsx`, `app/api/creative-studio/detect-text/route.ts`, `app/api/creative-studio/adjust-image/route.ts`, `app/api/creative-studio/image-editor-session/route.ts`
 
-### Open Prompt System (Ad Studio)
-Two new modes for direct AI generation without forced templates.
+### Open Prompt System
+Two modes for direct AI generation without forced templates.
 
-**Image Mode:**
+**Image Mode (in Ad Studio):**
 - Raw user text prompt → Gemini image gen
 - Optional source image via icon-only dropdown (Upload / Media Library)
 - No forced headline/primary text generation or ad copy curation
 - Result stored as `source_type: 'open_prompt'` in sessions
 
-**Video Mode (3-Stage Flow):**
-1. **Write Script:** User enters free-form scene description
-2. **Director's Review:** GPT 5.2 segments prompt into Veo time chunks. Editable per-segment prompts, overlay controls, extension management (+7s buttons, max 3 extensions = 29s total)
-3. **Action!:** Generate video via Veo 3.1
+**Video Mode (CONSOLIDATED into Video Studio — Mar 2026):**
+The standalone Direct Studio page (`direct/page.tsx`) was deleted. The 3-stage video flow (Write Script → Director's Review → Action) now lives in Video Studio's "Direct" sub-mode. See "AI Video Generation (Video Studio)" section for details.
 
 **Scene Planning (`/api/creative-studio/plan-scene`):**
 - GPT 5.2 segments user prompt into Veo time chunks without rewriting
@@ -917,7 +921,7 @@ Two new modes for direct AI generation without forced templates.
 - All prompts now use natural flowing prose
 - Balanced segmentation: evenly distributed beats per segment
 
-**Files:** `app/dashboard/creative-studio/direct/page.tsx`, `app/api/creative-studio/plan-scene/route.ts`, `app/api/creative-studio/generate-direct-concept/route.ts`
+**Files:** `app/dashboard/creative-studio/video-studio/page.tsx` (Direct sub-mode), `app/api/creative-studio/plan-scene/route.ts`, `app/api/creative-studio/generate-direct-concept/route.ts`
 
 ### Veo 3.1 Multi-Extension Support
 Videos longer than 8 seconds use Veo's extension API to chain segments.
@@ -961,7 +965,7 @@ Videos longer than 8 seconds use Veo's extension API to chain segments.
 - **Open Prompt:** Direct user prompt → image or video without templates
 - **Scene Planning:** GPT 5.2 segments prompts into Veo time chunks
 - **Video Analysis:** Gemini 2.0 Flash multimodal video analysis with funnel stage scoring
-- **Video Concept Generation:** Claude generates 4 visual metaphor concepts with angle diversity (Video Studio only — Oracle routes video concepts to Direct Studio via `action`)
+- **Video Concept Generation:** Claude generates 4 visual metaphor concepts with angle diversity (Video Studio Explore sub-mode — Oracle routes video concepts to Video Studio Direct sub-mode via `action`)
 - **Video Overlay Generation:** Whisper transcription + Claude generates time-synced captions
 - **Voiceover:** OpenAI TTS with 6 voice options
 
@@ -1108,7 +1112,7 @@ Added Open Prompt system (image mode: raw prompt → Gemini, video mode: Write S
 
 **Key Files Created:**
 - `app/api/creative-studio/plan-scene/route.ts` - GPT 5.2 scene segmentation
-- `app/dashboard/creative-studio/direct/page.tsx` - Direct Studio page
+- `app/dashboard/creative-studio/direct/page.tsx` - Direct Studio page (DELETED in Mar 2026 studio consolidation — now part of Video Studio)
 - `lib/prompts/*.ts` - Centralized prompt library (12+ files)
 - `docs/plans/2026-02-22-ad-studio-open-prompt-design.md` - Design spec
 
@@ -1362,7 +1366,10 @@ if (shopifyAttribution && Object.keys(shopifyAttribution).length > 0) {
 
 ---
 
-## Current Work (February 2026)
+## Current Work (March 2026)
+
+### Studio Consolidation (Complete)
+Unified Video Studio + shared ProductInput component. Video Studio now has two sub-modes (Explore + Direct) in a single page with 3 accordion steps. Direct Studio page deleted. Ad Studio video code stripped (~2,000 lines). Oracle chips reduced from 8 to 5. All video workflows route to `/video-studio`. Deleted components: `url-to-video.tsx` (2,335 LOC), `image-to-video.tsx` (859 LOC), `direct/page.tsx` (1,682 LOC). Ad Studio mode type simplified to `'create' | 'clone' | 'inspiration' | 'upload' | 'open-prompt' | null`.
 
 ### Workspace-First Architecture (Partially Complete)
 Migration 065 auto-links all existing connected accounts to user's default workspace and ensures every user has `selected_workspace_id` set. Data queries are now workspace-scoped.
@@ -1579,6 +1586,7 @@ Global plan files are in `~/.claude/plans/`. **Note:** This directory contains p
 
 | Plan | Topic | Date |
 |------|-------|------|
+| Studio Consolidation | Unified Video Studio (Explore+Direct), shared ProductInput, deleted direct/page.tsx + url-to-video + image-to-video (~4,876 lines removed) | Mar 03 |
 | Image Gen Prompt Fix | buildTextOnlyPrompt ignoring imagePrompt | Feb 23 |
 | Ad Studio Open Prompt | Direct prompt → image/video, scene planning, style overhaul | Feb 22 |
 | AI Image Editor | Gemini 3 Pro editing, text detection, version history | Feb 21 |
