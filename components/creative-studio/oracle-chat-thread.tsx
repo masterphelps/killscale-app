@@ -472,7 +472,7 @@ export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditC
     const videoUrl = card.data.videoUrl as string | undefined
     const handleEditInEditor = () => {
       if (jobId) {
-        // Standard pattern: navigate with ?jobId= (same as Video Studio, Direct Studio, etc.)
+        // Standard pattern: navigate with ?jobId= (same as Video Studio, etc.)
         if (onOpenInEditor) {
           onOpenInEditor({ jobId }, videoUrl)
         } else {

@@ -201,7 +201,7 @@ async function executeGenerateOverlay(
   const style = overlayConfig.style || 'default'
 
   // Create a video_generation_job record so the video editor can load via ?jobId=
-  // (the standard pattern used by all other flows — Video Studio, Direct Studio, etc.)
+  // (the standard pattern used by all other flows — Video Studio, etc.)
   let jobId: string | null = null
   try {
     const jobRes = await fetch('/api/creative-studio/create-overlay-job', {
