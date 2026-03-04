@@ -355,6 +355,7 @@ export default function DirectPage() {
     autoAdvancedRef.current = true
 
     // Restore product context from sessionStorage (stashed by Oracle before navigating)
+    let hasProductContext = false
     try {
       const raw = sessionStorage.getItem('ks_oracle_handoff')
       if (raw) {
@@ -379,6 +380,7 @@ export default function DirectPage() {
             visualHooks: p.visualHooks,
           })
           setHasAnalyzed(true)
+          hasProductContext = true
         }
         if (handoff.productImages?.length > 0) {
           setProductImages(handoff.productImages)
@@ -387,6 +389,16 @@ export default function DirectPage() {
         }
       }
     } catch { /* sessionStorage read failed — continue without product context */ }
+
+    // Fallback: if no full product context from sessionStorage, use ?productName= param
+    // (covers described products/services that never had a URL analyzed)
+    if (!hasProductContext) {
+      const productNameParam = searchParams?.get('productName')
+      if (productNameParam) {
+        setProductKnowledge(prev => ({ ...prev, name: productNameParam }))
+        setHasAnalyzed(true)
+      }
+    }
 
     setStep(2)
   }, [searchParams])

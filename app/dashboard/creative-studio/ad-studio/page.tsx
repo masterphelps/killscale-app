@@ -8,6 +8,9 @@ import type { MediaImage } from '@/app/api/meta/media/route'
 import type { VideoJob } from '@/remotion/types'
 import type { ScenePlan } from '@/lib/video-prompt-templates'
 import { cn } from '@/lib/utils'
+import ProductInput from '@/components/creative-studio/product-input'
+import type { ProductInputRef } from '@/components/creative-studio/product-input'
+import type { ProductKnowledge, ProductImage } from '@/lib/video-prompt-templates'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { useSubscription } from '@/lib/subscription'
@@ -300,6 +303,10 @@ export default function AdStudioPage() {
   const [selectedProductImageIdx, setSelectedProductImageIdx] = useState(0)
   const [selectedProductImageIndices, setSelectedProductImageIndices] = useState<number[]>([0])
 
+  // Create mode: shared ProductInput component state
+  const [createMediaLibraryOpen, setCreateMediaLibraryOpen] = useState(false)
+  const [createImageFromLibrary, setCreateImageFromLibrary] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
+
   // Manual product entry (alternative to URL)
   const [useManualEntry, setUseManualEntry] = useState(false)
   const [manualProductName, setManualProductName] = useState('')
@@ -402,6 +409,7 @@ export default function AdStudioPage() {
   const searchParams = useSearchParams()
   const restoredSessionRef = useRef(false)
   const restoredOracleRef = useRef(false)
+  const productInputRef = useRef<ProductInputRef>(null)
 
   // Save copy state
   const [savingCopyIndex, setSavingCopyIndex] = useState<number | null>(null)
@@ -833,9 +841,9 @@ export default function AdStudioPage() {
     }
   }, [productUrl])
 
-  // Auto-trigger analysis when Oracle conversation routes with a URL
+  // Auto-trigger analysis when Oracle conversation routes with a URL (clone mode only — create mode uses ProductInput's autoAnalyze)
   useEffect(() => {
-    if (oracleAutoAnalyzeRef.current && mode && productUrl.trim()) {
+    if (oracleAutoAnalyzeRef.current && mode && mode !== 'create' && productUrl.trim()) {
       oracleAutoAnalyzeRef.current = false
       handleAnalyzeProduct()
     }
@@ -2950,6 +2958,9 @@ export default function AdStudioPage() {
     setOraclePreloadMode(undefined)
     setOraclePlaceholder(undefined)
     setOracleInputMode('ks')
+    // Reset create mode ProductInput state
+    setCreateMediaLibraryOpen(false)
+    setCreateImageFromLibrary(null)
     handleClearCompany()
     // Strip ?sessionId= from URL on reset
     router.replace('/dashboard/creative-studio/ad-studio', { scroll: false })
@@ -4586,8 +4597,70 @@ export default function AdStudioPage() {
             </div>
           )}
 
-          {/* Step 1: Product URL or Manual Entry + Pill Selectors */}
-          {currentStep === 1 && (
+          {/* Create mode: Shared ProductInput component (always rendered, handles collapsed/expanded) */}
+          {mode === 'create' && (
+            <>
+              <ProductInput
+                ref={productInputRef}
+                onChange={(knowledge: ProductKnowledge, images: ProductImage[], selectedIndices: number[]) => {
+                  // Bridge ProductKnowledge → ProductInfo by including selected image data
+                  const firstSelected = selectedIndices.length > 0 ? images[selectedIndices[0]] : null
+                  const assembled: ProductInfo = {
+                    name: knowledge.name,
+                    description: knowledge.description,
+                    features: knowledge.features,
+                    benefits: knowledge.benefits,
+                    painPoints: knowledge.painPoints,
+                    testimonialPoints: knowledge.testimonialPoints,
+                    keyMessages: knowledge.keyMessages,
+                    targetAudience: knowledge.targetAudience,
+                    category: knowledge.category,
+                    uniqueSellingPoint: knowledge.uniqueSellingPoint,
+                    imageBase64: firstSelected?.base64,
+                    imageMimeType: firstSelected?.mimeType,
+                  }
+                  setProductInfo(assembled)
+                  setProductImageOptions(images as ProductImageOption[])
+                  setSelectedProductImageIndices(selectedIndices)
+                }}
+                onOpenMediaLibrary={() => setCreateMediaLibraryOpen(true)}
+                onImageFromLibrary={createImageFromLibrary}
+                initialUrl={productUrl}
+                initialProductKnowledge={productInfo ? {
+                  name: productInfo.name,
+                  description: productInfo.description,
+                  features: productInfo.features,
+                  benefits: productInfo.benefits,
+                  painPoints: productInfo.painPoints,
+                  testimonialPoints: productInfo.testimonialPoints,
+                  keyMessages: productInfo.keyMessages,
+                  targetAudience: productInfo.targetAudience,
+                  category: productInfo.category,
+                  uniqueSellingPoint: productInfo.uniqueSellingPoint,
+                } as ProductKnowledge : undefined}
+                autoAnalyze={!!productUrl.trim() && !productInfo}
+                collapsed={currentStep > 1}
+                onCollapsedChange={(collapsed) => { if (!collapsed) setCurrentStep(1) }}
+                accentColor="amber"
+              />
+              {/* Continue button for create mode (ProductInput doesn't include step navigation) */}
+              {currentStep === 1 && productInfo?.name && (
+                <button
+                  onClick={() => setCurrentStep(3)}
+                  className={cn(
+                    'w-full px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2',
+                    'bg-accent hover:bg-accent/90 text-white'
+                  )}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                  Continue to Generate
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Step 1: Product URL or Manual Entry + Pill Selectors (Clone mode) */}
+          {currentStep === 1 && mode !== 'create' && (
             <div className="space-y-4">
               {/* Section A: Product Input */}
               <div className="bg-bg-card border border-border rounded-xl p-6 space-y-4">
@@ -4826,8 +4899,8 @@ export default function AdStudioPage() {
             </div>
           )}
 
-          {/* Product Info Card (shows after step 1) */}
-          {productInfo && mode !== 'upload' && (
+          {/* Product Info Card (shows after step 1) — hidden for create mode (ProductInput has its own collapsed view) */}
+          {productInfo && mode !== 'upload' && mode !== 'create' && (
             <div className="bg-bg-card border border-emerald-500/30 rounded-xl p-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-4">
@@ -5266,6 +5339,43 @@ export default function AdStudioPage() {
             </div>
           )}
 
+
+          {/* Media Library Modal for Create mode ProductInput */}
+          {createMediaLibraryOpen && user?.id && currentAccountId && (
+            <MediaLibraryModal
+              isOpen={createMediaLibraryOpen}
+              onClose={() => setCreateMediaLibraryOpen(false)}
+              userId={user.id}
+              adAccountId={currentAccountId}
+              selectedItems={[]}
+              onSelectionChange={async (items) => {
+                setCreateMediaLibraryOpen(false)
+                if (items.length === 0) return
+                const item = items[0]
+                if (!('hash' in item)) return
+                const mediaItem = item as MediaImage & { mediaType: 'image' }
+                try {
+                  const res = await fetch('/api/creative-studio/download-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: mediaItem.url }),
+                  })
+                  if (res.ok) {
+                    const data = await res.json()
+                    setCreateImageFromLibrary({
+                      base64: data.base64,
+                      mimeType: data.mimeType || 'image/jpeg',
+                      preview: mediaItem.url,
+                    })
+                    // Reset after a tick so ProductInput can consume it
+                    setTimeout(() => setCreateImageFromLibrary(null), 100)
+                  }
+                } catch {}
+              }}
+              maxSelection={1}
+              allowedTypes={['image']}
+            />
+          )}
 
           {/* Media Library Modal for Open Prompt source image */}
           {openPromptShowLibrary && user?.id && currentAccountId && (
