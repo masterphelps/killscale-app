@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { getGoogleAI, withGeminiRetry } from '@/lib/google-ai'
+import { getGoogleAI, withGeminiRetry, withModelFallback, IMAGE_MODEL_PRIMARY, IMAGE_MODEL_FALLBACK } from '@/lib/google-ai'
 import {
   ANALYZE_REFERENCE_AD_PROMPT,
   TEXT_REQUIREMENTS,
@@ -37,8 +37,18 @@ function getAnthropic() {
 // Use shared Vertex AI / AI Studio client
 const getGenAI = getGoogleAI
 
-// Always use Gemini 3 Pro - it's the only model that works reliably
-const MODEL_NAME = 'gemini-3-pro-image-preview'
+// Helper: wrap a Gemini image call with model fallback (Pro → Flash on 429)
+function imageGenWithFallback(
+  client: ReturnType<typeof getGoogleAI> & object,
+  buildCall: (model: string) => Promise<any>,
+  label: string,
+) {
+  return withModelFallback(
+    () => withGeminiRetry(() => buildCall(IMAGE_MODEL_PRIMARY), 1, `${label} (${IMAGE_MODEL_PRIMARY})`),
+    () => withGeminiRetry(() => buildCall(IMAGE_MODEL_FALLBACK), 1, `${label} (${IMAGE_MODEL_FALLBACK})`),
+    label,
+  )
+}
 
 
 interface GenerateImageRequest extends ImagePromptRequest {
@@ -242,14 +252,14 @@ export async function POST(request: NextRequest) {
       console.log('[Imagen] Open Prompt | Parts count:', parts.length, '| Has source image:', Boolean(hasProductImage))
 
       try {
-        const response = await withGeminiRetry(() => client.models.generateContent({
-          model: MODEL_NAME,
+        const response = await imageGenWithFallback(client, (model) => client.models.generateContent({
+          model,
           contents: [{ role: 'user', parts }],
           config: {
             responseModalities: ['IMAGE', 'TEXT'],
             imageConfig: { aspectRatio },
           }
-        }))
+        }), 'Imagen Open Prompt')
 
         const responseParts = response.candidates?.[0]?.content?.parts || []
         for (const part of responseParts) {
@@ -269,7 +279,7 @@ export async function POST(request: NextRequest) {
 
             return NextResponse.json({
               image: { base64: part.inlineData.data, mimeType },
-              model: MODEL_NAME,
+              model: IMAGE_MODEL_PRIMARY,
             })
           }
         }
@@ -344,22 +354,15 @@ export async function POST(request: NextRequest) {
       parts.push({ text: prompt })
 
       console.log('[Imagen] Prompt type:', promptType, '| Parts count:', parts.length, '(images:', parts.length - 1, ')')
-      console.log('[Imagen] Using model:', MODEL_NAME)
-
       try {
-        const response = await withGeminiRetry(() => client.models.generateContent({
-          model: MODEL_NAME,
-          contents: [
-            {
-              role: 'user',
-              parts: parts
-            }
-          ],
+        const response = await imageGenWithFallback(client, (model) => client.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts }],
           config: {
             responseModalities: ['IMAGE', 'TEXT'],
             imageConfig: { aspectRatio },
           }
-        }))
+        }), 'Imagen')
 
         // Extract the generated image from response
         const responseParts = response.candidates?.[0]?.content?.parts || []
@@ -398,14 +401,15 @@ export async function POST(request: NextRequest) {
                 base64: base64Data,
                 mimeType: part.inlineData.mimeType || 'image/png',
               },
-              model: MODEL_NAME,
+              model: IMAGE_MODEL_PRIMARY,
               prompt: prompt.slice(0, 500),
             })
           }
         }
 
         geminiFallbackReason = 'Gemini returned response but no image part'
-        console.error('[Imagen] WARNING:', geminiFallbackReason, 'Parts:', JSON.stringify(responseParts.map(p => ({ hasImage: !!p.inlineData, hasText: !!p.text, text: p.text?.slice(0, 100) }))))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        console.error('[Imagen] WARNING:', geminiFallbackReason, 'Parts:', JSON.stringify(responseParts.map((p: any) => ({ hasImage: !!p.inlineData, hasText: !!p.text, text: p.text?.slice(0, 100) }))))
       } catch (geminiError) {
         const errMsg = geminiError instanceof Error ? geminiError.message : String(geminiError)
         geminiFallbackReason = errMsg
@@ -421,14 +425,14 @@ export async function POST(request: NextRequest) {
 
     const prompt = buildTextOnlyPrompt(body, curatedText)
 
-    const textOnlyResponse = await withGeminiRetry(() => client.models.generateContent({
-      model: MODEL_NAME,
+    const textOnlyResponse = await imageGenWithFallback(client, (model) => client.models.generateContent({
+      model,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         responseModalities: ['IMAGE', 'TEXT'],
         imageConfig: { aspectRatio },
       },
-    }))
+    }), 'Imagen Text-Only')
 
     const textOnlyParts = textOnlyResponse.candidates?.[0]?.content?.parts || []
     console.log('[Imagen] Text-only response parts count:', textOnlyParts.length)
@@ -465,7 +469,7 @@ export async function POST(request: NextRequest) {
             base64: base64Data,
             mimeType: part.inlineData.mimeType || 'image/png',
           },
-          model: MODEL_NAME,
+          model: IMAGE_MODEL_PRIMARY,
           prompt: prompt.slice(0, 500),
         })
       }

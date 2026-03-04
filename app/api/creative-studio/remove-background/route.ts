@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleAI, withRegionalFallback } from '@/lib/google-ai'
-
-const MODEL_NAME = 'gemini-3-pro-image-preview'
+import { getGoogleAI, withModelFallback, withGeminiRetry, IMAGE_MODEL_PRIMARY, IMAGE_MODEL_FALLBACK } from '@/lib/google-ai'
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,20 +21,8 @@ export async function POST(request: NextRequest) {
 
     console.log('[RemoveBG] Starting background removal...')
 
-    const response = await withRegionalFallback((client) => client.models.generateContent({
-      model: MODEL_NAME,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                mimeType: imageMimeType,
-                data: imageBase64,
-              }
-            },
-            {
-              text: `Remove the background from this product image completely. Output ONLY the product itself on a pure white (#FFFFFF) background.
+    const client = getGoogleAI()!
+    const bgPrompt = `Remove the background from this product image completely. Output ONLY the product itself on a pure white (#FFFFFF) background.
 
 Rules:
 - Keep the product EXACTLY as it appears — same shape, colors, text, branding, proportions, and details
@@ -46,14 +32,27 @@ Rules:
 - Fill the removed background with solid pure white
 - Maintain the original image resolution and quality
 - Output as a clean product shot suitable for video generation`
-            }
-          ]
-        }
-      ],
-      config: {
-        responseModalities: ['IMAGE'],
-      }
-    }), 'RemoveBG')
+
+    const makeRequest = (model: string) =>
+      withGeminiRetry(() => client.models.generateContent({
+        model,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: imageMimeType, data: imageBase64 } },
+              { text: bgPrompt }
+            ]
+          }
+        ],
+        config: { responseModalities: ['IMAGE'] }
+      }), 1, `RemoveBG (${model})`)
+
+    const response = await withModelFallback(
+      () => makeRequest(IMAGE_MODEL_PRIMARY),
+      () => makeRequest(IMAGE_MODEL_FALLBACK),
+      'RemoveBG',
+    )
 
     const parts = response.candidates?.[0]?.content?.parts || []
 

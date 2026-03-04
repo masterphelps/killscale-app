@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleAI, withGeminiRetry } from '@/lib/google-ai'
+import { getGoogleAI, withModelFallback, withGeminiRetry, IMAGE_MODEL_PRIMARY, IMAGE_MODEL_FALLBACK } from '@/lib/google-ai'
 import { buildAdjustImagePrompt } from '@/lib/prompts/adjust-image'
 
 export const maxDuration = 60
-
-// Always use Gemini 3 Pro - it's the only model that works reliably
-const MODEL_NAME = 'gemini-3-pro-image-preview'
 
 interface AdjustImageRequest {
   imageBase64: string
@@ -33,14 +30,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('[Adjust Image] Using model:', MODEL_NAME)
     console.log('[Adjust Image] Adjusting image with prompt:', body.adjustmentPrompt.slice(0, 100))
 
     const prompt = buildAdjustImagePrompt(body.adjustmentPrompt)
 
-    try {
-      const response = await withGeminiRetry(() => client.models.generateContent({
-        model: MODEL_NAME,
+    const makeRequest = (model: string) =>
+      withGeminiRetry(() => client.models.generateContent({
+        model,
         contents: [
           {
             role: 'user',
@@ -60,7 +56,14 @@ export async function POST(request: NextRequest) {
         config: {
           responseModalities: ['IMAGE'],
         }
-      }), 1, 'Adjust Image')
+      }), 1, `Adjust Image (${model})`)
+
+    try {
+      const response = await withModelFallback(
+        () => makeRequest(IMAGE_MODEL_PRIMARY),
+        () => makeRequest(IMAGE_MODEL_FALLBACK),
+        'Adjust Image',
+      )
 
       // Extract the generated image from response
       const parts = response.candidates?.[0]?.content?.parts || []

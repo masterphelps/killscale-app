@@ -138,3 +138,29 @@ export async function withRegionalFallback<T>(
   // All regions exhausted — throw the 429 error (not a 404 from a fallback region)
   throw first429Error || new Error(`All regions exhausted (${regions.join(', ')})`)
 }
+
+/**
+ * Model fallback for Gemini image models.
+ * Tries the primary function first. On 429, falls back to a secondary function
+ * (typically the same call with a cheaper/faster model like gemini-3.1-flash-image-preview).
+ */
+export async function withModelFallback<T>(
+  primaryFn: () => Promise<T>,
+  fallbackFn: () => Promise<T>,
+  label = 'Gemini',
+): Promise<T> {
+  try {
+    return await primaryFn()
+  } catch (err: unknown) {
+    const msg = safeErrorMsg(err)
+    if (is429Error(msg)) {
+      console.log(`[${label}] Primary model 429'd — falling back to secondary model`)
+      return await fallbackFn()
+    }
+    throw err
+  }
+}
+
+/** Primary and fallback image generation models */
+export const IMAGE_MODEL_PRIMARY = 'gemini-3-pro-image-preview'
+export const IMAGE_MODEL_FALLBACK = 'gemini-3.1-flash-image-preview'
