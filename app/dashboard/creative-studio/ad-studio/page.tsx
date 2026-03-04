@@ -1919,6 +1919,13 @@ export default function AdStudioPage() {
           ...(analyzedImageUrl ? { analyzedImageUrl } : {}),
         }))
       }
+      // Track last image result so image-editor action can navigate with it
+      if (result.success && (toolReq.tool === 'adjust_image' || toolReq.tool === 'generate_image')) {
+        const img = result.data.image as { base64?: string; mimeType?: string } | undefined
+        if (img?.base64) {
+          setOracleContext(prev => ({ ...prev, lastImageResult: img }))
+        }
+      }
 
       // Track generated assets
       if (result.generatedAsset) {
@@ -2316,6 +2323,16 @@ export default function AdStudioPage() {
         setOpenPromptMediaType((prefilledData.format as 'image' | 'video') || 'image')
         setMode('open-prompt')
         break
+      case 'image-editor': {
+        // Route to Image Editor with the most recent image from Oracle context
+        const lastImage = oracleContext.lastImageResult as { base64?: string; mimeType?: string } | undefined
+        if (lastImage?.base64) {
+          handleOracleEditImage({ base64: lastImage.base64, mimeType: lastImage.mimeType || 'image/png' })
+        } else {
+          navigateFromOracle('/dashboard/creative-studio/image-editor?from=oracle')
+        }
+        return
+      }
       default:
         setMode('create')
     }
