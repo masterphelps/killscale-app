@@ -29,10 +29,12 @@ import {
   Save,
   Trash2,
   Clapperboard,
+  User,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildConceptSoraPrompt } from '@/lib/video-prompt-templates'
-import type { ProductKnowledge, ProductImage, AdConcept, DirectConceptResult } from '@/lib/video-prompt-templates'
+import type { ProductKnowledge, ProductImage, AdConcept, DirectConceptResult, UGCSettings, UGCPromptResult } from '@/lib/video-prompt-templates'
+import { buildUGCVeoPrompt } from '@/lib/video-prompt-templates'
 import type { VideoJob } from '@/remotion/types'
 import { notifyCreditsChanged } from '@/components/creative-studio/credits-gauge'
 import DirectorsReview, { QUALITY_COSTS, VEO_BASE_DURATION, VEO_EXTENSION_STEP } from '@/components/creative-studio/directors-review'
@@ -98,8 +100,8 @@ export default function VideoStudioPage() {
   const [autoAnalyze, setAutoAnalyze] = useState(false)
   const [productCollapsed, setProductCollapsed] = useState(false)
 
-  // ─── Sub-mode toggle: Explore (concepts) vs Direct (single script) ──────
-  const [subMode, setSubMode] = useState<'explore' | 'direct'>('explore')
+  // ─── Sub-mode toggle: Explore (concepts) vs Direct (single script) vs UGC ──
+  const [subMode, setSubMode] = useState<'explore' | 'direct' | 'ugc'>('explore')
 
   // ─── Video style ──────────────────────────────────────────────────────────
   const styleParam = searchParams?.get('style') as VideoStyle | null
@@ -122,6 +124,14 @@ export default function VideoStudioPage() {
   const [directScript, setDirectScript] = useState<DirectConceptResult | null>(null)
   const [directWriting, setDirectWriting] = useState(false)
   const [directError, setDirectError] = useState<string | null>(null)
+
+  // ─── UGC mode state ──────────────────────────────────────────────────────
+  const [ugcSettings, setUgcSettings] = useState<UGCSettings>({
+    gender: 'female', ageRange: 'adult', tone: 'authentic', features: [], clothing: 'Casual', scene: 'indoors', setting: 'Living Room', notes: '',
+  })
+  const [ugcPrompt, setUgcPrompt] = useState<UGCPromptResult | null>(null)
+  const [ugcGenerating, setUgcGenerating] = useState(false)
+  const [ugcError, setUgcError] = useState<string | null>(null)
 
   // ─── Canvas persistence ───────────────────────────────────────────────────
   const [canvasId, setCanvasId] = useState<string | null>(null)
@@ -373,20 +383,18 @@ export default function VideoStudioPage() {
 
     const modeParam = searchParams?.get('mode')
     if (modeParam === 'ugc') {
-      // UGC mode: set style to talking_head, skip to direct with UGC prompt
-      setSubMode('direct')
-      setVideoStyle('product' as VideoStyle) // closest to UGC in available styles
-      setOpenStep(1) // start at product input, UGC still needs product context
+      // UGC mode: set sub-mode, product input first then UGC settings
+      setSubMode('ugc')
     } else if (modeParam === 'direct') {
       setSubMode('direct')
     } else if (modeParam === 'explore') {
       setSubMode('explore')
     }
 
-    // ?tab=image pre-opens the image picker hint
+    // ?tab=image pre-opens the image picker hint (only if ?mode= wasn't already set)
     // ProductInput already handles showing the image upload area by default
     const tabParam = searchParams?.get('tab')
-    if (tabParam === 'image') {
+    if (tabParam === 'image' && !modeParam) {
       setSubMode('direct') // Image-only goes to Direct (no concepts)
     }
 
@@ -552,10 +560,10 @@ export default function VideoStudioPage() {
 
   // ─── Generate Video (Explore mode — concept cards) ─────────────────────────
 
-  const handleGenerate = useCallback(async (conceptIndex: number) => {
+  const handleGenerate = useCallback(async (conceptIndex: number, conceptOverride?: AdConcept) => {
     if (!user?.id || !currentAccountId) return
 
-    const concept = concepts[conceptIndex]
+    const concept = conceptOverride || concepts[conceptIndex]
     if (!concept) return
 
     const conceptDuration = getConceptDuration(conceptIndex)
@@ -727,7 +735,8 @@ export default function VideoStudioPage() {
     setReviewingConceptIndex(null)
     setOpenStep(2)
 
-    setTimeout(() => handleGenerate(i), 50)
+    // Pass concept directly to avoid stale closure from setConcepts not yet committed
+    handleGenerate(i, updatedConcept)
   }, [reviewingConceptIndex, concepts, editScene, editSubject, editAction, editMood, editVideoPrompt, editExtensionPrompts, editHook, editCta, directQuality, handleGenerate])
 
   // ─── Extend Video ─────────────────────────────────────────────────────────
@@ -746,7 +755,7 @@ export default function VideoStudioPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        alert(data.error || 'Extension failed')
+        setGenerateError(data.error || 'Extension failed')
         return
       }
       setCredits(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - 25) } : prev)
@@ -767,7 +776,7 @@ export default function VideoStudioPage() {
       })
     } catch (err) {
       console.error('[VideoStudio] Extend error:', err)
-      alert('Failed to extend video')
+      setGenerateError('Failed to extend video')
     } finally {
       setExtendingIndex(null)
     }
@@ -1156,6 +1165,205 @@ export default function VideoStudioPage() {
     setOpenStep(2)
   }, [])
 
+  // ─── UGC: Write Script ────────────────────────────────────────────────────
+
+  const handleUgcWriteScript = useCallback(async () => {
+    if (!productKnowledge.name) return
+    setUgcGenerating(true)
+    setUgcError(null)
+    try {
+      const res = await fetch('/api/creative-studio/generate-ugc-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: productKnowledge, ugcSettings }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setUgcError(data.error || 'Failed to generate UGC script')
+        return
+      }
+      setUgcPrompt(data)
+      // Populate Director's Review fields from UGC result
+      setEditVideoPrompt(data.prompt || '')
+      setEditExtensionPrompts(data.extensionPrompts || [])
+      setEditScene(ugcSettings.setting || '')
+      setEditSubject('')
+      setEditAction('')
+      setEditMood(ugcSettings.tone || '')
+      setEditHook(data.overlay?.hook || '')
+      setEditCaptions([])
+      setEditCta(data.overlay?.cta || 'Shop Now')
+      if (data.adCopy) setEditAdCopy(data.adCopy)
+      setDirectOverlaysEnabled(true)
+      // Init per-segment image indices
+      const extCount = data.extensionPrompts?.length || 0
+      const segCount = 1 + extCount
+      const baseIndices = [...selectedProductImageIndices]
+      setSegmentImageIndices(Array.from({ length: segCount }, () => [...baseIndices]))
+      setOpenStep(3)
+    } catch (err) {
+      setUgcError(err instanceof Error ? err.message : 'UGC script generation failed')
+    } finally {
+      setUgcGenerating(false)
+    }
+  }, [productKnowledge, ugcSettings, selectedProductImageIndices])
+
+  const handleUgcRewrite = useCallback(() => {
+    setUgcPrompt(null)
+    setOpenStep(2)
+  }, [])
+
+  // ─── UGC: Generate Video ─────────────────────────────────────────────────
+
+  const handleUgcGenerate = useCallback(async () => {
+    if (!user?.id || !currentAccountId || !ugcPrompt) return
+
+    const conceptIndex = 0
+    const q = directQuality
+    const creditCost = QUALITY_COSTS[q].base + editExtensionPrompts.length * QUALITY_COSTS[q].extension
+
+    setGeneratingIndex(conceptIndex)
+    setGenerateError(null)
+
+    try {
+      // Ensure canvas exists (mirrors handleDirectGenerate)
+      let activeCanvasId = canvasId
+      if (!activeCanvasId) {
+        const canvasRes = await fetch('/api/creative-studio/video-canvas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            adAccountId: currentAccountId,
+            productUrl: productUrl || null,
+            productKnowledge: { ...productKnowledge, _studioMode: 'ugc' },
+            concepts: [{
+              visualMetaphor: `UGC: ${ugcSettings.gender} presenter`,
+              videoPrompt: editVideoPrompt || ugcPrompt.prompt,
+              extensionPrompts: editExtensionPrompts,
+              adCopy: editAdCopy,
+            }],
+          }),
+        })
+        const canvasData = await canvasRes.json()
+        if (canvasRes.ok && canvasData.canvas?.id) {
+          activeCanvasId = canvasData.canvas.id
+          setCanvasId(canvasData.canvas.id)
+        }
+      }
+
+      const scriptDuration = ugcPrompt.estimatedDuration || 8
+      // Pass main prompt through buildUGCVeoPrompt to strip any block headers (same as extensions)
+      const mainPrompt = buildUGCVeoPrompt(
+        { prompt: editVideoPrompt || ugcPrompt.prompt, dialogue: ugcPrompt.dialogue || '', sceneSummary: ugcPrompt.sceneSummary || '' },
+        scriptDuration
+      )
+      const numExtensions = editExtensionPrompts.length
+      const apiProvider = numExtensions > 0 ? 'veo-ext' : 'veo'
+
+      const hasImage = includeProductImage && selectedProductImageIndices.some(idx => productImages[idx]?.base64)
+
+      // Build structured overlayConfig (same format as handleDirectGenerate)
+      const overlayConfig = directOverlaysEnabled ? {
+        style: 'bold' as const,
+        hook: editHook ? {
+          line1: editHook,
+          startSec: 0,
+          endSec: 3,
+          animation: 'pop' as const,
+          fontSize: 56,
+          fontWeight: 800,
+          position: 'top' as const,
+        } : undefined,
+        captions: (() => {
+          const caps = editCaptions.filter(c => c.trim())
+          const captionStart = 3
+          const gap = 0.15
+          let cursor = captionStart
+          return caps.map((text, idx) => {
+            const wordCount = text.split(/\s+/).length
+            const duration = Math.min(2.5, Math.max(1.2, wordCount * 0.6))
+            const start = Math.round(cursor * 10) / 10
+            const end = Math.round((cursor + duration) * 10) / 10
+            cursor += duration + gap
+            return {
+              text,
+              startSec: start,
+              endSec: end,
+              highlight: idx < caps.length - 1,
+              highlightWord: undefined as string | undefined,
+              fontSize: 40,
+              fontWeight: 700,
+              position: 'bottom' as const,
+            }
+          })
+        })(),
+        cta: editCta ? {
+          buttonText: editCta,
+          startSec: Math.max(scriptDuration - 3, scriptDuration * 0.7),
+          animation: 'slide' as const,
+          fontSize: 32,
+        } : undefined,
+      } : undefined
+
+      const enrichedExtensionPrompts = editExtensionPrompts.map(ep =>
+        buildUGCVeoPrompt({ prompt: ep, dialogue: '', sceneSummary: '' }, 7)
+      )
+
+      const res = await fetch('/api/creative-studio/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          prompt: mainPrompt,
+          videoStyle: 'talking_head',
+          durationSeconds: scriptDuration,
+          productName: productKnowledge.name || null,
+          provider: apiProvider,
+          quality: q,
+          canvasId: activeCanvasId || null,
+          adIndex: conceptIndex,
+          targetDurationSeconds: apiProvider === 'veo-ext' ? scriptDuration : undefined,
+          extensionPrompts: enrichedExtensionPrompts.length > 0 ? enrichedExtensionPrompts : undefined,
+          overlayConfig,
+          adCopy: editAdCopy || null,
+          logline: `${ugcSettings.gender === 'male' ? 'A man' : 'A woman'} shares their experience with ${productKnowledge.name}`,
+          productImages: includeProductImage
+            ? selectedProductImageIndices
+                .map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType }))
+                .filter(img => img.base64)
+            : [],
+          segmentImages: segmentImageIndices.length > 0 && includeProductImage
+            ? segmentImageIndices.map(indices =>
+                indices.map(idx => ({ base64: productImages[idx]?.base64, mimeType: productImages[idx]?.mimeType })).filter(img => img.base64)
+              )
+            : undefined,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        setGenerateError(data.error || 'Failed to start video generation')
+        return
+      }
+
+      setGenerateError(null)
+      setCredits(prev => prev ? { ...prev, remaining: Math.max(0, prev.remaining - creditCost) } : prev)
+      notifyCreditsChanged()
+      setCurrentVideoVersion(prev => ({ ...prev, [conceptIndex]: 0 }))
+
+      if (activeCanvasId) {
+        refreshJobsWithCanvas(activeCanvasId)
+      }
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setGeneratingIndex(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, currentAccountId, ugcPrompt, editVideoPrompt, editExtensionPrompts, directQuality, ugcSettings, productKnowledge, canvasId, productUrl, directOverlaysEnabled, editHook, editCta, editCaptions, editAdCopy, includeProductImage, productImages, selectedProductImageIndices, segmentImageIndices, refreshJobsWithCanvas])
+
   // ─── Derived state ────────────────────────────────────────────────────────
 
   const canProceed = productInputRef.current?.canProceed || hasAnalyzed
@@ -1164,8 +1372,8 @@ export default function VideoStudioPage() {
   const directCosts = QUALITY_COSTS[directQuality]
   const directCreditCost = directCosts.base + directExtensionCount * directCosts.extension
 
-  // Direct mode: video job state for Director's Review
-  const directJob = subMode === 'direct' ? getActiveJob(0) : null
+  // Direct/UGC mode: video job state for Director's Review
+  const directJob = (subMode === 'direct' || subMode === 'ugc') ? getActiveJob(0) : null
   const directHasActiveJob = directJob != null && ['generating', 'queued', 'rendering', 'extending'].includes(directJob?.status || '')
   const directHasCompletedVideo = directJob?.status === 'complete' && !!(directJob.final_video_url || directJob.raw_video_url)
 
@@ -1274,12 +1482,12 @@ export default function VideoStudioPage() {
             <div className="flex items-center gap-3">
               <div className={cn(
                 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold',
-                hasConcepts || directScript ? 'bg-emerald-500 text-white' : openStep === 2 ? 'bg-purple-500 text-white' : 'bg-zinc-800 text-zinc-500'
+                hasConcepts || directScript || ugcPrompt ? 'bg-emerald-500 text-white' : openStep === 2 ? 'bg-purple-500 text-white' : 'bg-zinc-800 text-zinc-500'
               )}>
-                {hasConcepts || directScript ? <Check className="w-4 h-4" /> : '2'}
+                {hasConcepts || directScript || ugcPrompt ? <Check className="w-4 h-4" /> : '2'}
               </div>
               <span className={cn('text-sm font-medium', openStep === 2 ? 'text-white' : 'text-zinc-500')}>
-                {subMode === 'explore' ? 'Creative Concepts' : 'Write Your Script'}
+                {subMode === 'ugc' ? 'UGC Settings' : subMode === 'explore' ? 'Creative Concepts' : 'Write Your Script'}
               </span>
             </div>
             {openStep === 2 ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
@@ -1288,7 +1496,8 @@ export default function VideoStudioPage() {
           {openStep === 2 && (
             <div className="px-6 pb-6 pt-0">
 
-              {/* Sub-mode toggle */}
+              {/* Sub-mode toggle (hidden for UGC — UGC is its own path) */}
+              {subMode !== 'ugc' && (
               <div className="flex gap-2 mb-5">
                 <button
                   onClick={() => setSubMode('explore')}
@@ -1315,6 +1524,7 @@ export default function VideoStudioPage() {
                   Direct Script
                 </button>
               </div>
+              )}
 
               {/* Video style + controls */}
               <div className="flex items-center gap-3 mb-5">
@@ -2016,12 +2226,147 @@ export default function VideoStudioPage() {
                   })()}
                 </>
               )}
+
+              {/* ──── UGC Mode: Presenter Settings ──── */}
+              {subMode === 'ugc' && (
+                <div className="space-y-5">
+                  {/* Gender */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Gender</label>
+                    <div className="flex gap-2">
+                      {(['male', 'female'] as const).map((g) => (
+                        <button key={g} onClick={() => setUgcSettings(prev => ({ ...prev, gender: g, features: [] }))}
+                          className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                            ugcSettings.gender === g ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>{g === 'male' ? 'Male' : 'Female'}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Age Range */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Age Range</label>
+                    <div className="flex flex-wrap gap-2">
+                      {([{ value: 'young-adult' as const, label: 'Young Adult (18-25)' }, { value: 'adult' as const, label: 'Adult (25-40)' }, { value: 'middle-aged' as const, label: 'Middle-aged (40-55)' }]).map(({ value, label }) => (
+                        <button key={value} onClick={() => setUgcSettings(prev => ({ ...prev, ageRange: value }))}
+                          className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                            ugcSettings.ageRange === value ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tone */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Tone</label>
+                    <div className="flex flex-wrap gap-2">
+                      {(['authentic', 'excited', 'humorous', 'serious', 'empathetic'] as const).map((t) => (
+                        <button key={t} onClick={() => setUgcSettings(prev => ({ ...prev, tone: t }))}
+                          className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border capitalize',
+                            ugcSettings.tone === t ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>{t}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Features — contextual on gender */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Features <span className="text-xs text-zinc-600 font-normal">(optional, multi-select)</span></label>
+                    <div className="flex flex-wrap gap-2">
+                      {(ugcSettings.gender === 'male' ? ['Glasses', 'Full Beard', 'Mustache', 'Bald', 'Hat'] : ['Glasses', 'Hat', 'Make-up', 'No Make-up']).map((feat) => {
+                        const isSelected = ugcSettings.features.includes(feat)
+                        const isMakeupConflict = (feat === 'Make-up' && ugcSettings.features.includes('No Make-up')) || (feat === 'No Make-up' && ugcSettings.features.includes('Make-up'))
+                        return (
+                          <button key={feat} onClick={() => setUgcSettings(prev => {
+                            let next = isSelected ? prev.features.filter(f => f !== feat) : [...prev.features, feat]
+                            if (!isSelected && feat === 'Make-up') next = next.filter(f => f !== 'No Make-up')
+                            if (!isSelected && feat === 'No Make-up') next = next.filter(f => f !== 'Make-up')
+                            return { ...prev, features: next }
+                          })}
+                            className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                              isSelected ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : isMakeupConflict ? 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                            )}>{feat}</button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Clothing */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Clothing</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['Casual', 'Formal', 'Athletic', 'Streetwear'].map((style) => (
+                        <button key={style} onClick={() => setUgcSettings(prev => ({ ...prev, clothing: style }))}
+                          className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                            ugcSettings.clothing === style ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>{style}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Scene */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Scene</label>
+                    <div className="flex gap-2">
+                      {(['indoors', 'outdoors'] as const).map((s) => (
+                        <button key={s} onClick={() => setUgcSettings(prev => ({ ...prev, scene: s, setting: s === 'indoors' ? 'Living Room' : 'Park' }))}
+                          className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border capitalize',
+                            ugcSettings.scene === s ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>{s}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Setting — contextual on scene */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Setting</label>
+                    <div className="flex flex-wrap gap-2">
+                      {(ugcSettings.scene === 'indoors' ? ['Living Room', 'Kitchen', 'Bathroom', 'Office', 'Gym', 'Studio'] : ['Park', 'Street', 'Beach', 'Backyard', 'Cafe Patio']).map((setting) => (
+                        <button key={setting} onClick={() => setUgcSettings(prev => ({ ...prev, setting }))}
+                          className={cn('px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+                            ugcSettings.setting === setting ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>{setting}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Additional Notes */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Additional Notes <span className="text-zinc-600 text-xs font-normal">(optional)</span></label>
+                    <textarea
+                      value={ugcSettings.notes}
+                      onChange={(e) => setUgcSettings(prev => ({ ...prev, notes: e.target.value }))}
+                      placeholder="e.g., 'Mention the 30-day guarantee' or 'Show the product being applied to skin'"
+                      className="w-full bg-bg-dark border border-border rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500 resize-none text-sm"
+                      rows={2}
+                    />
+                  </div>
+
+                  {ugcError && (
+                    <div className="flex items-center gap-2 text-red-400 text-sm">
+                      <AlertCircle className="w-4 h-4" />{ugcError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleUgcWriteScript}
+                    disabled={ugcGenerating || !productKnowledge.name}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-cyan-500 text-black font-medium hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {ugcGenerating ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Writing UGC script...</>
+                    ) : (
+                      <><User className="w-4 h-4" />Write UGC Script</>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* ═══════════════════════════ Step 3: Director's Review ═══════════════════════════ */}
-        {(reviewingConceptIndex !== null || (subMode === 'direct' && directScript)) && (
+        {(reviewingConceptIndex !== null || (subMode === 'direct' && directScript) || (subMode === 'ugc' && ugcPrompt)) && (
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
             <button
               onClick={() => setOpenStep(openStep === 3 ? 2 : 3)}
@@ -2073,13 +2418,13 @@ export default function VideoStudioPage() {
                   productImages={productImages}
                   segmentImageIndices={segmentImageIndices}
                   onSegmentImageIndicesChange={setSegmentImageIndices}
-                  onGenerate={subMode === 'explore' ? handleGenerateFromReview : handleDirectGenerate}
-                  onRewrite={subMode === 'direct' ? handleDirectRewrite : undefined}
+                  onGenerate={subMode === 'explore' ? handleGenerateFromReview : subMode === 'ugc' ? handleUgcGenerate : handleDirectGenerate}
+                  onRewrite={subMode === 'direct' ? handleDirectRewrite : subMode === 'ugc' ? handleUgcRewrite : undefined}
                   generating={generatingIndex !== null}
                   creditsRemaining={credits?.remaining ?? null}
                   error={generateError}
-                  hasActiveJob={subMode === 'direct' ? directHasActiveJob : false}
-                  hasCompletedVideo={subMode === 'direct' ? directHasCompletedVideo : false}
+                  hasActiveJob={(subMode === 'direct' || subMode === 'ugc') ? directHasActiveJob : false}
+                  hasCompletedVideo={(subMode === 'direct' || subMode === 'ugc') ? directHasCompletedVideo : false}
                 />
               </div>
             )}

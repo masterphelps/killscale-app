@@ -476,9 +476,9 @@ export default function ImageEditorPage() {
       setImageKey(k => k + 1)
       setPrompt('')
 
-      // Step 4: Persist and re-detect text
+      // Step 4: Persist and re-detect text (delay to avoid Vertex AI rate limits)
       await persistVersions(newVersions)
-      detectText(newBase64, newMimeType)
+      setTimeout(() => detectText(newBase64, newMimeType), 4000)
     } catch (err) {
       console.error('[ImageEditor] Edit failed:', err)
       setEditError(err instanceof Error ? err.message : 'Edit failed. Please try again.')

@@ -35,6 +35,8 @@ export interface ToolContext {
   userMedia?: Array<{ url: string; mimeType: string; name: string; type: string }>
   videoAnalysis?: Record<string, unknown>
   analyzedVideoUrl?: string
+  imageAnalysis?: Record<string, unknown>
+  analyzedImageUrl?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +160,142 @@ async function executeAnalyzeVideo(
       `Funnel scores — Hook: ${analysis.hook?.score ?? 'N/A'}, Hold: ${analysis.hold?.score ?? 'N/A'}, Click: ${analysis.click?.score ?? 'N/A'}, Convert: ${analysis.convert?.score ?? 'N/A'}.`,
       data.scriptSuggestions?.length ? `${data.scriptSuggestions.length} script rewrite suggestion(s).` : null,
     ].filter(Boolean).join(' '),
+  }
+}
+
+async function executeAnalyzeImage(
+  inputs: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
+  let imageBase64 = inputs.imageBase64 as string | undefined
+  let imageMimeType = (inputs.imageMimeType as string) || 'image/png'
+
+  // Fallback: use first user-uploaded image from context
+  if (!imageBase64) {
+    const userImage = (context.userMedia || []).find(m => m.type === 'image')
+    if (userImage?.url) {
+      imageBase64 = userImage.url
+    }
+  }
+
+  if (!imageBase64) return errorResult('Missing image for analysis. Please upload an image first.')
+
+  // Handle data URLs
+  if (imageBase64.startsWith('data:')) {
+    const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/)
+    if (match) {
+      imageMimeType = match[1]
+      imageBase64 = match[2]
+    }
+  }
+
+  // Convert URL to base64
+  if (imageBase64.startsWith('http://') || imageBase64.startsWith('https://')) {
+    const resolved = await resolveToBase64(imageBase64)
+    if (!resolved) return errorResult('Failed to download image for analysis')
+    imageBase64 = resolved.base64
+    imageMimeType = resolved.mimeType
+  }
+
+  const res = await fetch('/api/creative-studio/analyze-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64, imageMimeType }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    return errorResult((err as Record<string, string>).error || `Image analysis failed (${res.status})`)
+  }
+
+  const data = await res.json()
+  const analysis = data.analysis || {}
+
+  const subjects = Array.isArray(analysis.subjects) ? analysis.subjects : []
+  const colors = Array.isArray(analysis.colors) ? analysis.colors : []
+  const textContent = Array.isArray(analysis.textContent) ? analysis.textContent : []
+  const suggestedEdits = Array.isArray(analysis.suggestedEdits) ? analysis.suggestedEdits : []
+
+  return {
+    success: true,
+    cardType: 'image-analysis',
+    data: { analysis },
+    modelSummary: [
+      'Image analysis complete.',
+      analysis.style ? `Style: ${analysis.style}.` : null,
+      analysis.mood ? `Mood: ${analysis.mood}.` : null,
+      subjects.length > 0 ? `Subjects: ${subjects.join(', ')}.` : null,
+      colors.length > 0 ? `Colors: ${colors.join(', ')}.` : null,
+      textContent.length > 0 ? `Text detected: ${textContent.map((t: Record<string, string>) => `[${t.role}] "${truncate(t.text, 40)}"`).join(', ')}.` : 'No text detected.',
+      analysis.adPotential ? `Ad potential: ${truncate(analysis.adPotential as string, 150)}` : null,
+      suggestedEdits.length > 0 ? `Suggested edits: ${suggestedEdits.map((e: string) => truncate(e, 60)).join('; ')}` : null,
+    ].filter(Boolean).join(' '),
+  }
+}
+
+async function executeAdjustImage(
+  inputs: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
+  let imageBase64 = inputs.imageBase64 as string | undefined
+  let imageMimeType = (inputs.imageMimeType as string) || 'image/png'
+  const adjustmentPrompt = inputs.adjustmentPrompt as string | undefined
+
+  if (!adjustmentPrompt) return errorResult('Missing adjustmentPrompt for image editing')
+
+  // Fallback: use first user-uploaded image from context
+  if (!imageBase64) {
+    const userImage = (context.userMedia || []).find(m => m.type === 'image')
+    if (userImage?.url) {
+      imageBase64 = userImage.url
+    }
+  }
+
+  if (!imageBase64) return errorResult('Missing image for editing. Please upload an image first.')
+
+  // Handle data URLs
+  if (imageBase64.startsWith('data:')) {
+    const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/)
+    if (match) {
+      imageMimeType = match[1]
+      imageBase64 = match[2]
+    }
+  }
+
+  // Convert URL to base64
+  if (imageBase64.startsWith('http://') || imageBase64.startsWith('https://')) {
+    const resolved = await resolveToBase64(imageBase64)
+    if (!resolved) return errorResult('Failed to download image for editing')
+    imageBase64 = resolved.base64
+    imageMimeType = resolved.mimeType
+  }
+
+  const res = await fetch('/api/creative-studio/adjust-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64, imageMimeType, adjustmentPrompt }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    return errorResult((err as Record<string, string>).error || `Image adjustment failed (${res.status})`)
+  }
+
+  const data = await res.json()
+  const image = data.image || {}
+
+  return {
+    success: true,
+    cardType: 'image-result',
+    data: {
+      image,
+      adjustmentPrompt,
+    },
+    modelSummary: `Image edited successfully. Applied: "${truncate(adjustmentPrompt, 100)}".`,
+    generatedAsset: {
+      type: 'image',
+      creditCost: 0, // adjust_image is free (no credit cost)
+    },
   }
 }
 
@@ -439,6 +577,15 @@ async function executeDetectText(
 
   if (!imageBase64) return errorResult('Missing image for text detection')
 
+  // If it's a data URL, extract the base64 portion
+  if (imageBase64.startsWith('data:')) {
+    const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/)
+    if (match) {
+      imageMimeType = match[1]
+      imageBase64 = match[2]
+    }
+  }
+
   // If the value is a URL, convert to base64
   if (imageBase64.startsWith('http://') || imageBase64.startsWith('https://')) {
     const resolved = await resolveToBase64(imageBase64)
@@ -514,6 +661,12 @@ export async function executeOracleTool(
 
       case 'analyze_video':
         return await executeAnalyzeVideo(inputs, context)
+
+      case 'analyze_image':
+        return await executeAnalyzeImage(inputs, context)
+
+      case 'adjust_image':
+        return await executeAdjustImage(inputs, context)
 
       case 'generate_overlay':
         return await executeGenerateOverlay(inputs, context)

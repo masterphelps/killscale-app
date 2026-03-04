@@ -577,10 +577,10 @@ export function MediaGalleryCard({
                 )}
               </div>
 
-              {/* Composite score pills — always show all 4, grey when null */}
+              {/* Composite score pills — video: all 4, image/carousel: click + conv only */}
               <div className="flex flex-wrap gap-1.5">
-                <ScorePill label="Hook" value={item.hookScore} />
-                <ScorePill label="Hold" value={item.holdScore} />
+                {isVideo && <ScorePill label="Hook" value={item.hookScore} />}
+                {isVideo && <ScorePill label="Hold" value={item.holdScore} />}
                 <ScorePill label="Click" value={item.clickScore} />
                 <ScorePill label="Conv" value={item.convertScore} />
               </div>

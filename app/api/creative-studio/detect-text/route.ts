@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleAI } from '@/lib/google-ai'
+import { getGoogleAI, withGeminiRetry } from '@/lib/google-ai'
+
+export const maxDuration = 60
 
 // Use Flash for text extraction — fast, reliable for OCR/vision tasks
 const MODEL_NAME = 'gemini-2.5-flash'
@@ -32,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[DetectText] Calling', MODEL_NAME, 'for text extraction')
 
-    const response = await client.models.generateContent({
+    const response = await withGeminiRetry(() => client.models.generateContent({
       model: MODEL_NAME,
       contents: [
         {
@@ -62,7 +64,7 @@ Return ONLY the JSON array, no explanation or markdown formatting.`
           ]
         }
       ],
-    })
+    }), 2, 'DetectText')
 
     const textContent = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]'
     console.log('[DetectText] Raw response:', textContent.slice(0, 300))

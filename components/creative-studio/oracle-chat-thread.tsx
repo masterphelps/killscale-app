@@ -88,9 +88,11 @@ interface OracleChatThreadProps {
   onCreditCancel?: (messageId: string) => void
   onOpenInEditor?: (config: Record<string, unknown>, videoUrl?: string) => void
   onSaveCopy?: (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => void
+  onSaveImage?: (image: { base64: string; mimeType: string }) => void
+  onEditImage?: (image: { base64: string; mimeType: string }) => void
 }
 
-export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy }: OracleChatThreadProps) {
+export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy, onSaveImage, onEditImage }: OracleChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [previewMedia, setPreviewMedia] = useState<{ url: string; preview?: string; type: string; name: string } | null>(null)
 
@@ -193,6 +195,8 @@ export function OracleChatThread({ messages, currentTier, onOptionClick, onPromp
                       onCreditCancel={onCreditCancel}
                       onOpenInEditor={onOpenInEditor}
                       onSaveCopy={onSaveCopy}
+                      onSaveImage={onSaveImage}
+                      onEditImage={onEditImage}
                     />
                   ))}
                 </div>
@@ -404,13 +408,15 @@ function AdCopyCardGroup({ ads, onSaveCopy }: {
   )
 }
 
-export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy }: {
+export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy, onSaveImage, onEditImage }: {
   card: OracleContextCard
   messageId: string
   onCreditConfirm?: (messageId: string) => void
   onCreditCancel?: (messageId: string) => void
   onOpenInEditor?: (config: Record<string, unknown>, videoUrl?: string) => void
   onSaveCopy?: (ad: { headline: string; primaryText: string; description?: string; angle?: string }) => void
+  onSaveImage?: (image: { base64: string; mimeType: string }) => void
+  onEditImage?: (image: { base64: string; mimeType: string }) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -460,6 +466,67 @@ export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditC
                 </span>
               )
             })}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  // --- image-analysis ---
+  if (card.type === 'image-analysis') {
+    const analysis = card.data.analysis as Record<string, unknown> | undefined
+    if (!analysis) return null
+    const subjects = Array.isArray(analysis.subjects) ? analysis.subjects as string[] : []
+    const colors = Array.isArray(analysis.colors) ? analysis.colors as string[] : []
+    const textContent = Array.isArray(analysis.textContent) ? analysis.textContent as Array<{ text: string; role: string }> : []
+    const suggestedEdits = Array.isArray(analysis.suggestedEdits) ? analysis.suggestedEdits as string[] : []
+    return (
+      <div className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3 space-y-2">
+        <div className="text-xs font-medium text-zinc-400">Image Analysis</div>
+        {analysis.style || analysis.mood ? (
+          <div className="flex gap-2 flex-wrap">
+            {analysis.style ? <span className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">{String(analysis.style)}</span> : null}
+            {analysis.mood ? <span className="text-xs font-medium text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded">{String(analysis.mood)}</span> : null}
+          </div>
+        ) : null}
+        {subjects.length > 0 ? (
+          <div className="flex gap-1.5 flex-wrap">
+            {subjects.map((s, i) => (
+              <span key={i} className="text-[10px] font-medium text-zinc-400 bg-white/[0.05] px-1.5 py-0.5 rounded">{s}</span>
+            ))}
+          </div>
+        ) : null}
+        {colors.length > 0 ? (
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <span className="text-[10px] text-zinc-500">Colors:</span>
+            {colors.map((c, i) => (
+              <span key={i} className="text-[10px] text-zinc-400">{c}{i < colors.length - 1 ? ',' : ''}</span>
+            ))}
+          </div>
+        ) : null}
+        {textContent.length > 0 ? (
+          <div className="space-y-1">
+            <span className="text-[10px] text-zinc-500">Text detected:</span>
+            {textContent.map((t, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-[10px] font-medium text-zinc-500 bg-white/[0.05] px-1.5 py-0.5 rounded shrink-0 capitalize">{t.role}</span>
+                <span className="text-xs text-zinc-300">&ldquo;{t.text}&rdquo;</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {analysis.adPotential ? (
+          <div className="text-xs text-zinc-400 italic">{String(analysis.adPotential)}</div>
+        ) : null}
+        {suggestedEdits.length > 0 ? (
+          <div className="space-y-1 pt-1 border-t border-zinc-700/30">
+            <span className="text-[10px] font-medium text-amber-400">Suggested edits:</span>
+            {suggestedEdits.map((edit, i) => (
+              <div key={i} className="text-xs text-zinc-400 flex gap-1.5">
+                <span className="text-amber-500 shrink-0">{i + 1}.</span>
+                <span>{edit}</span>
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
@@ -529,14 +596,22 @@ export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditC
             className="w-full max-h-80 object-contain bg-zinc-900"
           />
         ) : null}
-        <div className="p-2 flex gap-2">
-          <button className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-700/50 rounded transition-colors">
-            <Download className="w-3 h-3" /> Save
-          </button>
-          <button className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-700/50 rounded transition-colors">
-            <ExternalLink className="w-3 h-3" /> Edit
-          </button>
-        </div>
+        {image?.base64 && (
+          <div className="p-2 flex gap-2">
+            <button
+              onClick={() => onSaveImage?.({ base64: image.base64!, mimeType: image.mimeType || 'image/png' })}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-700/50 rounded transition-colors"
+            >
+              <Download className="w-3 h-3" /> Save
+            </button>
+            <button
+              onClick={() => onEditImage?.({ base64: image.base64!, mimeType: image.mimeType || 'image/png' })}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-700/50 rounded transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" /> Edit
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -610,6 +685,31 @@ export function ContextCardDisplay({ card, messageId, onCreditConfirm, onCreditC
             Cancel
           </button>
         </div>
+      </div>
+    )
+  }
+
+  // --- text-detection (detect_text tool result displayed via 'product' cardType) ---
+  if (card.type === 'product' && card.data.textBlocks) {
+    const textBlocks = card.data.textBlocks as Array<{ text: string; role: string }>
+    return (
+      <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Pencil className="w-3 h-3 text-purple-400" />
+          <span className="text-xs font-medium text-zinc-400">Detected text</span>
+        </div>
+        {textBlocks.length === 0 ? (
+          <p className="text-xs text-zinc-500 italic">No text detected in the image.</p>
+        ) : (
+          <div className="space-y-1">
+            {textBlocks.map((block, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-[10px] font-medium text-zinc-500 bg-white/[0.05] px-1.5 py-0.5 rounded shrink-0 capitalize">{block.role}</span>
+                <span className="text-xs text-zinc-300">&ldquo;{block.text}&rdquo;</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }

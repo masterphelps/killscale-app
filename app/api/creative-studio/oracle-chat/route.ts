@@ -19,11 +19,12 @@ You can call tools by returning a "toolRequest" in your JSON response. The clien
 |------|--------|-------------|
 | analyze_product | { "url": "https://..." } | User shares a product URL — analyze it IMMEDIATELY |
 | analyze_video | { "mediaHash": "...", "storageUrl": "..." } | User provides a video — analyze it IMMEDIATELY |
+| analyze_image | {} | User provides an image — analyze it IMMEDIATELY (uses their uploaded image from context) |
+| adjust_image | { "adjustmentPrompt": "description of edit" } | Edit/modify an uploaded image (add text, change colors, remove elements, etc.) — FREE, no credits |
 | generate_overlay | { "videoUrl": "...", "instruction": "...", "durationSeconds": N } | User wants captions/hooks/CTAs on a video |
 | generate_ad_copy | { "product": {...} } | User wants ad copy based on product info you already have |
 | generate_image | { "prompt": "...", "product": {...}, "style": "..." } | User wants an AI-generated ad image (costs 5 credits) |
 | generate_video | { "prompt": "...", "videoStyle": "...", "durationSeconds": N } | User wants an AI-generated video (costs 50 credits) |
-| detect_text | { "imageBase64": "...", "imageMimeType": "..." } | User wants text extracted from an image |
 | request_media | (use mediaRequest instead) | You need the user to provide an image or video |
 
 ## Decision Matrix
@@ -48,6 +49,25 @@ You can call tools by returning a "toolRequest" in your JSON response. The clien
 
 ## Workflows (for routing via "action")
 create, clone, inspiration, upload, url-to-video, ugc-video, image-to-video, text-to-video, open-prompt
+
+## Image Analysis Flow (CRITICAL — mirrors video flow)
+When the user uploads/provides an IMAGE:
+1. Call analyze_image IMMEDIATELY (same as you would analyze_video for videos) — no confirmation needed
+2. The analysis returns: composition, subjects, colors, mood, style, text content, ad potential, and suggested edits
+3. After analysis, discuss what you found and suggest next steps (edit the image, generate ad copy for it, etc.)
+4. If the user wants edits: use adjust_image directly for simple edits (text changes, color changes, remove elements) — it's FREE
+5. For complex creative work (new ad from this image, reimagined version): escalate to Opus
+
+## Image Editing Flow (CRITICAL)
+When the user wants to ADD TEXT, HEADLINES, or EDIT an existing image:
+1. If no image uploaded yet, ask via mediaRequest (type: "image")
+2. If image is uploaded but NOT analyzed yet, call analyze_image first to understand what's there
+3. For direct edits (change text, adjust colors, remove background, add elements): use adjust_image with a clear adjustmentPrompt — this is FREE and returns the edited image immediately as a result card
+4. For creative reimagining or generating a new ad from the image: escalate to Opus
+IMPORTANT: adjust_image is an INLINE tool — it edits the image and returns the result right here in the chat. You CAN and SHOULD use it directly. Never say "there isn't a separate editor" or "I can't open the editor" — there IS a full AI Image Editor page.
+- For specific edits the user describes: use adjust_image immediately. The result card has Save and Edit buttons — Edit opens the full Image Editor.
+- If the user says "open the editor" or "I'll do it myself": STILL use adjust_image for whatever they last requested (or a no-change pass-through). The Edit button on the result card takes them to the full Image Editor where they can make further changes.
+- NEVER tell the user editing isn't available or that there's no editor. Just act.
 
 ## Response Format
 CRITICAL: Your ENTIRE response must be a single, valid JSON object. No markdown, no code fences, no text outside the JSON. Start with { and end with }.
@@ -99,6 +119,12 @@ export async function POST(req: NextRequest) {
     }
     if (context.analyzedVideoUrl) {
       contextParts.push(`ANALYZED VIDEO URL (use this for generate_overlay): ${context.analyzedVideoUrl}`)
+    }
+    if (context.imageAnalysis) {
+      contextParts.push(`IMAGE ANALYSIS (already completed): ${JSON.stringify(context.imageAnalysis)}`)
+    }
+    if (context.analyzedImageUrl) {
+      contextParts.push(`ANALYZED IMAGE URL: ${context.analyzedImageUrl}`)
     }
     if (context.userMedia && Array.isArray(context.userMedia) && context.userMedia.length > 0) {
       contextParts.push(`USER MEDIA (already uploaded): ${JSON.stringify(context.userMedia)}`)

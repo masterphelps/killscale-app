@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleAI } from '@/lib/google-ai'
+import { getGoogleAI, withRegionalFallback } from '@/lib/google-ai'
 import { buildAdjustImagePrompt } from '@/lib/prompts/adjust-image'
 
-// Use shared Vertex AI / AI Studio client
-const getGenAI = getGoogleAI
+export const maxDuration = 60
 
 // Always use Gemini 3 Pro - it's the only model that works reliably
 const MODEL_NAME = 'gemini-3-pro-image-preview'
@@ -26,7 +25,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!getGenAI()) {
+    if (!getGoogleAI()) {
       return NextResponse.json(
         { error: 'Image generation not configured' },
         { status: 503 }
@@ -38,13 +37,8 @@ export async function POST(request: NextRequest) {
 
     const prompt = buildAdjustImagePrompt(body.adjustmentPrompt)
 
-    const client = getGenAI()
-    if (!client) {
-      return NextResponse.json({ error: 'Image generation not configured' }, { status: 503 })
-    }
-
     try {
-      const response = await client.models.generateContent({
+      const response = await withRegionalFallback((client) => client.models.generateContent({
         model: MODEL_NAME,
         contents: [
           {
@@ -63,9 +57,9 @@ export async function POST(request: NextRequest) {
           }
         ],
         config: {
-          responseModalities: ['IMAGE'],
+          responseModalities: ['IMAGE', 'TEXT'],
         }
-      })
+      }), 'Adjust Image')
 
       // Extract the generated image from response
       const parts = response.candidates?.[0]?.content?.parts || []

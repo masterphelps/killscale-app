@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { getGoogleAI } from '@/lib/google-ai'
+import { getGoogleAI, withGeminiRetry } from '@/lib/google-ai'
 import {
   ANALYZE_REFERENCE_AD_PROMPT,
   TEXT_REQUIREMENTS,
@@ -40,22 +40,6 @@ const getGenAI = getGoogleAI
 // Always use Gemini 3 Pro - it's the only model that works reliably
 const MODEL_NAME = 'gemini-3-pro-image-preview'
 
-// Retry wrapper for transient 429s from Vertex AI
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn()
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const is429 = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Resource exhausted')
-      if (!is429 || attempt === maxRetries) throw err
-      const delay = (attempt + 1) * 3000 // 3s, 6s
-      console.log(`[Imagen] 429 hit, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})`)
-      await new Promise(r => setTimeout(r, delay))
-    }
-  }
-  throw new Error('Unreachable')
-}
 
 interface GenerateImageRequest extends ImagePromptRequest {
   userId?: string
@@ -258,7 +242,7 @@ export async function POST(request: NextRequest) {
       console.log('[Imagen] Open Prompt | Parts count:', parts.length, '| Has source image:', Boolean(hasProductImage))
 
       try {
-        const response = await withRetry(() => client.models.generateContent({
+        const response = await withGeminiRetry(() => client.models.generateContent({
           model: MODEL_NAME,
           contents: [{ role: 'user', parts }],
           config: {
@@ -363,7 +347,7 @@ export async function POST(request: NextRequest) {
       console.log('[Imagen] Using model:', MODEL_NAME)
 
       try {
-        const response = await withRetry(() => client.models.generateContent({
+        const response = await withGeminiRetry(() => client.models.generateContent({
           model: MODEL_NAME,
           contents: [
             {
@@ -437,7 +421,7 @@ export async function POST(request: NextRequest) {
 
     const prompt = buildTextOnlyPrompt(body, curatedText)
 
-    const textOnlyResponse = await withRetry(() => client.models.generateContent({
+    const textOnlyResponse = await withGeminiRetry(() => client.models.generateContent({
       model: MODEL_NAME,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {

@@ -34,7 +34,7 @@ Available workflows:
 - "image-to-video": User has an image and wants to animate it into a video
 - "text-to-video": User has a specific scene/concept in mind (NOT a product) and wants to describe it for a video. Only use when the user provides a creative brief or scene description, not just "make a video"
 - "open-prompt": User wants raw content (no ad copy structure). Used when outputType is "content"
-- "conversation": ONLY use when input is truly vague with no clear direction. Examples: "help me", "what can you do?", "not sure where to start". Do NOT use conversation for anything that mentions ads, videos, products, or any specific intent.
+- "conversation": User wants to edit an existing image (add text, headlines, modify), OR input is truly vague with no clear direction. Image editing goes through conversation so the agent can ask for the image, analyze it, and help interactively. Examples: "help me", "what can you do?", "not sure where to start". Do NOT use conversation for anything that mentions ads, videos, products, or any specific intent.
 
 Routing rules (check in order):
 1. If outputType is "content", always return "open-prompt"
@@ -50,7 +50,8 @@ Routing rules (check in order):
 11. If format is "video" and text is a detailed creative brief or scene description (not just "make a video"), return "text-to-video"
 12. If format is "video" and intent is making a video (generic), return "url-to-video" (the workflow will ask for the URL)
 13. If format is "image" and user wants to make ads or mentions a product, return "create"
-14. ONLY return "conversation" if the input is truly vague/greeting with no actionable intent
+14. If text mentions editing an existing image, adding text/headlines to an image, or modifying an image they have, return "conversation" (so Sonnet can handle it interactively — ask for image, analyze, help)
+15. ONLY return "conversation" if the input is truly vague/greeting with no actionable intent, OR if the user wants interactive image editing help
 
 Extract any URLs found in the text. If there are two URLs, the first is likely the product URL and the second is the competitor URL.
 
@@ -67,8 +68,9 @@ Return ONLY valid JSON matching this schema:
 }`
 
 export async function POST(req: NextRequest) {
+  let body: OracleRequest = { text: '', hasImage: false }
   try {
-    const body: OracleRequest = await req.json()
+    body = await req.json()
     const { text, hasImage } = body
 
     // Resolve mode from new field or deprecated fields
@@ -168,10 +170,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     console.error('Oracle route error:', err)
-    // Fallback: simple mode-based routing
-    const body: OracleRequest = await req.json().catch(() => ({
-      text: '', mode: 'ks' as const, hasImage: false,
-    }))
+    // Fallback: use body captured before try block (req stream already consumed)
     return NextResponse.json({
       workflow: 'create',
       prompt: body.text?.trim() || null,

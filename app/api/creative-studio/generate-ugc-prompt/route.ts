@@ -86,18 +86,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Snap GPT's estimated duration to a valid Veo duration
+    // GPT tends to overestimate — Veo renders speech ~2x faster than natural pace
     const rawEstimate = typeof parsed.estimatedSeconds === 'number' ? parsed.estimatedSeconds : 8
-    const veoDuration = snapToVeoDuration(rawEstimate)
+    const adjustedEstimate = Math.max(8, Math.round(rawEstimate * 0.5))
+    const veoDuration = snapToVeoDuration(adjustedEstimate)
     const numExtensions = veoDuration > VEO_BASE_DURATION
       ? Math.round((veoDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)
       : 0
 
-    // Validate extension prompts
+    // Validate and truncate extension prompts to match adjusted duration
     const extensionPrompts: string[] | undefined = numExtensions > 0 && Array.isArray(parsed.extensionPrompts)
-      ? parsed.extensionPrompts.filter((p: unknown): p is string => typeof p === 'string' && p.length > 0)
+      ? parsed.extensionPrompts.filter((p: unknown): p is string => typeof p === 'string' && p.length > 0).slice(0, numExtensions)
       : undefined
 
-    console.log(`[UGCPrompt] GPT estimated ${rawEstimate}s → snapped to ${veoDuration}s (${numExtensions} extension(s)), dialogue: ${parsed.dialogue.split(' ').length} words, ${extensionPrompts?.length || 0} extension prompt(s)`)
+    console.log(`[UGCPrompt] GPT estimated ${rawEstimate}s → adjusted ${adjustedEstimate}s → snapped to ${veoDuration}s (${numExtensions} extension(s)), dialogue: ${parsed.dialogue.split(' ').length} words, ${extensionPrompts?.length || 0} extension prompt(s)`)
 
     // Extract overlay data (hook + CTA only — captions come from Whisper transcription in the RVE)
     const overlay = parsed.overlay && typeof parsed.overlay === 'object'

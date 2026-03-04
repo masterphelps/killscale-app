@@ -77,24 +77,25 @@ RULES:
 7. The person should look directly at the camera with ${tone} energy.
 
 DURATION ESTIMATION:
-After writing the dialogue, estimate how many seconds it would take to speak it naturally (roughly 2.5 words per second, plus pauses for product demos, gestures, and reactions). Return this as "estimatedSeconds".
+After writing the dialogue, estimate the VIDEO duration needed. The video engine renders speech MUCH FASTER than natural pace — roughly 5 words per second (NOT real-time speaking pace). Count the total words in your dialogue and divide by 5 to get the video duration. Return this as "estimatedSeconds". CRITICAL: Most UGC ads should be 8-15 seconds (1-2 segments). Only go to 22+ seconds if the product genuinely requires extended explanation.
 
 VIDEO SEGMENTATION:
-The video engine generates an 8-second base clip, but the FIRST ~1 SECOND is a still product image (no presenter, no speech) and the LAST ~1 SECOND fades/transitions out. So the first segment only has ~6 USABLE SECONDS for dialogue and action. Extensions are 7 seconds each but only ~6 seconds are usable for speech (transitions eat ~1 second). Valid total durations are 8, 15, 22, 29, 36 seconds.
+The video engine generates an 8-second base clip. The FIRST ~1 SECOND is a still product image (no presenter) and the LAST ~1 SECOND transitions out. So the first segment has ~6 USABLE SECONDS. Extensions are 7 seconds each with ~6 usable. Valid total durations: 8, 15, 22, 29 seconds.
 
-IMPORTANT: Budget your dialogue so the first segment's speech fits in ~6 seconds (not 7 or 8). Leave breathing room — it is MUCH better to have the speaker finish 0.5s early than to have the last word cut off. The presenter appears after the product intro shot.
+IMPORTANT: Budget dialogue so the first segment fits ~30 words (6 usable seconds × 5 words/sec). Leave breathing room — better to finish 0.5s early than have the last word cut off.
 
 If your estimated duration is 8 seconds or less:
 - Write a single prompt covering the full video.
 - Do NOT include "extensionPrompts".
-- Remember: only ~6 seconds of actual dialogue time in this segment. That means ~15 words MAX.
+- First segment: ~30 words MAX of dialogue.
 
 If your estimated duration is more than 8 seconds:
-- The "prompt" field must cover ONLY the first 8 seconds (but only ~6s of dialogue since the first second is the product image and last second transitions).
+- The "prompt" field must cover ONLY the first 8 seconds (~30 words of dialogue).
 - Include an "extensionPrompts" array with one prompt per 7-second extension segment.
 - Each extension prompt MUST start with "Continue from previous shot." and lock the visual context (same presenter, wardrobe, lighting, setting).
-- Each extension describes ONLY what happens in that 7-second segment (~6s usable for speech, ~15 words max per extension).
+- Each extension describes ONLY what happens in that 7-second segment (~30 words of dialogue per extension).
 - The number of extension prompts should match: ceil((estimatedSeconds - 8) / 7).
+- AIM FOR FEWER EXTENSIONS. A tight 15-second UGC ad (1 extension) is almost always better than a rambling 29-second one.
 
 PRODUCT VISIBILITY RULE:
 - The product from the reference image must NEVER be altered, distorted, or morphed by the AI. Same shape, colors, text, proportions at all times.
@@ -104,7 +105,7 @@ PRODUCT VISIBILITY RULE:
 
 OUTPUT FORMAT (JSON):
 {
-  "prompt": "Veo video prompt using block headers: [Scene], [Subject], [Action], [Product Preservation], [Mood & Atmosphere], [Technical], [Dialogue]. Detailed and specific.",
+  "prompt": "Flowing prose Veo video prompt. NO block headers like [Scene] or [Subject] — Veo performs better with natural descriptive paragraphs. Weave together the scene, subject, action, mood, technical details, and dialogue into one cohesive paragraph. Be detailed and specific.",
   "dialogue": "The FULL dialogue for the entire video (all segments combined)",
   "sceneSummary": "One-line description for UI display",
   "estimatedSeconds": 15,
@@ -117,17 +118,11 @@ OUTPUT FORMAT (JSON):
     "headline": "Short punchy headline (5-8 words)",
     "description": "Link description (1 sentence)"
   },
-  "extensionPrompts": ["Only if estimatedSeconds > 8. One prompt per 7-second extension."]
+  "extensionPrompts": ["Only if estimatedSeconds > 8. One prompt per 7-second extension. Each must be flowing prose, no block headers."]
 }
 
-PROMPT BLOCK GUIDELINES:
-- [Scene]: Describe the ${setting} environment in detail — lighting, time of day, atmosphere, background.
-- [Subject]: Describe the ${gender} presenter — age (${ageDesc}), wearing ${clothing} clothing${features?.length ? `, with ${features.join(', ').toLowerCase()}` : ''}. Energy and demeanor.
-- [Action]: Beat-by-beat description of what happens in this segment.
-- [Product Preservation]: "The product from the reference image must remain completely unchanged — same shape, colors, text, and proportions."
-- [Mood & Atmosphere]: ${tone} tone — lighting, color grade, energy feel.
-- [Technical]: "Vertical 9:16 portrait. Natural UGC aesthetic. Selfie-style camera with subtle movement."
-- [Dialogue]: Format as Speaker: "line" for each sentence. Only include dialogue for THIS segment.
+PROMPT WRITING GUIDELINES:
+Write the "prompt" field as flowing natural prose. Describe the ${setting} environment in detail — lighting, time of day, atmosphere, background. Describe the ${gender} presenter — age (${ageDesc}), wearing ${clothing} clothing${features?.length ? `, with ${features.join(', ').toLowerCase()}` : ''}. Include beat-by-beat action, ${tone} mood and energy, and specify "Vertical 9:16 portrait. Natural UGC aesthetic. Selfie-style camera with subtle movement." Include the dialogue inline as the presenter speaking: Speaker: "line". The product from the reference image must remain completely unchanged — same shape, colors, text, and proportions. Weave all these details into one flowing paragraph — do NOT use block headers like [Scene], [Subject], etc.
 
 Respond ONLY with the JSON object, no other text.`
 }

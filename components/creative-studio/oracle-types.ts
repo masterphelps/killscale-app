@@ -26,6 +26,7 @@ export type OracleContextCardType =
   | 'style'
   | 'prompt-preview'
   | 'video-analysis'
+  | 'image-analysis'
   | 'overlay-preview'
   | 'ad-copy'
   | 'image-result'
@@ -46,6 +47,8 @@ export interface OracleContextCard {
 export type OracleToolName =
   | 'analyze_product'
   | 'analyze_video'
+  | 'analyze_image'
+  | 'adjust_image'
   | 'generate_overlay'
   | 'generate_ad_copy'
   | 'generate_image'
@@ -107,7 +110,10 @@ export interface OracleChatRequest {
     priorConversation?: { role: string; content: string }[]
     videoAnalysis?: Record<string, unknown>
     analyzedVideoUrl?: string
+    imageAnalysis?: Record<string, unknown>
+    analyzedImageUrl?: string
     userMedia?: Array<{ url: string; mimeType: string; name: string; type: string }>
+    productImages?: Array<{ base64: string; mimeType: string; description: string; type: string }>
   }
 }
 

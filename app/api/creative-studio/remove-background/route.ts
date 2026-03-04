@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleAI } from '@/lib/google-ai'
+import { getGoogleAI, withRegionalFallback } from '@/lib/google-ai'
 
 const MODEL_NAME = 'gemini-3-pro-image-preview'
 
@@ -14,8 +14,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const client = getGoogleAI()
-    if (!client) {
+    if (!getGoogleAI()) {
       return NextResponse.json(
         { error: 'Image processing not configured' },
         { status: 503 }
@@ -24,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[RemoveBG] Starting background removal...')
 
-    const response = await client.models.generateContent({
+    const response = await withRegionalFallback((client) => client.models.generateContent({
       model: MODEL_NAME,
       contents: [
         {
@@ -54,7 +53,7 @@ Rules:
       config: {
         responseModalities: ['IMAGE'],
       }
-    })
+    }), 'RemoveBG')
 
     const parts = response.candidates?.[0]?.content?.parts || []
 

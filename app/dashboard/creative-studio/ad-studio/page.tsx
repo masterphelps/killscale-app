@@ -451,11 +451,15 @@ export default function AdStudioPage() {
   const [oracleInputMode, setOracleInputMode] = useState<OracleInputMode>('ks')
   const [oracleOpenAttach, setOracleOpenAttach] = useState(false)
   const oracleAutoGenRef = useRef(false) // tracks if Oracle routed to open-prompt and needs auto-gen
+  const oracleAutoAnalyzeRef = useRef(false) // tracks if Oracle routed to create and needs auto-analysis
 
   // Oracle conversation state
   const [oracleMode, setOracleMode] = useState<OracleMode>('idle')
   const [oracleMessages, setOracleMessages] = useState<OracleMessage[]>([])
   const [oracleContext, setOracleContext] = useState<Record<string, unknown>>({})
+  const oracleContextRef = useRef<Record<string, unknown>>({})
+  // Keep ref in sync so tool executor always reads latest context (avoids stale closures)
+  oracleContextRef.current = oracleContext
   const [oracleSending, setOracleSending] = useState(false)
   const [oracleResearching, setOracleResearching] = useState(false)
   const oracleMsgIdRef = useRef(0)
@@ -464,6 +468,8 @@ export default function AdStudioPage() {
     type: string; url?: string; mediaHash?: string; toolUsed: string; creditCost: number
   }>>([])
   const [pendingToolRequest, setPendingToolRequest] = useState<OracleToolRequest | null>(null)
+  const oracleChainDepthRef = useRef(0)
+  const MAX_ORACLE_CHAIN_DEPTH = 3 // Stop auto-chaining after 3 tool calls — require user input
   const [oracleMediaLibraryOpen, setOracleMediaLibraryOpen] = useState(false)
   const [oracleMediaRequestType, setOracleMediaRequestType] = useState<'image' | 'video' | 'any'>('any')
   const saveSessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -1529,6 +1535,28 @@ export default function AdStudioPage() {
 
     if (!currentImage || !prompt?.trim()) return
 
+    // Guard: session-restored images have empty base64 — fetch from storageUrl first
+    let imageBase64 = currentImage.base64
+    const imageMimeType = currentImage.mimeType
+    if (!imageBase64 && currentImage.storageUrl) {
+      try {
+        const fetchRes = await fetch(currentImage.storageUrl)
+        const blob = await fetchRes.blob()
+        imageBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1])
+          reader.readAsDataURL(blob)
+        })
+      } catch {
+        setImageErrors(prev => ({ ...prev, [adIndex]: 'Failed to load image for adjustment' }))
+        return
+      }
+    }
+    if (!imageBase64) {
+      setImageErrors(prev => ({ ...prev, [adIndex]: 'Image data not available - please regenerate' }))
+      return
+    }
+
     setAdjustingImageIndex(adIndex)
     setImageErrors(prev => ({ ...prev, [adIndex]: '' }))
 
@@ -1537,8 +1565,8 @@ export default function AdStudioPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: currentImage.base64,
-          imageMimeType: currentImage.mimeType,
+          imageBase64,
+          imageMimeType,
           adjustmentPrompt: prompt,
         }),
       })
@@ -1677,6 +1705,18 @@ export default function AdStudioPage() {
   }, [currentAccountId, user?.id, generatedImages, currentImageVersion, savedToLibrary])
 
   const downloadImage = (image: GeneratedImage, adIndex: number, versionIndex: number) => {
+    if (!image.base64 && image.storageUrl) {
+      // Session-restored images: download from storageUrl
+      const link = document.createElement('a')
+      link.href = image.storageUrl
+      link.download = `ad-image-${adIndex + 1}-v${versionIndex + 1}.png`
+      link.target = '_blank'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      return
+    }
+    if (!image.base64) return
     const link = document.createElement('a')
     link.href = `data:${image.mimeType};base64,${image.base64}`
     link.download = `ad-image-${adIndex + 1}-v${versionIndex + 1}.png`
@@ -1828,14 +1868,18 @@ export default function AdStudioPage() {
     }])
 
     try {
+      // Read from ref to get latest context (avoids stale closure after setOracleContext)
+      const ctx = oracleContextRef.current
       const toolContext = {
         userId: user?.id || '',
         adAccountId: currentAccountId || '',
-        productInfo: oracleContext.productInfo as Record<string, unknown> | undefined,
-        productImages: oracleContext.productImages as Array<{ base64: string; mimeType: string }> | undefined,
-        userMedia: oracleContext.userMedia as Array<{ url: string; mimeType: string; name: string; type: string }> | undefined,
-        videoAnalysis: oracleContext.videoAnalysis as Record<string, unknown> | undefined,
-        analyzedVideoUrl: oracleContext.analyzedVideoUrl as string | undefined,
+        productInfo: ctx.productInfo as Record<string, unknown> | undefined,
+        productImages: ctx.productImages as Array<{ base64: string; mimeType: string }> | undefined,
+        userMedia: ctx.userMedia as Array<{ url: string; mimeType: string; name: string; type: string }> | undefined,
+        videoAnalysis: ctx.videoAnalysis as Record<string, unknown> | undefined,
+        analyzedVideoUrl: ctx.analyzedVideoUrl as string | undefined,
+        imageAnalysis: ctx.imageAnalysis as Record<string, unknown> | undefined,
+        analyzedImageUrl: ctx.analyzedImageUrl as string | undefined,
       }
 
       const result = await executeOracleTool(toolReq.tool, toolReq.inputs, toolContext)
@@ -1866,6 +1910,15 @@ export default function AdStudioPage() {
           ...(analyzedVideoUrl ? { analyzedVideoUrl } : {}),
         }))
       }
+      if (result.success && toolReq.tool === 'analyze_image' && result.data.analysis) {
+        const analyzedImageUrl = ((oracleContext.userMedia as Array<{ url: string; type: string }>) || [])
+            .filter(m => m.type === 'image').slice(-1)[0]?.url
+        setOracleContext(prev => ({
+          ...prev,
+          imageAnalysis: result.data.analysis,
+          ...(analyzedImageUrl ? { analyzedImageUrl } : {}),
+        }))
+      }
 
       // Track generated assets
       if (result.generatedAsset) {
@@ -1875,12 +1928,21 @@ export default function AdStudioPage() {
         }])
       }
 
-      // Auto-send result back to model for chaining
-      // Use a slight delay so the user sees the result card first
-      setTimeout(async () => {
-        const toolResultText = `[Tool result for ${toolReq.tool}]: ${result.modelSummary}`
-        await oracleChatSendRef.current(toolResultText, true)
-      }, 500)
+      // Auto-send result back to model for chaining (capped to prevent runaway loops)
+      oracleChainDepthRef.current += 1
+      if (oracleChainDepthRef.current >= MAX_ORACLE_CHAIN_DEPTH) {
+        // Stop — let the user decide what's next
+        console.log(`[Oracle] Chain depth ${oracleChainDepthRef.current} reached limit, stopping auto-chain`)
+        oracleChainDepthRef.current = 0
+        const summaryMsg = makeOracleMsg('oracle', result.modelSummary, { tier })
+        setOracleMessages(prev => [...prev, summaryMsg])
+      } else {
+        // Continue chain — send result back to model
+        setTimeout(async () => {
+          const toolResultText = `[Tool result for ${toolReq.tool}]: ${result.modelSummary}`
+          await oracleChatSendRef.current(toolResultText, true)
+        }, 500)
+      }
 
     } catch (err) {
       setOracleMessages(prev => prev.map(m =>
@@ -1972,6 +2034,29 @@ export default function AdStudioPage() {
     }
   }, [user?.id, currentAccountId])
 
+  const handleOracleSaveImage = useCallback(async (image: { base64: string; mimeType: string }) => {
+    if (!user?.id || !currentAccountId) return
+    try {
+      const res = await fetch('/api/creative-studio/save-generated-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId,
+          base64: image.base64,
+          mimeType: image.mimeType,
+          saveToLibrary: true,
+          source: 'oracle',
+        }),
+      })
+      if (res.ok) {
+        console.log('[Oracle] Image saved to library')
+      }
+    } catch (err) {
+      console.error('[Oracle] Failed to save image:', err)
+    }
+  }, [user?.id, currentAccountId])
+
   // Force-save Oracle session + store ID in sessionStorage before navigating away
   const navigateFromOracle = useCallback(async (url: string) => {
     // Cancel pending debounce
@@ -1987,6 +2072,38 @@ export default function AdStudioPage() {
     }
     router.push(url)
   }, [oracleSessionId, router])
+
+  const handleOracleEditImage = useCallback(async (image: { base64: string; mimeType: string }) => {
+    if (!user?.id) return
+    try {
+      // Save to Supabase storage so the image editor can load it
+      const res = await fetch('/api/creative-studio/save-generated-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          adAccountId: currentAccountId || '',
+          base64: image.base64,
+          mimeType: image.mimeType,
+          saveToLibrary: false,
+          source: 'oracle',
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const storageUrl = data.storageUrl
+        if (storageUrl) {
+          navigateFromOracle(`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(storageUrl)}&from=oracle`)
+          return
+        }
+      }
+      // Fallback: navigate with base64 in sessionStorage (large but works)
+      sessionStorage.setItem('ks_oracle_edit_image', JSON.stringify(image))
+      navigateFromOracle('/dashboard/creative-studio/image-editor?from=oracle')
+    } catch (err) {
+      console.error('[Oracle] Failed to open image editor:', err)
+    }
+  }, [user?.id, currentAccountId, navigateFromOracle])
 
   // Open overlay config in Video Editor via ?jobId= (standard pattern used by all flows)
   const handleOracleOpenInEditor = useCallback((config: Record<string, unknown>, videoUrl?: string) => {
@@ -2012,6 +2129,19 @@ export default function AdStudioPage() {
       const mediaType = file.type.startsWith('video') ? 'video' : 'image'
       const preview = URL.createObjectURL(file)
 
+      // Convert file to base64 so tools (detect_text, generate_image) can use it
+      let base64Data: string | undefined
+      if (mediaType === 'image') {
+        base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const result = reader.result as string
+            resolve(result.split(',')[1]) // strip data:...;base64, prefix
+          }
+          reader.readAsDataURL(file)
+        })
+      }
+
       // Add media-attached card as user message
       setOracleMessages(prev => [...prev, {
         id: `media-${Date.now()}`,
@@ -2025,6 +2155,18 @@ export default function AdStudioPage() {
           preview,
         }],
       }])
+
+      // Add to oracle context so tools can access the image
+      setOracleContext(prev => ({
+        ...prev,
+        userMedia: [...((prev.userMedia || []) as Array<Record<string, unknown>>), {
+          url: base64Data ? `data:${file.type};base64,${base64Data}` : preview,
+          mimeType: file.type,
+          name: file.name,
+          type: mediaType,
+          ...(base64Data ? { base64: base64Data } : {}),
+        }],
+      }))
 
       // Send the file info back to the model
       await oracleChatSendRef.current(
@@ -2084,9 +2226,6 @@ export default function AdStudioPage() {
       true
     )
   }, [])
-
-  // Flag to auto-trigger product analysis after routing from Oracle conversation
-  const oracleAutoAnalyzeRef = useRef(false)
 
   // ── Single routing function used by ALL Oracle tiers (Haiku, Sonnet, Opus) ──
   // This is the ONLY place workflow routing happens. No model should craft generation
@@ -2180,10 +2319,11 @@ export default function AdStudioPage() {
       default:
         setMode('create')
     }
-  }, [router, navigateFromOracle])
+  }, [router, navigateFromOracle, oracleContext])
 
   // Oracle submit — mode-based routing: KS → Sonnet, Image → Gemini, Video → Video Studio
   const handleOracleSubmit = useCallback(async (submission: OracleSubmission) => {
+    oracleChainDepthRef.current = 0 // Reset chain depth on new submission
     setOracleLoading(true)
     try {
       // Store attached image(s) for flows that need it
@@ -2232,20 +2372,6 @@ export default function AdStudioPage() {
 
       // ── KS mode: full Oracle pipeline ──
 
-      // Fast path: URL detected → route directly to workflow
-      const urlMatch = submission.text.match(/https?:\/\/[^\s]+/)
-      if (urlMatch) {
-        handleOracleAction({
-          workflow: 'create',
-          prefilledData: {
-            productUrl: urlMatch[0],
-            prompt: submission.text.trim(),
-          },
-          _image: primaryImage ?? undefined,
-        })
-        return
-      }
-
       // Fast path: image attached → upload workflow
       if (submission.images.length > 0) {
         handleOracleAction({
@@ -2256,7 +2382,37 @@ export default function AdStudioPage() {
         return
       }
 
-      // Default: Sonnet conversation
+      // Haiku router: classify intent before deciding Sonnet vs direct workflow
+      try {
+        const routeRes = await fetch('/api/creative-studio/oracle-route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: submission.text,
+            mode: 'ks',
+            hasImage: false,
+          }),
+        })
+        const routeData = await routeRes.json()
+
+        // If Haiku classified a clear workflow (not conversation), route directly
+        if (routeRes.ok && routeData.workflow && routeData.workflow !== 'conversation') {
+          handleOracleAction({
+            workflow: routeData.workflow,
+            prefilledData: {
+              productUrl: routeData.productUrl || undefined,
+              prompt: routeData.prompt || submission.text.trim(),
+              format: routeData.format,
+            },
+            _image: primaryImage ?? undefined,
+          })
+          return
+        }
+      } catch {
+        // Haiku failed — fall through to Sonnet conversation
+      }
+
+      // Sonnet conversation (Haiku returned 'conversation' or failed)
       const userMsg = makeOracleMsg('user', submission.text)
       setOracleMessages([userMsg])
       setOracleMode('chat')
@@ -2739,6 +2895,7 @@ export default function AdStudioPage() {
 
   // Public wrapper — always shows user message bubble
   const handleOracleChatSend = useCallback(async (userText: string) => {
+    oracleChainDepthRef.current = 0 // Reset chain depth on user message
     return handleOracleChatSendInternal(userText, false)
   }, [handleOracleChatSendInternal])
 
@@ -2903,7 +3060,7 @@ export default function AdStudioPage() {
         }, 50)
         break
     }
-  }, [])
+  }, [router])
 
   const resetToModeSelection = () => {
     setMode(null)
@@ -3636,6 +3793,8 @@ export default function AdStudioPage() {
                 onCreditCancel={handleOracleCreditCancel}
                 onOpenInEditor={handleOracleOpenInEditor}
                 onSaveCopy={handleOracleSaveCopy}
+                onSaveImage={handleOracleSaveImage}
+                onEditImage={handleOracleEditImage}
               />
             )}
 
@@ -4122,13 +4281,20 @@ export default function AdStudioPage() {
                       )}
                       {openPromptSaved ? 'Saved' : 'Save to Library'}
                     </button>
-                    <Link
-                      href={`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(openPromptResult.image.storageUrl || '')}`}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
-                    >
-                      <Pencil className="w-4 h-4" />
-                      Edit
-                    </Link>
+                    {openPromptResult.image.storageUrl ? (
+                      <Link
+                        href={`/dashboard/creative-studio/image-editor?imageUrl=${encodeURIComponent(openPromptResult.image.storageUrl)}`}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Edit
+                      </Link>
+                    ) : (
+                      <span className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-500 text-sm cursor-not-allowed opacity-50">
+                        <Pencil className="w-4 h-4" />
+                        Edit
+                      </span>
+                    )}
                     <button
                       onClick={handleOpenPromptCreateAd}
                       disabled={creatingAd[-1]}
