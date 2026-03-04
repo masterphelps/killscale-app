@@ -1,8 +1,7 @@
 'use client'
 
 import {
-  Target, RefreshCw, Sparkles, UserCircle, ImagePlus,
-  Image as ImageIcon, Film,
+  Target, RefreshCw, Sparkles, UserCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OracleInputMode } from './oracle-types'
@@ -17,29 +16,25 @@ export interface ChipDef {
     | { type: 'switch-mode'; mode: OracleInputMode }
 }
 
-// KS mode chips (8) — full Oracle pipeline
+// KS mode chips (5) — full Oracle pipeline
 const ksChips: ChipDef[] = [
-  { label: 'Product \u2192 Ad', icon: Target, action: { type: 'workflow', workflow: 'create' } },
-  { label: 'Product \u2192 Video Ad', icon: Target, action: { type: 'workflow', workflow: 'url-to-video' } },
+  { label: 'Create Image Ad', icon: Target, action: { type: 'workflow', workflow: 'create' } },
+  { label: 'Create Video Ad', icon: Target, action: { type: 'workflow', workflow: 'url-to-video' } },
   { label: 'Clone Ad', icon: RefreshCw, action: { type: 'workflow', workflow: 'clone' } },
   { label: 'Inspiration', icon: Sparkles, action: { type: 'workflow', workflow: 'inspiration' } },
   { label: 'UGC Video Ad', icon: UserCircle, action: { type: 'workflow', workflow: 'ugc-video' } },
-  { label: 'Image \u2192 Ad', icon: ImagePlus, action: { type: 'workflow', workflow: 'upload' } },
-  { label: 'Generate Image', icon: ImageIcon, action: { type: 'switch-mode', mode: 'image' } },
-  { label: 'Generate Video', icon: Film, action: { type: 'switch-mode', mode: 'video' } },
 ]
 
-// Image mode chips — filtered subset of KS chips relevant to image workflows
+// Image mode chips — filtered subset
 const imageChips: ChipDef[] = [
-  { label: 'Product \u2192 Ad', icon: Target, action: { type: 'workflow', workflow: 'create' } },
+  { label: 'Create Image Ad', icon: Target, action: { type: 'workflow', workflow: 'create' } },
   { label: 'Clone Ad', icon: RefreshCw, action: { type: 'workflow', workflow: 'clone' } },
   { label: 'Inspiration', icon: Sparkles, action: { type: 'workflow', workflow: 'inspiration' } },
-  { label: 'Image \u2192 Ad', icon: ImagePlus, action: { type: 'workflow', workflow: 'upload' } },
 ]
 
-// Video mode chips — filtered subset of KS chips relevant to video workflows
+// Video mode chips — filtered subset
 const videoChips: ChipDef[] = [
-  { label: 'Product \u2192 Video Ad', icon: Target, action: { type: 'workflow', workflow: 'url-to-video' } },
+  { label: 'Create Video Ad', icon: Target, action: { type: 'workflow', workflow: 'url-to-video' } },
   { label: 'UGC Video Ad', icon: UserCircle, action: { type: 'workflow', workflow: 'ugc-video' } },
 ]
 

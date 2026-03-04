@@ -2163,8 +2163,12 @@ export default function AdStudioPage() {
       const params = new URLSearchParams()
       if (prefilledData.prompt) params.set('prompt', prefilledData.prompt as string)
       if (prefilledData.style) params.set('style', prefilledData.style as string)
+      // Pass productName from Opus prefilledData or Oracle context (for described products with no URL)
+      const productName = (prefilledData.productName as string)
+        || (oracleContext.productInfo as Record<string, unknown> | undefined)?.name as string | undefined
+      if (productName) params.set('productName', productName)
 
-      // Stash product context in sessionStorage so Direct Studio can use it
+      // Stash product context in sessionStorage so Video Studio can use it
       // (URL params can't carry complex objects like productKnowledge + images)
       const productInfo = oracleContext.productInfo as Record<string, unknown> | undefined
       const productImgs = oracleContext.productImages as Array<{ base64: string; mimeType: string; description: string; type: string }> | undefined
@@ -2177,8 +2181,8 @@ export default function AdStudioPage() {
         } catch { /* sessionStorage quota — best effort */ }
       }
 
-      const directUrl = `/dashboard/creative-studio/direct${params.toString() ? `?${params.toString()}` : ''}`
-      navigateFromOracle(directUrl)
+      const videoStudioUrl = `/dashboard/creative-studio/video-studio${params.toString() ? `?${params.toString()}` : ''}`
+      navigateFromOracle(videoStudioUrl)
       return
     }
 
@@ -2210,15 +2214,14 @@ export default function AdStudioPage() {
         setMode('upload')
         break
       case 'url-to-video':
-        setMode('url-to-video')
-        break
+        navigateFromOracle('/dashboard/creative-studio/video-studio')
+        return
       case 'ugc-video':
-        setMode('ugc-video')
-        break
+        navigateFromOracle('/dashboard/creative-studio/video-studio?mode=ugc')
+        return
       case 'image-to-video':
-        if (prefilledData.prompt) setI2vPrompt(prefilledData.prompt as string)
-        setMode('image-to-video')
-        break
+        navigateFromOracle('/dashboard/creative-studio/video-studio?tab=image')
+        return
       case 'open-prompt':
         if (_image) setOpenPromptSourceImage({ base64: _image.base64, mimeType: _image.mimeType, preview: _image.preview })
         if (prefilledData.prompt) setOpenPromptText(prefilledData.prompt as string)
@@ -2230,7 +2233,7 @@ export default function AdStudioPage() {
     }
   }, [router, navigateFromOracle])
 
-  // Oracle submit — mode-based routing: KS → Sonnet, Image → Gemini, Video → Direct Studio
+  // Oracle submit — mode-based routing: KS → Sonnet, Image → Gemini, Video → Video Studio
   const handleOracleSubmit = useCallback(async (submission: OracleSubmission) => {
     setOracleLoading(true)
     try {
@@ -2267,19 +2270,14 @@ export default function AdStudioPage() {
         return
       }
 
-      // ── Video mode: use open-prompt video flow (scene plan → quality → generate) ──
+      // ── Video mode: navigate to Video Studio with prompt ──
       if (mode === 'video') {
-        if (submission.text.trim()) {
-          oracleAutoGenRef.current = true
+        const videoPrompt = submission.text.trim()
+        if (videoPrompt) {
+          router.push(`/dashboard/creative-studio/video-studio?prompt=${encodeURIComponent(videoPrompt)}&mode=direct`)
+        } else {
+          router.push('/dashboard/creative-studio/video-studio')
         }
-        handleOracleAction({
-          workflow: 'open-prompt',
-          prefilledData: {
-            prompt: submission.text.trim(),
-            format: 'video',
-          },
-          _image: primaryImage ?? undefined,
-        })
         return
       }
 
@@ -2937,8 +2935,8 @@ export default function AdStudioPage() {
         else if (action.workflow === 'inspiration') setMode('inspiration')
         else if (action.workflow === 'create') setMode('create')
         else if (action.workflow === 'upload') setMode('upload')
-        else if (action.workflow === 'url-to-video') setMode('url-to-video')
-        else if (action.workflow === 'ugc-video') setMode('ugc-video')
+        else if (action.workflow === 'url-to-video') router.push('/dashboard/creative-studio/video-studio')
+        else if (action.workflow === 'ugc-video') router.push('/dashboard/creative-studio/video-studio?mode=ugc')
         break
 
       case 'attach':
@@ -4294,7 +4292,7 @@ export default function AdStudioPage() {
                       setOpenPromptMediaType('image')
                       setMode('open-prompt')
                     } else if (workflow === 'text-to-video') {
-                      router.push('/dashboard/creative-studio/direct')
+                      router.push('/dashboard/creative-studio/video-studio')
                     } else {
                       handleOracleAction({ workflow, prefilledData: {} })
                     }
