@@ -1902,7 +1902,7 @@ export default function AdStudioPage() {
       if (result.success && toolReq.tool === 'analyze_video' && result.data.analysis) {
         // Store analysis AND the video's storage URL so overlay tool can find it
         const analyzedVideoUrl = (toolReq.inputs as Record<string, unknown>)?.storageUrl as string
-          || ((oracleContext.userMedia as Array<{ url: string; type: string }>) || [])
+          || ((oracleContextRef.current.userMedia as Array<{ url: string; type: string }>) || [])
               .filter(m => m.type === 'video').slice(-1)[0]?.url
         setOracleContext(prev => ({
           ...prev,
@@ -1911,7 +1911,7 @@ export default function AdStudioPage() {
         }))
       }
       if (result.success && toolReq.tool === 'analyze_image' && result.data.analysis) {
-        const analyzedImageUrl = ((oracleContext.userMedia as Array<{ url: string; type: string }>) || [])
+        const analyzedImageUrl = ((oracleContextRef.current.userMedia as Array<{ url: string; type: string }>) || [])
             .filter(m => m.type === 'image').slice(-1)[0]?.url
         setOracleContext(prev => ({
           ...prev,
@@ -1964,7 +1964,7 @@ export default function AdStudioPage() {
           : m
       ))
     }
-  }, [user?.id, currentAccountId, oracleContext, stripBase64ForContext])
+  }, [user?.id, currentAccountId, stripBase64ForContext])
 
   // Handle tool execution with credit check
   const handleToolExecution = useCallback(async (

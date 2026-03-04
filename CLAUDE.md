@@ -672,8 +672,10 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 6. Opus crafts rich generation prompts → returns `generatedPrompt` for image preview OR `action: { workflow: 'text-to-video' }` for video handoff to Video Studio
 
 **Haiku Routing Defaults:**
-- Image format → `create` (Product→Ad workflow, asks for URL)
-- Video format → `url-to-video` (navigates to Video Studio)
+- Image mode → `open-prompt` (direct image generation)
+- Video mode → `text-to-video` or `image-to-video` (navigates to Video Studio)
+- KS mode with image → `upload`
+- KS mode text-only → Haiku classification (fallback: `create`)
 - `conversation` is a LAST RESORT — only for truly vague/greeting inputs with no actionable intent
 - Haiku should match at least all chip intents: any mention of ads/video/product → direct route, not conversation
 - All video workflows (`url-to-video`, `ugc-video`, `text-to-video`, `image-to-video`) navigate to `/video-studio` with appropriate URL params
@@ -685,12 +687,14 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 - Create Image Ad (`create`), Create Video Ad (`url-to-video`), Clone Ad (`clone`), Inspiration (`inspiration`), UGC Video Ad (`ugc-video`)
 - Chip action type: `workflow` (bypasses Haiku, navigates directly)
 
-**Tool System (8 tools, called by Sonnet/Opus):**
+**Tool System (10 tools, called by Sonnet/Opus):**
 
 | Tool | Credits | What it does |
 |------|---------|-------------|
 | `analyze_product` | Free | Fetch + analyze product URL |
 | `analyze_video` | Free | Gemini video analysis |
+| `analyze_image` | Free | Gemini image analysis (composition, style, ad potential) |
+| `adjust_image` | Free | Gemini 3 Pro image editing (text, colors, elements) |
 | `generate_overlay` | Free | Whisper + Claude overlay gen |
 | `generate_ad_copy` | Free | Claude ad copy from product |
 | `detect_text` | Free | Gemini Vision text extraction |
@@ -702,8 +706,8 @@ Intelligent input box that replaces the old 9-mode card grid. Classifies user in
 
 Credit-costing tools show a `credit-confirm` context card and wait for user confirmation before executing.
 
-**Context Cards (10 types rendered in chat thread):**
-`product`, `video-analysis`, `overlay-preview`, `ad-copy`, `image-result`, `video-result`, `media-attached`, `credit-confirm`, `tool-loading`, `tool-error`
+**Context Cards (11 types rendered in chat thread):**
+`product`, `video-analysis`, `image-analysis`, `overlay-preview`, `ad-copy`, `image-result`, `video-result`, `media-attached`, `credit-confirm`, `tool-loading`, `tool-error`
 Note: `concepts` type still exists in `OracleContextCardType` for backwards compat with saved sessions, but is no longer rendered.
 
 **Session Persistence:**

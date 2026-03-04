@@ -94,7 +94,7 @@ interface OracleChatThreadProps {
 
 export function OracleChatThread({ messages, currentTier, onOptionClick, onPromptAction, isSending, isResearching, onMediaUpload, onMediaLibrary, onCreditConfirm, onCreditCancel, onOpenInEditor, onSaveCopy, onSaveImage, onEditImage }: OracleChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
-  const [previewMedia, setPreviewMedia] = useState<{ url: string; preview?: string; type: string; name: string } | null>(null)
+  // Media attachments open in a new tab on click
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -150,7 +150,7 @@ export function OracleChatThread({ messages, currentTier, onOptionClick, onPromp
                   {msg.mediaAttachments.map((media, i) => (
                     <button
                       key={i}
-                      onClick={() => setPreviewMedia(media)}
+                      onClick={() => window.open(media.url || media.preview, '_blank')}
                       className="relative w-20 h-20 rounded-lg overflow-hidden border border-zinc-700/50 bg-zinc-800/50 shrink-0 group cursor-pointer hover:border-purple-500/40 transition-colors"
                     >
                       {media.type === 'video' ? (

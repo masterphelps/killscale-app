@@ -381,7 +381,7 @@ async function executeGenerateAdCopy(
   inputs: Record<string, unknown>,
   context: ToolContext,
 ): Promise<ToolExecutionResult> {
-  const product = (inputs.product as Record<string, unknown>) || context.productInfo || {}
+  const product = { ...((inputs.product as Record<string, unknown>) || context.productInfo || {}) }
   if (!product.name) return errorResult('Missing product info for ad copy generation')
 
   // Check if we have video analysis context — enriches the product for video-informed copy

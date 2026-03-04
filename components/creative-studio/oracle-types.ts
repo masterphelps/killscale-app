@@ -23,15 +23,13 @@ export interface OracleOption {
 
 export type OracleContextCardType =
   | 'product'
-  | 'style'
-  | 'prompt-preview'
   | 'video-analysis'
   | 'image-analysis'
   | 'overlay-preview'
   | 'ad-copy'
   | 'image-result'
   | 'video-result'
-  | 'concepts'
+  | 'concepts'       // backwards compat for saved sessions
   | 'media-attached'
   | 'credit-confirm'
   | 'tool-loading'

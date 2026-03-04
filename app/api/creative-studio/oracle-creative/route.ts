@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { OracleChatRequest, OracleCreativeResponse } from '@/components/creative-studio/oracle-types'
+import { parseOracleJson } from '@/lib/oracle-parse'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -162,57 +163,7 @@ export async function POST(req: NextRequest) {
     })
 
     const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
-
-    // Parse JSON response — model is instructed to return pure JSON via system prompt
-    let parsed: OracleCreativeResponse
-    try {
-      const cleaned = rawText.replace(/```json?\s*/gi, '').replace(/```/g, '').trim()
-      parsed = JSON.parse(cleaned)
-    } catch {
-      try {
-        // Fallback: find first balanced JSON object using bracket counting
-        const start = rawText.indexOf('{')
-        if (start !== -1) {
-          let depth = 0
-          let inString = false
-          let escape = false
-          let end = -1
-          for (let i = start; i < rawText.length; i++) {
-            const ch = rawText[i]
-            if (escape) { escape = false; continue }
-            if (ch === '\\' && inString) { escape = true; continue }
-            if (ch === '"' && !escape) { inString = !inString; continue }
-            if (inString) continue
-            if (ch === '{') depth++
-            else if (ch === '}') { depth--; if (depth === 0) { end = i; break } }
-          }
-          if (end !== -1) {
-            parsed = JSON.parse(rawText.slice(start, end + 1))
-          } else {
-            parsed = { message: rawText }
-          }
-        } else {
-          parsed = { message: rawText }
-        }
-      } catch {
-        parsed = { message: rawText }
-      }
-    }
-
-    if (!parsed.message) parsed.message = rawText
-
-    // Safety net: double-encoded JSON
-    if (parsed.message && !parsed.toolRequest && !parsed.action && !parsed.analyzeUrl) {
-      try {
-        const inner = parsed.message.trim()
-        if (inner.startsWith('{') && inner.endsWith('}')) {
-          const reparsed = JSON.parse(inner)
-          if (reparsed.message && (reparsed.toolRequest || reparsed.action || reparsed.options)) {
-            parsed = reparsed
-          }
-        }
-      } catch { /* not double-encoded */ }
-    }
+    const parsed = parseOracleJson<OracleCreativeResponse>(rawText, ['toolRequest', 'action', 'analyzeUrl'])
 
     return NextResponse.json(parsed)
   } catch (err) {
