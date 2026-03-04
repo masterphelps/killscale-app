@@ -3651,7 +3651,7 @@ export default function AdStudioPage() {
                       setOpenPromptMediaType('image')
                       setMode('open-prompt')
                     } else if (workflow === 'text-to-video') {
-                      router.push('/dashboard/creative-studio/video-studio')
+                      router.push('/dashboard/creative-studio/video-studio?mode=direct')
                     } else {
                       handleOracleAction({ workflow, prefilledData: {} })
                     }
