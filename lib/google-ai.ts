@@ -63,7 +63,7 @@ function is429Error(msg: string): boolean {
  * Retry wrapper for transient 429s from Vertex AI preview models.
  * Exponential backoff: 5s, 10s, 20s.
  */
-export async function withGeminiRetry<T>(fn: () => Promise<T>, maxRetries = 2, label = 'Gemini'): Promise<T> {
+export async function withGeminiRetry<T>(fn: () => Promise<T>, maxRetries = 1, label = 'Gemini'): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn()
@@ -110,44 +110,28 @@ export async function withRegionalFallback<T>(
     const client = getGoogleAI(region)
     if (!client) continue
 
-    // Per-region retries (2 retries = 3 attempts) for the primary region,
-    // single attempt for fallback regions (they'll likely 404 for global-only models)
-    const regionRetries = i === 0 ? 2 : 0
+    try {
+      const result = await fnFactory(client)
+      if (i > 0) console.log(`[${label}] Succeeded in fallback region "${region}"`)
+      return result
+    } catch (err: unknown) {
+      const msg = safeErrorMsg(err)
 
-    for (let attempt = 0; attempt <= regionRetries; attempt++) {
-      try {
-        const result = await fnFactory(client)
-        if (i > 0) console.log(`[${label}] Succeeded in fallback region "${region}"`)
-        return result
-      } catch (err: unknown) {
-        const msg = safeErrorMsg(err)
-
-        // 404 = model not available in this region → skip to next region immediately
-        if (msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('not found')) {
-          console.log(`[${label}] Model not available in "${region}", skipping...`)
-          break // break inner retry loop, continue to next region
-        }
-
-        // 429 = quota exhausted in this region
-        if (is429Error(msg)) {
-          if (!first429Error) first429Error = err
-          if (attempt < regionRetries) {
-            const delay = 5000 * Math.pow(2, attempt) // 5s, 10s
-            console.log(`[${label}] 429 in "${region}", retrying in ${delay / 1000}s (attempt ${attempt + 1}/${regionRetries})`)
-            await new Promise(r => setTimeout(r, delay))
-            continue
-          }
-          // Exhausted retries for this region — try next
-          if (i < regions.length - 1) {
-            console.log(`[${label}] 429 in "${region}" after ${regionRetries + 1} attempts, trying "${regions[i + 1]}"...`)
-            await new Promise(r => setTimeout(r, 2000))
-          }
-          break // break inner retry loop, continue to next region
-        }
-
-        // Other error (bad input, safety, etc.) — fail fast
-        throw err
+      // 404 = model not available in this region → skip to next region
+      if (msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('not found')) {
+        console.log(`[${label}] Model not available in "${region}", skipping...`)
+        continue
       }
+
+      // 429 = quota exhausted — try next region (no retry, fail fast)
+      if (is429Error(msg)) {
+        if (!first429Error) first429Error = err
+        console.log(`[${label}] 429 in "${region}"${i < regions.length - 1 ? `, trying "${regions[i + 1]}"...` : ', all regions exhausted'}`)
+        continue
+      }
+
+      // Other error (bad input, safety, etc.) — fail fast
+      throw err
     }
   }
 

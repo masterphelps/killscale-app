@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleAI, withRegionalFallback } from '@/lib/google-ai'
+import { getGoogleAI, withGeminiRetry } from '@/lib/google-ai'
 import { buildAdjustImagePrompt } from '@/lib/prompts/adjust-image'
 
 export const maxDuration = 60
@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!getGoogleAI()) {
+    const client = getGoogleAI()
+    if (!client) {
       return NextResponse.json(
         { error: 'Image generation not configured' },
         { status: 503 }
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     const prompt = buildAdjustImagePrompt(body.adjustmentPrompt)
 
     try {
-      const response = await withRegionalFallback((client) => client.models.generateContent({
+      const response = await withGeminiRetry(() => client.models.generateContent({
         model: MODEL_NAME,
         contents: [
           {
@@ -57,9 +58,9 @@ export async function POST(request: NextRequest) {
           }
         ],
         config: {
-          responseModalities: ['IMAGE', 'TEXT'],
+          responseModalities: ['IMAGE'],
         }
-      }), 'Adjust Image')
+      }), 1, 'Adjust Image')
 
       // Extract the generated image from response
       const parts = response.candidates?.[0]?.content?.parts || []
