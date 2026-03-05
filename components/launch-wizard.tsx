@@ -140,6 +140,7 @@ export interface Creative {
   isFromLibrary?: boolean
   libraryId?: string
   name?: string
+  storageUrl?: string  // Supabase Storage URL — wizard will fetch + upload to Meta
 }
 
 interface LocationResult {
@@ -963,10 +964,56 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     const cleanAdAccountId = state.adAccountId.replace(/^act_/, '')
 
     for (let i = 0; i < updatedCreatives.length; i++) {
-      const creative = updatedCreatives[i]
+      let creative = updatedCreatives[i]
 
-      // Skip already uploaded or library items
-      if (creative.uploaded || creative.isFromLibrary) continue
+      // Skip already uploaded items. For images from library, imageHash is valid on Meta.
+      if (creative.uploaded) continue
+      if (creative.isFromLibrary && creative.type === 'image') continue
+
+      // For videos with storageUrl but no file, upload via server-side proxy (avoids CORS)
+      if (!creative.file && creative.storageUrl) {
+        try {
+          updatedCreatives[i] = { ...creative, uploading: true, uploadProgress: 0 }
+          setState(s => ({ ...s, creatives: [...updatedCreatives] }))
+
+          const res = await fetch('/api/meta/upload-creative', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              adAccountId: state.adAccountId,
+              sourceUrl: creative.storageUrl,
+              fileName: creative.name || 'video.mp4',
+            }),
+          })
+          const result = await res.json()
+          console.log('Storage video upload result:', result)
+
+          if (result.success && result.videoId) {
+            updatedCreatives[i] = {
+              ...creative,
+              uploading: false,
+              uploaded: true,
+              uploadProgress: 100,
+              videoId: result.videoId,
+              thumbnailUrl: result.thumbnailUrl || creative.thumbnailUrl,
+            }
+          } else {
+            console.error('Storage video upload failed:', result.error)
+            updatedCreatives[i] = { ...creative, uploading: false, uploadProgress: 0 }
+            allUploaded = false
+          }
+          setState(s => ({ ...s, creatives: [...updatedCreatives] }))
+          continue
+        } catch (err) {
+          console.error('Failed to upload video from storage:', err)
+          updatedCreatives[i] = { ...creative, uploading: false, uploadProgress: 0 }
+          allUploaded = false
+          setState(s => ({ ...s, creatives: [...updatedCreatives] }))
+          continue
+        }
+      }
+
       if (!creative.file) continue
 
       updatedCreatives[i] = { ...creative, uploading: true, uploadProgress: 0 }

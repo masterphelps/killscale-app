@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
 
         if (creative.thumbnailHash) {
           videoData.image_hash = creative.thumbnailHash
-        } else if (creative.thumbnailUrl) {
+        } else if (creative.thumbnailUrl && !creative.thumbnailUrl.match(/\.(mp4|mov|avi|webm)(\?|$)/i)) {
           videoData.image_url = creative.thumbnailUrl
         }
 

@@ -13,30 +13,62 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    let formData
-    try {
-      formData = await request.formData()
-    } catch (parseError) {
-      console.error('Failed to parse form data:', parseError)
-      return NextResponse.json({
-        error: 'Failed to parse upload. File may be too large (max 4MB on Vercel).'
-      }, { status: 413 })
-    }
+    // Check if this is a JSON request (sourceUrl mode) or form data (file upload mode)
+    const contentType = request.headers.get('content-type') || ''
+    let file: File | null = null
+    let userId: string | null = null
+    let adAccountId: string | null = null
 
-    const file = formData.get('file') as File
-    const userId = formData.get('userId') as string
-    const adAccountId = formData.get('adAccountId') as string
+    if (contentType.includes('application/json')) {
+      // Server-side download mode — fetch video from sourceUrl and upload to Meta
+      const body = await request.json()
+      userId = body.userId
+      adAccountId = body.adAccountId
+      const sourceUrl = body.sourceUrl
+
+      if (!userId || !adAccountId || !sourceUrl) {
+        return NextResponse.json({ error: 'Missing required fields (userId, adAccountId, sourceUrl)' }, { status: 400 })
+      }
+
+      // Download file from Supabase Storage (no CORS issues server-side)
+      const dlRes = await fetch(sourceUrl)
+      if (!dlRes.ok) {
+        return NextResponse.json({ error: `Failed to download from storage (${dlRes.status})` }, { status: 500 })
+      }
+      const blob = await dlRes.blob()
+      const fileName = body.fileName || 'video.mp4'
+      file = new File([blob], fileName, { type: blob.type || 'video/mp4' })
+    } else {
+      // Standard file upload mode
+      let formData
+      try {
+        formData = await request.formData()
+      } catch (parseError) {
+        console.error('Failed to parse form data:', parseError)
+        return NextResponse.json({
+          error: 'Failed to parse upload. File may be too large (max 4MB on Vercel).'
+        }, { status: 413 })
+      }
+
+      file = formData.get('file') as File
+      userId = formData.get('userId') as string
+      adAccountId = formData.get('adAccountId') as string
+    }
 
     if (!file || !userId || !adAccountId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Check file size - Vercel has ~4.5MB limit for serverless functions
-    const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({
-        error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 4MB. Please compress your image or use a smaller file.`
-      }, { status: 413 })
+    // Check file size - Vercel has ~4.5MB limit for formData uploads (images only)
+    // Videos bypass this check — they have their own 1GB limit below and use direct Meta upload
+    const isVideoFile = file.type.startsWith('video/')
+    if (!isVideoFile) {
+      const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json({
+          error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 4MB. Please compress your image or use a smaller file.`
+        }, { status: 413 })
+      }
     }
 
     console.log(`Uploading creative: ${file.name}, size: ${(file.size / 1024).toFixed(0)}KB, type: ${file.type}`)
@@ -255,11 +287,26 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to get video ID' }, { status: 500 })
       }
 
+      // Fetch auto-generated thumbnail from Meta (required for video ad creatives)
+      let thumbnailUrl: string | undefined
+      try {
+        const thumbRes = await fetch(
+          `${META_GRAPH_URL}/${result.id}?fields=picture&access_token=${accessToken}`
+        )
+        const thumbData = await thumbRes.json()
+        if (thumbData.picture) {
+          thumbnailUrl = thumbData.picture
+        }
+      } catch (thumbErr) {
+        console.warn('Could not fetch video thumbnail:', thumbErr)
+      }
+
       return NextResponse.json({
         success: true,
         type: 'video',
         videoId: result.id,
-        fileName: file.name
+        fileName: file.name,
+        thumbnailUrl
       })
     }
 

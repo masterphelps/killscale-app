@@ -626,11 +626,11 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Add thumbnail - required by Meta for video ads
-        // Prefer image_hash (uploaded thumbnail) over image_url (Meta auto-generated)
+        // Add thumbnail - prefer image_hash (uploaded thumbnail) over image_url
+        // Safety: never pass a video URL as image_url — Meta rejects non-image URLs
         if (creative.thumbnailHash) {
           videoData.image_hash = creative.thumbnailHash
-        } else if (creative.thumbnailUrl) {
+        } else if (creative.thumbnailUrl && !creative.thumbnailUrl.match(/\.(mp4|mov|avi|webm)(\?|$)/i)) {
           videoData.image_url = creative.thumbnailUrl
         }
 

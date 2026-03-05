@@ -479,19 +479,21 @@ export default function AllMediaPage() {
   }, [menuItemId, assets, user, currentAccountId, removeAsset])
 
   // Handle build from starred
-  const handleBuildFromStarred = useCallback(async () => {
+  const handleBuildFromStarred = useCallback(() => {
     const starredAssets = assets.filter(a => starredIds.has(a.mediaHash)).slice(0, 6)
     if (starredAssets.length === 0) return
 
-    const creatives: Creative[] = await Promise.all(starredAssets.map(async (a) => {
+    const creatives: Creative[] = starredAssets.map(a => {
       if (a.mediaType === 'video') {
-        // Videos must be uploaded to Meta first — fetch from Supabase Storage
-        const videoUrl = a.storageUrl
-        if (!videoUrl) return { preview: a.thumbnailUrl || '', type: 'video' as const, uploaded: false, name: a.name || undefined }
-        const res = await fetch(videoUrl)
-        const blob = await res.blob()
-        const file = new File([blob], a.name || 'video.mp4', { type: 'video/mp4' })
-        return { file, preview: a.thumbnailUrl || a.storageUrl || '', type: 'video' as const, uploaded: false, name: a.name || undefined }
+        return {
+          preview: a.thumbnailUrl || a.storageUrl || '',
+          type: 'video' as const,
+          uploaded: false,
+          isFromLibrary: true,
+          storageUrl: a.storageUrl || undefined,
+          thumbnailUrl: a.thumbnailUrl || undefined,
+          name: a.name || undefined,
+        }
       }
       return {
         preview: a.imageUrl || a.storageUrl || '',
@@ -501,7 +503,7 @@ export default function AllMediaPage() {
         imageHash: a.mediaHash,
         name: a.name || undefined,
       }
-    }))
+    })
 
     setWizardCreatives(creatives)
     setWizardAccountId(currentAccountId)
@@ -1112,33 +1114,20 @@ export default function AllMediaPage() {
         onClose={() => setSelectedItem(null)}
         mode={mediaTab}
         videoSource={selectedItem ? (videoSources[selectedItem.id] || null) : null}
-        onBuildNewAds={async () => {
+        onBuildNewAds={() => {
           if (!selectedItem) return
           const a = selectedItem
-          let creative: Creative
-          if (a.mediaType === 'video') {
-            // Videos must be uploaded to Meta first — fetch from Supabase Storage
-            const videoUrl = a.storageUrl || videoSources[a.id]
-            if (!videoUrl) { console.error('No video URL available'); return }
-            const res = await fetch(videoUrl)
-            const blob = await res.blob()
-            const file = new File([blob], a.name || 'video.mp4', { type: 'video/mp4' })
-            creative = {
-              file,
-              preview: a.thumbnailUrl || a.storageUrl || '',
-              type: 'video',
-              uploaded: false,
-              name: a.name || undefined,
-            }
-          } else {
-            creative = {
-              preview: a.imageUrl || a.storageUrl || '',
-              type: 'image',
-              uploaded: true,
-              isFromLibrary: true,
-              imageHash: a.mediaHash,
-              name: a.name || undefined,
-            }
+          const creative: Creative = {
+            preview: a.mediaType === 'video'
+              ? (a.thumbnailUrl || a.storageUrl || '')
+              : (a.imageUrl || a.storageUrl || ''),
+            type: a.mediaType as 'image' | 'video',
+            uploaded: a.mediaType === 'image',
+            isFromLibrary: true,
+            ...(a.mediaType === 'image'
+              ? { imageHash: a.mediaHash }
+              : { storageUrl: a.storageUrl || videoSources[a.id], thumbnailUrl: a.thumbnailUrl || undefined }),
+            name: a.name || undefined,
           }
           setWizardCreatives([creative])
           setSelectedItem(null)
