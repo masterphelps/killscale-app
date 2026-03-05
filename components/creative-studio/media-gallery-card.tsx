@@ -81,8 +81,8 @@ export function MediaGalleryCard({
   onSelect,
   onStar,
   onMenuClick,
-  // videoSourceUrl and onRequestVideoSource are accepted but unused —
-  // videos only use storageUrl (Supabase). No external URL fetching.
+  videoSourceUrl,
+  onRequestVideoSource,
   customMetrics,
   subtitle,
   rankBadge,
@@ -105,6 +105,8 @@ export function MediaGalleryCard({
   const scoreStyles = hasPerf ? getScoreStyles(item.convertScore) : null
 
   const storageUrl = item.storageUrl || null
+  // For videos without storageUrl, fall back to on-demand video source from Meta API
+  const videoUrl = storageUrl || (isVideo ? videoSourceUrl : null) || null
   const thumbnailUrl = item.imageUrl || item.thumbnailUrl
 
   // For masonry: use known dims, else default by media type (videos are 9:16, images 1:1)
@@ -117,7 +119,14 @@ export function MediaGalleryCard({
     return `$${val.toFixed(0)}`
   }
 
-  // Videos only use Supabase storage URLs — never external/Meta URLs that expire
+  // Request video source on mount for videos without storageUrl
+  const requestedRef = useRef(false)
+  useEffect(() => {
+    if (isVideo && !storageUrl && !videoSourceUrl && onRequestVideoSource && !requestedRef.current) {
+      requestedRef.current = true
+      onRequestVideoSource()
+    }
+  }, [isVideo, storageUrl, videoSourceUrl, onRequestVideoSource])
 
   // Detect touch device (mobile) for scroll-to-play vs hover-to-play
   const isTouchDevice = useRef(false)
@@ -146,7 +155,7 @@ export function MediaGalleryCard({
 
   // Play/pause logic — hover on desktop, scroll visibility on mobile
   useEffect(() => {
-    if (!videoRef.current || !isVideo || !storageUrl) return
+    if (!videoRef.current || !isVideo || !videoUrl) return
 
     const shouldPlay = isTouchDevice.current ? isInView : isHovered
 
@@ -155,10 +164,10 @@ export function MediaGalleryCard({
       setVideoPlaying(true)
     } else {
       videoRef.current.pause()
-      videoRef.current.currentTime = 0
+      videoRef.current.currentTime = 1
       setVideoPlaying(false)
     }
-  }, [isHovered, isInView, isVideo, storageUrl])
+  }, [isHovered, isInView, isVideo, videoUrl])
 
   const handleStarClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -212,10 +221,10 @@ export function MediaGalleryCard({
         {/* Inner wrapper — absolute when using paddingBottom trick */}
         <div className={minimal ? 'absolute inset-0' : 'contents'}>
 
-        {(storageUrl || thumbnailUrl) && !imageError ? (
+        {(videoUrl || storageUrl || thumbnailUrl) && !imageError ? (
           <>
-            {isVideo && storageUrl ? (
-              // Video: always use <video #t=1> from Supabase storage as poster
+            {isVideo && videoUrl ? (
+              // Video: use <video #t=1> for sharp poster frame (storageUrl or on-demand source)
               <motion.div
                 initial={false}
                 animate={{
@@ -227,12 +236,17 @@ export function MediaGalleryCard({
               >
                 <video
                   ref={videoRef}
-                  src={`${storageUrl}#t=1`}
+                  src={`${videoUrl}#t=1`}
                   muted
                   loop
                   playsInline
                   preload="auto"
-                  onLoadedData={() => setImageLoaded(true)}
+                  onLoadedData={() => {
+                    setImageLoaded(true)
+                    if (videoRef.current && !videoPlaying) {
+                      videoRef.current.currentTime = 1
+                    }
+                  }}
                   onError={() => setImageError(true)}
                   className={cn(
                     'w-full h-full object-cover',
@@ -261,10 +275,10 @@ export function MediaGalleryCard({
                   )}
                 />
 
-                {isVideo && storageUrl && (
+                {isVideo && videoUrl && (
                   <video
                     ref={videoRef}
-                    src={storageUrl}
+                    src={videoUrl}
                     muted
                     loop
                     playsInline
