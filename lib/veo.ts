@@ -95,6 +95,17 @@ export interface VeoOperationResult {
   }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Strip data URI prefix (e.g. "data:image/png;base64,") if present */
+function stripDataUri(base64: string): string {
+  const idx = base64.indexOf(',')
+  if (idx !== -1 && base64.startsWith('data:')) {
+    return base64.substring(idx + 1)
+  }
+  return base64
+}
+
 // ── Core API ────────────────────────────────────────────────────────────────
 
 /** Submit a video generation request to Veo via Vertex AI REST API */
@@ -112,14 +123,14 @@ export async function veoGenerate(params: VeoGenerateParams): Promise<VeoOperati
     if (params.images.length === 1) {
       // Single image → image field (image-to-video)
       instance.image = {
-        bytesBase64Encoded: params.images[0].base64,
+        bytesBase64Encoded: stripDataUri(params.images[0].base64),
         mimeType: params.images[0].mimeType || 'image/png',
       }
     } else {
       // Multiple images → referenceImages array (up to 3 asset images per docs)
       instance.referenceImages = params.images.map((img) => ({
         image: {
-          bytesBase64Encoded: img.base64,
+          bytesBase64Encoded: stripDataUri(img.base64),
           mimeType: img.mimeType || 'image/png',
         },
         referenceType: 'asset',
@@ -148,7 +159,9 @@ export async function veoGenerate(params: VeoGenerateParams): Promise<VeoOperati
     parameters,
   }
 
-  console.log(`[Veo] POST ${params.model}: images=${params.images?.length || 0}, video=${!!params.video}, duration=${params.config.durationSeconds}s`)
+  const bodyJson = JSON.stringify(body)
+  const bodyMB = (bodyJson.length / 1024 / 1024).toFixed(2)
+  console.log(`[Veo] POST ${params.model}: images=${params.images?.length || 0}, video=${!!params.video}, duration=${params.config.durationSeconds}s, payload=${bodyMB}MB`)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -156,7 +169,7 @@ export async function veoGenerate(params: VeoGenerateParams): Promise<VeoOperati
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body),
+    body: bodyJson,
   })
 
   if (!res.ok) {
