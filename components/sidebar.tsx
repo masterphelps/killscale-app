@@ -50,8 +50,8 @@ const performanceItems: { href: string; label: string; icon: LucideIcon }[] = [
 ]
 
 const creativeSuiteItems: { href: string; label: string; icon: LucideIcon; isNew?: boolean }[] = [
-  { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/creative-studio/ad-studio', label: 'Ad Studio', icon: Wand2 },
+  { href: '/dashboard/creative-studio', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/creative-studio/ai-tasks', label: 'Tasks', icon: Sparkles },
 ]
 
@@ -311,51 +311,9 @@ export function Sidebar() {
       {/* Navigation — Three Flat Sections */}
       <nav className="space-y-1 mb-6">
 
-        {/* ─── Performance ─── */}
-        {!isCollapsed && (
-          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
-            Performance
-          </div>
-        )}
-        {performanceItems.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          const isAlerts = item.href === '/dashboard/alerts'
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
-                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
-                isActive
-                  ? 'bg-accent text-white'
-                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
-              )}
-              title={isCollapsed ? item.label : undefined}
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
-              {!isCollapsed && <span className="flex-1">{item.label}</span>}
-              {!isCollapsed && isAlerts && alertCount > 0 && (
-                <span className={cn(
-                  "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
-                  isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"
-                )}>
-                  {alertCount > 99 ? '99+' : alertCount}
-                </span>
-              )}
-              {isCollapsed && isAlerts && alertCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center bg-red-500 text-white">
-                  {alertCount > 99 ? '!' : alertCount}
-                </span>
-              )}
-            </Link>
-          )
-        })}
-
         {/* ─── Creative Suite ─── */}
         {!isCollapsed && (
-          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mt-5 mb-2">
+          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mb-2">
             Creative Suite
           </div>
         )}
@@ -376,7 +334,7 @@ export function Sidebar() {
                 'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
                 isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
                 isActive
-                  ? 'bg-accent text-white'
+                  ? 'bg-purple-500/20 text-white'
                   : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
               )}
               title={isCollapsed ? item.label : undefined}
@@ -386,6 +344,48 @@ export function Sidebar() {
               {!isCollapsed && item.isNew && (
                 <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded">
                   NEW
+                </span>
+              )}
+            </Link>
+          )
+        })}
+
+        {/* ─── Performance ─── */}
+        {!isCollapsed && (
+          <div className="text-xs text-zinc-600 uppercase tracking-wider px-3 mt-5 mb-2">
+            Performance
+          </div>
+        )}
+        {performanceItems.map((item) => {
+          const Icon = item.icon
+          const isActive = pathname === item.href
+          const isAlerts = item.href === '/dashboard/alerts'
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
+                isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
+                isActive
+                  ? 'bg-purple-500/20 text-white'
+                  : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
+              )}
+              title={isCollapsed ? item.label : undefined}
+            >
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              {!isCollapsed && isAlerts && alertCount > 0 && (
+                <span className={cn(
+                  "min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center",
+                  isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"
+                )}>
+                  {alertCount > 99 ? '99+' : alertCount}
+                </span>
+              )}
+              {isCollapsed && isAlerts && alertCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center bg-red-500 text-white">
+                  {alertCount > 99 ? '!' : alertCount}
                 </span>
               )}
             </Link>
@@ -415,7 +415,7 @@ export function Sidebar() {
                 'flex items-center gap-3 rounded-lg text-sm transition-colors relative',
                 isCollapsed ? 'justify-center p-3' : 'px-3 py-2',
                 isActive
-                  ? 'bg-accent text-white'
+                  ? 'bg-purple-500/20 text-white'
                   : 'text-zinc-400 hover:bg-bg-hover hover:text-white'
               )}
               title={isCollapsed ? item.label : undefined}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { LayoutGrid, Zap, Trophy, FileText, ArrowRight, Film, Image as ImageIcon, Sparkles, Eye, MousePointer, TrendingUp } from 'lucide-react'
+import { LayoutGrid, Zap, FileText, ArrowRight, Film, Image as ImageIcon, Sparkles, Eye, MousePointer, TrendingUp, Wand2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -129,7 +129,7 @@ export default function CreativeStudioOverview() {
   if (!user || !currentAccountId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-zinc-500">Loading...</div>
+        <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -147,7 +147,9 @@ export default function CreativeStudioOverview() {
 
         {/* System Status Bar */}
         {isLoading ? (
-          <div className="h-16 bg-bg-card border border-border rounded-xl animate-pulse" />
+          <div className="h-16 bg-bg-card border border-border rounded-xl flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          </div>
         ) : (
           <div className="bg-bg-card border border-border rounded-xl px-6 py-4">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
@@ -185,6 +187,13 @@ export default function CreativeStudioOverview() {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {/* AI Score Cards — Loading */}
+        {isLoadingAnalyses && (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
@@ -334,6 +343,15 @@ export default function CreativeStudioOverview() {
         )}
 
         {/* Score Distribution Charts */}
+        {isLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="bg-bg-card border border-border rounded-xl p-4 h-40 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && assets.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <ScoreDistributionChart items={assets} scoreField="hookScore" color="#10b981" label="Hook" />
@@ -344,13 +362,22 @@ export default function CreativeStudioOverview() {
         )}
 
         {/* Mini Leaderboards */}
+        {isLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="bg-bg-card border border-border rounded-xl p-4 h-36 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && assets.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Top Hook */}
             <div className="bg-bg-card border border-border rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-medium text-emerald-400">Top Hook</h3>
-                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                <Link href="/dashboard/creative-studio/active" className="text-xs text-zinc-500 hover:text-white transition-colors">
                   See all <ArrowRight className="w-3 h-3 inline" />
                 </Link>
               </div>
@@ -358,9 +385,13 @@ export default function CreativeStudioOverview() {
                 {topHook.map((item, i) => (
                   <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
-                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {item.mediaType === 'video' && item.storageUrl ? (
+                        <video src={`${item.storageUrl}#t=0.3`} muted preload="metadata" className="w-full h-full object-cover" />
+                      ) : (item.storageUrl || item.thumbnailUrl || item.imageUrl) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={(item.storageUrl || item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />
+                      ) : null}
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.hookScore} size="sm" />
@@ -374,7 +405,7 @@ export default function CreativeStudioOverview() {
             <div className="bg-bg-card border border-border rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-medium text-blue-400">Top Hold</h3>
-                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                <Link href="/dashboard/creative-studio/active" className="text-xs text-zinc-500 hover:text-white transition-colors">
                   See all <ArrowRight className="w-3 h-3 inline" />
                 </Link>
               </div>
@@ -382,9 +413,13 @@ export default function CreativeStudioOverview() {
                 {topHold.map((item, i) => (
                   <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
-                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {item.mediaType === 'video' && item.storageUrl ? (
+                        <video src={`${item.storageUrl}#t=0.3`} muted preload="metadata" className="w-full h-full object-cover" />
+                      ) : (item.storageUrl || item.thumbnailUrl || item.imageUrl) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={(item.storageUrl || item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />
+                      ) : null}
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.holdScore} size="sm" />
@@ -398,7 +433,7 @@ export default function CreativeStudioOverview() {
             <div className="bg-bg-card border border-border rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-medium text-violet-400">Top Click</h3>
-                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                <Link href="/dashboard/creative-studio/active" className="text-xs text-zinc-500 hover:text-white transition-colors">
                   See all <ArrowRight className="w-3 h-3 inline" />
                 </Link>
               </div>
@@ -406,9 +441,13 @@ export default function CreativeStudioOverview() {
                 {topClick.map((item, i) => (
                   <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
-                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {item.mediaType === 'video' && item.storageUrl ? (
+                        <video src={`${item.storageUrl}#t=0.3`} muted preload="metadata" className="w-full h-full object-cover" />
+                      ) : (item.storageUrl || item.thumbnailUrl || item.imageUrl) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={(item.storageUrl || item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />
+                      ) : null}
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.clickScore} size="sm" />
@@ -422,7 +461,7 @@ export default function CreativeStudioOverview() {
             <div className="bg-bg-card border border-border rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-medium text-amber-400">Top Convert</h3>
-                <Link href="/dashboard/creative-studio/best-ads" className="text-xs text-zinc-500 hover:text-white transition-colors">
+                <Link href="/dashboard/creative-studio/active" className="text-xs text-zinc-500 hover:text-white transition-colors">
                   See all <ArrowRight className="w-3 h-3 inline" />
                 </Link>
               </div>
@@ -430,9 +469,13 @@ export default function CreativeStudioOverview() {
                 {topConvert.map((item, i) => (
                   <button key={item.id} onClick={() => openTheater(item.mediaHash)} className="flex items-center gap-3 w-full text-left rounded-lg p-1 -mx-1 hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <span className="text-xs font-bold text-zinc-500 w-4">{i + 1}</span>
-                    <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {(item.thumbnailUrl || item.imageUrl) && <img src={(item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />}
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-zinc-900 flex-shrink-0">
+                      {item.mediaType === 'video' && item.storageUrl ? (
+                        <video src={`${item.storageUrl}#t=0.3`} muted preload="metadata" className="w-full h-full object-cover" />
+                      ) : (item.storageUrl || item.thumbnailUrl || item.imageUrl) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={(item.storageUrl || item.thumbnailUrl || item.imageUrl)!} alt="" className="w-full h-full object-cover" />
+                      ) : null}
                     </div>
                     <span className="text-xs text-zinc-300 truncate flex-1">{item.name || 'Untitled'}</span>
                     <ScoreBadge score={item.convertScore} size="sm" />
@@ -446,6 +489,14 @@ export default function CreativeStudioOverview() {
 
         {/* Quick Links */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Link
+            href="/dashboard/creative-studio/ad-studio"
+            className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+          >
+            <Wand2 className="w-5 h-5 text-accent mb-2" />
+            <h3 className="text-sm font-medium text-white group-hover:text-accent transition-colors">Ad Studio</h3>
+            <p className="text-xs text-zinc-500 mt-1">Create ads with AI</p>
+          </Link>
           <Link
             href="/dashboard/creative-studio/active"
             className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
@@ -463,14 +514,6 @@ export default function CreativeStudioOverview() {
             <p className="text-xs text-zinc-500 mt-1">Browse assets grouped by media</p>
           </Link>
           <Link
-            href="/dashboard/creative-studio/best-ads"
-            className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
-          >
-            <Trophy className="w-5 h-5 text-emerald-400 mb-2" />
-            <h3 className="text-sm font-medium text-white group-hover:text-accent transition-colors">Best Ads</h3>
-            <p className="text-xs text-zinc-500 mt-1">Top performing ads leaderboard</p>
-          </Link>
-          <Link
             href="/dashboard/creative-studio/best-copy"
             className="bg-bg-card border border-border rounded-xl p-4 hover:border-zinc-600 transition-colors group"
           >
@@ -483,7 +526,7 @@ export default function CreativeStudioOverview() {
         {/* Loading placeholder */}
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <div className="text-zinc-500 text-sm">Loading creative data...</div>
+            <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
       </div>

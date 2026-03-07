@@ -43,6 +43,7 @@ export function ScoreDistributionChart({ items, scoreField, color, label }: Scor
               contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px', fontSize: 12 }}
               labelStyle={{ color: '#a1a1aa' }}
               itemStyle={{ color: '#e4e4e7' }}
+              cursor={{ fill: 'rgba(255,255,255,0.05)' }}
             />
             <Bar dataKey="count" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
