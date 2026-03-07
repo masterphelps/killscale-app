@@ -77,7 +77,9 @@ VEO LIMITATIONS (silently work around):
 - Cause-and-effect in one segment fails — split across segments
 
 DIALOGUE:
-If the scene implies someone speaking, suggest short dialogue (1-3 sentences). If purely visual, set to "".
+If the scene includes someone speaking, preserve their COMPLETE dialogue — never truncate or summarize.
+If purely visual, set dialogue to "".
+CRITICAL: Estimate speaking time at ~2.5 words per second. If the dialogue has more than 20 words, the video MUST be 15 seconds — speech CANNOT be cut mid-sentence by the 8-second boundary. Split the dialogue naturally across videoPrompt (first 8s) and extensionPrompt (next 7s) at a sentence boundary.
 
 OUTPUT FORMAT (respond with ONLY this JSON):
 {
