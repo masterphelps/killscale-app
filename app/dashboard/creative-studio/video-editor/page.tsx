@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { DesktopOnlyGate } from '@/components/desktop-only-gate'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -1189,6 +1190,7 @@ export default function VideoEditorPage() {
   }
 
   return (
+    <DesktopOnlyGate feature="Video Editor">
     <div className="flex flex-col h-screen dark rve-editor">
       {/* KillScale Header Bar */}
       <div className="flex items-center justify-between px-4 lg:px-6 py-2.5 border-b border-border flex-shrink-0 bg-bg-dark z-10">
@@ -1616,6 +1618,7 @@ export default function VideoEditorPage() {
         </div>
       )}
     </div>
+    </DesktopOnlyGate>
   )
 }
 

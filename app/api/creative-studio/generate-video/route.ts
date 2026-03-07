@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getGoogleAI, isVertexAI } from '@/lib/google-ai'
+import { veoGenerate } from '@/lib/veo'
 
 const VEO_GCS_OUTPUT_URI = 'gs://killscaleapp/video/'
-// Extension model now uses VEO_MODELS[qualityTier]
 
 export const maxDuration = 60
 
@@ -139,20 +138,6 @@ export async function POST(request: NextRequest) {
       generation_label: isVeoExt ? `Video: ${videoStyle} (15s Veo 3.1)` : `Video: ${videoStyle}`,
     })
 
-    // ── Prepare Reference Images for Veo ──────────────────────────────────────
-    const veoReferenceImages: Array<{ image: { imageBytes: string; mimeType: string }; referenceType: string }> = []
-
-    for (const img of images) {
-      const rawBuffer = Buffer.from(img.base64, 'base64')
-      veoReferenceImages.push({
-        image: {
-          imageBytes: rawBuffer.toString('base64'),
-          mimeType: img.mimeType || 'image/png',
-        },
-        referenceType: 'ASSET',
-      })
-    }
-
     // ── Validate duration ────────────────────────────────────────────────────
     let finalDuration: number
     if (isVeoExt) {
@@ -211,41 +196,21 @@ export async function POST(request: NextRequest) {
     // ── Submit to Veo ──────────────────────────────────────────────────────────
     try {
       if (isVeoExt) {
-        // ── Veo 3.1 Extended Path ──────────────────────────────────────────
-        console.log(`[GenerateVideo] Sending to Veo 3.1 Extended: initialDuration=8s, targetDuration=${targetDuration}s, extensions=${extensionTotal}, images=${images.length}`)
-        console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
+        // ── Veo 3.1 Extended Path (direct REST) ─────────────────────────────
+        console.log(`[GenerateVideo] Veo 3.1 Extended: initialDuration=8s, targetDuration=${targetDuration}s, extensions=${extensionTotal}, images=${images.length}`)
 
-        const ai = getGoogleAI()
-        if (!ai) throw new Error('Google AI not configured')
-
-        const veoExtConfig: Record<string, unknown> = {
-          numberOfVideos: 1,
-          durationSeconds: 8,       // Always 8s for extension-capable generation
-          aspectRatio: '9:16',
-          resolution: '720p',       // Required for extension
-        }
-
-        // Vertex AI: outputGcsUri makes Veo write to GCS and return gcsUri (needed for extensions)
-        if (isVertexAI()) {
-          veoExtConfig.outputGcsUri = VEO_GCS_OUTPUT_URI
-        }
-
-        const veoExtParams: Record<string, unknown> = {
-          model: VEO_MODELS[qualityTier],   // Match quality tier for extensions
+        const operation = await veoGenerate({
+          model: VEO_MODELS[qualityTier],
           prompt,
-          config: veoExtConfig,
-        }
-
-        // Pass reference images
-        if (veoReferenceImages.length === 1) {
-          // Single image: use legacy `image` param (proven to work)
-          veoExtParams.image = veoReferenceImages[0].image
-        } else if (veoReferenceImages.length > 1) {
-          // Multiple images: use referenceImages array
-          veoExtParams.referenceImages = veoReferenceImages
-        }
-
-        const operation = await (ai.models as any).generateVideos(veoExtParams)
+          images: images.length > 0 ? images : undefined,
+          config: {
+            numberOfVideos: 1,
+            durationSeconds: 8,
+            aspectRatio: '9:16',
+            resolution: '720p',
+            outputGcsUri: VEO_GCS_OUTPUT_URI,
+          },
+        })
         const operationId = `veoext:${operation.name}`
 
         await supabase
@@ -269,44 +234,23 @@ export async function POST(request: NextRequest) {
           extensionTotal,
         })
       } else {
-        // ── Veo Standard Path ──────────────────────────────────────────────
+        // ── Veo Standard Path (direct REST) ─────────────────────────────────
         const veoModel = VEO_MODELS[qualityTier]
-        console.log(`[GenerateVideo] Sending to Veo: model=${veoModel}, duration=${finalDuration}s, images=${images.length}`)
-        console.log(`[GenerateVideo] Prompt: ${prompt.substring(0, 200)}...`)
+        console.log(`[GenerateVideo] Veo: model=${veoModel}, duration=${finalDuration}s, images=${images.length}`)
 
-        const ai = getGoogleAI()
-        if (!ai) throw new Error('Google AI not configured')
-
-        const veoConfig: Record<string, unknown> = {
-          numberOfVideos: 1,
-          durationSeconds: finalDuration,
-          aspectRatio: '9:16',   // portrait for ads
-          resolution: '720p',
-        }
-
-        // Vertex AI: outputGcsUri so we get a downloadable URI instead of raw videoBytes
-        if (isVertexAI()) {
-          veoConfig.outputGcsUri = VEO_GCS_OUTPUT_URI
-        }
-
-        const veoParams: Record<string, unknown> = {
+        const operation = await veoGenerate({
           model: veoModel,
           prompt,
-          config: veoConfig,
-        }
+          images: images.length > 0 ? images : undefined,
+          config: {
+            numberOfVideos: 1,
+            durationSeconds: finalDuration,
+            aspectRatio: '9:16',
+            resolution: '720p',
+            outputGcsUri: VEO_GCS_OUTPUT_URI,
+          },
+        })
 
-        // Pass reference images
-        if (veoReferenceImages.length === 1) {
-          // Single image: use legacy `image` param (proven to work)
-          veoParams.image = veoReferenceImages[0].image
-        } else if (veoReferenceImages.length > 1) {
-          // Multiple images: use referenceImages array
-          veoParams.referenceImages = veoReferenceImages
-        }
-
-        const operation = await (ai.models as any).generateVideos(veoParams)
-
-        // Store operation name with veo: prefix so polling endpoint knows the provider
         const operationId = `veo:${operation.name}`
 
         await supabase

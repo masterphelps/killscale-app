@@ -22,6 +22,17 @@ interface LocationTarget {
   name?: string
   radius?: number
   countries?: string[]
+  // Multiple cities support
+  cities?: { key: string; name: string; radius: number }[]
+}
+
+interface PlacementConfig {
+  mode: 'automatic' | 'manual'
+  publisherPlatforms: string[]
+  facebookPositions: string[]
+  instagramPositions: string[]
+  messengerPositions: string[]
+  audienceNetworkPositions: string[]
 }
 
 interface TargetingOption {
@@ -65,6 +76,20 @@ interface CreateCampaignRequest {
   selectedExcludedAudiences?: CustomAudience[]
   ageMin?: number
   ageMax?: number
+  // New Tier 1 fields
+  gender?: 'male' | 'female'
+  attributionWindow?: '7d_click' | '1d_click' | '1d_click_1d_view'
+  placements?: PlacementConfig
+  budgetMode?: 'daily' | 'lifetime'
+  lifetimeBudget?: number
+  startDate?: string
+  endDate?: string
+  bidStrategy?: string
+  bidAmount?: number
+  roasFloor?: number
+  // Lead gen conversion location
+  conversionLocation?: 'instant_form' | 'website' | 'messenger'
+  optimizeForQuality?: boolean
   // Performance Set specific fields
   isPerformanceSet?: boolean
   existingCreativeIds?: { adId: string; adName: string; creativeId: string }[]
@@ -117,6 +142,18 @@ export async function POST(request: NextRequest) {
       selectedExcludedAudiences,
       ageMin,
       ageMax,
+      gender,
+      attributionWindow,
+      placements,
+      budgetMode,
+      lifetimeBudget,
+      startDate,
+      endDate,
+      bidStrategy: requestBidStrategy,
+      bidAmount,
+      roasFloor,
+      conversionLocation,
+      optimizeForQuality,
       isPerformanceSet,
       existingCreativeIds
     } = body
@@ -202,9 +239,9 @@ export async function POST(request: NextRequest) {
     // Build special ad categories array
     const specialAdCategories = specialAdCategory ? [specialAdCategory] : []
 
-    // For conversion campaigns, we need a pixel ID
+    // For conversion campaigns or leads+website, we need a pixel ID
     let pixelId: string | null = null
-    if (objective === 'conversions') {
+    if (objective === 'conversions' || (objective === 'leads' && conversionLocation === 'website')) {
       // Fetch available pixels for this ad account
       const pixelsResponse = await fetch(
         `${META_GRAPH_URL}/act_${cleanAdAccountId}/adspixels?fields=id,name&access_token=${accessToken}`
@@ -244,8 +281,13 @@ export async function POST(request: NextRequest) {
 
       // Add budget at campaign level for CBO
       if (budgetType === 'cbo') {
-        campaignPayload.daily_budget = budgetCents
-        campaignPayload.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'
+        if (budgetMode === 'lifetime' && lifetimeBudget) {
+          campaignPayload.lifetime_budget = Math.round(lifetimeBudget * 100)
+        } else {
+          campaignPayload.daily_budget = budgetCents
+        }
+        campaignPayload.bid_strategy = requestBidStrategy || 'LOWEST_COST_WITHOUT_CAP'
+        // Cost Cap and Bid Cap need bid_amount at adset level (handled below)
       } else {
         // ABO campaigns require this field at campaign level
         campaignPayload.is_adset_budget_sharing_enabled = false
@@ -273,21 +315,62 @@ export async function POST(request: NextRequest) {
     }
 
     // ========== STEP 2: Create ad set ==========
+    // Build geo_locations from location target
+    let geoLocations: Record<string, unknown>
+    if (locationTarget.type === 'city') {
+      // Support both single city (legacy) and multiple cities
+      if (locationTarget.cities && locationTarget.cities.length > 0) {
+        geoLocations = {
+          cities: locationTarget.cities.map(c => ({
+            key: c.key,
+            radius: c.radius || 25,
+            distance_unit: 'mile'
+          }))
+        }
+      } else if (locationTarget.key) {
+        geoLocations = {
+          cities: [{
+            key: locationTarget.key,
+            radius: locationTarget.radius || 25,
+            distance_unit: 'mile'
+          }]
+        }
+      } else {
+        geoLocations = { countries: ['US'] }
+      }
+    } else {
+      geoLocations = { countries: locationTarget.countries || ['US'] }
+    }
+
     const targeting: Record<string, unknown> = {
-      geo_locations: locationTarget.type === 'city' && locationTarget.key
-        ? {
-            cities: [{
-              key: locationTarget.key,
-              radius: locationTarget.radius || 25,
-              distance_unit: 'mile'
-            }]
-          }
-        : {
-            countries: locationTarget.countries || ['US']
-          },
+      geo_locations: geoLocations,
       // Age targeting (Meta supports 18-65, where 65 means 65+)
       age_min: ageMin || 18,
       age_max: ageMax || 65
+    }
+
+    // Gender targeting: 1 = male, 2 = female, omit for all
+    if (gender === 'male') {
+      targeting.genders = [1]
+    } else if (gender === 'female') {
+      targeting.genders = [2]
+    }
+
+    // Manual placements
+    if (placements && placements.mode === 'manual' && placements.publisherPlatforms.length > 0) {
+      targeting.publisher_platforms = placements.publisherPlatforms
+      if (placements.facebookPositions.length > 0) {
+        targeting.facebook_positions = placements.facebookPositions
+      }
+      if (placements.instagramPositions.length > 0) {
+        targeting.instagram_positions = placements.instagramPositions
+      }
+      if (placements.messengerPositions.length > 0) {
+        targeting.messenger_positions = placements.messengerPositions
+      }
+      if (placements.audienceNetworkPositions.length > 0) {
+        targeting.audience_network_positions = placements.audienceNetworkPositions
+      }
     }
 
     // Add detailed targeting (flexible_spec) if custom mode
@@ -332,32 +415,102 @@ export async function POST(request: NextRequest) {
       campaign_id: campaignId,
       status: 'PAUSED',
       targeting,
-      optimization_goal: OPTIMIZATION_GOAL_MAP[objective],
+      optimization_goal: (objective === 'leads' && optimizeForQuality) ? 'QUALITY_LEAD' : OPTIMIZATION_GOAL_MAP[objective],
       billing_event: 'IMPRESSIONS',
       access_token: accessToken
+    }
+
+    // Add destination_type for lead gen campaigns
+    if (objective === 'leads') {
+      const DESTINATION_MAP: Record<string, string> = { instant_form: 'on_ad', website: 'website', messenger: 'messenger' }
+      adsetPayload.destination_type = DESTINATION_MAP[conversionLocation || 'instant_form']
     }
 
     // Add promoted_object for conversion campaigns (requires pixel + event)
     if (objective === 'conversions' && pixelId) {
       adsetPayload.promoted_object = {
         pixel_id: pixelId,
-        custom_event_type: conversionEvent || 'PURCHASE'  // Use selected event or default to PURCHASE
+        custom_event_type: conversionEvent || 'PURCHASE'
       }
     }
 
-    // Add promoted_object for lead generation campaigns (requires page + form)
-    if (objective === 'leads' && formId) {
-      adsetPayload.promoted_object = {
-        page_id: pageId,
-        lead_gen_form_id: formId
+    // Add promoted_object for lead generation campaigns
+    if (objective === 'leads') {
+      if (conversionLocation === 'website' && pixelId) {
+        // Website leads: use pixel
+        adsetPayload.promoted_object = {
+          pixel_id: pixelId,
+          custom_event_type: 'LEAD'
+        }
+      } else if (conversionLocation === 'messenger') {
+        // Messenger leads: use page
+        adsetPayload.promoted_object = {
+          page_id: pageId
+        }
+      } else if (formId) {
+        // Instant Form leads: use page + form (default)
+        adsetPayload.promoted_object = {
+          page_id: pageId,
+          lead_gen_form_id: formId
+        }
       }
     }
 
     // Add budget at ad set level for ABO
     if (budgetType === 'abo') {
-      adsetPayload.daily_budget = budgetCents
-      // ABO adsets need a bid strategy - use lowest cost (highest volume)
-      adsetPayload.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'
+      if (budgetMode === 'lifetime' && lifetimeBudget) {
+        adsetPayload.lifetime_budget = Math.round(lifetimeBudget * 100)
+      } else {
+        adsetPayload.daily_budget = budgetCents
+      }
+      // ABO adsets need a bid strategy
+      adsetPayload.bid_strategy = requestBidStrategy || 'LOWEST_COST_WITHOUT_CAP'
+    }
+
+    // Bid amount for Cost Cap / Bid Cap (always on adset level)
+    if ((requestBidStrategy === 'COST_CAP' || requestBidStrategy === 'BID_CAP') && bidAmount) {
+      adsetPayload.bid_amount = Math.round(bidAmount * 100)
+    }
+
+    // Minimum ROAS floor
+    if (requestBidStrategy === 'LOWEST_COST_WITH_MIN_ROAS' && roasFloor) {
+      adsetPayload.roas_average_floor = roasFloor
+    }
+
+    // Campaign scheduling
+    if (startDate) {
+      adsetPayload.start_time = new Date(startDate).toISOString()
+    }
+    if (endDate) {
+      adsetPayload.end_time = new Date(endDate).toISOString()
+    }
+
+    // Attribution window
+    if (attributionWindow && attributionWindow !== '7d_click') {
+      const ATTRIBUTION_SPECS: Record<string, { event_type: string; window_days: number }[]> = {
+        '1d_click': [{ event_type: 'CLICK_THROUGH', window_days: 1 }],
+        '1d_click_1d_view': [
+          { event_type: 'CLICK_THROUGH', window_days: 1 },
+          { event_type: 'VIEW_THROUGH', window_days: 1 },
+        ],
+      }
+      adsetPayload.attribution_spec = ATTRIBUTION_SPECS[attributionWindow]
+    }
+
+    // Instagram actor ID for Instagram placements
+    if (placements && placements.mode === 'manual' && placements.publisherPlatforms.includes('instagram')) {
+      // Fetch Instagram account linked to this page
+      try {
+        const igRes = await fetch(
+          `${META_GRAPH_URL}/${pageId}/instagram_accounts?fields=id&access_token=${accessToken}`
+        )
+        const igData = await igRes.json()
+        if (igData.data && igData.data.length > 0) {
+          adsetPayload.instagram_actor_id = igData.data[0].id
+        }
+      } catch (err) {
+        console.error('Failed to fetch Instagram account:', err)
+      }
     }
 
     // Meta requires this field when not using campaign budget (ABO or when campaign has no budget)
@@ -452,7 +605,7 @@ export async function POST(request: NextRequest) {
           link: websiteUrl,
           message: primaryText,
           child_attachments: carouselCards,
-          call_to_action: objective === 'leads' && formId
+          call_to_action: (objective === 'leads' && formId && conversionLocation !== 'website' && conversionLocation !== 'messenger')
             ? { type: ctaType, value: { lead_gen_form_id: formId } }
             : { type: ctaType, value: { link: websiteUrl } }
         }
@@ -612,8 +765,8 @@ export async function POST(request: NextRequest) {
           link_description: description || undefined
         }
 
-        // Build CTA - different for lead forms vs website
-        if (objective === 'leads' && formId) {
+        // Build CTA - different for lead forms vs website/messenger
+        if (objective === 'leads' && formId && conversionLocation !== 'website' && conversionLocation !== 'messenger') {
           videoData.call_to_action = {
             type: ctaType,
             value: { lead_gen_form_id: formId }
@@ -646,8 +799,8 @@ export async function POST(request: NextRequest) {
           name: headline
         }
 
-        // Build CTA - different for lead forms vs website
-        if (objective === 'leads' && formId) {
+        // Build CTA - different for lead forms vs website/messenger
+        if (objective === 'leads' && formId && conversionLocation !== 'website' && conversionLocation !== 'messenger') {
           linkData.call_to_action = {
             type: ctaType,
             value: { lead_gen_form_id: formId }

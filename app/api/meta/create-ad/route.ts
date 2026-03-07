@@ -24,6 +24,7 @@ interface CreateAdRequest {
   adName?: string
   objective: 'leads' | 'conversions' | 'traffic'  // Inherited from campaign
   formId?: string  // For lead gen campaigns
+  conversionLocation?: 'instant_form' | 'website' | 'messenger'
   creatives: Creative[]
   creativeMode?: 'separate' | 'carousel' // separate = N ads, carousel = 1 ad with N cards
   primaryText: string
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
       adName,
       objective,
       formId,
+      conversionLocation,
       creatives,
       creativeMode,
       primaryText,
@@ -147,7 +149,7 @@ export async function POST(request: NextRequest) {
           link: websiteUrl,
           message: primaryText,
           child_attachments: carouselCards,
-          call_to_action: objective === 'leads' && formId
+          call_to_action: objective === 'leads' && formId && conversionLocation !== 'website' && conversionLocation !== 'messenger'
             ? { type: ctaType, value: { lead_gen_form_id: formId } }
             : { type: ctaType, value: { link: ctaLink } }
         }
@@ -218,7 +220,7 @@ export async function POST(request: NextRequest) {
           link_description: description || undefined
         }
 
-        if (objective === 'leads' && formId) {
+        if (objective === 'leads' && formId && conversionLocation !== 'website' && conversionLocation !== 'messenger') {
           videoData.call_to_action = {
             type: ctaType,
             value: { lead_gen_form_id: formId }
@@ -252,7 +254,7 @@ export async function POST(request: NextRequest) {
           name: headline
         }
 
-        if (objective === 'leads' && formId) {
+        if (objective === 'leads' && formId && conversionLocation !== 'website' && conversionLocation !== 'messenger') {
           linkData.call_to_action = {
             type: ctaType,
             value: { lead_gen_form_id: formId }

@@ -49,7 +49,7 @@ export interface OracleSubmission {
   format: OracleFormat
 }
 
-const MAX_IMAGES = 2
+const MAX_IMAGES = 3
 
 interface OracleBoxProps {
   onSubmit: (submission: OracleSubmission) => void

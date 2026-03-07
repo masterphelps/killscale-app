@@ -28,6 +28,8 @@ import { uploadImageToMeta, uploadVideoToMeta } from '@/lib/meta-upload'
 import type { MediaImage, MediaVideo } from '@/app/api/meta/media/route'
 import { supabase } from '@/lib/supabase-browser'
 import type { CopyVariation } from '@/app/dashboard/creative-studio/creative-studio-context'
+import type { LocationEntry, PlacementConfig, BidStrategy, AttributionWindow, Gender, BudgetMode, ConversionLocation } from '@/components/launch-wizard/types'
+import { COUNTRIES, PLACEMENT_PLATFORMS, BID_STRATEGIES, ATTRIBUTION_SPECS, ATTRIBUTION_OPTIONS } from '@/components/launch-wizard/constants'
 
 // Generate thumbnail from video file using canvas
 const generateVideoThumbnail = (videoUrl: string): Promise<string | null> => {
@@ -192,12 +194,34 @@ interface WizardState {
   objective: 'leads' | 'conversions' | 'traffic'
   conversionEvent: string  // The specific pixel event (PURCHASE, COMPLETE_REGISTRATION, etc.)
   selectedFormId: string   // Lead form ID for lead generation campaigns
+  conversionLocation: ConversionLocation  // Where leads are captured (instant_form, website, messenger)
+  optimizeForQuality: boolean             // QUALITY_LEAD vs LEAD_GENERATION optimization
   dailyBudget: number
   specialAdCategory: 'HOUSING' | 'CREDIT' | 'EMPLOYMENT' | null
   locationType: 'city' | 'country'
   locationKey: string
   locationName: string
   locationRadius: number
+  // Multiple locations
+  locations: LocationEntry[]
+  // Country targeting
+  selectedCountries: string[]
+  // Gender targeting
+  gender: Gender
+  // Placement control
+  placements: PlacementConfig
+  // Budget mode
+  budgetMode: BudgetMode
+  lifetimeBudget: number
+  // Campaign scheduling
+  startDate: string
+  endDate: string
+  // Bid strategy
+  bidStrategy: BidStrategy
+  bidAmount: number
+  roasFloor: number
+  // Attribution window
+  attributionWindow: AttributionWindow
   targetingMode: 'broad' | 'custom'
   selectedInterests: TargetingOption[]
   selectedBehaviors: TargetingOption[]
@@ -378,6 +402,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(null)
 
+  // Instagram accounts for placement control
+  const [instagramAccounts, setInstagramAccounts] = useState<{ id: string; name: string; username: string }[]>([])
+  const [loadingInstagram, setLoadingInstagram] = useState(false)
+  // Country search for targeting
+  const [countryQuery, setCountryQuery] = useState('')
+
   // Copy Library modal state
   const [showCopyLibrary, setShowCopyLibrary] = useState(false)
   const [copyVariations, setCopyVariations] = useState<CopyVariation[]>([])
@@ -417,12 +447,33 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     objective: 'conversions',
     conversionEvent: 'PURCHASE',
     selectedFormId: '',
+    conversionLocation: 'instant_form',
+    optimizeForQuality: false,
     dailyBudget: 50,
     specialAdCategory: null,
     locationType: 'country',
     locationKey: '',
     locationName: '',
     locationRadius: 25,
+    locations: [],
+    selectedCountries: ['US'],
+    gender: 'all',
+    placements: {
+      mode: 'automatic',
+      publisherPlatforms: [],
+      facebookPositions: [],
+      instagramPositions: [],
+      messengerPositions: [],
+      audienceNetworkPositions: [],
+    },
+    budgetMode: 'daily',
+    lifetimeBudget: 500,
+    startDate: '',
+    endDate: '',
+    bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
+    bidAmount: 0,
+    roasFloor: 2.0,
+    attributionWindow: '7d_click',
     targetingMode: 'broad',
     selectedInterests: [],
     selectedBehaviors: [],
@@ -582,6 +633,23 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       console.error('Failed to load ad sets:', err)
     } finally {
       setLoadingAdsets(false)
+    }
+  }
+
+  // Load Instagram accounts for placement control
+  const loadInstagramAccounts = async () => {
+    if (!user || !adAccountId) return
+    setLoadingInstagram(true)
+    try {
+      const res = await fetch(`/api/meta/instagram-accounts?userId=${user.id}&adAccountId=${encodeURIComponent(adAccountId)}`)
+      const data = await res.json()
+      if (data.accounts) {
+        setInstagramAccounts(data.accounts)
+      }
+    } catch (err) {
+      console.error('Failed to load Instagram accounts:', err)
+    } finally {
+      setLoadingInstagram(false)
     }
   }
 
@@ -925,11 +993,13 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       } else {
         const vid = item as MediaVideo & { mediaType: 'video' }
         return {
-          preview: vid.thumbnailUrl,
+          // Use video source URL for preview if no thumbnail available
+          preview: vid.thumbnailUrl || vid.source || '',
           type: 'video' as const,
           uploaded: true,
           videoId: vid.id,
-          thumbnailUrl: vid.thumbnailUrl,  // Required for Meta API
+          thumbnailUrl: vid.thumbnailUrl || undefined,  // Required for Meta API
+          storageUrl: vid.source,  // Keep storage URL for server-side upload if needed
           isFromLibrary: true,
           libraryId: vid.id,
           name: vid.title
@@ -1096,6 +1166,35 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
         }))
       }
 
+      // Build shared location target for API calls
+      const locationTarget = state.locationType === 'city' && state.locations.length > 0
+        ? {
+            type: 'city' as const,
+            cities: state.locations.map(loc => ({
+              key: loc.key,
+              name: loc.name,
+              radius: loc.radius,
+            })),
+          }
+        : {
+            type: 'country' as const,
+            countries: state.selectedCountries,
+          }
+
+      // Build shared new targeting/budget fields
+      const sharedNewFields = {
+        gender: state.gender !== 'all' ? state.gender : undefined,
+        attributionWindow: state.attributionWindow !== '7d_click' ? state.attributionWindow : undefined,
+        placements: state.placements.mode === 'manual' ? state.placements : undefined,
+        budgetMode: state.budgetMode,
+        lifetimeBudget: state.budgetMode === 'lifetime' ? state.lifetimeBudget : undefined,
+        startDate: state.startDate || undefined,
+        endDate: state.endDate || undefined,
+        bidStrategy: state.bidStrategy,
+        bidAmount: (state.bidStrategy === 'COST_CAP' || state.bidStrategy === 'BID_CAP') ? state.bidAmount : undefined,
+        roasFloor: state.bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS' ? state.roasFloor : undefined,
+      }
+
       // Route to correct API based on entity type
       if (state.entityType === 'ad') {
         // Create just an ad
@@ -1112,7 +1211,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             pageId: state.pageId,
             adName: state.headline || 'New Ad',
             objective: state.selectedCampaignObjective || 'conversions',
-            formId: state.selectedCampaignObjective === 'leads' ? state.selectedFormId : undefined,
+            formId: (state.selectedCampaignObjective === 'leads' && state.conversionLocation === 'instant_form') ? state.selectedFormId : undefined,
+            conversionLocation: state.selectedCampaignObjective === 'leads' ? state.conversionLocation : undefined,
             creatives: creativesWithHashes,
             creativeMode: state.creativeMode,
             primaryText: state.primaryText,
@@ -1140,22 +1240,14 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             adsetName: state.adsetName,
             objective: state.selectedCampaignObjective || 'conversions',
             conversionEvent: state.selectedCampaignObjective === 'conversions' ? state.conversionEvent : undefined,
-            formId: state.selectedCampaignObjective === 'leads' ? state.selectedFormId : undefined,
+            formId: (state.selectedCampaignObjective === 'leads' && state.conversionLocation === 'instant_form') ? state.selectedFormId : undefined,
+            conversionLocation: state.selectedCampaignObjective === 'leads' ? state.conversionLocation : undefined,
+            optimizeForQuality: state.selectedCampaignObjective === 'leads' ? state.optimizeForQuality : undefined,
             dailyBudget: state.adsetDailyBudget,
             isCBO: state.selectedCampaignIsCBO,
             hasSpendCap: state.adsetHasSpendCap,
             specialAdCategory: state.specialAdCategory,
-            locationTarget: state.locationType === 'city'
-              ? {
-                  type: 'city',
-                  key: state.locationKey,
-                  name: state.locationName,
-                  radius: state.locationRadius
-                }
-              : {
-                  type: 'country',
-                  countries: ['US']
-                },
+            locationTarget,
             creatives: creativesWithHashes,
             creativeMode: state.creativeMode,
             primaryText: state.primaryText,
@@ -1171,7 +1263,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             selectedCustomAudiences: state.targetingMode === 'custom' ? state.selectedCustomAudiences : undefined,
             selectedExcludedAudiences: state.targetingMode === 'custom' ? state.selectedExcludedAudiences : undefined,
             ageMin: state.ageMin,
-            ageMax: state.ageMax
+            ageMax: state.ageMax,
+            ...sharedNewFields,
           })
         })
 
@@ -1235,20 +1328,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             campaignName: state.campaignName || `Performance Set - ${new Date().toLocaleDateString()}`,
             objective: state.objective,
             conversionEvent: state.objective === 'conversions' ? state.conversionEvent : undefined,
-            formId: state.objective === 'leads' ? state.selectedFormId : undefined,
+            formId: (state.objective === 'leads' && state.conversionLocation === 'instant_form') ? state.selectedFormId : undefined,
+            conversionLocation: state.objective === 'leads' ? state.conversionLocation : undefined,
+            optimizeForQuality: state.objective === 'leads' ? state.optimizeForQuality : undefined,
             dailyBudget: state.dailyBudget,
             specialAdCategory: state.specialAdCategory,
-            locationTarget: state.locationType === 'city'
-              ? {
-                  type: 'city',
-                  key: state.locationKey,
-                  name: state.locationName,
-                  radius: state.locationRadius
-                }
-              : {
-                  type: 'country',
-                  countries: ['US']
-                },
+            locationTarget,
             // Performance Set specific - reuse existing creatives
             isPerformanceSet: true,
             existingCreativeIds,
@@ -1259,7 +1344,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             selectedCustomAudiences: state.targetingMode === 'custom' ? state.selectedCustomAudiences : undefined,
             selectedExcludedAudiences: state.targetingMode === 'custom' ? state.selectedExcludedAudiences : undefined,
             ageMin: state.ageMin,
-            ageMax: state.ageMax
+            ageMax: state.ageMax,
+            ...sharedNewFields,
           })
         })
 
@@ -1282,20 +1368,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             campaignName: state.campaignName,
             objective: state.objective,
             conversionEvent: state.objective === 'conversions' ? state.conversionEvent : undefined,
-            formId: state.objective === 'leads' ? state.selectedFormId : undefined,
+            formId: (state.objective === 'leads' && state.conversionLocation === 'instant_form') ? state.selectedFormId : undefined,
+            conversionLocation: state.objective === 'leads' ? state.conversionLocation : undefined,
+            optimizeForQuality: state.objective === 'leads' ? state.optimizeForQuality : undefined,
             dailyBudget: state.dailyBudget,
             specialAdCategory: state.specialAdCategory,
-            locationTarget: state.locationType === 'city'
-              ? {
-                  type: 'city',
-                  key: state.locationKey,
-                  name: state.locationName,
-                  radius: state.locationRadius
-                }
-              : {
-                  type: 'country',
-                  countries: ['US']
-                },
+            locationTarget,
             creatives: creativesWithHashes,
             creativeMode: state.creativeMode,
             primaryText: state.primaryText,
@@ -1311,7 +1389,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             selectedCustomAudiences: state.targetingMode === 'custom' ? state.selectedCustomAudiences : undefined,
             selectedExcludedAudiences: state.targetingMode === 'custom' ? state.selectedExcludedAudiences : undefined,
             ageMin: state.ageMin,
-            ageMax: state.ageMax
+            ageMax: state.ageMax,
+            ...sharedNewFields,
           })
         })
       }
@@ -1382,8 +1461,8 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
         return 'creatives'
 
       case 'adset-details':
-        // Ad set path: check objective from selected campaign
-        return state.selectedCampaignObjective === 'leads' ? 'leadform' : 'targeting'
+        // Ad set path: only go to leadform when leads + instant_form
+        return (state.selectedCampaignObjective === 'leads' && state.conversionLocation === 'instant_form') ? 'leadform' : 'targeting'
 
       // Campaign path (unchanged)
       case 'budget':
@@ -1395,7 +1474,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
           // Performance Set: skip leadform, go to targeting (always build fresh)
           return 'targeting'
         }
-        return state.objective === 'leads' ? 'leadform' : 'targeting'
+        return (state.objective === 'leads' && state.conversionLocation === 'instant_form') ? 'leadform' : 'targeting'
 
       // Shared steps
       case 'leadform':
@@ -1457,10 +1536,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
           return 'details'
         }
         if (state.entityType === 'campaign') {
-          return state.objective === 'leads' ? 'leadform' : 'details'
+          return (state.objective === 'leads' && state.conversionLocation === 'instant_form') ? 'leadform' : 'details'
         }
         // Ad set path
-        return state.selectedCampaignObjective === 'leads' ? 'leadform' : 'adset-details'
+        return (state.selectedCampaignObjective === 'leads' && state.conversionLocation === 'instant_form') ? 'leadform' : 'adset-details'
       case 'creatives':
         if (state.entityType === 'ad') return 'select-adset'
         return 'targeting'
@@ -1502,17 +1581,32 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       case 'abo-options':
         return state.aboOption === 'new' || !!state.existingCampaignId
       case 'details':
-        return !!state.campaignName && state.dailyBudget > 0
+        const hasBudget = state.budgetMode === 'daily'
+          ? state.dailyBudget > 0
+          : state.lifetimeBudget > 0
+        const hasEndDateForLifetime = state.budgetMode === 'lifetime' ? !!state.endDate : true
+        const hasBidInput = state.bidStrategy === 'COST_CAP' || state.bidStrategy === 'BID_CAP'
+          ? state.bidAmount > 0
+          : state.bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS'
+            ? state.roasFloor > 0
+            : true
+        return !!state.campaignName && hasBudget && hasEndDateForLifetime && hasBidInput
 
       // Shared steps
       case 'leadform':
         return !!state.selectedFormId
       case 'targeting':
-        const hasLocation = state.locationType === 'country' || !!state.locationKey
+        const hasLocation = state.locationType === 'country'
+          ? state.selectedCountries.length > 0
+          : state.locations.length > 0
+        // Manual placements must have at least one platform+position selected
+        const hasValidPlacements = state.placements.mode === 'automatic' || (
+          state.placements.publisherPlatforms.length > 0
+        )
         if (state.targetingMode === 'broad') {
-          return hasLocation
+          return hasLocation && hasValidPlacements
         }
-        return hasLocation && (state.selectedInterests.length > 0 || state.selectedBehaviors.length > 0)
+        return hasLocation && hasValidPlacements && (state.selectedInterests.length > 0 || state.selectedBehaviors.length > 0)
       case 'creatives':
         return state.creatives.length > 0
       case 'copy':
@@ -2058,6 +2152,94 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                 </p>
               </div>
             )}
+
+            {/* Conversion Location - for adset under leads campaign */}
+            {state.selectedCampaignObjective === 'leads' && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Conversion Location</label>
+                <p className="text-xs text-zinc-500 mb-3">
+                  Where do you want to capture leads?
+                </p>
+                <div className="space-y-2">
+                  {([
+                    { value: 'instant_form' as ConversionLocation, label: 'Instant Forms', desc: 'Collect leads directly in Facebook/Instagram', recommended: true },
+                    { value: 'website' as ConversionLocation, label: 'Website', desc: 'Send people to your website to fill out a form' },
+                    { value: 'messenger' as ConversionLocation, label: 'Messenger', desc: 'Start conversations in Messenger' },
+                  ] as const).map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setState(s => ({ ...s, conversionLocation: option.value, selectedFormId: option.value !== 'instant_form' ? '' : s.selectedFormId }))}
+                      className={cn(
+                        "w-full p-3 rounded-lg border text-left transition-all",
+                        state.conversionLocation === option.value
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-zinc-600"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-4 h-4 rounded-full border-2 shrink-0",
+                          state.conversionLocation === option.value ? "border-accent bg-accent" : "border-zinc-500"
+                        )} />
+                        <div>
+                          <span className="font-medium">{option.label}{'recommended' in option && option.recommended ? ' (recommended)' : ''}</span>
+                          <p className="text-xs text-zinc-500">{option.desc}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Optimization Goal - for adset under leads campaign */}
+            {state.selectedCampaignObjective === 'leads' && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Optimization Goal</label>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setState(s => ({ ...s, optimizeForQuality: false }))}
+                    className={cn(
+                      "w-full p-3 rounded-lg border text-left transition-all",
+                      !state.optimizeForQuality
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 shrink-0",
+                        !state.optimizeForQuality ? "border-accent bg-accent" : "border-zinc-500"
+                      )} />
+                      <div>
+                        <span className="font-medium">Maximize Leads (default)</span>
+                        <p className="text-xs text-zinc-500">Get the most form submissions</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setState(s => ({ ...s, optimizeForQuality: true }))}
+                    className={cn(
+                      "w-full p-3 rounded-lg border text-left transition-all",
+                      state.optimizeForQuality
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 shrink-0",
+                        state.optimizeForQuality ? "border-accent bg-accent" : "border-zinc-500"
+                      )} />
+                      <div>
+                        <span className="font-medium">Maximize Conversion Leads</span>
+                        <p className="text-xs text-zinc-500">Optimize for higher-quality leads (requires CRM + Conversions API)</p>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )
 
@@ -2199,6 +2381,94 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
               />
             </div>
 
+            {/* Conversion Location - only for leads objective */}
+            {state.objective === 'leads' && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Conversion Location</label>
+                <p className="text-xs text-zinc-500 mb-3">
+                  Where do you want to capture leads?
+                </p>
+                <div className="space-y-2">
+                  {([
+                    { value: 'instant_form' as ConversionLocation, label: 'Instant Forms', desc: 'Collect leads directly in Facebook/Instagram', recommended: true },
+                    { value: 'website' as ConversionLocation, label: 'Website', desc: 'Send people to your website to fill out a form' },
+                    { value: 'messenger' as ConversionLocation, label: 'Messenger', desc: 'Start conversations in Messenger' },
+                  ] as const).map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setState(s => ({ ...s, conversionLocation: option.value, selectedFormId: option.value !== 'instant_form' ? '' : s.selectedFormId }))}
+                      className={cn(
+                        "w-full p-3 rounded-lg border text-left transition-all",
+                        state.conversionLocation === option.value
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-zinc-600"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-4 h-4 rounded-full border-2 shrink-0",
+                          state.conversionLocation === option.value ? "border-accent bg-accent" : "border-zinc-500"
+                        )} />
+                        <div>
+                          <span className="font-medium">{option.label}{'recommended' in option && option.recommended ? ' (recommended)' : ''}</span>
+                          <p className="text-xs text-zinc-500">{option.desc}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Optimization Goal - only for leads objective */}
+            {state.objective === 'leads' && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Optimization Goal</label>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setState(s => ({ ...s, optimizeForQuality: false }))}
+                    className={cn(
+                      "w-full p-3 rounded-lg border text-left transition-all",
+                      !state.optimizeForQuality
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 shrink-0",
+                        !state.optimizeForQuality ? "border-accent bg-accent" : "border-zinc-500"
+                      )} />
+                      <div>
+                        <span className="font-medium">Maximize Leads (default)</span>
+                        <p className="text-xs text-zinc-500">Get the most form submissions</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setState(s => ({ ...s, optimizeForQuality: true }))}
+                    className={cn(
+                      "w-full p-3 rounded-lg border text-left transition-all",
+                      state.optimizeForQuality
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-zinc-600"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 shrink-0",
+                        state.optimizeForQuality ? "border-accent bg-accent" : "border-zinc-500"
+                      )} />
+                      <div>
+                        <span className="font-medium">Maximize Conversion Leads</span>
+                        <p className="text-xs text-zinc-500">Optimize for higher-quality leads (requires CRM + Conversions API)</p>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Conversion Event - only shown for conversions objective */}
             {state.objective === 'conversions' && (
               <div>
@@ -2221,21 +2491,174 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
               </div>
             )}
 
+            {/* Budget Mode Toggle */}
             <div>
-              <label className="block text-sm font-medium mb-2">Daily Budget</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
-                <input
-                  type="number"
-                  value={state.dailyBudget}
-                  onChange={(e) => setState(s => ({ ...s, dailyBudget: parseFloat(e.target.value) || 0 }))}
-                  className="w-full bg-bg-dark border border-border rounded-lg pl-8 pr-16 py-3 text-white focus:outline-none focus:border-accent"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">/day</span>
+              <label className="block text-sm font-medium mb-2">Budget Type</label>
+              <div className="flex rounded-lg overflow-hidden border border-border">
+                <button
+                  onClick={() => setState(s => ({ ...s, budgetMode: 'daily' }))}
+                  className={cn(
+                    "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                    state.budgetMode === 'daily'
+                      ? "bg-accent text-white"
+                      : "bg-bg-dark text-zinc-400 hover:text-white"
+                  )}
+                >
+                  Daily Budget
+                </button>
+                <button
+                  onClick={() => setState(s => ({ ...s, budgetMode: 'lifetime' }))}
+                  className={cn(
+                    "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                    state.budgetMode === 'lifetime'
+                      ? "bg-accent text-white"
+                      : "bg-bg-dark text-zinc-400 hover:text-white"
+                  )}
+                >
+                  Lifetime Budget
+                </button>
+              </div>
+            </div>
+
+            {state.budgetMode === 'daily' ? (
+              <div>
+                <label className="block text-sm font-medium mb-2">Daily Budget</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
+                  <input
+                    type="number"
+                    value={state.dailyBudget}
+                    onChange={(e) => setState(s => ({ ...s, dailyBudget: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-bg-dark border border-border rounded-lg pl-8 pr-16 py-3 text-white focus:outline-none focus:border-accent"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">/day</span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Start with $20-50/day. Scale winners.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium mb-2">Lifetime Budget</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
+                  <input
+                    type="number"
+                    value={state.lifetimeBudget}
+                    onChange={(e) => setState(s => ({ ...s, lifetimeBudget: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-bg-dark border border-border rounded-lg pl-8 pr-4 py-3 text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Total amount to spend over the campaign lifetime. Requires an end date.
+                </p>
+              </div>
+            )}
+
+            {/* Campaign Scheduling */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Schedule</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Start Date (optional)</label>
+                  <input
+                    type="date"
+                    value={state.startDate}
+                    onChange={(e) => setState(s => ({ ...s, startDate: e.target.value }))}
+                    className="w-full bg-bg-dark border border-border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-accent [color-scheme:dark]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">
+                    End Date {state.budgetMode === 'lifetime' ? '(required)' : '(optional)'}
+                  </label>
+                  <input
+                    type="date"
+                    value={state.endDate}
+                    onChange={(e) => setState(s => ({ ...s, endDate: e.target.value }))}
+                    className="w-full bg-bg-dark border border-border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-accent [color-scheme:dark]"
+                  />
+                </div>
               </div>
               <p className="text-xs text-zinc-500 mt-2">
-                Start with $20-50/day. Scale winners.
+                {state.budgetMode === 'lifetime'
+                  ? 'An end date is required for lifetime budgets.'
+                  : 'Leave empty to start immediately with no end date.'
+                }
               </p>
+            </div>
+
+            {/* Bid Strategy */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Bid Strategy</label>
+              <div className="space-y-2">
+                {BID_STRATEGIES
+                  .filter(bs => {
+                    // Filter Min ROAS to only show for conversions + PURCHASE
+                    if (bs.requiresObjective && state.objective !== bs.requiresObjective) return false
+                    if (bs.requiresEvent && state.conversionEvent !== bs.requiresEvent) return false
+                    return true
+                  })
+                  .map((bs) => (
+                    <div key={bs.value}>
+                      <button
+                        onClick={() => setState(s => ({ ...s, bidStrategy: bs.value }))}
+                        className={cn(
+                          "w-full p-3 rounded-lg border text-left text-sm transition-all",
+                          state.bidStrategy === bs.value
+                            ? "border-accent bg-accent/10"
+                            : "border-border hover:border-zinc-600"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-4 h-4 rounded-full border-2 flex-shrink-0",
+                            state.bidStrategy === bs.value ? "border-accent bg-accent" : "border-zinc-500"
+                          )} />
+                          <div>
+                            <span className="font-medium">{bs.label}</span>
+                            {bs.value === 'LOWEST_COST_WITHOUT_CAP' && (
+                              <span className="text-verdict-scale text-xs ml-2">(Recommended)</span>
+                            )}
+                            <p className="text-xs text-zinc-500 mt-0.5">{bs.description}</p>
+                          </div>
+                        </div>
+                      </button>
+                      {/* Conditional input for strategies that need it */}
+                      {state.bidStrategy === bs.value && bs.hasInput && (
+                        <div className="mt-2 ml-7">
+                          <label className="block text-xs text-zinc-500 mb-1">{bs.inputLabel}</label>
+                          {bs.value === 'LOWEST_COST_WITH_MIN_ROAS' ? (
+                            <div className="relative w-40">
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0.01"
+                                value={state.roasFloor}
+                                onChange={(e) => setState(s => ({ ...s, roasFloor: parseFloat(e.target.value) || 0 }))}
+                                className="w-full bg-bg-dark border border-border rounded-lg px-3 pr-8 py-2 text-white text-sm focus:outline-none focus:border-accent"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">x</span>
+                            </div>
+                          ) : (
+                            <div className="relative w-40">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={state.bidAmount || ''}
+                                onChange={(e) => setState(s => ({ ...s, bidAmount: parseFloat(e.target.value) || 0 }))}
+                                className="w-full bg-bg-dark border border-border rounded-lg pl-7 pr-3 py-2 text-white text-sm focus:outline-none focus:border-accent"
+                                placeholder="0.00"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
         )
@@ -2374,7 +2797,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
               <label className="block text-sm font-medium mb-2">Service Area</label>
               <div className="space-y-3">
                 <button
-                  onClick={() => setState(s => ({ ...s, locationType: 'country', locationKey: '', locationName: '' }))}
+                  onClick={() => setState(s => ({ ...s, locationType: 'country', locationKey: '', locationName: '', locations: [] }))}
                   className={cn(
                     "w-full p-3 rounded-lg border text-left text-sm transition-all flex items-center gap-3",
                     state.locationType === 'country'
@@ -2386,7 +2809,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     "w-4 h-4 rounded-full border-2",
                     state.locationType === 'country' ? "border-accent bg-accent" : "border-zinc-500"
                   )} />
-                  Target entire United States (default)
+                  Target by country
                 </button>
 
                 <button
@@ -2402,22 +2825,117 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     "w-4 h-4 rounded-full border-2",
                     state.locationType === 'city' ? "border-accent bg-accent" : "border-zinc-500"
                   )} />
-                  Target specific city + radius
+                  Target specific cities + radius
                 </button>
               </div>
 
-              {state.locationType === 'city' && (
+              {/* Country selection */}
+              {state.locationType === 'country' && (
                 <div className="mt-4 space-y-3">
+                  {/* Selected countries chips */}
+                  {state.selectedCountries.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {state.selectedCountries.map(code => {
+                        const country = COUNTRIES.find(c => c.code === code)
+                        return (
+                          <span key={code} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/20 text-accent text-sm">
+                            {country?.name || code}
+                            <button
+                              onClick={() => setState(s => ({
+                                ...s,
+                                selectedCountries: s.selectedCountries.filter(c => c !== code)
+                              }))}
+                              className="hover:text-white"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {/* Country search */}
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                     <input
                       type="text"
-                      value={state.locationName || locationQuery}
+                      value={countryQuery}
+                      onChange={(e) => setCountryQuery(e.target.value)}
+                      placeholder="Search countries..."
+                      className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  {countryQuery && (
+                    <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                      {COUNTRIES
+                        .filter(c =>
+                          c.name.toLowerCase().includes(countryQuery.toLowerCase()) &&
+                          !state.selectedCountries.includes(c.code)
+                        )
+                        .slice(0, 8)
+                        .map(country => (
+                          <button
+                            key={country.code}
+                            onClick={() => {
+                              setState(s => ({
+                                ...s,
+                                selectedCountries: [...s.selectedCountries, country.code]
+                              }))
+                              setCountryQuery('')
+                            }}
+                            className="w-full px-4 py-2.5 text-left text-sm hover:bg-bg-hover border-b border-border last:border-0"
+                          >
+                            {country.name}
+                          </button>
+                        ))
+                      }
+                      {COUNTRIES.filter(c =>
+                        c.name.toLowerCase().includes(countryQuery.toLowerCase()) &&
+                        !state.selectedCountries.includes(c.code)
+                      ).length === 0 && (
+                        <div className="px-4 py-3 text-sm text-zinc-500">No matching countries</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* City targeting with multiple locations */}
+              {state.locationType === 'city' && (
+                <div className="mt-4 space-y-3">
+                  {/* Added locations */}
+                  {state.locations.length > 0 && (
+                    <div className="space-y-2">
+                      {state.locations.map((loc, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-bg-hover rounded-lg px-4 py-2.5">
+                          <div className="text-sm">
+                            <span className="text-white">{loc.name}</span>
+                            <span className="text-zinc-500 ml-2">({loc.radius} mi)</span>
+                          </div>
+                          <button
+                            onClick={() => setState(s => ({
+                              ...s,
+                              locations: s.locations.filter((_, i) => i !== idx)
+                            }))}
+                            className="text-zinc-500 hover:text-white p-1"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Search input for adding new city */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                    <input
+                      type="text"
+                      value={locationQuery}
                       onChange={(e) => {
                         setLocationQuery(e.target.value)
-                        setState(s => ({ ...s, locationName: '', locationKey: '' }))
                       }}
-                      placeholder="Search city..."
+                      placeholder={state.locations.length > 0 ? "Add another city..." : "Search city..."}
                       className="w-full bg-bg-dark border border-border rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-accent"
                     />
                     {searchingLocations && (
@@ -2425,7 +2943,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     )}
                   </div>
 
-                  {locationResults.length > 0 && !state.locationKey && (
+                  {locationResults.length > 0 && (
                     <div className="border border-border rounded-lg overflow-hidden">
                       {locationResults.slice(0, 5).map((loc) => (
                         <button
@@ -2433,6 +2951,12 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                           onClick={() => {
                             setState(s => ({
                               ...s,
+                              locations: [...s.locations, {
+                                key: loc.key,
+                                name: `${loc.name}, ${loc.region}`,
+                                radius: s.locationRadius
+                              }],
+                              // Also set legacy fields for backwards compat
                               locationKey: loc.key,
                               locationName: `${loc.name}, ${loc.region}`
                             }))
@@ -2447,22 +2971,24 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     </div>
                   )}
 
-                  {state.locationKey && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">Radius:</span>
-                      <Select
-                        value={state.locationRadius.toString()}
-                        onChange={(value) => setState(s => ({ ...s, locationRadius: parseInt(value) }))}
-                        options={RADIUS_OPTIONS.map(r => ({ value: r.toString(), label: `${r} miles` }))}
-                        className="w-32"
-                      />
-                    </div>
-                  )}
+                  {/* Radius selector (applies to next city added) */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-zinc-400">Radius for new cities:</span>
+                    <Select
+                      value={state.locationRadius.toString()}
+                      onChange={(value) => setState(s => ({ ...s, locationRadius: parseInt(value) }))}
+                      options={RADIUS_OPTIONS.map(r => ({ value: r.toString(), label: `${r} miles` }))}
+                      className="w-32"
+                    />
+                  </div>
                 </div>
               )}
 
               <p className="text-xs text-zinc-500 mt-3">
-                Great for local service businesses like pressure washing, roofing, landscaping.
+                {state.locationType === 'city'
+                  ? 'Great for local service businesses. Add multiple cities to cover your service area.'
+                  : 'Select one or more countries to target.'
+                }
               </p>
             </div>
 
@@ -2509,6 +3035,31 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
               <p className="text-xs text-zinc-500 mt-2">
                 Meta supports ages 18-65+ for targeting
               </p>
+            </div>
+
+            {/* Gender Targeting */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Gender</label>
+              <div className="flex rounded-lg overflow-hidden border border-border">
+                {([
+                  { value: 'all' as Gender, label: 'All' },
+                  { value: 'male' as Gender, label: 'Male' },
+                  { value: 'female' as Gender, label: 'Female' },
+                ] as const).map(g => (
+                  <button
+                    key={g.value}
+                    onClick={() => setState(s => ({ ...s, gender: g.value }))}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                      state.gender === g.value
+                        ? "bg-accent text-white"
+                        : "bg-bg-dark text-zinc-400 hover:text-white"
+                    )}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Audience Targeting Mode */}
@@ -2930,6 +3481,182 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                 </div>
               )}
             </div>
+
+            {/* Placement Control */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Placements</label>
+              <div className="space-y-3">
+                <button
+                  onClick={() => setState(s => ({
+                    ...s,
+                    placements: { ...s.placements, mode: 'automatic' }
+                  }))}
+                  className={cn(
+                    "w-full p-3 rounded-lg border text-left text-sm transition-all",
+                    state.placements.mode === 'automatic'
+                      ? "border-accent bg-accent/10"
+                      : "border-border hover:border-zinc-600"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2",
+                      state.placements.mode === 'automatic' ? "border-accent bg-accent" : "border-zinc-500"
+                    )} />
+                    <div>
+                      <span className="font-medium">Advantage+ Placements</span>
+                      <span className="text-verdict-scale text-xs ml-2">(Recommended)</span>
+                      <p className="text-xs text-zinc-500 mt-0.5">Meta optimizes across all placements automatically</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setState(s => ({
+                      ...s,
+                      placements: {
+                        ...s.placements,
+                        mode: 'manual',
+                        // Pre-select all if switching for first time
+                        publisherPlatforms: s.placements.publisherPlatforms.length === 0
+                          ? ['facebook', 'instagram']
+                          : s.placements.publisherPlatforms,
+                        facebookPositions: s.placements.facebookPositions.length === 0
+                          ? ['feed', 'story', 'reel']
+                          : s.placements.facebookPositions,
+                        instagramPositions: s.placements.instagramPositions.length === 0
+                          ? ['stream', 'story', 'reels']
+                          : s.placements.instagramPositions,
+                      }
+                    }))
+                    // Load Instagram accounts if not loaded
+                    if (instagramAccounts.length === 0 && !loadingInstagram) {
+                      loadInstagramAccounts()
+                    }
+                  }}
+                  className={cn(
+                    "w-full p-3 rounded-lg border text-left text-sm transition-all",
+                    state.placements.mode === 'manual'
+                      ? "border-accent bg-accent/10"
+                      : "border-border hover:border-zinc-600"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2",
+                      state.placements.mode === 'manual' ? "border-accent bg-accent" : "border-zinc-500"
+                    )} />
+                    <div>
+                      <span className="font-medium">Manual Placements</span>
+                      <p className="text-xs text-zinc-500 mt-0.5">Choose where your ads appear</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Manual placement checkboxes */}
+              {state.placements.mode === 'manual' && (
+                <div className="mt-4 space-y-4">
+                  {PLACEMENT_PLATFORMS.map(platform => {
+                    const isPlatformEnabled = state.placements.publisherPlatforms.includes(platform.platform)
+                    const positionsKey = `${platform.platform}Positions` as keyof PlacementConfig
+                    const currentPositions = state.placements[positionsKey] as string[]
+
+                    return (
+                      <div key={platform.platform} className="border border-border rounded-lg p-3">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isPlatformEnabled}
+                            onChange={(e) => {
+                              setState(s => {
+                                const newPlatforms = e.target.checked
+                                  ? [...s.placements.publisherPlatforms, platform.platform]
+                                  : s.placements.publisherPlatforms.filter(p => p !== platform.platform)
+                                return {
+                                  ...s,
+                                  placements: {
+                                    ...s.placements,
+                                    publisherPlatforms: newPlatforms,
+                                    // Clear positions when unchecking platform
+                                    ...(!e.target.checked ? { [positionsKey]: [] } : {}),
+                                    // Select all positions when checking platform
+                                    ...(e.target.checked ? { [positionsKey]: platform.positions.map(p => p.value) } : {}),
+                                  }
+                                }
+                              })
+                            }}
+                            className="w-4 h-4 rounded accent-accent"
+                          />
+                          <span className="font-medium text-sm">{platform.label}</span>
+                        </label>
+
+                        {isPlatformEnabled && (
+                          <div className="ml-7 mt-2 space-y-1.5">
+                            {platform.positions.map(pos => (
+                              <label key={pos.value} className="flex items-center gap-2.5 cursor-pointer text-sm text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  checked={currentPositions.includes(pos.value)}
+                                  onChange={(e) => {
+                                    setState(s => {
+                                      const current = s.placements[positionsKey] as string[]
+                                      const updated = e.target.checked
+                                        ? [...current, pos.value]
+                                        : current.filter(p => p !== pos.value)
+                                      return {
+                                        ...s,
+                                        placements: { ...s.placements, [positionsKey]: updated }
+                                      }
+                                    })
+                                  }}
+                                  className="w-3.5 h-3.5 rounded accent-accent"
+                                />
+                                {pos.label}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* Instagram account notice */}
+                  {state.placements.publisherPlatforms.includes('instagram') && (
+                    <div className="bg-bg-hover rounded-lg p-3">
+                      {loadingInstagram ? (
+                        <div className="flex items-center gap-2 text-sm text-zinc-400">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading Instagram accounts...
+                        </div>
+                      ) : instagramAccounts.length > 0 ? (
+                        <p className="text-xs text-zinc-400">
+                          Instagram account: <span className="text-white">@{instagramAccounts[0].username}</span> will be used for Instagram placements.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-yellow-500">
+                          No Instagram account linked to this Facebook Page. Instagram placements may use your Page identity.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Attribution Window */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Attribution Window</label>
+              <Select
+                value={state.attributionWindow}
+                onChange={(value) => setState(s => ({ ...s, attributionWindow: value as AttributionWindow }))}
+                options={ATTRIBUTION_OPTIONS}
+              />
+              <p className="text-xs text-zinc-500 mt-2">
+                How long after clicking or viewing your ad should conversions be attributed to it.
+              </p>
+            </div>
           </div>
         )
 
@@ -3050,13 +3777,14 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     // Determine the preview source
                     // - Images: use preview (blob URL or library URL)
                     // - Videos: use thumbnailUrl if available, else preview (generated thumbnail or storageUrl)
-                    const previewSrc = creative.type === 'image'
-                      ? creative.preview
-                      : (creative.thumbnailUrl || creative.preview)
+                    // For videos: use storageUrl or preview as video source
+                    // For images: use preview (blob URL or library URL)
+                    const previewSrc = creative.type === 'video'
+                      ? (creative.storageUrl || creative.preview)
+                      : creative.preview
                     const hasValidPreview = !!previewSrc
-                    // Detect if the preview is a video file URL (not a thumbnail image)
+                    // Render as <video> if it's a video type with a source URL
                     const isVideoPreview = creative.type === 'video' && hasValidPreview
-                      && /\.(mp4|mov|webm|avi)/i.test(previewSrc)
 
                     return (
                     <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-bg-hover group">
@@ -3355,9 +4083,30 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     <span className="text-zinc-400">Objective</span>
                     <span className="font-medium capitalize">{state.objective}</span>
                   </div>
+                  {state.objective === 'leads' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Conversion Location</span>
+                        <span className="font-medium">
+                          {state.conversionLocation === 'instant_form' ? 'Instant Forms' : state.conversionLocation === 'website' ? 'Website' : 'Messenger'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Optimization</span>
+                        <span className="font-medium">
+                          {state.optimizeForQuality ? 'Conversion Leads' : 'Maximize Leads'}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Budget</span>
-                    <span className="font-medium">${state.dailyBudget}/day</span>
+                    <span className="font-medium">
+                      {state.budgetMode === 'lifetime'
+                        ? `$${state.lifetimeBudget} lifetime`
+                        : `$${state.dailyBudget}/day`
+                      }
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Starred Ads</span>
@@ -3381,10 +4130,52 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     <span className="text-zinc-400">Objective</span>
                     <span className="font-medium capitalize">{state.objective}</span>
                   </div>
+                  {state.objective === 'leads' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Conversion Location</span>
+                        <span className="font-medium">
+                          {state.conversionLocation === 'instant_form' ? 'Instant Forms' : state.conversionLocation === 'website' ? 'Website' : 'Messenger'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Optimization</span>
+                        <span className="font-medium">
+                          {state.optimizeForQuality ? 'Conversion Leads' : 'Maximize Leads'}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Budget</span>
-                    <span className="font-medium">${state.dailyBudget}/day</span>
+                    <span className="font-medium">
+                      {state.budgetMode === 'lifetime'
+                        ? `$${state.lifetimeBudget} lifetime`
+                        : `$${state.dailyBudget}/day`
+                      }
+                    </span>
                   </div>
+                  {state.bidStrategy !== 'LOWEST_COST_WITHOUT_CAP' && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Bid Strategy</span>
+                      <span className="font-medium">
+                        {BID_STRATEGIES.find(b => b.value === state.bidStrategy)?.label}
+                        {state.bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS' && ` (${state.roasFloor}x)`}
+                        {(state.bidStrategy === 'COST_CAP' || state.bidStrategy === 'BID_CAP') && ` ($${state.bidAmount})`}
+                      </span>
+                    </div>
+                  )}
+                  {(state.startDate || state.endDate) && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Schedule</span>
+                      <span className="font-medium">
+                        {state.startDate && `${state.startDate}`}
+                        {state.startDate && state.endDate && ' — '}
+                        {!state.startDate && state.endDate && 'Until '}
+                        {state.endDate && `${state.endDate}`}
+                      </span>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -3403,6 +4194,22 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                     <span className="text-zinc-400">Objective</span>
                     <span className="font-medium capitalize">{state.selectedCampaignObjective} (inherited)</span>
                   </div>
+                  {state.selectedCampaignObjective === 'leads' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Conversion Location</span>
+                        <span className="font-medium">
+                          {state.conversionLocation === 'instant_form' ? 'Instant Forms' : state.conversionLocation === 'website' ? 'Website' : 'Messenger'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Optimization</span>
+                        <span className="font-medium">
+                          {state.optimizeForQuality ? 'Conversion Leads' : 'Maximize Leads'}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   {(!state.selectedCampaignIsCBO || state.adsetHasSpendCap) && (
                     <div className="flex justify-between">
                       <span className="text-zinc-400">Budget</span>
@@ -3433,10 +4240,19 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                 <>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Location</span>
-                    <span className="font-medium">
-                      {state.locationType === 'country' ? 'United States' : `${state.locationName} (${state.locationRadius}mi)`}
+                    <span className="font-medium text-right">
+                      {state.locationType === 'country'
+                        ? state.selectedCountries.map(c => COUNTRIES.find(cc => cc.code === c)?.name || c).join(', ')
+                        : state.locations.map(l => `${l.name} (${l.radius}mi)`).join(', ')
+                      }
                     </span>
                   </div>
+                  {state.gender !== 'all' && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Gender</span>
+                      <span className="font-medium capitalize">{state.gender}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Audience</span>
                     <span className="font-medium">
@@ -3446,6 +4262,18 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                       }
                     </span>
                   </div>
+                  {state.placements.mode === 'manual' && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Placements</span>
+                      <span className="font-medium">Manual ({state.placements.publisherPlatforms.length} platforms)</span>
+                    </div>
+                  )}
+                  {state.attributionWindow !== '7d_click' && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Attribution</span>
+                      <span className="font-medium">{ATTRIBUTION_OPTIONS.find(a => a.value === state.attributionWindow)?.label}</span>
+                    </div>
+                  )}
                 </>
               )}
 

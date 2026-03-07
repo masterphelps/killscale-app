@@ -421,7 +421,7 @@ export default function AdStudioPage() {
   // Open Prompt state
   const [openPromptText, setOpenPromptText] = useState('')
   const [openPromptMediaType, setOpenPromptMediaType] = useState<'image' | 'video'>('image')
-  const [openPromptSourceImage, setOpenPromptSourceImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
+  const [openPromptSourceImages, setOpenPromptSourceImages] = useState<Array<{ base64: string; mimeType: string; preview: string }>>([])
   const [openPromptAspectRatio, setOpenPromptAspectRatio] = useState('9:16')
   const [openPromptQuality, setOpenPromptQuality] = useState<'standard' | 'premium'>('standard')
   const [openPromptGenerating, setOpenPromptGenerating] = useState(false)
@@ -430,6 +430,7 @@ export default function AdStudioPage() {
   const [openPromptSessionId, setOpenPromptSessionId] = useState<string | null>(null)
   const [openPromptCanvasId, setOpenPromptCanvasId] = useState<string | null>(null)
   const [openPromptVideoJob, setOpenPromptVideoJob] = useState<VideoJob | null>(null)
+  const [openPromptExtending, setOpenPromptExtending] = useState(false)
   const [openPromptAdjustText, setOpenPromptAdjustText] = useState('')
   const [openPromptAdjusting, setOpenPromptAdjusting] = useState(false)
   const [openPromptSaving, setOpenPromptSaving] = useState(false)
@@ -619,11 +620,11 @@ export default function AdStudioPage() {
 
         // Restore source image if persisted
         if (concept.sourceImage?.base64 && concept.sourceImage?.mimeType) {
-          setOpenPromptSourceImage({
+          setOpenPromptSourceImages([{
             base64: concept.sourceImage.base64,
             mimeType: concept.sourceImage.mimeType,
             preview: `data:${concept.sourceImage.mimeType};base64,${concept.sourceImage.base64}`,
-          })
+          }])
         }
       } catch (err) {
         console.error('[AdStudio] Failed to restore canvas:', err)
@@ -2318,7 +2319,7 @@ export default function AdStudioPage() {
         navigateFromOracle('/dashboard/creative-studio/video-studio?tab=image')
         return
       case 'open-prompt':
-        if (_image) setOpenPromptSourceImage({ base64: _image.base64, mimeType: _image.mimeType, preview: _image.preview })
+        if (_image) setOpenPromptSourceImages(prev => prev.length >= 3 ? prev : [...prev, { base64: _image.base64, mimeType: _image.mimeType, preview: _image.preview }])
         if (prefilledData.prompt) setOpenPromptText(prefilledData.prompt as string)
         setOpenPromptMediaType((prefilledData.format as 'image' | 'video') || 'image')
         setMode('open-prompt')
@@ -2344,13 +2345,12 @@ export default function AdStudioPage() {
     setOracleLoading(true)
     try {
       // Store attached image(s) for flows that need it
-      const primaryImage = submission.images[0] ?? null
-      if (primaryImage) {
-        setOpenPromptSourceImage({
-          base64: primaryImage.base64,
-          mimeType: primaryImage.mimeType,
-          preview: primaryImage.preview,
-        })
+      if (submission.images.length > 0) {
+        setOpenPromptSourceImages(submission.images.slice(0, 3).map(img => ({
+          base64: img.base64,
+          mimeType: img.mimeType,
+          preview: img.preview,
+        })))
       }
 
       const { mode } = submission
@@ -2371,18 +2371,28 @@ export default function AdStudioPage() {
             prompt: submission.text.trim(),
             format: 'image',
           },
-          _image: primaryImage ?? undefined,
+          _image: submission.images[0] ?? undefined,
         })
         return
       }
 
-      // ── Video mode: navigate to Video Studio with prompt ──
+      // ── Video mode: route to open-prompt Quick Review ──
       if (mode === 'video') {
         const videoPrompt = submission.text.trim()
+        setOpenPromptText(videoPrompt)
+        setOpenPromptMediaType('video')
+        // Pass attached images as source images (up to 3)
+        if (submission.images.length > 0) {
+          setOpenPromptSourceImages(submission.images.slice(0, 3).map(img => ({
+            base64: img.base64,
+            mimeType: img.mimeType,
+            preview: img.preview,
+          })))
+        }
+        setMode('open-prompt')
+        // Auto-trigger scene planning if there's a prompt
         if (videoPrompt) {
-          router.push(`/dashboard/creative-studio/video-studio?prompt=${encodeURIComponent(videoPrompt)}&mode=direct`)
-        } else {
-          router.push('/dashboard/creative-studio/video-studio')
+          oracleAutoGenRef.current = true
         }
         return
       }
@@ -2394,7 +2404,7 @@ export default function AdStudioPage() {
         handleOracleAction({
           workflow: 'upload',
           prefilledData: { prompt: submission.text.trim() },
-          _image: primaryImage ?? undefined,
+          _image: submission.images[0] ?? undefined,
         })
         return
       }
@@ -2421,7 +2431,7 @@ export default function AdStudioPage() {
               prompt: routeData.prompt || submission.text.trim(),
               format: routeData.format,
             },
-            _image: primaryImage ?? undefined,
+            _image: submission.images[0] ?? undefined,
           })
           return
         }
@@ -3108,7 +3118,7 @@ export default function AdStudioPage() {
     // Reset open prompt state
     setOpenPromptText('')
     setOpenPromptMediaType('image')
-    setOpenPromptSourceImage(null)
+    setOpenPromptSourceImages([])
     setOpenPromptAspectRatio('9:16')
     setOpenPromptQuality('standard')
     setOpenPromptGenerating(false)
@@ -3120,6 +3130,7 @@ export default function AdStudioPage() {
     setOpenPromptSessionId(null)
     setOpenPromptCanvasId(null)
     setOpenPromptVideoJob(null)
+    setOpenPromptExtending(false)
     setOpenPromptAdjustText('')
     setOpenPromptAdjusting(false)
     setOpenPromptSaving(false)
@@ -3300,7 +3311,7 @@ export default function AdStudioPage() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const base64 = (e.target?.result as string).split(',')[1]
-      setOpenPromptSourceImage({ base64, mimeType: file.type, preview: URL.createObjectURL(file) })
+      setOpenPromptSourceImages(prev => prev.length >= 3 ? prev : [...prev, { base64, mimeType: file.type, preview: URL.createObjectURL(file) }])
     }
     reader.readAsDataURL(file)
   }, [])
@@ -3337,8 +3348,8 @@ export default function AdStudioPage() {
         const requestBody: Record<string, unknown> = {
           userId: user.id,
           adCopy: { headline: '', primaryText: openPromptText, description: '', angle: 'Open Prompt' },
-          product: openPromptSourceImage
-            ? { name: 'Open Prompt', imageBase64: openPromptSourceImage.base64, imageMimeType: openPromptSourceImage.mimeType }
+          product: openPromptSourceImages.length > 0
+            ? { name: 'Open Prompt', imageBase64: openPromptSourceImages[0].base64, imageMimeType: openPromptSourceImages[0].mimeType }
             : { name: 'Open Prompt' },
           style: 'lifestyle',
           aspectRatio: openPromptAspectRatio,
@@ -3414,7 +3425,7 @@ export default function AdStudioPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: openPromptText,
-            hasSourceImage: !!openPromptSourceImage,
+            hasSourceImage: openPromptSourceImages.length > 0,
           }),
         })
         const data = await res.json()
@@ -3429,7 +3440,7 @@ export default function AdStudioPage() {
     } finally {
       setOpenPromptGenerating(false)
     }
-  }, [openPromptText, openPromptMediaType, openPromptSourceImage, openPromptAspectRatio, openPromptQuality, openPromptCreditCost, user?.id, currentAccountId])
+  }, [openPromptText, openPromptMediaType, openPromptSourceImages, openPromptAspectRatio, openPromptQuality, openPromptCreditCost, user?.id, currentAccountId])
 
   // Auto-trigger generation when Oracle routes to open-prompt
   useEffect(() => {
@@ -3481,7 +3492,7 @@ export default function AdStudioPage() {
               scenePlan: openPromptScenePlan,
               originalPrompt: openPromptText,
               // Persist source image for session restoration
-              ...(openPromptSourceImage ? { sourceImage: { base64: openPromptSourceImage.base64, mimeType: openPromptSourceImage.mimeType } } : {}),
+              ...(openPromptSourceImages.length > 0 ? { sourceImage: { base64: openPromptSourceImages[0].base64, mimeType: openPromptSourceImages[0].mimeType } } : {}),
             }],
           }),
         })
@@ -3535,8 +3546,8 @@ export default function AdStudioPage() {
         extensionPrompts: isExtended ? openPromptScenePlan.extensionPrompts : undefined,
         overlayConfig,
       }
-      if (openPromptSourceImage) {
-        ;(videoBody as any).productImages = [{ base64: openPromptSourceImage.base64, mimeType: openPromptSourceImage.mimeType }]
+      if (openPromptSourceImages.length > 0) {
+        ;(videoBody as any).productImages = openPromptSourceImages.map(img => ({ base64: img.base64, mimeType: img.mimeType }))
       }
 
       const res = await fetch('/api/creative-studio/generate-video', {
@@ -3564,7 +3575,31 @@ export default function AdStudioPage() {
     } finally {
       setOpenPromptGenerating(false)
     }
-  }, [openPromptScenePlan, openPromptQuality, openPromptOverlaysEnabled, openPromptSourceImage, openPromptText, openPromptCanvasId, user?.id, currentAccountId])
+  }, [openPromptScenePlan, openPromptQuality, openPromptOverlaysEnabled, openPromptSourceImages, openPromptText, openPromptCanvasId, user?.id, currentAccountId])
+
+  // Open Prompt: Extend video +7s
+  const handleOpenPromptExtend = useCallback(async () => {
+    if (!openPromptVideoJob || openPromptVideoJob.status !== 'complete' || !user?.id) return
+    setOpenPromptExtending(true)
+    try {
+      const res = await fetch('/api/creative-studio/video-status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: openPromptVideoJob.id, userId: user.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Extension failed')
+      // Update job to extending state so polling picks it up
+      setOpenPromptVideoJob(prev => prev ? { ...prev, status: 'extending' as const, extension_step: data.extension_step, extension_total: data.extension_total, target_duration_seconds: data.target_duration_seconds } : prev)
+      // Optimistic credit update (25 per extension)
+      setAiUsage(prev => prev ? { ...prev, used: prev.used + 25, remaining: Math.max(0, prev.remaining - 25) } : prev)
+      notifyCreditsChanged()
+    } catch (err) {
+      setOpenPromptError(err instanceof Error ? err.message : 'Extension failed')
+    } finally {
+      setOpenPromptExtending(false)
+    }
+  }, [openPromptVideoJob, user?.id])
 
   // Open Prompt: Adjust image with refinement prompt
   const handleOpenPromptAdjust = useCallback(async () => {
@@ -3916,13 +3951,13 @@ export default function AdStudioPage() {
                   }
                   // Set both: OracleBox preview + open-prompt source
                   setOraclePreloadImage(img)
-                  setOpenPromptSourceImage(img)
+                  setOpenPromptSourceImages(prev => prev.length >= 3 ? prev : [...prev, img])
                 }
               } catch {} finally {
                 setOpenPromptDownloadingLibrary(false)
               }
             }}
-            maxSelection={1}
+            maxSelection={3}
             allowedTypes={['image']}
           />
         )}
@@ -3978,6 +4013,31 @@ export default function AdStudioPage() {
                 <div className="text-xs text-zinc-600 mt-1 ml-7">{openPromptCreditCost} credits</div>
               )}
             </div>
+
+            {/* Source Images (up to 3) */}
+            {openPromptSourceImages.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {openPromptSourceImages.map((img, idx) => (
+                  <div key={idx} className="relative group">
+                    <img src={img.preview} alt="" className="w-12 h-12 object-cover rounded-lg border border-border" />
+                    <button
+                      onClick={() => setOpenPromptSourceImages(prev => prev.filter((_, i) => i !== idx))}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-2.5 h-2.5 text-zinc-400" />
+                    </button>
+                  </div>
+                ))}
+                {openPromptSourceImages.length < 3 && (
+                  <button
+                    onClick={() => setOpenPromptShowImageMenu(true)}
+                    className="w-12 h-12 rounded-lg border border-dashed border-zinc-700 flex items-center justify-center text-zinc-600 hover:text-zinc-400 hover:border-zinc-500 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Error */}
             {openPromptError && (
@@ -4434,7 +4494,7 @@ export default function AdStudioPage() {
                   {/* Completed video */}
                   {openPromptVideoJob?.status === 'complete' && (openPromptVideoJob.final_video_url || openPromptVideoJob.raw_video_url) && (
                     <div>
-                      <div className="flex justify-center bg-zinc-900/50 p-4">
+                      <div className="flex items-center justify-center gap-3 bg-zinc-900/50 p-4">
                         <video
                           src={openPromptVideoJob.final_video_url || openPromptVideoJob.raw_video_url}
                           controls
@@ -4442,6 +4502,17 @@ export default function AdStudioPage() {
                           autoPlay
                           muted
                         />
+                        {(openPromptVideoJob.provider === 'veo-ext' || openPromptVideoJob.provider === 'veo') && (
+                          <button
+                            onClick={handleOpenPromptExtend}
+                            disabled={openPromptExtending || (aiUsage !== null && aiUsage.remaining < 25)}
+                            className="flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl text-sm font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {openPromptExtending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                            <span className="whitespace-nowrap">+ 7 sec</span>
+                            <span className="text-[10px] text-amber-400/60">25 credits</span>
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 p-4 flex-wrap">
                         <a
@@ -5587,17 +5658,17 @@ export default function AdStudioPage() {
 
                   if (res.ok) {
                     const data = await res.json()
-                    setOpenPromptSourceImage({
+                    setOpenPromptSourceImages(prev => prev.length >= 3 ? prev : [...prev, {
                       base64: data.base64,
                       mimeType: data.mimeType || 'image/jpeg',
                       preview: mediaItem.url,
-                    })
+                    }])
                   }
                 } catch {} finally {
                   setOpenPromptDownloadingLibrary(false)
                 }
               }}
-              maxSelection={1}
+              maxSelection={3}
               allowedTypes={['image']}
             />
           )}

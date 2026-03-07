@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GenerateVideosOperation } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
-import { getGoogleAI, isVertexAI } from '@/lib/google-ai'
+import { veoGenerate, veoPoll } from '@/lib/veo'
 
 const VEO_GCS_OUTPUT_URI = 'gs://killscaleapp/video/'
 const VEO_EXTENSION_MODEL = 'veo-3.1-generate-preview'
@@ -60,12 +59,9 @@ function getVeoOperationName(soraJobId: string): string {
   return soraJobId.replace('veo:', '')
 }
 
-/** Poll a Veo operation by name using the SDK */
-async function pollVeoOperation(operationName: string): Promise<GenerateVideosOperation> {
-  const ai = getGoogleAI()
-  if (!ai) throw new Error('Google AI not configured')
-  const stub = Object.assign(new GenerateVideosOperation(), { name: operationName })
-  return ai.operations.getVideosOperation({ operation: stub })
+/** Poll a Veo operation by name via direct REST */
+async function pollVeoOperation(operationName: string) {
+  return veoPoll(operationName)
 }
 
 /**
@@ -163,44 +159,23 @@ function getVeoExtOperationName(soraJobId: string): string {
   return soraJobId.replace('veoext:', '')
 }
 
-/** Trigger a Veo 3.1 extension — returns new operation name */
+/** Trigger a Veo 3.1 extension via direct REST — returns new operation name.
+ *  NOTE: Extensions only accept video + prompt. Images are NOT supported for extensions. */
 async function triggerVeoExtension(
   videoUri: string,
   prompt: string,
-  referenceImages?: Array<{ base64: string; mimeType: string }> | null,
 ): Promise<string> {
-  const ai = getGoogleAI()
-  if (!ai) throw new Error('Google AI not configured')
-
-  const extConfig: Record<string, unknown> = {
-    numberOfVideos: 1,
-    resolution: '720p',
-    aspectRatio: '9:16',
-  }
-
-  // Vertex AI: outputGcsUri so extension also returns gcsUri for further chaining
-  if (isVertexAI()) {
-    extConfig.outputGcsUri = VEO_GCS_OUTPUT_URI
-  }
-
-  const extParams: Record<string, unknown> = {
+  const operation = await veoGenerate({
     model: VEO_EXTENSION_MODEL,
-    video: { uri: videoUri, mimeType: 'video/mp4' },
     prompt,
-    config: extConfig,
-  }
-
-  // Pass ONE reference image to extension (extensions only support single image)
-  if (referenceImages && referenceImages.length > 0) {
-    const first = referenceImages[0]
-    extParams.image = {
-      imageBytes: Buffer.from(first.base64, 'base64').toString('base64'),
-      mimeType: first.mimeType || 'image/png',
-    }
-    console.log(`[VideoStatus] Passing 1 reference image to extension (${referenceImages.length} available, using first)`)
-  }
-
-  const operation = await (ai.models as any).generateVideos(extParams)
+    video: { uri: videoUri, mimeType: 'video/mp4' },
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p',
+      aspectRatio: '9:16',
+      outputGcsUri: VEO_GCS_OUTPUT_URI,
+    },
+  })
   console.log(`[VideoStatus] Veo extension triggered: ${operation.name}`)
   return operation.name
 }
@@ -221,35 +196,6 @@ function getExtensionPrompt(job: any, extensionStep: number): string {
 /** Get images for a specific extension step.
  *  If reference_images has per-segment format { segments: [...] }, uses the segment for this step.
  *  Falls back to all images (legacy flat array) or base segment images. */
-function getExtensionImages(job: any, extensionStep: number): Array<{ base64: string; mimeType: string }> | null {
-  const refImages = job.reference_images
-  if (!refImages) return null
-
-  // Per-segment format: { segments: [ [base_images], [ext1_images], ... ] }
-  if (refImages.segments && Array.isArray(refImages.segments)) {
-    // extensionStep 0 = first extension = segments[1], step 1 = segments[2], etc.
-    const segmentImages = refImages.segments[extensionStep + 1]
-    if (segmentImages && Array.isArray(segmentImages) && segmentImages.length > 0) {
-      console.log(`[VideoStatus] Using per-segment images for extension step ${extensionStep} (${segmentImages.length} images)`)
-      return segmentImages
-    }
-    // Fallback to base segment images
-    const baseImages = refImages.segments[0]
-    if (baseImages && Array.isArray(baseImages) && baseImages.length > 0) {
-      console.log(`[VideoStatus] Falling back to base segment images for extension step ${extensionStep}`)
-      return baseImages
-    }
-    return null
-  }
-
-  // Legacy flat array format
-  if (Array.isArray(refImages) && refImages.length > 0) {
-    return refImages
-  }
-
-  return null
-}
-
 export async function GET(request: NextRequest) {
   try {
     const jobId = request.nextUrl.searchParams.get('jobId')
@@ -429,7 +375,7 @@ export async function GET(request: NextRequest) {
             // Trigger next extension — optimistic concurrency to prevent duplicates
             try {
               const extensionPrompt = getExtensionPrompt(job, currentStep)
-              const newOpName = await triggerVeoExtension(videoUri, extensionPrompt, getExtensionImages(job, currentStep))
+              const newOpName = await triggerVeoExtension(videoUri, extensionPrompt)
 
               const { data: updated } = await supabase
                 .from('video_generation_jobs')
@@ -525,19 +471,21 @@ export async function GET(request: NextRequest) {
           // ALL EXTENSIONS DONE — download final video and complete
           console.log(`[VideoStatus] ALL EXTENSIONS DONE for ${job.id}: step=${currentStep}, total=${totalExtensions}. Downloading final ${job.target_duration_seconds}s video...`)
           const rawVideoUrl = await downloadAndStoreVeoVideo(videoUri, job.id, userId, job.ad_account_id)
+          // Cache-bust: same storage path is overwritten, so browsers serve stale 8s version
+          const cacheBustedUrl = rawVideoUrl ? `${rawVideoUrl}?v=${Date.now()}` : rawVideoUrl
 
           await supabase.from('video_generation_jobs')
             .update({
               status: 'complete',
               progress_pct: 100,
-              raw_video_url: rawVideoUrl,
+              raw_video_url: cacheBustedUrl,
               duration_seconds: job.target_duration_seconds || 15,
               extension_video_uri: videoUri,
               updated_at: new Date().toISOString(),
             })
             .eq('id', job.id)
 
-          console.log(`[VideoStatus] Veo ext video complete: ${job.id}, ${job.target_duration_seconds}s, stored at ${rawVideoUrl}`)
+          console.log(`[VideoStatus] Veo ext video complete: ${job.id}, ${job.target_duration_seconds}s, stored at ${cacheBustedUrl}`)
 
           if (rawVideoUrl) {
             await autoInsertToMediaLibrary(job.id, userId, job.ad_account_id, rawVideoUrl, job.video_style)
@@ -547,7 +495,7 @@ export async function GET(request: NextRequest) {
             jobId: job.id,
             status: 'complete',
             progress_pct: 100,
-            raw_video_url: rawVideoUrl,
+            raw_video_url: cacheBustedUrl,
             overlay_config: job.overlay_config,
             duration_seconds: job.target_duration_seconds || 15,
             prompt: job.prompt,
@@ -848,7 +796,7 @@ export async function POST(request: NextRequest) {
                 if (currentStep < totalExtensions) {
                   try {
                     const extensionPrompt = getExtensionPrompt(job, currentStep)
-                    const newOpName = await triggerVeoExtension(videoUri, extensionPrompt, getExtensionImages(job, currentStep))
+                    const newOpName = await triggerVeoExtension(videoUri, extensionPrompt)
 
                     const { data: updated } = await supabase
                       .from('video_generation_jobs')
@@ -902,10 +850,12 @@ export async function POST(request: NextRequest) {
                 console.log(`[VideoStatus/List] ALL EXTENSIONS DONE for ${job.id}: step=${currentStep}, total=${totalExtensions}. Downloading final ${job.target_duration_seconds}s video...`)
                 try {
                   const rawVideoUrl = await downloadAndStoreVeoVideo(videoUri, job.id, job.user_id, job.ad_account_id)
+                  // Cache-bust: same storage path is overwritten, so browsers serve stale 8s version
+                  const cacheBustedUrl = rawVideoUrl ? `${rawVideoUrl}?v=${Date.now()}` : rawVideoUrl
 
                   await supabase.from('video_generation_jobs')
                     .update({
-                      status: 'complete', progress_pct: 100, raw_video_url: rawVideoUrl,
+                      status: 'complete', progress_pct: 100, raw_video_url: cacheBustedUrl,
                       duration_seconds: job.target_duration_seconds || 15,
                       extension_video_uri: videoUri,
                       updated_at: new Date().toISOString(),
@@ -914,7 +864,7 @@ export async function POST(request: NextRequest) {
 
                   job.status = 'complete'
                   job.progress_pct = 100
-                  job.raw_video_url = rawVideoUrl
+                  job.raw_video_url = cacheBustedUrl
                   job.duration_seconds = job.target_duration_seconds || 15
                   console.log(`[VideoStatus/List] Veo ext video complete: ${job.id}, ${job.target_duration_seconds}s, stored at ${rawVideoUrl}`)
                   if (rawVideoUrl) {
@@ -1038,7 +988,7 @@ export async function PATCH(request: NextRequest) {
 
     // Trigger the extension — use per-segment prompt if available
     const extensionPrompt = getExtensionPrompt(job, job.extension_step || 0)
-    const newOpName = await triggerVeoExtension(job.extension_video_uri, extensionPrompt, getExtensionImages(job, job.extension_step || 0))
+    const newOpName = await triggerVeoExtension(job.extension_video_uri, extensionPrompt)
 
     const currentStep = job.extension_step || 0
     const currentTotal = job.extension_total || 0

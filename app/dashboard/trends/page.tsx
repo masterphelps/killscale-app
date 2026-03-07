@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { DesktopOnlyGate } from '@/components/desktop-only-gate'
 import {
   ChevronRight,
   ChevronDown,
@@ -824,6 +825,7 @@ export default function TrendsPage() {
   }
 
   return (
+    <DesktopOnlyGate feature="Trends Explorer">
     <div className="space-y-4 lg:space-y-6">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -1770,5 +1772,6 @@ export default function TrendsPage() {
         </div>
       </div>
     </div>
+    </DesktopOnlyGate>
   )
 }
