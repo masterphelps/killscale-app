@@ -170,6 +170,7 @@ interface CustomAudience {
 interface WizardState {
   adAccountId: string
   pageId: string
+  instagramAccountId: string
   // Entity type selection (new)
   entityType: 'campaign' | 'adset' | 'ad' | 'performance-set'
   // Selected starred ads for performance-set path
@@ -246,16 +247,24 @@ const OBJECTIVES = [
   { value: 'traffic', label: 'Traffic (Website Visits)', hasEvents: false }
 ]
 
-// Fallback conversion events if pixel fetch fails
+// Fallback conversion events if pixel fetch fails — must match pixel-events API
 const FALLBACK_CONVERSION_EVENTS = [
   { value: 'PURCHASE', label: 'Purchase' },
-  { value: 'COMPLETE_REGISTRATION', label: 'Complete Registration' },
   { value: 'LEAD', label: 'Lead' },
+  { value: 'COMPLETE_REGISTRATION', label: 'Complete Registration' },
   { value: 'ADD_TO_CART', label: 'Add to Cart' },
+  { value: 'ADD_TO_WISHLIST', label: 'Add to Wishlist' },
   { value: 'INITIATE_CHECKOUT', label: 'Initiate Checkout' },
+  { value: 'ADD_PAYMENT_INFO', label: 'Add Payment Info' },
   { value: 'SUBSCRIBE', label: 'Subscribe' },
+  { value: 'START_TRIAL', label: 'Start Trial' },
+  { value: 'SEARCH', label: 'Search' },
+  { value: 'VIEW_CONTENT', label: 'View Content' },
+  { value: 'DONATE', label: 'Donate' },
   { value: 'CONTACT', label: 'Contact' },
-  { value: 'SUBMIT_APPLICATION', label: 'Submit Application' }
+  { value: 'SUBMIT_APPLICATION', label: 'Submit Application' },
+  { value: 'SCHEDULE', label: 'Schedule' },
+  { value: 'OTHER', label: 'Other' },
 ]
 
 const CTA_OPTIONS = [
@@ -423,6 +432,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
   const [state, setState] = useState<WizardState>({
     adAccountId: adAccountId, // Use the prop from sidebar context
     pageId: '',
+    instagramAccountId: '',
     // Entity type selection (default to campaign, or use initialEntityType for Performance Set flow)
     entityType: initialEntityType || 'campaign',
     // Selected starred ads for performance-set path (pre-select all if coming from Performance Set flow)
@@ -643,8 +653,10 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
     try {
       const res = await fetch(`/api/meta/instagram-accounts?userId=${user.id}&adAccountId=${encodeURIComponent(adAccountId)}`)
       const data = await res.json()
-      if (data.accounts) {
+      if (data.accounts && data.accounts.length > 0) {
         setInstagramAccounts(data.accounts)
+        // Auto-select the first Instagram account
+        setState(s => ({ ...s, instagramAccountId: data.accounts[0].id }))
       }
     } catch (err) {
       console.error('Failed to load Instagram accounts:', err)
@@ -679,6 +691,13 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
       loadPixelEvents()
     }
   }, [user, adAccountId, loadPixelEvents])
+
+  // Load Instagram accounts when pageId is set
+  useEffect(() => {
+    if (state.pageId && user && adAccountId) {
+      loadInstagramAccounts()
+    }
+  }, [state.pageId])
 
   // Load lead forms when page is selected and objective is leads
   const loadLeadForms = useCallback(async () => {
@@ -1209,6 +1228,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             adAccountId: state.adAccountId,
             adsetId: state.selectedAdsetId,
             pageId: state.pageId,
+            instagramAccountId: state.instagramAccountId || undefined,
             adName: state.headline || 'New Ad',
             objective: state.selectedCampaignObjective || 'conversions',
             formId: (state.selectedCampaignObjective === 'leads' && state.conversionLocation === 'instant_form') ? state.selectedFormId : undefined,
@@ -1237,6 +1257,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             adAccountId: state.adAccountId,
             campaignId: state.selectedCampaignId,
             pageId: state.pageId,
+            instagramAccountId: state.instagramAccountId || undefined,
             adsetName: state.adsetName,
             objective: state.selectedCampaignObjective || 'conversions',
             conversionEvent: state.selectedCampaignObjective === 'conversions' ? state.conversionEvent : undefined,
@@ -1324,6 +1345,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             userId: user.id,
             adAccountId: state.adAccountId,
             pageId: state.pageId,
+            instagramAccountId: state.instagramAccountId || undefined,
             budgetType: 'cbo', // Performance Set is always CBO
             campaignName: state.campaignName || `Performance Set - ${new Date().toLocaleDateString()}`,
             objective: state.objective,
@@ -1361,6 +1383,7 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
             userId: user.id,
             adAccountId: state.adAccountId,
             pageId: state.pageId,
+            instagramAccountId: state.instagramAccountId || undefined,
             budgetType: state.budgetType,
             existingCampaignId: state.budgetType === 'abo' && state.aboOption === 'existing'
               ? state.existingCampaignId
@@ -1679,6 +1702,35 @@ export function LaunchWizard({ adAccountId, onComplete, onCancel, initialEntityT
                 </div>
               )}
             </div>
+
+            {/* Instagram Account */}
+            {instagramAccounts.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Instagram Account</label>
+                <p className="text-xs text-zinc-500 mb-3">
+                  Your ads will appear from this Instagram account
+                </p>
+                {instagramAccounts.length === 1 ? (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 border border-zinc-700/30 rounded-lg">
+                    <span className="text-sm text-white">@{instagramAccounts[0].username}</span>
+                    <span className="text-xs text-zinc-500">{instagramAccounts[0].name}</span>
+                  </div>
+                ) : (
+                  <Select
+                    value={state.instagramAccountId}
+                    onChange={(value) => setState(s => ({ ...s, instagramAccountId: value }))}
+                    options={instagramAccounts.map(acc => ({ value: acc.id, label: `@${acc.username}` }))}
+                    placeholder="Select Instagram account..."
+                  />
+                )}
+              </div>
+            )}
+            {loadingInstagram && (
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <div className="w-3 h-3 border border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                Loading Instagram accounts...
+              </div>
+            )}
           </div>
         )
 

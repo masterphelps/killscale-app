@@ -21,6 +21,7 @@ interface CreateAdRequest {
   adAccountId: string
   adsetId: string
   pageId: string
+  instagramAccountId?: string
   adName?: string
   objective: 'leads' | 'conversions' | 'traffic'  // Inherited from campaign
   formId?: string  // For lead gen campaigns
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
       adAccountId,
       adsetId,
       pageId,
+      instagramAccountId,
       adName,
       objective,
       formId,
@@ -145,6 +147,7 @@ export async function POST(request: NextRequest) {
 
       const carouselStorySpec: Record<string, unknown> = {
         page_id: pageId,
+        ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
         link_data: {
           link: websiteUrl,
           message: primaryText,
@@ -245,6 +248,7 @@ export async function POST(request: NextRequest) {
 
         objectStorySpec = {
           page_id: pageId,
+          ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
           video_data: videoData
         }
       } else {
@@ -281,6 +285,7 @@ export async function POST(request: NextRequest) {
 
         objectStorySpec = {
           page_id: pageId,
+          ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
           link_data: linkData
         }
       }

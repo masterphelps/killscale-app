@@ -162,7 +162,7 @@ export default function BestCopyPage() {
     <div className="min-h-screen">
       <div className="px-4 lg:px-8 py-6 space-y-6">
         {/* Constrained content area - matches gallery width */}
-        <div className="max-w-[1200px] mx-auto space-y-6">
+        <div data-tour="copy-list" className="max-w-[1200px] mx-auto space-y-6">
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold text-white">Copy</h1>
             <p className="text-zinc-500 mt-1">Top-performing ad copy variations ranked by score</p>

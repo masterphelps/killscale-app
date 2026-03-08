@@ -88,7 +88,7 @@ export function OracleChips({ mode, onChipAction }: OracleChipsProps) {
   }
 
   return (
-    <div>
+    <div data-tour="oracle-chips">
       <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-3 px-1">{heading}</h3>
       <div className="flex flex-col gap-2">
         {rows.map((row, i) => (

@@ -7,20 +7,23 @@ const supabase = createClient(
 )
 
 // Standard Meta conversion events (custom_event_type values)
+// Ref: https://developers.facebook.com/docs/meta-pixel/reference#standard-events
 const STANDARD_EVENTS = [
   { value: 'PURCHASE', label: 'Purchase' },
   { value: 'LEAD', label: 'Lead' },
   { value: 'COMPLETE_REGISTRATION', label: 'Complete Registration' },
   { value: 'ADD_TO_CART', label: 'Add to Cart' },
+  { value: 'ADD_TO_WISHLIST', label: 'Add to Wishlist' },
   { value: 'INITIATE_CHECKOUT', label: 'Initiate Checkout' },
   { value: 'ADD_PAYMENT_INFO', label: 'Add Payment Info' },
   { value: 'SUBSCRIBE', label: 'Subscribe' },
-  { value: 'CONTACT', label: 'Contact' },
-  { value: 'SUBMIT_APPLICATION', label: 'Submit Application' },
   { value: 'START_TRIAL', label: 'Start Trial' },
-  { value: 'SCHEDULE', label: 'Schedule' },
   { value: 'SEARCH', label: 'Search' },
   { value: 'VIEW_CONTENT', label: 'View Content' },
+  { value: 'DONATE', label: 'Donate' },
+  { value: 'CONTACT', label: 'Contact' },
+  { value: 'SUBMIT_APPLICATION', label: 'Submit Application' },
+  { value: 'SCHEDULE', label: 'Schedule' },
   { value: 'OTHER', label: 'Other' },
 ]
 

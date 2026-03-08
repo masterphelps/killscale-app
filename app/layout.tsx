@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { Analytics } from '@vercel/analytics/react'
 import './globals.css'
+import './tour-theme.css'
 import { AuthProvider } from '@/lib/auth'
 import { SubscriptionProvider } from '@/lib/subscription'
 

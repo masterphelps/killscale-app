@@ -3585,7 +3585,7 @@ export default function DashboardPage() {
           )}
 
           {/* Primary Stats Row - 4 cards, fixed height */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
+          <div data-tour="stat-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4 max-w-[1400px]">
             {businessType === 'leadgen' ? (() => {
               // Per-platform results and CPR for lead gen cards
               const metaResults = selectedData.filter(r => r._platform !== 'google').reduce((sum, r) => sum + (r.results || 0), 0)
@@ -3850,7 +3850,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Include Paused checkbox */}
-              <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
+              <label data-tour="include-paused" className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer hover:text-zinc-300">
                 <input
                   type="checkbox"
                   checked={includePaused}
@@ -3861,7 +3861,7 @@ export default function DashboardPage() {
               </label>
 
               {/* Simple/Detailed Toggle - hidden on mobile */}
-              <div className="hidden lg:flex items-center gap-1 bg-bg-card rounded-lg p-1 border border-border">
+              <div data-tour="view-mode-toggle" className="hidden lg:flex items-center gap-1 bg-bg-card rounded-lg p-1 border border-border">
                 <button
                   onClick={() => setViewMode('simple')}
                   className={`px-3 py-1 text-xs rounded-md transition-colors ${
@@ -3883,6 +3883,7 @@ export default function DashboardPage() {
               {/* Create button - only show when user can manage Meta ads (not Google) */}
               {canSync && selectedAccountId && !isGoogleAccount(selectedAccountId) && (
                 <button
+                  data-tour="create-campaign-btn"
                   onClick={() => { setLaunchWizardEntityType('campaign'); setShowLaunchWizard(true) }}
                   className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors"
                 >
@@ -3893,7 +3894,7 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          <div>
+          <div data-tour="performance-table">
             <PerformanceTable
               data={tableData}
               rules={rules}

@@ -199,7 +199,7 @@ export default function CreativeStudioOverview() {
 
         {/* AI Score Cards */}
         {!isLoadingAnalyses && aiScores && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div data-tour="score-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Hook Score */}
             <div className={cn(
               'rounded-xl border p-5 transition-all',

@@ -770,10 +770,10 @@ export default function InsightsPage() {
           <div className="space-y-6">
             {/* Scores Row: Stack on mobile, side-by-side on desktop */}
             <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 lg:items-stretch">
-              <div className="w-full lg:w-72 lg:flex-shrink-0">
+              <div data-tour="health-score" className="w-full lg:w-72 lg:flex-shrink-0">
                 <HealthScoreCard score={healthScore} isLoading={isLoading} />
               </div>
-              <div className="flex-1 [&>div]:h-full [&>div]:mb-0">
+              <div data-tour="andromeda-score" className="flex-1 [&>div]:h-full [&>div]:mb-0">
                 <AndromedaPreview
                   score={andromedaScore}
                   isLoading={isLoading}

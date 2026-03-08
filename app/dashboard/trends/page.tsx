@@ -1268,7 +1268,7 @@ export default function TrendsPage() {
           
           {/* View Mode Tabs */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg overflow-x-auto">
+            <div data-tour="trends-metrics" className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-lg overflow-x-auto">
               <button
                 onClick={() => setViewMode('overview')}
                 className={cn(
@@ -1317,7 +1317,7 @@ export default function TrendsPage() {
           </div>
           
           {/* Main Visualization */}
-          <div className="bg-bg-card border border-border rounded-xl p-6">
+          <div data-tour="trends-chart" className="bg-bg-card border border-border rounded-xl p-6">
             <h3 className="font-semibold mb-4">
               {viewMode === 'overview' 
                 ? (currentLevel === 'account' ? 'Campaign Overview' : 'Performance Over Time')

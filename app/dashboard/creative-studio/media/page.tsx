@@ -750,7 +750,7 @@ export default function AllMediaPage() {
             </div>
 
             {/* Sort dropdown */}
-            <div className="relative" ref={sortDropdownRef}>
+            <div data-tour="sort-controls" className="relative" ref={sortDropdownRef}>
               <button
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg text-zinc-400 hover:text-white transition-colors"
@@ -803,7 +803,7 @@ export default function AllMediaPage() {
         )}
 
         {/* Content */}
-        <div>
+        <div data-tour="media-gallery">
           {/* Collections tab */}
           {mediaTab === 'collection' ? (
             selectedCollectionId ? (

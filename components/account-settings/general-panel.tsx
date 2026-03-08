@@ -6,6 +6,8 @@ import { VerdictBadge } from '@/components/verdict-badge'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase-browser'
 import { cn } from '@/lib/utils'
+import { DEMO_ACCOUNT_ID } from '@/lib/tour/config'
+import { clearAllDismissals, dismissAllTours } from '@/lib/tour/use-tour'
 
 const DEFAULT_RULES = {
   scale_roas: '3.0',
@@ -19,7 +21,7 @@ const DEFAULT_RULES = {
 type WorkspaceAccount = {
   id: string
   ad_account_id: string
-  account_name: string | null
+  ad_account_name: string | null
   platform: string
 }
 
@@ -41,6 +43,11 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
   // Per-account rules
   const [workspaceAccounts, setWorkspaceAccounts] = useState<WorkspaceAccount[]>([])
   const [rulesAccountId, setRulesAccountId] = useState<string | null>(null) // null = workspace default
+  const [tourEnabled, setTourEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return !sessionStorage.getItem('ks_tours_disabled')
+  })
+  const isDemoWorkspace = workspaceAccounts.some(a => a.ad_account_id === DEMO_ACCOUNT_ID)
 
   useEffect(() => {
     if (!user) return
@@ -98,7 +105,7 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
       // Load workspace accounts for rules scope selector
       const { data: accounts } = await supabase
         .from('workspace_accounts')
-        .select('id, ad_account_id, account_name, platform')
+        .select('id, ad_account_id, ad_account_name, platform')
         .eq('workspace_id', workspaceId)
 
       setWorkspaceAccounts(accounts || [])
@@ -213,6 +220,40 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
       <h2 className="text-lg font-semibold mb-6">General</h2>
 
       <div className="space-y-5">
+        {/* Guided Tour Toggle — only visible on demo workspace */}
+        {isDemoWorkspace && (
+          <div className="flex items-center justify-between p-4 bg-violet-500/10 border border-violet-500/20 rounded-xl">
+            <div>
+              <h3 className="text-sm font-medium text-zinc-200">Guided Tour</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Enable walkthroughs when browsing the demo account
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                if (tourEnabled) {
+                  dismissAllTours()
+                  sessionStorage.setItem('ks_tours_disabled', 'true')
+                  setTourEnabled(false)
+                } else {
+                  clearAllDismissals()
+                  sessionStorage.removeItem('ks_tours_disabled')
+                  setTourEnabled(true)
+                }
+              }}
+              className={cn(
+                'relative w-11 h-6 rounded-full transition-colors',
+                tourEnabled ? 'bg-violet-500' : 'bg-zinc-700'
+              )}
+            >
+              <span className={cn(
+                'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform',
+                tourEnabled && 'translate-x-5'
+              )} />
+            </button>
+          </div>
+        )}
+
         {/* Workspace Name */}
         <div>
           <label className="block text-sm text-zinc-400 mb-1.5">Workspace Name</label>
@@ -266,7 +307,7 @@ export function GeneralPanel({ workspaceId }: GeneralPanelProps) {
                 <option value="">All accounts (default)</option>
                 {workspaceAccounts.map(acc => (
                   <option key={acc.ad_account_id} value={acc.ad_account_id}>
-                    {acc.account_name || acc.ad_account_id}
+                    {acc.ad_account_name || acc.ad_account_id}
                   </option>
                 ))}
               </select>

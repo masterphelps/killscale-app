@@ -277,7 +277,7 @@ export function FunnelFilterBar({ thresholds, onToggle, onSetThreshold, onClear,
   const hasActiveFilters = Object.values(thresholds).some(v => v !== null)
 
   return (
-    <div className="relative grid grid-cols-2 gap-2 lg:flex lg:items-center lg:gap-4 lg:overflow-x-auto py-1 lg:scrollbar-hide">
+    <div data-tour="funnel-filter-bar" className="relative grid grid-cols-2 gap-2 lg:flex lg:items-center lg:gap-4 lg:overflow-x-auto py-1 lg:scrollbar-hide">
       {stages.map((stage) => (
         <FunnelPill
           key={stage.key}

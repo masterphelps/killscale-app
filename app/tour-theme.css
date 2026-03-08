@@ -1,0 +1,102 @@
+/* driver.js purple theme for KillScale */
+.driver-popover.ks-tour-popover {
+  background: #1e1e2f;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.15), 0 8px 32px rgba(0, 0, 0, 0.5);
+  color: #f4f4f5;
+  padding: 20px;
+  max-width: 360px;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-description {
+  font-size: 14px;
+  color: #a1a1aa;
+  line-height: 1.5;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-progress-text {
+  font-size: 12px;
+  color: #71717a;
+  font-weight: 500;
+}
+
+/* Next / Done button — purple */
+.driver-popover.ks-tour-popover .driver-popover-next-btn,
+.driver-popover.ks-tour-popover .driver-popover-done-btn {
+  background: #8B5CF6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-next-btn:hover,
+.driver-popover.ks-tour-popover .driver-popover-done-btn:hover {
+  background: #7C3AED;
+}
+
+/* Back button — ghost */
+.driver-popover.ks-tour-popover .driver-popover-prev-btn {
+  background: transparent;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-prev-btn:hover {
+  color: #f4f4f5;
+  border-color: #71717a;
+}
+
+/* Close button */
+.driver-popover.ks-tour-popover .driver-popover-close-btn {
+  color: #71717a;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-close-btn:hover {
+  color: #f4f4f5;
+}
+
+/* Arrow */
+.driver-popover.ks-tour-popover .driver-popover-arrow {
+  border: 5px solid transparent;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-arrow-side-left {
+  border-right-color: #1e1e2f;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-arrow-side-right {
+  border-left-color: #1e1e2f;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-arrow-side-top {
+  border-bottom-color: #1e1e2f;
+}
+
+.driver-popover.ks-tour-popover .driver-popover-arrow-side-bottom {
+  border-top-color: #1e1e2f;
+}
+
+/* Highlighted element glow */
+.driver-active-element {
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.4) !important;
+  border-radius: 12px;
+}

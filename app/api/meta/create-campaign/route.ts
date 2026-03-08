@@ -50,6 +50,7 @@ interface CreateCampaignRequest {
   userId: string
   adAccountId: string
   pageId: string
+  instagramAccountId?: string
   budgetType: 'cbo' | 'abo'
   existingCampaignId?: string // For ABO "add to existing"
   campaignName: string
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
       userId,
       adAccountId,
       pageId,
+      instagramAccountId,
       budgetType,
       existingCampaignId,
       campaignName,
@@ -497,9 +499,10 @@ export async function POST(request: NextRequest) {
       adsetPayload.attribution_spec = ATTRIBUTION_SPECS[attributionWindow]
     }
 
-    // Instagram actor ID for Instagram placements
-    if (placements && placements.mode === 'manual' && placements.publisherPlatforms.includes('instagram')) {
-      // Fetch Instagram account linked to this page
+    // Instagram actor ID — always set if provided, fallback to page lookup for manual Instagram placements
+    if (instagramAccountId) {
+      adsetPayload.instagram_actor_id = instagramAccountId
+    } else if (placements && placements.mode === 'manual' && placements.publisherPlatforms.includes('instagram')) {
       try {
         const igRes = await fetch(
           `${META_GRAPH_URL}/${pageId}/instagram_accounts?fields=id&access_token=${accessToken}`
@@ -601,6 +604,7 @@ export async function POST(request: NextRequest) {
 
       const carouselStorySpec: Record<string, unknown> = {
         page_id: pageId,
+        ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
         link_data: {
           link: websiteUrl,
           message: primaryText,
@@ -789,6 +793,7 @@ export async function POST(request: NextRequest) {
 
         objectStorySpec = {
           page_id: pageId,
+          ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
           video_data: videoData
         }
       } else {
@@ -823,6 +828,7 @@ export async function POST(request: NextRequest) {
 
         objectStorySpec = {
           page_id: pageId,
+          ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
           link_data: linkData
         }
       }

@@ -1048,6 +1048,7 @@ function AdSessionDetailPanel({
           Generated Ad Copy ({session.generated_ads?.length || 0})
         </h4>
         <Link
+          data-tour="ai-tasks-continue"
           href={`/dashboard/creative-studio/ad-studio?sessionId=${session.id}`}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors border border-purple-500/30"
         >
@@ -2896,7 +2897,7 @@ export default function AITasksPage() {
       {!isEmpty && (
         <div className="flex-1 flex min-h-0 min-w-0">
           {/* Left column - List with collapsible sections */}
-          <div className={cn(
+          <div data-tour="ai-tasks-list" className={cn(
             'w-full lg:w-64 xl:w-80 flex-shrink-0 border-r border-border flex flex-col overflow-hidden',
             mobileExpandedItem && 'hidden lg:flex'
           )}>

@@ -8,6 +8,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Sidebar } from '@/components/sidebar'
 import { PrivacyProvider } from '@/lib/privacy-mode'
 import { AccountProvider } from '@/lib/account'
+import { useTour } from '@/lib/tour/use-tour'
 import { AttributionProvider } from '@/lib/attribution'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-state'
 import { Menu, X, CheckCircle, Zap } from 'lucide-react'
@@ -63,6 +64,7 @@ function DashboardContent({ children, sidebarOpen, setSidebarOpen }: {
   const { isCollapsed } = useSidebar()
   const pathname = usePathname()
   const isFullScreen = pathname?.includes('/video-editor')
+  useTour()
 
   if (isFullScreen) {
     return <main className="min-h-screen bg-bg-dark">{children}</main>

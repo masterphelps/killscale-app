@@ -2625,7 +2625,7 @@ export function PerformanceTable({
     <div className="bg-zinc-900 border border-border rounded-xl p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold">All Campaigns</h3>
-        <VerdictBadge verdict={totals.verdict} />
+        <span data-tour="verdict-example"><VerdictBadge verdict={totals.verdict} /></span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-bg-dark rounded-lg p-2 text-center">

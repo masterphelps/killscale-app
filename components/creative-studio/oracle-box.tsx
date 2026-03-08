@@ -202,7 +202,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
   )
 
   return (
-    <div className="relative w-full">
+    <div data-tour="oracle-box" className="relative w-full">
       {/* Main input container */}
       <div
         className={cn(
@@ -311,7 +311,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
           {/* Right: three-state mode selector + submit */}
           <div className="flex items-center gap-2">
             {/* Mode selector: KS / Image / Video */}
-            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
+            <div data-tour="oracle-mode-toggle" className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
               <button
                 onClick={() => handleModeChange('ks')}
                 className={cn(

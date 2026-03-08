@@ -153,6 +153,8 @@ export default function LaunchpadPage() {
               <Link
                 key={tile.href}
                 href={tile.href}
+                {...(tile.label === 'Ad Studio' ? { 'data-tour': 'launchpad-ad-studio' } : {})}
+                {...(tile.label === 'Performance' ? { 'data-tour': 'launchpad-performance' } : {})}
                 className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm overflow-hidden transition-all duration-300 hover:border-white/[0.12] hover:bg-white/[0.05] hover:scale-[1.02] active:scale-[0.98]"
                 style={{
                   opacity: mounted ? 1 : 0,

@@ -280,6 +280,7 @@ export default function ActiveAdsPage() {
               <p className="text-zinc-500 mt-1">Individual ads with performance scores</p>
             </div>
             <button
+              data-tour="launch-new-ad"
               onClick={() => setShowLaunchWizard(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg transition-colors"
             >
@@ -335,6 +336,7 @@ export default function ActiveAdsPage() {
 
               {/* Status Filter Dropdown */}
               <select
+                data-tour="active-ads-status-filter"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                 className="bg-bg-card border border-border rounded-xl px-4 py-2 text-sm text-zinc-300 focus:outline-none focus:border-accent"
@@ -401,7 +403,7 @@ export default function ActiveAdsPage() {
             </div>
           </div>
 
-        <div className="text-sm text-zinc-500">
+        <div data-tour="active-ads-grid" className="text-sm text-zinc-500">
           {filteredAds.length} {statusFilter === 'all' ? 'ads' : statusFilter === 'active' ? 'active ads' : 'paused ads'}
         </div>
 

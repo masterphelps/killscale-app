@@ -50,6 +50,7 @@ interface CreateAdsetRequest {
   adAccountId: string
   campaignId: string
   pageId: string
+  instagramAccountId?: string
   adsetName: string
   objective: 'leads' | 'conversions' | 'traffic'
   conversionEvent?: string
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
       adAccountId,
       campaignId,
       pageId,
+      instagramAccountId,
       adsetName,
       objective,
       conversionEvent,
@@ -396,8 +398,10 @@ export async function POST(request: NextRequest) {
       adsetPayload.attribution_spec = specs[attributionWindow]
     }
 
-    // Instagram actor ID for Instagram placements
-    if (placements && placements.mode === 'manual' && placements.publisherPlatforms.includes('instagram')) {
+    // Instagram actor ID — always set if provided, fallback to page lookup for manual Instagram placements
+    if (instagramAccountId) {
+      adsetPayload.instagram_actor_id = instagramAccountId
+    } else if (placements && placements.mode === 'manual' && placements.publisherPlatforms.includes('instagram')) {
       try {
         const igRes = await fetch(
           `${META_GRAPH_URL}/${pageId}/instagram_accounts?fields=id&access_token=${accessToken}`
@@ -449,6 +453,7 @@ export async function POST(request: NextRequest) {
 
       const carouselStorySpec: Record<string, unknown> = {
         page_id: pageId,
+        ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
         link_data: {
           link: websiteUrl,
           message: primaryText,
@@ -549,6 +554,7 @@ export async function POST(request: NextRequest) {
 
         objectStorySpec = {
           page_id: pageId,
+          ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
           video_data: videoData
         }
       } else {
@@ -585,6 +591,7 @@ export async function POST(request: NextRequest) {
 
         objectStorySpec = {
           page_id: pageId,
+          ...(instagramAccountId ? { instagram_actor_id: instagramAccountId } : {}),
           link_data: linkData
         }
       }

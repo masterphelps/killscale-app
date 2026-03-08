@@ -129,7 +129,7 @@ export function GalleryGrid({
         columnClassName={minimal ? 'pl-4 bg-clip-padding' : 'pl-6 bg-clip-padding'}
       >
         {visibleItems.map((item, index) => (
-          <div key={item.id} className={minimal ? 'mb-4' : 'mb-6'}>
+          <div key={item.id} className={minimal ? 'mb-4' : 'mb-6'} {...(index === 0 ? { 'data-tour': 'media-card' } : {})}>
             <MediaGalleryCard
               item={item}
               index={index}
