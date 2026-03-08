@@ -132,6 +132,7 @@ export default function VideoStudioPage() {
   const [ugcPrompt, setUgcPrompt] = useState<UGCPromptResult | null>(null)
   const [ugcGenerating, setUgcGenerating] = useState(false)
   const [ugcError, setUgcError] = useState<string | null>(null)
+  const [ugcTargetDuration, setUgcTargetDuration] = useState<number>(8)
 
   // ─── Canvas persistence ───────────────────────────────────────────────────
   const [canvasId, setCanvasId] = useState<string | null>(null)
@@ -1175,7 +1176,7 @@ export default function VideoStudioPage() {
       const res = await fetch('/api/creative-studio/generate-ugc-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: productKnowledge, ugcSettings }),
+        body: JSON.stringify({ product: productKnowledge, ugcSettings, targetDuration: ugcTargetDuration }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1206,7 +1207,7 @@ export default function VideoStudioPage() {
     } finally {
       setUgcGenerating(false)
     }
-  }, [productKnowledge, ugcSettings, selectedProductImageIndices])
+  }, [productKnowledge, ugcSettings, ugcTargetDuration, selectedProductImageIndices])
 
   const handleUgcRewrite = useCallback(() => {
     setUgcPrompt(null)
@@ -1526,7 +1527,8 @@ export default function VideoStudioPage() {
               </div>
               )}
 
-              {/* Video style + controls */}
+              {/* Video style + controls (hidden for UGC — always talking_head) */}
+              {subMode !== 'ugc' && (
               <div className="flex items-center gap-3 mb-5">
                 <div className="relative">
                   <button
@@ -1559,6 +1561,7 @@ export default function VideoStudioPage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* ─── EXPLORE sub-mode ──────────────────────────────────────── */}
               {subMode === 'explore' && (
@@ -2342,6 +2345,27 @@ export default function VideoStudioPage() {
                     />
                   </div>
 
+                  {/* Target Duration */}
+                  <div>
+                    <label className="text-sm font-medium text-zinc-300 mb-2 block">Target Length</label>
+                    <div className="flex gap-2">
+                      {([
+                        { value: 8, label: '8s', desc: 'Quick hook' },
+                        { value: 15, label: '15s', desc: 'Standard' },
+                        { value: 22, label: '22s', desc: 'Detailed' },
+                        { value: 29, label: '29s', desc: 'Extended' },
+                      ]).map(({ value, label, desc }) => (
+                        <button key={value} onClick={() => setUgcTargetDuration(value)}
+                          className={cn('flex-1 px-3 py-2 rounded-lg text-center transition-all border',
+                            ugcTargetDuration === value ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200 hover:border-zinc-600'
+                          )}>
+                          <div className="text-sm font-medium">{label}</div>
+                          <div className="text-[10px] text-zinc-500">{desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {ugcError && (
                     <div className="flex items-center gap-2 text-red-400 text-sm">
                       <AlertCircle className="w-4 h-4" />{ugcError}
@@ -2403,10 +2427,6 @@ export default function VideoStudioPage() {
                 )}
 
                 <DirectorsReview
-                  scene={editScene} onSceneChange={setEditScene}
-                  subject={editSubject} onSubjectChange={setEditSubject}
-                  action={editAction} onActionChange={setEditAction}
-                  mood={editMood} onMoodChange={setEditMood}
                   videoPrompt={editVideoPrompt} onVideoPromptChange={setEditVideoPrompt}
                   extensionPrompts={editExtensionPrompts} onExtensionPromptsChange={setEditExtensionPrompts}
                   overlaysEnabled={directOverlaysEnabled} onOverlaysEnabledChange={setDirectOverlaysEnabled}

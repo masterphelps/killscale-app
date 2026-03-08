@@ -37,6 +37,7 @@ export interface BuildUGCPromptParams {
   scene: string
   setting: string
   notes: string | undefined
+  targetDuration?: number // 8, 15, 22, or 29 — tells GPT exactly how long to write for
 }
 
 export function buildUGCPrompt(params: BuildUGCPromptParams): string {
@@ -50,6 +51,7 @@ export function buildUGCPrompt(params: BuildUGCPromptParams): string {
     scene,
     setting,
     notes,
+    targetDuration,
   } = params
 
   return `You are a UGC video ad director. Create a detailed video generation prompt for a vertical (9:16) product testimonial video.
@@ -70,32 +72,34 @@ ${notes ? `- Additional direction: ${notes}` : ''}
 RULES:
 1. The product shown in the reference image is the HERO. It must NOT be altered, distorted, resized, or changed in ANY way.
 2. The presenter holds, uses, or gestures toward the product naturally.
-3. Write the dialogue AS LONG AS IT NEEDS TO BE to tell a compelling, natural-feeling testimonial. Don't rush it. A real person wouldn't cram everything into 8 seconds.
-4. The dialogue must weave in real product benefits/features naturally — NOT read like an ad script. It should feel like a real person sharing their genuine experience.
-5. Camera: Front-facing, slight movement (not static), natural selfie-style framing.
-6. Lighting should match the ${scene} ${setting} environment realistically.
-7. The person should look directly at the camera with ${tone} energy.
+3. The dialogue must weave in real product benefits/features naturally — NOT read like an ad script. It should feel like a real person sharing their genuine experience.
+4. Camera: Front-facing, slight movement (not static), natural selfie-style framing.
+5. Lighting should match the ${scene} ${setting} environment realistically.
+6. The person should look directly at the camera with ${tone} energy.
 
-DURATION ESTIMATION:
-After writing the dialogue, estimate the VIDEO duration needed. The video engine renders speech MUCH FASTER than natural pace — roughly 5 words per second (NOT real-time speaking pace). Count the total words in your dialogue and divide by 5 to get the video duration. Return this as "estimatedSeconds". CRITICAL: Most UGC ads should be 8-15 seconds (1-2 segments). Only go to 22+ seconds if the product genuinely requires extended explanation.
+TARGET DURATION: ${targetDuration ? `${targetDuration} seconds` : '8 seconds (default)'}
+${targetDuration && targetDuration > 8
+    ? `This means ${Math.round((targetDuration - 8) / 7)} extension(s) after the 8-second base clip.`
+    : 'Single 8-second clip, no extensions.'}
+
+DIALOGUE LENGTH — THIS IS CRITICAL:
+The video engine renders speech at roughly 5 words per second. Write dialogue that fits the target duration EXACTLY:
+${targetDuration && targetDuration >= 22
+    ? `- Base segment (8s, ~6 usable): ~30 words\n- Extension 1 (7s, ~6 usable): ~30 words\n- Extension 2 (7s, ~6 usable): ~30 words${targetDuration >= 29 ? '\n- Extension 3 (7s, ~6 usable): ~30 words' : ''}\n- Total dialogue: ~${Math.round(((targetDuration === 29 ? 4 : 3) * 30))} words`
+    : targetDuration === 15
+      ? '- Base segment (8s, ~6 usable): ~30 words\n- Extension 1 (7s, ~6 usable): ~30 words\n- Total dialogue: ~60 words'
+      : '- Single segment (8s, ~6 usable): ~30 words MAX\n- Do NOT include extensionPrompts'}
+
+Leave breathing room — better to finish 0.5s early than have the last word cut off mid-sentence.
 
 VIDEO SEGMENTATION:
 The video engine generates an 8-second base clip. The FIRST ~1 SECOND is a still product image (no presenter) and the LAST ~1 SECOND transitions out. So the first segment has ~6 USABLE SECONDS. Extensions are 7 seconds each with ~6 usable. Valid total durations: 8, 15, 22, 29 seconds.
 
-IMPORTANT: Budget dialogue so the first segment fits ~30 words (6 usable seconds × 5 words/sec). Leave breathing room — better to finish 0.5s early than have the last word cut off.
-
-If your estimated duration is 8 seconds or less:
-- Write a single prompt covering the full video.
-- Do NOT include "extensionPrompts".
-- First segment: ~30 words MAX of dialogue.
-
-If your estimated duration is more than 8 seconds:
-- The "prompt" field must cover ONLY the first 8 seconds (~30 words of dialogue).
-- Include an "extensionPrompts" array with one prompt per 7-second extension segment.
-- Each extension prompt MUST start with "Continue from previous shot." and lock the visual context (same presenter, wardrobe, lighting, setting).
-- Each extension describes ONLY what happens in that 7-second segment (~30 words of dialogue per extension).
-- The number of extension prompts should match: ceil((estimatedSeconds - 8) / 7).
-- AIM FOR FEWER EXTENSIONS. A tight 15-second UGC ad (1 extension) is almost always better than a rambling 29-second one.
+${!targetDuration || targetDuration <= 8 ? `Write a single prompt covering the full video. Do NOT include "extensionPrompts".` : `The "prompt" field must cover ONLY the first 8 seconds.
+Include an "extensionPrompts" array with exactly ${Math.round((targetDuration - 8) / 7)} prompt(s).
+Each extension prompt MUST start with "Continue from previous shot." and lock the visual context (same presenter, wardrobe, lighting, setting).
+Each extension describes ONLY what happens in that 7-second segment.
+Split dialogue at natural sentence boundaries across segments.`}
 
 PRODUCT VISIBILITY RULE:
 - The product from the reference image must NEVER be altered, distorted, or morphed by the AI. Same shape, colors, text, proportions at all times.

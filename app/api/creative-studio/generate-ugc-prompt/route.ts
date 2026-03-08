@@ -9,9 +9,10 @@ export async function POST(request: NextRequest) {
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
     const body = await request.json()
-    const { product, ugcSettings } = body as {
+    const { product, ugcSettings, targetDuration } = body as {
       product: ProductKnowledge
       ugcSettings: UGCSettings
+      targetDuration?: number
     }
 
     if (!product?.name) {
@@ -38,6 +39,9 @@ export async function POST(request: NextRequest) {
       'middle-aged': '40-55 years old',
     }
 
+    // Snap target duration to valid Veo duration (8, 15, 22, 29)
+    const snappedDuration = targetDuration ? snapToVeoDuration(targetDuration) : undefined
+
     const prompt = buildUGCPrompt({
       productContext,
       gender: ugcSettings.gender,
@@ -48,6 +52,7 @@ export async function POST(request: NextRequest) {
       scene: ugcSettings.scene,
       setting: ugcSettings.setting,
       notes: ugcSettings.notes,
+      targetDuration: snappedDuration,
     })
 
     const completion = await openai.chat.completions.create({
@@ -85,11 +90,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid UGC prompt response' }, { status: 500 })
     }
 
-    // Snap GPT's estimated duration to a valid Veo duration
-    // GPT tends to overestimate — Veo renders speech ~2x faster than natural pace
-    const rawEstimate = typeof parsed.estimatedSeconds === 'number' ? parsed.estimatedSeconds : 8
-    const adjustedEstimate = Math.max(8, Math.round(rawEstimate * 0.5))
-    const veoDuration = snapToVeoDuration(adjustedEstimate)
+    // Use target duration if provided, otherwise fall back to GPT's estimate
+    const veoDuration = snappedDuration || snapToVeoDuration(
+      typeof parsed.estimatedSeconds === 'number' ? Math.max(8, parsed.estimatedSeconds) : 8
+    )
     const numExtensions = veoDuration > VEO_BASE_DURATION
       ? Math.round((veoDuration - VEO_BASE_DURATION) / VEO_EXTENSION_STEP)
       : 0
@@ -99,7 +103,7 @@ export async function POST(request: NextRequest) {
       ? parsed.extensionPrompts.filter((p: unknown): p is string => typeof p === 'string' && p.length > 0).slice(0, numExtensions)
       : undefined
 
-    console.log(`[UGCPrompt] GPT estimated ${rawEstimate}s → adjusted ${adjustedEstimate}s → snapped to ${veoDuration}s (${numExtensions} extension(s)), dialogue: ${parsed.dialogue.split(' ').length} words, ${extensionPrompts?.length || 0} extension prompt(s)`)
+    console.log(`[UGCPrompt] target=${snappedDuration || 'auto'}s → ${veoDuration}s (${numExtensions} extension(s)), dialogue: ${parsed.dialogue.split(' ').length} words, ${extensionPrompts?.length || 0} extension prompt(s)`)
 
     // Extract overlay data (hook + CTA only — captions come from Whisper transcription in the RVE)
     const overlay = parsed.overlay && typeof parsed.overlay === 'object'

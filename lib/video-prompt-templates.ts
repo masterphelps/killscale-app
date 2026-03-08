@@ -76,6 +76,11 @@ export type ProductVideoScript = {
 
 export type ScenePlan = ProductVideoScript & {
   dialogue?: string  // Optional spoken dialogue — AI suggests when scene implies speech
+  extensionDialogue?: string
+  subject?: string
+  action?: string
+  cameraDirection?: string
+  extensionAction?: string
 }
 
 // ─── UGC Video Types ────────────────────────────────────────────────────────

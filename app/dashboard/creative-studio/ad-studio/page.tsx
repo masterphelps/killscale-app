@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Link2, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Plus, Globe, Play, User, Clapperboard, Pencil, Image as ImageIcon } from 'lucide-react'
+import { Search, Wand2, Sparkles, ExternalLink, Copy, Check, Loader2, AlertCircle, Link as LinkIcon, Link2, Package, ChevronRight, Download, ImagePlus, Calendar, BarChart3, ChevronLeft, FolderPlus, Send, Megaphone, Layers, Lightbulb, Upload, X, FileText, RefreshCw, Video, Plus, Globe, Play, User, Pencil, Image as ImageIcon } from 'lucide-react'
 import { LaunchWizard, type Creative } from '@/components/launch-wizard'
 import { MediaLibraryModal } from '@/components/media-library-modal'
 import type { MediaImage } from '@/app/api/meta/media/route'
@@ -9,6 +9,7 @@ import type { VideoJob } from '@/remotion/types'
 import type { ScenePlan } from '@/lib/video-prompt-templates'
 import { cn } from '@/lib/utils'
 import ProductInput from '@/components/creative-studio/product-input'
+import DirectorsReview from '@/components/creative-studio/directors-review'
 import type { ProductInputRef } from '@/components/creative-studio/product-input'
 import type { ProductKnowledge, ProductImage } from '@/lib/video-prompt-templates'
 import { useAuth } from '@/lib/auth'
@@ -3519,13 +3520,27 @@ export default function AdStudioPage() {
         },
       } : undefined
 
-      // 3. Build prompt — inject [Dialogue] block if dialogue exists
-      let finalPrompt = openPromptScenePlan.videoPrompt
-      if (openPromptScenePlan.dialogue?.trim()) {
-        const dialogueLines = openPromptScenePlan.dialogue.trim().split('\n').map(l => `Speaker: "${l.trim()}"`).join('\n')
-        // Append dialogue block if not already in the prompt
-        if (!finalPrompt.includes('[Dialogue]')) {
-          finalPrompt += `\n\n[Dialogue]\n${dialogueLines}`
+      // 3. Build prompt from structured fields
+      const promptParts: string[] = []
+      if (openPromptScenePlan.scene) promptParts.push(openPromptScenePlan.scene + '.')
+      if (openPromptScenePlan.subject) promptParts.push(openPromptScenePlan.subject + '.')
+      if (openPromptScenePlan.action) promptParts.push(openPromptScenePlan.action)
+      if (openPromptScenePlan.cameraDirection) promptParts.push(openPromptScenePlan.cameraDirection + '.')
+      if (openPromptScenePlan.dialogue?.trim()) promptParts.push(`The person speaks: "${openPromptScenePlan.dialogue.trim()}"`)
+      promptParts.push('Vertical 9:16 portrait format.')
+      const finalPrompt = promptParts.join(' ')
+
+      // Build extension prompt from structured fields
+      let extensionPrompts: string[] | undefined
+      if (isExtended) {
+        const extParts: string[] = []
+        if (openPromptScenePlan.extensionAction) extParts.push(openPromptScenePlan.extensionAction)
+        if (openPromptScenePlan.extensionDialogue?.trim()) extParts.push(`The person speaks: "${openPromptScenePlan.extensionDialogue.trim()}"`)
+        if (extParts.length > 0) {
+          const extPrompt = extParts.join(' ')
+          extensionPrompts = [extPrompt.startsWith('Continue from previous shot') ? extPrompt : `Continue from previous shot. ${extPrompt}`]
+        } else if (openPromptScenePlan.extensionPrompts?.length) {
+          extensionPrompts = openPromptScenePlan.extensionPrompts
         }
       }
 
@@ -3543,7 +3558,7 @@ export default function AdStudioPage() {
         canvasId: canvasId || null,
         adIndex: 0,
         targetDurationSeconds: isExtended ? scriptDuration : undefined,
-        extensionPrompts: isExtended ? openPromptScenePlan.extensionPrompts : undefined,
+        extensionPrompts,
         overlayConfig,
       }
       if (openPromptSourceImages.length > 0) {
@@ -4067,254 +4082,33 @@ export default function AdStudioPage() {
 
             {/* Video: Director's Review — shown after scene planner returns */}
             {openPromptScenePlan && !openPromptResult && !openPromptPlanningScene && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
-                  <Clapperboard className="w-4 h-4 text-amber-400" />
-                  <span className="text-sm font-semibold text-amber-300">Director&apos;s Review</span>
-                  <span className="ml-auto text-xs text-amber-400/60">Edit before generating</span>
-                </div>
-
-                <div className="p-4 space-y-4">
-                  {/* Scene — editable */}
-                  <div>
-                    <label className="text-xs font-medium text-zinc-400 mb-1 block">Scene</label>
-                    <input
-                      type="text"
-                      value={openPromptScenePlan.scene}
-                      onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, scene: e.target.value } : prev)}
-                      className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-
-                  {/* Mood — editable */}
-                  <div>
-                    <label className="text-xs font-medium text-zinc-400 mb-1 block">Mood</label>
-                    <input
-                      type="text"
-                      value={openPromptScenePlan.mood}
-                      onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, mood: e.target.value } : prev)}
-                      className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-
-                  {/* Full Veo Prompt — collapsible */}
-                  <details className="group" open>
-                    <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-                      <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-                      Veo Prompt (first 8s)
-                    </summary>
-                    <textarea
-                      value={openPromptScenePlan.videoPrompt}
-                      onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, videoPrompt: e.target.value } : prev)}
-                      className="w-full mt-2 bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                      rows={8}
-                    />
-                  </details>
-
-                  {/* Extension Prompts — add/remove/edit */}
-                  <details className="group" open={!!openPromptScenePlan.extensionPrompts?.length}>
-                    <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-                      <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-                      Extension Prompts ({openPromptScenePlan.extensionPrompts?.length || 0})
-                    </summary>
-                    <div className="mt-2 space-y-2">
-                      {openPromptScenePlan.extensionPrompts?.map((ep, idx) => (
-                        <div key={idx}>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-xs text-zinc-500">Segment {idx + 2} ({8 + (idx + 1) * 7 - 6}s - {8 + (idx + 1) * 7}s)</label>
-                            <button
-                              onClick={() => setOpenPromptScenePlan(prev => {
-                                if (!prev?.extensionPrompts) return prev
-                                const updated = prev.extensionPrompts!.filter((_, i) => i !== idx)
-                                const newDuration = 8 + updated.length * 7
-                                return { ...prev, extensionPrompts: updated.length > 0 ? updated : undefined, estimatedDuration: newDuration }
-                              })}
-                              className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          <textarea
-                            value={ep}
-                            onChange={(e) => setOpenPromptScenePlan(prev => {
-                              if (!prev?.extensionPrompts) return prev
-                              const updated = [...prev.extensionPrompts!]
-                              updated[idx] = e.target.value
-                              return { ...prev, extensionPrompts: updated }
-                            })}
-                            className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono focus:outline-none focus:border-amber-500/50 resize-y"
-                            rows={4}
-                          />
-                        </div>
-                      ))}
-                      {(openPromptScenePlan.extensionPrompts?.length || 0) < 3 && (
-                        <button
-                          onClick={() => setOpenPromptScenePlan(prev => {
-                            if (!prev) return prev
-                            const exts = [...(prev.extensionPrompts || [])]
-                            exts.push('Continue from previous shot. ')
-                            return { ...prev, extensionPrompts: exts, estimatedDuration: 8 + exts.length * 7 }
-                          })}
-                          className="flex items-center gap-1.5 text-xs text-amber-400/70 hover:text-amber-300 transition-colors py-1"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Add extension (+7s)
-                        </button>
-                      )}
-                    </div>
-                  </details>
-
-                  {/* Dialogue — optional, AI-suggested when scene implies speech */}
-                  {openPromptScenePlan.dialogue ? (
-                    <div>
-                      <label className="text-xs font-medium text-zinc-400 mb-1 block">Dialogue <span className="text-zinc-600 font-normal">(spoken in video)</span></label>
-                      <textarea
-                        value={openPromptScenePlan.dialogue}
-                        onChange={(e) => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: e.target.value } : prev)}
-                        className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 resize-y"
-                        rows={2}
-                        placeholder="e.g. This changed everything for my skin"
-                      />
-                      <button
-                        onClick={() => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: undefined } : prev)}
-                        className="text-xs text-zinc-600 hover:text-zinc-400 mt-1 transition-colors"
-                      >
-                        Remove dialogue
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: '' } : prev)}
-                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-amber-400 transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      Add dialogue
-                    </button>
-                  )}
-
-                  {/* Overlays toggle */}
-                  <div className="flex items-center justify-between pt-1 border-t border-amber-500/10">
-                    <div>
-                      <p className="text-xs font-medium text-amber-300/80">Text Overlays</p>
-                      <p className="text-xs text-zinc-600">Hook text + CTA button baked into video</p>
-                    </div>
-                    <button
-                      onClick={() => setOpenPromptOverlaysEnabled(!openPromptOverlaysEnabled)}
-                      className={cn('w-10 h-5 rounded-full transition-colors relative',
-                        openPromptOverlaysEnabled ? 'bg-amber-500' : 'bg-zinc-700'
-                      )}
-                    >
-                      <span className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-                        openPromptOverlaysEnabled ? 'left-5' : 'left-0.5'
-                      )} />
-                    </button>
-                  </div>
-
-                  {/* Hook + CTA inputs (only when overlays enabled) */}
-                  {openPromptOverlaysEnabled && openPromptScenePlan.overlay && (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-zinc-400 mb-1 block">Hook Text <span className="text-zinc-600 font-normal">(first 2s)</span></label>
-                        <input
-                          type="text"
-                          value={openPromptScenePlan.overlay.hook}
-                          onChange={(e) => setOpenPromptScenePlan(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, hook: e.target.value } } : prev)}
-                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                          placeholder="e.g. See the Difference"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-zinc-400 mb-1 block">CTA Button</label>
-                        <input
-                          type="text"
-                          value={openPromptScenePlan.overlay.cta}
-                          onChange={(e) => setOpenPromptScenePlan(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, cta: e.target.value } } : prev)}
-                          className="w-full bg-bg-dark border border-zinc-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                          placeholder="e.g. Shop Now"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Quality + Budget + Action */}
-                  {(() => {
-                    const dur = openPromptScenePlan.estimatedDuration || 8
-                    const exts = dur > 8 ? Math.round((dur - 8) / 7) : 0
-                    const costs = openPromptQuality === 'standard' ? { base: 20, ext: 10 } : { base: 50, ext: 25 }
-                    const cost = costs.base + exts * costs.ext
-                    const canAfford = aiUsage ? aiUsage.remaining >= cost : true
-                    return (
-                      <>
-                      {/* Quality selector */}
-                      <div className="pt-1 border-t border-amber-500/10">
-                        <label className="text-xs font-medium text-zinc-400 mb-2 block">Quality</label>
-                        <div className="flex gap-2">
-                          {(['standard', 'premium'] as const).map((q) => (
-                            <button key={q} onClick={() => setOpenPromptQuality(q)}
-                              className={cn('px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
-                                openPromptQuality === q
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                  : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30 hover:text-zinc-200'
-                              )}>
-                              {q === 'standard' ? 'Standard (720p)' : 'Premium (1080p)'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Budget line */}
-                      <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-zinc-800/50 border border-zinc-700/30">
-                        <div className="space-y-0.5">
-                          <p className="text-sm font-semibold text-white tabular-nums">{dur}s video</p>
-                          <p className="text-xs text-zinc-500">
-                            {exts === 0 ? 'Single clip' : `8s base + ${exts} extension${exts > 1 ? 's' : ''}`}
-                            {' · '}{openPromptQuality === 'premium' ? '1080p' : '720p'}
-                          </p>
-                        </div>
-                        <div className="text-right space-y-0.5">
-                          <p className={cn('text-sm font-bold tabular-nums', canAfford ? 'text-amber-400' : 'text-red-400')}>
-                            {cost} credits
-                          </p>
-                          {aiUsage && (
-                            <p className="text-xs text-zinc-500">{aiUsage.remaining} remaining</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="flex gap-2 pt-1">
-                        <button
-                          onClick={handleOpenPromptVideoGenerate}
-                          disabled={openPromptGenerating || !canAfford}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-500 text-black font-bold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                        >
-                          {openPromptGenerating ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              Generating {dur}s video...
-                            </>
-                          ) : (
-                            <>
-                              <Clapperboard className="w-4 h-4" />
-                              Action! ({cost} credits)
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => { setOpenPromptScenePlan(null); handleOpenPromptGenerate() }}
-                          disabled={openPromptPlanningScene || openPromptGenerating}
-                          className="px-4 py-3 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                          title="Rewrite script"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </button>
-                      </div>
-                      </>
-                    )
-                  })()}
-                </div>
-              </div>
+              <DirectorsReview
+                videoPrompt={openPromptScenePlan.videoPrompt}
+                onVideoPromptChange={(v) => setOpenPromptScenePlan(prev => prev ? { ...prev, videoPrompt: v } : prev)}
+                extensionPrompts={openPromptScenePlan.extensionPrompts || []}
+                onExtensionPromptsChange={(v) => setOpenPromptScenePlan(prev => {
+                  if (!prev) return prev
+                  const newDuration = 8 + v.length * 7
+                  return { ...prev, extensionPrompts: v.length > 0 ? v : undefined, estimatedDuration: newDuration }
+                })}
+                dialogue={openPromptScenePlan.dialogue}
+                onDialogueChange={(v) => setOpenPromptScenePlan(prev => prev ? { ...prev, dialogue: v } : prev)}
+                extensionDialogue={openPromptScenePlan.extensionDialogue}
+                onExtensionDialogueChange={(v) => setOpenPromptScenePlan(prev => prev ? { ...prev, extensionDialogue: v } : prev)}
+                overlaysEnabled={openPromptOverlaysEnabled}
+                onOverlaysEnabledChange={setOpenPromptOverlaysEnabled}
+                hook={openPromptScenePlan.overlay?.hook || ''}
+                onHookChange={(v) => setOpenPromptScenePlan(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, hook: v } } : prev)}
+                cta={openPromptScenePlan.overlay?.cta || ''}
+                onCtaChange={(v) => setOpenPromptScenePlan(prev => prev?.overlay ? { ...prev, overlay: { ...prev.overlay, cta: v } } : prev)}
+                quality={openPromptQuality}
+                onQualityChange={setOpenPromptQuality}
+                onGenerate={handleOpenPromptVideoGenerate}
+                onRewrite={() => { setOpenPromptScenePlan(null); handleOpenPromptGenerate() }}
+                generating={openPromptGenerating}
+                creditsRemaining={aiUsage?.remaining ?? null}
+                error={null}
+              />
             )}
 
             {/* Image Result */}
