@@ -31,6 +31,8 @@ type WorkspacePixel = {
   attribution_source: 'native' | 'pixel'
   attribution_model: AttributionModel
   event_values: Record<string, number>
+  meta_pixel_id: string | null
+  meta_capi_token: string | null
 }
 
 type WorkspaceAccount = {
@@ -124,6 +126,13 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
   // Manual Event Modal
   const [showManualEventModal, setShowManualEventModal] = useState(false)
 
+  // CAPI settings
+  const [capiPixelId, setCapiPixelId] = useState('')
+  const [capiToken, setCapiToken] = useState('')
+  const [savingCapi, setSavingCapi] = useState(false)
+  const [capiSaved, setCapiSaved] = useState(false)
+  const [showCapiToken, setShowCapiToken] = useState(false)
+
   // Workspace accounts for UTM panel
   const [wsMetaAccounts, setWsMetaAccounts] = useState<WorkspaceAccount[]>([])
 
@@ -145,7 +154,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
     // Check if pixel exists
     let { data: existingPixel } = await supabase
       .from('workspace_pixels')
-      .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values')
+      .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values, meta_pixel_id, meta_capi_token')
       .eq('workspace_id', workspaceId)
       .single()
 
@@ -164,7 +173,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
           attribution_source: 'native',
           attribution_model: 'last_touch',
         })
-        .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values')
+        .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values, meta_pixel_id, meta_capi_token')
         .single()
 
       if (!createError && newPixel) {
@@ -180,7 +189,11 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
         attribution_source: existingPixel.attribution_source,
         attribution_model: existingPixel.attribution_model || 'last_touch',
         event_values: existingPixel.event_values || {},
+        meta_pixel_id: existingPixel.meta_pixel_id || null,
+        meta_capi_token: existingPixel.meta_capi_token || null,
       })
+      setCapiPixelId(existingPixel.meta_pixel_id || '')
+      setCapiToken(existingPixel.meta_capi_token || '')
 
       // Load events
       loadPixelEvents(existingPixel.pixel_id)
@@ -328,6 +341,35 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
       }
     } catch (err) {
       console.error('Failed to update event values:', err)
+    }
+  }
+
+  // Update CAPI settings
+  const updateCapiSettings = async () => {
+    if (!workspaceId || !workspacePixel) return
+    setSavingCapi(true)
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({
+          meta_pixel_id: capiPixelId.trim() || null,
+          meta_capi_token: capiToken.trim() || null,
+        })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixel(prev => prev ? {
+          ...prev,
+          meta_pixel_id: capiPixelId.trim() || null,
+          meta_capi_token: capiToken.trim() || null,
+        } : prev)
+        setCapiSaved(true)
+        setTimeout(() => setCapiSaved(false), 2000)
+      }
+    } catch (err) {
+      console.error('Failed to update CAPI settings:', err)
+    } finally {
+      setSavingCapi(false)
     }
   }
 
@@ -667,6 +709,70 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
               <p className="text-xs text-zinc-500 ml-6">{option.desc}</p>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ───────────────────── 4b. Meta CAPI (Conversions API) ───────────────────── */}
+      <div className="p-4 bg-bg-card border border-border rounded-xl">
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="font-medium text-sm">Meta Conversions API</h3>
+          <div className="group relative">
+            <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+              Connect your Meta Pixel to send conversion events server-side. This improves ad optimization by giving Meta direct conversion signals with higher match quality.
+            </div>
+          </div>
+          {wp.meta_pixel_id && wp.meta_capi_token && (
+            <span className="ml-auto text-xs text-emerald-400 flex items-center gap-1">
+              <Radio className="w-3 h-3" /> Connected
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 mb-3">
+          Events tracked by your pixel will be forwarded to Meta server-side for improved attribution and ad delivery optimization.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">Meta Pixel ID</label>
+            <input
+              type="text"
+              value={capiPixelId}
+              onChange={(e) => setCapiPixelId(e.target.value)}
+              placeholder="e.g. 123456789012345"
+              className="w-full bg-zinc-900 border border-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">CAPI Access Token</label>
+            <div className="relative">
+              <input
+                type={showCapiToken ? 'text' : 'password'}
+                value={capiToken}
+                onChange={(e) => setCapiToken(e.target.value)}
+                placeholder="From Meta Events Manager → Settings"
+                className="w-full bg-zinc-900 border border-border rounded-lg px-3 py-2 pr-10 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+              <button
+                onClick={() => setShowCapiToken(!showCapiToken)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                {showCapiToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={updateCapiSettings}
+            disabled={savingCapi}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+          >
+            {savingCapi ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
+            ) : capiSaved ? (
+              <><Check className="w-3.5 h-3.5" /> Saved</>
+            ) : (
+              'Save CAPI Settings'
+            )}
+          </button>
         </div>
       </div>
 
