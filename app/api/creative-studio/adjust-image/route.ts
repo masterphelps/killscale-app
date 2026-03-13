@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getGoogleAI, withModelFallback, withGeminiRetry, IMAGE_MODEL_PRIMARY, IMAGE_MODEL_FALLBACK } from '@/lib/google-ai'
 import { buildAdjustImagePrompt } from '@/lib/prompts/adjust-image'
 
-export const maxDuration = 60
+export const maxDuration = 180
 
 interface AdjustImageRequest {
   imageBase64: string

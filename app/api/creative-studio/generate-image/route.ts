@@ -18,7 +18,7 @@ import {
   type CuratedAdText,
 } from '@/lib/prompts/image-generation'
 
-export const maxDuration = 60
+export const maxDuration = 180
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

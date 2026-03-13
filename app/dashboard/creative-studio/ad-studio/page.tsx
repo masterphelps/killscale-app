@@ -1973,6 +1973,17 @@ export default function AdStudioPage() {
     toolReq: OracleToolRequest,
     tier: 'sonnet' | 'opus'
   ) => {
+    // Safety net: generate_video should never run inline — route to open-prompt Quick Review
+    if (toolReq.tool === 'generate_video') {
+      const inputs = toolReq.inputs as Record<string, unknown>
+      const prompt = (inputs.prompt as string) || ''
+      setOpenPromptText(prompt)
+      setOpenPromptMediaType('video')
+      oracleAutoGenRef.current = true
+      setMode('open-prompt')
+      return
+    }
+
     const toolCredits = ORACLE_TOOL_CREDITS[toolReq.tool]
 
     if (toolCredits && toolCredits > 0) {
@@ -1992,7 +2003,7 @@ export default function AdStudioPage() {
     }
 
     await executeOracleToolAndChain(toolReq, tier)
-  }, [executeOracleToolAndChain])
+  }, [executeOracleToolAndChain, router])
 
   // Credit confirm/cancel handlers
   const handleOracleCreditConfirm = useCallback(async (messageId: string) => {
@@ -2257,29 +2268,11 @@ export default function AdStudioPage() {
 
     // For workflows that navigate away, save Oracle session first (so user can return)
     if (workflow === 'text-to-video') {
-      const params = new URLSearchParams()
-      if (prefilledData.prompt) params.set('prompt', prefilledData.prompt as string)
-      if (prefilledData.style) params.set('style', prefilledData.style as string)
-      // Pass productName from Opus prefilledData or Oracle context (for described products with no URL)
-      const productName = (prefilledData.productName as string)
-        || (oracleContext.productInfo as Record<string, unknown> | undefined)?.name as string | undefined
-      if (productName) params.set('productName', productName)
-
-      // Stash product context in sessionStorage so Video Studio can use it
-      // (URL params can't carry complex objects like productKnowledge + images)
-      const productInfo = oracleContext.productInfo as Record<string, unknown> | undefined
-      const productImgs = oracleContext.productImages as Array<{ base64: string; mimeType: string; description: string; type: string }> | undefined
-      if (productInfo || productImgs) {
-        try {
-          sessionStorage.setItem('ks_oracle_handoff', JSON.stringify({
-            productInfo: productInfo || null,
-            productImages: productImgs || null,
-          }))
-        } catch { /* sessionStorage quota — best effort */ }
-      }
-
-      const videoStudioUrl = `/dashboard/creative-studio/video-studio${params.toString() ? `?${params.toString()}` : ''}`
-      navigateFromOracle(videoStudioUrl)
+      // Route to open-prompt Quick Review (stays on ad-studio page)
+      if (prefilledData.prompt) setOpenPromptText(prefilledData.prompt as string)
+      setOpenPromptMediaType('video')
+      oracleAutoGenRef.current = true
+      setMode('open-prompt')
       return
     }
 
@@ -2535,7 +2528,7 @@ export default function AdStudioPage() {
           const { workflow: actionWorkflow, prefilledData } = chatData.action
           // Generation workflows: show prompt preview card instead of auto-routing
           if ((actionWorkflow === 'open-prompt' || actionWorkflow === 'text-to-video') && prefilledData?.prompt) {
-            const fmt = ((prefilledData.format as string) || (submission.mode === 'video' ? 'video' : 'image')) as 'image' | 'video'
+            const fmt = ((prefilledData.format as string) || (actionWorkflow === 'text-to-video' ? 'video' : submission.mode === 'video' ? 'video' : 'image')) as 'image' | 'video'
             const previewMsg = makeOracleMsg('oracle', 'Here\'s what I\'ve got ready for you. Review the prompt and hit Generate when you\'re happy with it.', {
               tier: 'sonnet',
               promptPreview: { prompt: prefilledData.prompt as string, format: fmt, style: 'cinematic', duration: 8 },
@@ -2774,7 +2767,7 @@ export default function AdStudioPage() {
         if (chatData.action) {
           const { workflow, prefilledData } = chatData.action
           if ((workflow === 'open-prompt' || workflow === 'text-to-video') && prefilledData?.prompt) {
-            const fmt = ((prefilledData.format as string) || 'image') as 'image' | 'video'
+            const fmt = ((prefilledData.format as string) || (workflow === 'text-to-video' ? 'video' : 'image')) as 'image' | 'video'
             const previewMsg = makeOracleMsg('oracle', 'Here\'s what I\'ve got ready for you. Review the prompt and hit Generate when you\'re happy with it.', {
               tier: 'sonnet',
               promptPreview: { prompt: prefilledData.prompt as string, format: fmt, style: 'cinematic', duration: 8 },

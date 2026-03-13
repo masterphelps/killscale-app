@@ -50,8 +50,8 @@ Routing rules (check in order):
 11. If format is "video" and text is a detailed creative brief or scene description (not just "make a video"), return "text-to-video"
 12. If format is "video" and intent is making a video (generic), return "url-to-video" (the workflow will ask for the URL)
 13. If format is "image" and user wants to make ads or mentions a product, return "create"
-14. If text mentions editing an existing image, adding text/headlines to an image, or modifying an image they have, return "conversation" (so Sonnet can handle it interactively — ask for image, analyze, help)
-15. ONLY return "conversation" if the input is truly vague/greeting with no actionable intent, OR if the user wants interactive image editing help
+14. If text mentions editing an existing image, adding text/headlines to an image, or modifying an image they have, return "conversation"
+15. For anything else (vague, greeting, unclear), return "conversation"
 
 Extract any URLs found in the text. If there are two URLs, the first is likely the product URL and the second is the competitor URL.
 
@@ -116,58 +116,15 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // KS mode fast paths
-    if (hasImage) {
-      return NextResponse.json({
-        workflow: 'upload',
-        prompt: text.trim() || null,
-        format,
-        outputType,
-      })
-    }
-
-    // Claude Haiku classification for ambiguous KS inputs
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 256,
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `Input text: "${text}"\nMode: KS (full creative assistant)\nHas attached image: ${hasImage}`,
-      }],
+    // KS mode: always go to Sonnet conversation — no blind transfers
+    // Sonnet decides what to do conversationally and handles handoffs with friendly messages
+    return NextResponse.json({
+      workflow: 'conversation',
+      productUrl: text.match(/https?:\/\/[^\s]+/)?.[0] || null,
+      prompt: text.trim() || null,
+      format,
+      outputType,
     })
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : ''
-
-    // Parse JSON from response (handle markdown code blocks)
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      const urlMatch = text.match(/https?:\/\/[^\s]+/)
-      return NextResponse.json({
-        workflow: 'create',
-        productUrl: urlMatch?.[0] || null,
-        prompt: text.trim(),
-        format,
-        outputType,
-      })
-    }
-
-    const result: OracleResponse = JSON.parse(jsonMatch[0])
-
-    // Validate workflow value
-    const validWorkflows = [
-      'create', 'clone', 'inspiration', 'upload',
-      'url-to-video', 'ugc-video', 'image-to-video',
-      'open-prompt', 'text-to-video', 'conversation',
-    ]
-    if (!validWorkflows.includes(result.workflow)) {
-      result.workflow = 'create'
-    }
-
-    result.format = format
-    result.outputType = outputType
-
-    return NextResponse.json(result)
   } catch (err) {
     console.error('Oracle route error:', err)
     // Fallback: use body captured before try block (req stream already consumed)

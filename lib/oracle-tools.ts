@@ -449,10 +449,17 @@ async function executeGenerateImage(
   context: ToolContext,
 ): Promise<ToolExecutionResult> {
   const adCopy = inputs.adCopy as Record<string, unknown> | undefined
-  const product = (inputs.product as Record<string, unknown>) || context.productInfo || {}
+  let product = (inputs.product as Record<string, unknown>) || context.productInfo || {}
   const style = (inputs.style as string) || 'lifestyle'
-  const imagePrompt = inputs.imagePrompt as string | undefined
-  const noTextOverlay = inputs.noTextOverlay as boolean | undefined
+  // Accept "prompt" as alias for "imagePrompt" (Opus/Sonnet send "prompt")
+  const imagePrompt = (inputs.imagePrompt as string | undefined) || (inputs.prompt as string | undefined)
+  // Auto-set noTextOverlay when there's no ad copy — route to open prompt path
+  const noTextOverlay = (inputs.noTextOverlay as boolean | undefined) ?? !adCopy
+
+  // For open prompt images (no ad copy, no product), use placeholder — same as Image mode
+  if (!product.name && noTextOverlay) {
+    product = { ...product, name: 'Open Prompt' }
+  }
 
   if (!product.name) return errorResult('Missing product info for image generation')
   if (!adCopy && !noTextOverlay) return errorResult('Missing ad copy for image generation (or set noTextOverlay)')
