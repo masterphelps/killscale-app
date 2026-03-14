@@ -83,7 +83,7 @@ function legacyToMode(outputType?: OracleOutputType, format?: OracleFormat): Ora
 }
 
 export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading, placeholder, initialImage, initialMode, onModeChange, initialOutputType, initialFormat, openAttachMenu: openAttachMenuProp, onAttachMenuOpened }: OracleBoxProps) {
-  const resolvedInitialMode = initialMode || legacyToMode(initialOutputType, initialFormat) || 'ks'
+  const resolvedInitialMode = initialMode || legacyToMode(initialOutputType, initialFormat) || 'image'
   const [text, setText] = useState('')
   const [mode, setMode] = useState<OracleInputMode>(resolvedInitialMode)
   const [images, setImages] = useState<OracleImage[]>(initialImage ? [initialImage] : [])
@@ -312,7 +312,8 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
           <div className="flex items-center gap-2">
             {/* Mode selector: KS / Image / Video */}
             <div data-tour="oracle-mode-toggle" className="flex items-center bg-white/[0.06] rounded-lg p-0.5">
-              <button
+              {/* KS mode hidden — re-enable by removing this comment wrapper */}
+              {/* <button
                 onClick={() => handleModeChange('ks')}
                 className={cn(
                   'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
@@ -320,7 +321,7 @@ export function OracleBox({ onSubmit, onDirectWorkflow, onOpenLibrary, isLoading
                 )}
               >
                 <span className="mr-1">&#10022;</span>KS
-              </button>
+              </button> */}
               <button
                 onClick={() => handleModeChange('image')}
                 className={cn(
