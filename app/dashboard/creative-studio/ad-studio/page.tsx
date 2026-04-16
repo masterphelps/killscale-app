@@ -4644,6 +4644,10 @@ export default function AdStudioPage() {
               <ProductInput
                 ref={productInputRef}
                 onChange={(knowledge: ProductKnowledge, images: ProductImage[], selectedIndices: number[]) => {
+                  // Don't set productInfo from empty initial state — prevents circular
+                  // loop where empty onChange → productInfo truthy → initialProductKnowledge
+                  // triggers → hasAnalyzed=true → "Found 0 items" before user types anything
+                  if (!knowledge.name) return
                   // Bridge ProductKnowledge → ProductInfo by including selected image data
                   const firstSelected = selectedIndices.length > 0 ? images[selectedIndices[0]] : null
                   const assembled: ProductInfo = {

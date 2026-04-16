@@ -478,7 +478,7 @@ const ProductInput = forwardRef<ProductInputRef, ProductInputProps>(function Pro
   // ─── Pre-fill from initialProductKnowledge (Oracle handoff) ───────────────
 
   useEffect(() => {
-    if (initialProductKnowledge && !initialKnowledgeAppliedRef.current) {
+    if (initialProductKnowledge && initialProductKnowledge.name && !initialKnowledgeAppliedRef.current) {
       initialKnowledgeAppliedRef.current = true
       const pk = initialProductKnowledge
       const newPools: Record<PillCategory, string[]> = {
