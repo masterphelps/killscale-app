@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { useAccount } from '@/lib/account' // for accounts list only
+import { useAccount } from '@/lib/account'
 import { supabase } from '@/lib/supabase-browser'
 import { cn } from '@/lib/utils'
 
@@ -16,15 +16,22 @@ type WorkspaceAccount = {
   currency: string
 }
 
+type ConnectedAccount = {
+  id: string
+  name: string
+  platform: 'meta' | 'google'
+}
+
 interface DataSourcesPanelProps {
   workspaceId: string | null
 }
 
 export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
   const { user } = useAuth()
-  const { accounts, refetch, currentWorkspaceId } = useAccount()
+  const { refetch, currentWorkspaceId } = useAccount()
 
   const [wsAccounts, setWsAccounts] = useState<WorkspaceAccount[]>([])
+  const [allConnectedAccounts, setAllConnectedAccounts] = useState<ConnectedAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [addingAccount, setAddingAccount] = useState(false)
 
@@ -37,27 +44,55 @@ export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
   }, [user, workspaceId])
 
   const load = async () => {
-    if (!workspaceId) return
+    if (!workspaceId || !user) return
 
+    // Load workspace accounts
     const { data } = await supabase
       .from('workspace_accounts')
       .select('*')
       .eq('workspace_id', workspaceId)
 
     setWsAccounts(data || [])
+
+    // Load ALL connected accounts directly (not filtered by in_dashboard)
+    const connected: ConnectedAccount[] = []
+
+    const { data: metaConn } = await supabase
+      .from('meta_connections')
+      .select('ad_accounts')
+      .eq('user_id', user.id)
+      .single()
+
+    if (metaConn?.ad_accounts) {
+      for (const a of metaConn.ad_accounts as Array<{ id: string; name: string }>) {
+        connected.push({ id: a.id, name: a.name, platform: 'meta' })
+      }
+    }
+
+    const { data: googleConn } = await supabase
+      .from('google_connections')
+      .select('customer_ids')
+      .eq('user_id', user.id)
+      .single()
+
+    if (googleConn?.customer_ids) {
+      for (const c of googleConn.customer_ids as Array<{ id: string; name: string }>) {
+        connected.push({ id: c.id, name: c.name, platform: 'google' })
+      }
+    }
+
+    setAllConnectedAccounts(connected)
     setLoading(false)
   }
 
-  const handleAdd = async (account: { id: string; name: string; platform?: string }) => {
+  const handleAdd = async (account: ConnectedAccount) => {
     if (!workspaceId) return
-
-    const platform = (account.platform || (account.id.startsWith('act_') ? 'meta' : 'google')) as 'meta' | 'google'
 
     const { error } = await supabase
       .from('workspace_accounts')
       .insert({
         workspace_id: workspaceId,
-        platform,
+        platform: account.platform,
         ad_account_id: account.id,
         ad_account_name: account.name,
         currency: 'USD',
@@ -65,7 +100,6 @@ export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
 
     if (!error) {
       load()
-      // Refresh sidebar account count if editing the active workspace
       if (workspaceId === currentWorkspaceId) refetch()
     }
     setAddingAccount(false)
@@ -81,7 +115,6 @@ export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
       .eq('ad_account_id', accountId)
 
     setWsAccounts(prev => prev.filter(a => a.ad_account_id !== accountId))
-    // Refresh sidebar account count if editing the active workspace
     if (workspaceId === currentWorkspaceId) refetch()
   }
 
@@ -103,7 +136,7 @@ export function DataSourcesPanel({ workspaceId }: DataSourcesPanelProps) {
   }
 
   const linkedIds = new Set(wsAccounts.map(a => a.ad_account_id))
-  const availableAccounts = accounts.filter(a => !linkedIds.has(a.id))
+  const availableAccounts = allConnectedAccounts.filter(a => !linkedIds.has(a.id))
 
   return (
     <div className="max-w-lg">

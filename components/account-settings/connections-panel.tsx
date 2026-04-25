@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Link2, Unlink, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { Link2, Unlink, CheckCircle, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
 import { supabase } from '@/lib/supabase-browser'
@@ -20,6 +20,7 @@ export function ConnectionsPanel({ onClose }: ConnectionsPanelProps) {
   const [googleConnected, setGoogleConnected] = useState(false)
   const [googleUserEmail, setGoogleUserEmail] = useState('')
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -105,6 +106,35 @@ export function ConnectionsPanel({ onClose }: ConnectionsPanelProps) {
     refetchAccounts()
   }
 
+  const handleRefreshMeta = async () => {
+    if (!user || refreshing) return
+    setRefreshing(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/auth/meta/refresh-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setMessage({ type: 'error', text: data.error || 'Failed to sync accounts' })
+        return
+      }
+      refetchAccounts()
+      setMessage({
+        type: 'success',
+        text: data.newCount > 0
+          ? `Found ${data.newCount} new ad account${data.newCount > 1 ? 's' : ''}! Assign them in Data Sources.`
+          : 'Ad accounts are up to date.'
+      })
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to sync accounts' })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -154,6 +184,14 @@ export function ConnectionsPanel({ onClose }: ConnectionsPanelProps) {
                 <span className="w-1.5 h-1.5 bg-verdict-scale rounded-full" />
                 Connected
               </span>
+              <button
+                onClick={handleRefreshMeta}
+                disabled={refreshing}
+                className="p-2 rounded-lg text-zinc-500 hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-50"
+                title="Sync ad accounts from Meta"
+              >
+                <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
+              </button>
               <button
                 onClick={handleDisconnectMeta}
                 className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"

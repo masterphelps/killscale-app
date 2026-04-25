@@ -109,10 +109,10 @@ export async function GET(request: NextRequest) {
     // Store connection in database
     const expiresAt = new Date(Date.now() + (finalExpiry * 1000)).toISOString()
     
-    // Add in_dashboard field to each account (first one defaults to true)
-    const accountsWithDashboard = (adAccountsData.data || []).map((account: any, index: number) => ({
+    // All accounts default to in_dashboard: true — workspace_accounts handles scoping
+    const accountsWithDashboard = (adAccountsData.data || []).map((account: any) => ({
       ...account,
-      in_dashboard: index === 0 // First account auto-added to dashboard
+      in_dashboard: true,
     }))
 
     // Preserve demo account (act_999888777666) across reconnects — it's not a real Meta
