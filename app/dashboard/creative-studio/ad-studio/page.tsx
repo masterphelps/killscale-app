@@ -2338,15 +2338,6 @@ export default function AdStudioPage() {
     oracleChainDepthRef.current = 0 // Reset chain depth on new submission
     setOracleLoading(true)
     try {
-      // Store attached image(s) for flows that need it
-      if (submission.images.length > 0) {
-        setOpenPromptSourceImages(submission.images.slice(0, 3).map(img => ({
-          base64: img.base64,
-          mimeType: img.mimeType,
-          preview: img.preview,
-        })))
-      }
-
       const { mode } = submission
 
       // ── Image mode: direct to Gemini via open-prompt ──
@@ -2359,13 +2350,21 @@ export default function AdStudioPage() {
         if (submission.text.trim()) {
           oracleAutoGenRef.current = true
         }
+        // Set source images directly (not via _image append) to avoid duplication
+        if (submission.images.length > 0) {
+          setOpenPromptSourceImages(submission.images.slice(0, 3).map(img => ({
+            base64: img.base64,
+            mimeType: img.mimeType,
+            preview: img.preview,
+          })))
+        }
         handleOracleAction({
           workflow: 'open-prompt',
           prefilledData: {
             prompt: submission.text.trim(),
             format: 'image',
           },
-          _image: submission.images[0] ?? undefined,
+          // Don't pass _image — already set above to avoid double-add
         })
         return
       }

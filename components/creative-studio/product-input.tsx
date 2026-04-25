@@ -458,6 +458,10 @@ const ProductInput = forwardRef<ProductInputRef, ProductInputProps>(function Pro
           setSelectedProductImageIndices(data.productImages.slice(0, 3).map((_: unknown, i: number) => i))
         }
         setHasAnalyzed(true)
+        // Mark as applied so parent's onChange feedback doesn't re-initialize pools
+        // (prevents: select pill → onChange → parent sets productInfo → initialProductKnowledge
+        // prop becomes truthy → useEffect resets pools to only selected items, losing unselected pills)
+        initialKnowledgeAppliedRef.current = true
       }
     } catch {
       setAnalyzeError('Failed to analyze product URL')
