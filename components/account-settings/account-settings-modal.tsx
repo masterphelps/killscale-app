@@ -232,9 +232,9 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
 
         {/* Left nav */}
         <div className={cn(
-          'w-full lg:w-52 border-r border-border bg-bg-card p-3 space-y-4 overflow-y-auto flex-shrink-0',
-          'lg:block',
-          mobileNavOpen ? 'block' : 'hidden'
+          'w-full lg:w-52 border-r border-border bg-bg-card p-3 space-y-4 overflow-y-auto',
+          'lg:block lg:flex-shrink-0',
+          mobileNavOpen ? 'block flex-1' : 'hidden'
         )}>
           {/* Account section */}
           <div>
