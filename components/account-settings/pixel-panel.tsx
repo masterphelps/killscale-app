@@ -410,8 +410,9 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
   }
 
   // Delete manual event
-  const deleteManualEvent = async (eventId: string) => {
+  const deleteEvent = async (eventId: string) => {
     if (!workspacePixel) return
+    if (!confirm('Delete this event? This will affect your metrics.')) return
     setDeletingEventId(eventId)
     try {
       const res = await fetch(`/api/pixel/events/${eventId}`, { method: 'DELETE' })
@@ -1156,21 +1157,19 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
                     <span className="text-xs text-zinc-600" title={new Date(event.event_time).toLocaleString()}>
                       {new Date(event.event_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
-                    {/* Delete button for manual events */}
-                    {event.source === 'manual' && (
-                      <button
-                        onClick={() => deleteManualEvent(event.id)}
-                        disabled={deletingEventId === event.id}
-                        className="p-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-50"
-                        title="Delete event"
-                      >
-                        {deletingEventId === event.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    )}
+                    {/* Delete button */}
+                    <button
+                      onClick={() => deleteEvent(event.id)}
+                      disabled={deletingEventId === event.id}
+                      className="p-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-50"
+                      title="Delete event"
+                    >
+                      {deletingEventId === event.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <X className="w-3.5 h-3.5" />
+                      )}
+                    </button>
                   </div>
                 </div>
               ))}

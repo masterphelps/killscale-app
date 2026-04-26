@@ -110,25 +110,6 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // First check if the event exists and is manual
-    const { data: existingEvent, error: fetchError } = await supabase
-      .from('pixel_events')
-      .select('id, source')
-      .eq('id', id)
-      .single()
-
-    if (fetchError || !existingEvent) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
-    }
-
-    // Only allow deleting manual events
-    if (existingEvent.source !== 'manual') {
-      return NextResponse.json(
-        { error: 'Only manual events can be deleted' },
-        { status: 403 }
-      )
-    }
-
     const { error: deleteError } = await supabase
       .from('pixel_events')
       .delete()
