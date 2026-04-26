@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, User, Plug, Settings, Database, Users, Radio, Bell, CreditCard, ChevronDown, Building2, ShoppingBag, Gift, Plus, Trash2, Loader2, Check } from 'lucide-react'
+import { X, User, Plug, Settings, Database, Users, Radio, Bell, CreditCard, ChevronDown, Building2, ShoppingBag, Gift, Plus, Trash2, Loader2, Check, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useAccount } from '@/lib/account'
@@ -216,9 +216,14 @@ export function AccountSettingsModal({ isOpen, onClose, initialPanel = 'profile'
         <div className="lg:hidden flex items-center justify-between p-4 border-b border-border">
           <button
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            className="text-sm text-zinc-400 hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-bg-hover transition-colors"
           >
-            {mobileNavOpen ? 'Close Menu' : activePanel.charAt(0).toUpperCase() + activePanel.slice(1).replace('-', ' ')}
+            {mobileNavOpen ? (
+              <X className="w-4 h-4" />
+            ) : (
+              <Menu className="w-4 h-4" />
+            )}
+            {mobileNavOpen ? 'Close' : 'Settings'}
           </button>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-bg-hover text-zinc-400 hover:text-white">
             <X className="w-5 h-5" />
