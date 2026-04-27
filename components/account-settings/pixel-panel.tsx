@@ -847,6 +847,32 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
               'Save CAPI Settings'
             )}
           </button>
+          {/* CAPI forwarding status */}
+          <div className="mt-3 pt-3 border-t border-border">
+            {(wp.capi_event_types || []).length > 0 ? (
+              wp.meta_pixel_id && wp.meta_capi_token ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-zinc-500">Forwarding:</span>
+                  {(wp.capi_event_types || []).map(type => (
+                    <span key={type} className={cn(
+                      'px-2 py-0.5 rounded-full text-[11px] font-medium',
+                      type === 'purchase' ? 'bg-verdict-scale/15 text-verdict-scale' : 'bg-purple-500/15 text-purple-400'
+                    )}>
+                      {STANDARD_EVENTS.find(e => e.key === type)?.label || type}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-amber-400">
+                  {(wp.capi_event_types || []).length} event type{(wp.capi_event_types || []).length > 1 ? 's' : ''} ready &mdash; add your Meta Pixel ID and token to start forwarding.
+                </p>
+              )
+            ) : (
+              <p className="text-xs text-zinc-500">
+                No events configured for CAPI. Add them in Events &amp; CAPI below.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
