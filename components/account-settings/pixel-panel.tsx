@@ -33,6 +33,7 @@ type WorkspacePixel = {
   event_values: Record<string, number>
   meta_pixel_id: string | null
   meta_capi_token: string | null
+  capi_event_types: string[]
 }
 
 type WorkspaceAccount = {
@@ -154,7 +155,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
     // Check if pixel exists
     let { data: existingPixel } = await supabase
       .from('workspace_pixels')
-      .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values, meta_pixel_id, meta_capi_token')
+      .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values, meta_pixel_id, meta_capi_token, capi_event_types')
       .eq('workspace_id', workspaceId)
       .single()
 
@@ -173,7 +174,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
           attribution_source: 'native',
           attribution_model: 'last_touch',
         })
-        .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values, meta_pixel_id, meta_capi_token')
+        .select('pixel_id, pixel_secret, attribution_source, attribution_model, event_values, meta_pixel_id, meta_capi_token, capi_event_types')
         .single()
 
       if (!createError && newPixel) {
@@ -191,6 +192,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
         event_values: existingPixel.event_values || {},
         meta_pixel_id: existingPixel.meta_pixel_id || null,
         meta_capi_token: existingPixel.meta_capi_token || null,
+        capi_event_types: existingPixel.capi_event_types || [],
       })
       setCapiPixelId(existingPixel.meta_pixel_id || '')
       setCapiToken(existingPixel.meta_capi_token || '')
@@ -341,6 +343,77 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
       }
     } catch (err) {
       console.error('Failed to update event values:', err)
+    }
+  }
+
+  // Update CAPI event types
+  const updateCapiEventTypes = async (newTypes: string[]) => {
+    if (!workspaceId || !workspacePixel) return
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({ capi_event_types: newTypes })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixel(prev => prev ? { ...prev, capi_event_types: newTypes } : prev)
+      }
+    } catch (err) {
+      console.error('Failed to update CAPI event types:', err)
+    }
+  }
+
+  // Add event type to both event_values and capi_event_types (from event log shortcut)
+  const addEventToCapi = async (eventType: string) => {
+    if (!workspacePixel) return
+    const newEventValues = { ...workspacePixel.event_values }
+    if (!(eventType in newEventValues)) {
+      newEventValues[eventType] = 0
+    }
+    const newCapiTypes = workspacePixel.capi_event_types.includes(eventType)
+      ? workspacePixel.capi_event_types
+      : [...workspacePixel.capi_event_types, eventType]
+
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({ event_values: newEventValues, capi_event_types: newCapiTypes })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixel(prev => prev ? {
+          ...prev,
+          event_values: newEventValues,
+          capi_event_types: newCapiTypes,
+        } : prev)
+      }
+    } catch (err) {
+      console.error('Failed to add event to CAPI:', err)
+    }
+  }
+
+  // Remove event type from both event_values and capi_event_types
+  const removeEventType = async (eventType: string) => {
+    if (!workspacePixel) return
+    const newEventValues = { ...workspacePixel.event_values }
+    delete newEventValues[eventType]
+    const newCapiTypes = workspacePixel.capi_event_types.filter(t => t !== eventType)
+
+    try {
+      const { error } = await supabase
+        .from('workspace_pixels')
+        .update({ event_values: newEventValues, capi_event_types: newCapiTypes })
+        .eq('workspace_id', workspaceId)
+
+      if (!error) {
+        setWorkspacePixel(prev => prev ? {
+          ...prev,
+          event_values: newEventValues,
+          capi_event_types: newCapiTypes,
+        } : prev)
+      }
+    } catch (err) {
+      console.error('Failed to remove event type:', err)
     }
   }
 
@@ -830,66 +903,129 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
         )}
       </div>
 
-      {/* ───────────────────── 6. Event Values ───────────────────── */}
+      {/* ───────────────────── 6. Events & CAPI ───────────────────── */}
       <div className="p-4 bg-bg-card border border-border rounded-xl">
         <div className="flex items-center gap-2 mb-3">
-          <h3 className="font-medium text-sm">Event Values</h3>
+          <h3 className="font-medium text-sm">Events & CAPI</h3>
           <div className="group relative">
             <Info className="w-3.5 h-3.5 text-zinc-500 cursor-help" />
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
-              Assign dollar values to conversion events so pixel attribution can calculate revenue and ROAS.
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 z-10">
+              Configure which pixel events forward to Meta CAPI and their dollar values for ROAS calculation.
             </div>
           </div>
         </div>
         <p className="text-xs text-zinc-500 mb-3">
-          When your pixel tracks events (leads, registrations, etc.), these values are used to calculate revenue. ROAS = (Events x Value) / Spend.
+          Events with CAPI enabled are forwarded server-side to Meta for ad optimization. Values are used for ROAS: (Events x Value) / Spend.
         </p>
 
-        {/* Configured events */}
-        <div className="space-y-2 mb-3">
-          {Object.entries(wp.event_values || {}).map(([key, value]) => {
-            const event = STANDARD_EVENTS.find(e => e.key === key)
-            return (
-              <div key={key} className="flex items-center gap-3 bg-bg-dark rounded-lg p-3">
-                <span className="flex-1 text-sm font-medium">{event?.label || key}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-zinc-500 text-sm">$</span>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={value}
-                    onChange={(e) => {
-                      const num = parseFloat(e.target.value)
-                      if (!isNaN(num) && num >= 0) {
-                        updateEventValues({ ...wp.event_values, [key]: num })
-                      }
-                    }}
-                    className="w-24 px-3 py-2 bg-bg-card border border-border rounded-lg text-white font-mono text-sm focus:outline-none focus:border-accent"
-                  />
+        {/* Column headers */}
+        <div className="grid grid-cols-[1fr_100px_60px_32px] gap-2 px-3 pb-2 text-[11px] text-zinc-500 uppercase tracking-wider">
+          <span>Event</span>
+          <span className="text-right">Value</span>
+          <span className="text-center">CAPI</span>
+          <span />
+        </div>
+
+        {/* Event type rows */}
+        <div className="space-y-1.5 mb-3">
+          {(() => {
+            const allTypes = new Set([
+              ...Object.keys(wp.event_values || {}),
+              ...(wp.capi_event_types || []),
+            ])
+            const rows = Array.from(allTypes)
+            if (rows.length === 0) {
+              return (
+                <div className="text-sm text-zinc-500 py-2 px-3">
+                  No event types configured. Add events below or click &quot;+ Add to CAPI&quot; on an event in the log.
                 </div>
-                <button
-                  onClick={() => {
-                    const next = { ...wp.event_values }
-                    delete next[key]
-                    updateEventValues(next)
-                  }}
-                  className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+              )
+            }
+            return rows.map(eventType => {
+              const event = STANDARD_EVENTS.find(e => e.key === eventType)
+              const value = (wp.event_values || {})[eventType]
+              const capiOn = (wp.capi_event_types || []).includes(eventType)
+              const isPurchase = eventType === 'purchase'
+
+              return (
+                <div
+                  key={eventType}
+                  className={cn(
+                    'grid grid-cols-[1fr_100px_60px_32px] gap-2 items-center p-3 bg-bg-dark rounded-lg border border-border',
+                    !capiOn && 'opacity-60'
+                  )}
                 >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )
-          })}
-          {Object.keys(wp.event_values || {}).length === 0 && (
-            <div className="text-sm text-zinc-500 py-2">
-              No event values configured. Add events below to track their value.
-            </div>
-          )}
+                  <span className={cn(
+                    'px-2 py-0.5 rounded text-xs font-medium w-fit',
+                    eventType === 'purchase' ? 'bg-verdict-scale/20 text-verdict-scale' :
+                    eventType === 'pageview' ? 'bg-zinc-700 text-zinc-400' :
+                    'bg-accent/20 text-accent'
+                  )}>
+                    {event?.label || eventType}
+                  </span>
+
+                  <div className="flex items-center gap-1 justify-end">
+                    {isPurchase ? (
+                      <span className="text-xs text-zinc-500 italic">from order</span>
+                    ) : (
+                      <>
+                        <span className="text-zinc-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={value ?? 0}
+                          onChange={(e) => {
+                            const num = parseFloat(e.target.value)
+                            if (!isNaN(num) && num >= 0) {
+                              updateEventValues({ ...wp.event_values, [eventType]: num })
+                            }
+                          }}
+                          className="w-16 px-2 py-1.5 bg-bg-card border border-border rounded-lg text-white font-mono text-sm focus:outline-none focus:border-accent text-right"
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => {
+                        const newTypes = capiOn
+                          ? (wp.capi_event_types || []).filter(t => t !== eventType)
+                          : [...(wp.capi_event_types || []), eventType]
+                        updateCapiEventTypes(newTypes)
+                      }}
+                      className="relative w-9 h-5 rounded-full transition-colors"
+                      style={{ background: capiOn ? '#a855f7' : '#3f3f46' }}
+                      title={capiOn ? 'Forwarding to CAPI' : 'Not forwarding'}
+                    >
+                      <div
+                        className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                        style={{
+                          background: capiOn ? 'white' : '#71717a',
+                          left: capiOn ? '18px' : '2px',
+                        }}
+                      />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => removeEventType(eventType)}
+                    className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors flex justify-center"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )
+            })
+          })()}
         </div>
 
         {/* Add event dropdown */}
-        {STANDARD_EVENTS.filter(e => !(e.key in (wp.event_values || {}))).length > 0 && (
+        {STANDARD_EVENTS.filter(e => {
+          const allTypes = new Set([...Object.keys(wp.event_values || {}), ...(wp.capi_event_types || [])])
+          return !allTypes.has(e.key)
+        }).length > 0 && (
           <select
             defaultValue=""
             onChange={(e) => {
@@ -900,8 +1036,11 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
             }}
             className="w-full px-3 py-2 bg-bg-dark border border-border rounded-lg text-white text-sm focus:outline-none focus:border-accent appearance-none cursor-pointer"
           >
-            <option value="" disabled>Add an event...</option>
-            {STANDARD_EVENTS.filter(e => !(e.key in (wp.event_values || {}))).map(({ key, label }) => (
+            <option value="" disabled>Add an event type...</option>
+            {STANDARD_EVENTS.filter(e => {
+              const allTypes = new Set([...Object.keys(wp.event_values || {}), ...(wp.capi_event_types || [])])
+              return !allTypes.has(e.key)
+            }).map(({ key, label }) => (
               <option key={key} value={key}>{label}</option>
             ))}
           </select>
