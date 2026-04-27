@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       .from('workspace_pixels')
       .select(`
         pixel_id,
+        capi_event_types,
         workspaces!inner (
           user_id
         )
@@ -94,7 +95,8 @@ export async function GET(request: NextRequest) {
       events: events || [],
       total: stats?.length || 0,
       byType: eventCounts,
-      lastEventTime
+      lastEventTime,
+      capiEventTypes: (pixel as any)?.capi_event_types || [],
     })
   } catch (err) {
     console.error('Pixel events error:', err)
