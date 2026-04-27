@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     // Validate pixel_id and pixel_secret
     const { data: pixelData, error: pixelError } = await supabase
       .from('workspace_pixels')
-      .select('workspace_id, pixel_id')
+      .select('workspace_id, pixel_id, meta_pixel_id, meta_capi_token, capi_event_types, event_values')
       .eq('pixel_id', pixel_id)
       .eq('pixel_secret', pixel_secret)
       .single()
@@ -153,6 +153,39 @@ export async function POST(request: NextRequest) {
       utm_content,
       order_total
     })
+
+    // CAPI forwarding
+    const capiEventTypes: string[] = pixelData.capi_event_types || []
+    if (pixelData.meta_pixel_id && pixelData.meta_capi_token && capiEventTypes.includes('purchase')) {
+      const { forwardToMeta } = await import('@/lib/meta-capi')
+      const eventValues: Record<string, number> = pixelData.event_values || {}
+      const capiStatus = await forwardToMeta(
+        {
+          event_type: 'purchase',
+          event_time: event_time ? new Date(event_time).toISOString() : new Date().toISOString(),
+          event_id: body.event_id || null,
+          event_value: order_total || null,
+          event_currency: 'USD',
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null,
+          user_agent: request.headers.get('user-agent') || null,
+          fbclid: fbclid || null,
+          client_id: client_id || null,
+        },
+        {
+          metaPixelId: pixelData.meta_pixel_id,
+          capiToken: pixelData.meta_capi_token,
+          configuredValue: eventValues['purchase'],
+        }
+      )
+      // Update capi_status on the event (fire-and-forget)
+      supabase
+        .from('pixel_events')
+        .update({ capi_status: capiStatus })
+        .eq('pixel_id', pixel_id)
+        .eq('order_id', normalizedOrderId)
+        .eq('event_type', 'purchase')
+        .then(() => {})
+    }
 
     return NextResponse.json({
       success: true,
