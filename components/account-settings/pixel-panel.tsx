@@ -1253,10 +1253,18 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
             </div>
           ) : (
             <div className="space-y-1.5 max-h-80 overflow-y-auto">
-              {filteredEvents.slice(0, 50).map((event) => (
+              {filteredEvents.slice(0, 50).map((event) => {
+                const isConfigured = wp && (event.event_type in (wp.event_values || {}) || (wp.capi_event_types || []).includes(event.event_type))
+                const isCapiOn = wp && (wp.capi_event_types || []).includes(event.event_type)
+                const isNew = !isConfigured && event.event_type !== 'pageview'
+
+                return (
                 <div
                   key={event.id}
-                  className="flex items-center justify-between p-2.5 bg-bg-dark rounded-lg text-sm group"
+                  className={cn(
+                    'flex items-center justify-between p-2.5 bg-bg-dark rounded-lg text-sm group',
+                    isNew && 'border border-purple-500/15 bg-purple-500/[0.03]'
+                  )}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     {/* Event type badge */}
@@ -1268,6 +1276,12 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
                     )}>
                       {event.event_type}
                     </span>
+                    {/* NEW badge for unconfigured types */}
+                    {isNew && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 flex-shrink-0">
+                        NEW
+                      </span>
+                    )}
                     {/* Manual indicator */}
                     {event.source === 'manual' && (
                       <span className="px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-400 flex-shrink-0">
@@ -1292,6 +1306,19 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* CAPI status */}
+                    {isCapiOn && (
+                      <span className="text-[11px] text-purple-400 flex-shrink-0">&#x2713; CAPI</span>
+                    )}
+                    {/* + Add to CAPI shortcut */}
+                    {isNew && (
+                      <button
+                        onClick={() => addEventToCapi(event.event_type)}
+                        className="text-[11px] text-purple-400 bg-purple-500/15 border border-purple-500/30 rounded-md px-2 py-0.5 hover:bg-purple-500/25 transition-colors flex-shrink-0 whitespace-nowrap"
+                      >
+                        + Add to CAPI
+                      </button>
+                    )}
                     {/* Date */}
                     <span className="text-xs text-zinc-600" title={new Date(event.event_time).toLocaleString()}>
                       {new Date(event.event_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -1311,7 +1338,8 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
                     </button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
               {filteredEvents.length > 50 && (
                 <p className="text-xs text-zinc-600 text-center pt-2">
                   +{filteredEvents.length - 50} more events
