@@ -1282,7 +1282,7 @@ export function PixelPanel({ workspaceId }: PixelPanelProps) {
               {filteredEvents.slice(0, 50).map((event) => {
                 const isConfigured = wp && (event.event_type in (wp.event_values || {}) || (wp.capi_event_types || []).includes(event.event_type))
                 const isCapiOn = wp && (wp.capi_event_types || []).includes(event.event_type)
-                const isNew = !isConfigured && event.event_type !== 'pageview'
+                const isNew = !isConfigured
 
                 return (
                 <div
