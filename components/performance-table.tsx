@@ -1328,11 +1328,11 @@ export function PerformanceTable({
         if (!expandedAdsets.has(adsetKey)) return
 
         // Load creatives for visible ads (Meta only - Google doesn't have creatives)
-        // Skip images that already have data from sync. Always load videos (need videoSource).
+        // Skip if already have a Supabase storage_url (permanent). CDN URLs from sync expire,
+        // so always load from Meta API if no storage_url — applies to both images and videos.
         adset.children?.forEach(ad => {
           if (ad.creativeId && ad.platform !== 'google' && !loadedCreativesRef.current.has(ad.creativeId)) {
-            const isImage = ad.media_type && ad.media_type.toLowerCase() !== 'video'
-            if (isImage && (ad.thumbnail_url || ad.image_url)) return // images have CDN URL already
+            if (ad.storage_url) return // has permanent Supabase URL — no need to fetch
             loadCreative(ad.creativeId)
           }
         })
